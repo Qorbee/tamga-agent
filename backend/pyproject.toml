@@ -1,13 +1,12 @@
 [project]
 name = "backend"
 version = "0.1.0"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20",
     "asyncpg>=0.31",
     "fastapi>=0.141",
     "pydantic-settings>=2.15",
-    "redis>=8.1",
     "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53",
 ]
@@ -51,5 +50,5 @@ testpaths = ["app/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
-    "integration: needs the Postgres and Redis from docker-compose.yml; runs when INTEGRATION=1",
+    "integration: needs the Postgres from docker-compose.yml; runs when INTEGRATION=1",
 ]

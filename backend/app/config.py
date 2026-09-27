@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import PostgresDsn, RedisDsn
+from pydantic import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolved from this file rather than the working directory, so `uv run` from anywhere, Alembic and
@@ -21,12 +21,11 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
-    app_name: str = "backend"
+    app_name: str = "tamga"
     app_env: Literal["local", "test", "staging", "production"] = "local"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     database_url: PostgresDsn
-    redis_url: RedisDsn
 
     # Comma-separated, because a list-typed field would demand JSON in the environment.
     cors_origins: str = ""

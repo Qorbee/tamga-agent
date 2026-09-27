@@ -1,6 +1,6 @@
 """The OpenAPI document as committed to ``backend/openapi.json`` — the frontend's type source.
 
-Built from ``create_app().openapi()``: no server, database or Redis needed. Keys are sorted so the
+Built from ``create_app().openapi()``: no server or database needed. Keys are sorted so the
 file changes when the API changes, not when two ``include_router`` calls swap places.
 """
 

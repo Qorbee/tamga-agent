@@ -21,10 +21,6 @@
             "title": "Database",
             "type": "boolean"
           },
-          "redis": {
-            "title": "Redis",
-            "type": "boolean"
-          },
           "status": {
             "enum": [
               "ok",
@@ -36,8 +32,7 @@
         },
         "required": [
           "status",
-          "database",
-          "redis"
+          "database"
         ],
         "title": "Readiness",
         "type": "object"
@@ -45,7 +40,7 @@
     }
   },
   "info": {
-    "title": "backend",
+    "title": "tamga",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",

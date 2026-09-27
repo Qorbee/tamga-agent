@@ -1,14 +1,38 @@
-# Full Stack Project Template
+# Tamga
 
-A starting point for full-stack projects whose stack changes from one project to the next. The
-backend (Python, FastAPI, PostgreSQL, Redis) is ready to run; the frontend (Vite + React, Next.js or
-Astro) is chosen per project and scaffolded by an agent skill, from your idea or PRD if you have one.
-Agent rules and skills are plain `AGENTS.md` and `SKILL.md` files, so Codex, Claude Code and most
-other coding agents read the same copy.
+**An AI finance operator for freight brokers, by Qorbee.** Tamga follows every project file from the
+conversations it already lives in — WhatsApp, email, invoices, CMRs and delivery photos — proposes who
+gets paid and when under the owner's own written rules, and explains every payment. Money settles in
+USDC on [Arc](https://www.arc.network/) through a contract that caps what the agent can move, so a
+persuasive message can never talk it past its limits.
 
-## Starting a new project
+> In the steppe, a *tamga* proved what was yours. Tamga proves the job was done before anyone gets paid.
 
-Once per machine (see [Supply chain](#supply-chain)):
+Built for the [Tameion agents hackathon](https://tameion.thecanteenapp.com/). **Status: in active
+development** — see the roadmap. All payments are test USDC on Arc
+testnet; nothing touches a company's bank or real money.
+
+## How it works
+
+1. **Evidence arrives on the channels people already use** — WhatsApp, email, web upload — and is
+   linked to a project file (a job with a client above and subcontractors below).
+2. **Specialist agents give opinions** — document extraction, match, risk, treasury — and a controller
+   proposes one decision per payable, with its reasons.
+3. **Plain code applies the hard rules** (no independent proof, no payment; never pay the same invoice
+   twice; a changed payee wallet waits out a timelock; amounts above the owner's approval limit go to
+   the owner, and nothing above the contract's caps can be paid at all).
+4. **The owner approves the weekly payment run** card by card, in a chat-first app, or asks the
+   assistant why.
+5. **The executor settles** through the PolicyVault contract on Arc, and every decision lands in a
+   hash-chained log anchored on-chain.
+
+The design and its reasoning: `docs/architecture/` and
+`docs/adr/`.
+
+## Running it locally
+
+Needs Docker, [uv](https://docs.astral.sh/uv/), Node (LTS) and pnpm. Once per machine, the supply-chain
+settings for one-off tools:
 
 ```bash
 scripts/setup-machine.sh            # shows what it would change; --apply to change it
@@ -17,40 +41,28 @@ scripts/setup-machine.sh            # shows what it would change; --apply to cha
 Then:
 
 ```bash
-gh repo create my-app --template yigitcanozdemir/full-stack-project-template --private --clone
-cd my-app
-```
-
-(or click **Use this template** on this repository's GitHub page).
-
-```bash
-docker compose up -d                               # Postgres + Redis
+docker compose up -d                               # Postgres
 cd backend && cp .env.example .env && uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload               # http://localhost:8000/docs
 ```
 
-Put your idea note, PRD or research in `docs/product/` (any format), then run the **`init-stack`**
-skill (`/init-stack` in Claude Code, `$init-stack` in Codex). It reads the documents, recommends a
-stack with the requirement behind each choice, lists what the documents leave open, and — once you
-confirm — refreshes the version snapshot, scaffolds the frontend, wires the generated API types,
-drafts ADR-0001, and offers a first plan. Once per clone:
-`uvx --exclude-newer "7 days" pre-commit install`.
+Once per clone: `uvx --exclude-newer "7 days" pre-commit install`.
 
-Needs Docker, [uv](https://docs.astral.sh/uv/), Node (LTS) and pnpm.
+## Layout
 
-## How it stays swappable
-
-The root `AGENTS.md` separates **contracts** — one settings module per service, an API
-contract generated from the backend (`backend/openapi.json` → `frontend/src/lib/api-schema.d.ts`),
-generated migrations, one image per service — from **slots**: backend, database, cache, frontend.
-Any slot can change as long as the contracts hold. The `init-stack` skill lists every file each slot
-touches, and CI runs only the contract commands, so it works with whichever frontend is installed.
-
-**Versions are written once each**, in the file that uses them: `backend/.python-version` (also what
-the Docker image installs), `backend/uv.lock`, `docker-compose.yml` (CI starts the same file),
-`frontend/.node-version`, `frontend/package.json`. Dependabot proposes updates; nothing else repeats
-a version, so nothing goes stale.
+| Path | What is there |
+|---|---|
+| `AGENTS.md` | Rules for every coding agent: stack, contracts, product invariants, definition of done, review rules |
+| `CLAUDE.md` (and in each package) | One line, `@AGENTS.md` — how Claude Code loads the same rules |
+| `.agents/skills/` | Project skills. `.claude/skills` is a symlink to this directory |
+| [`backend/`](backend/README.md) | The API service (FastAPI, PostgreSQL) |
+| [`frontend/`](frontend/README.md) | The web app — scaffolded in foundation phase B |
+| `docs/` | Architecture, ADRs, plans, guides, page templates |
+| `docker-compose.yml` | Local Postgres; the backend image under `--profile app` |
+| `scripts/setup-machine.sh` | Per-machine supply-chain settings |
+| `.github/` | CI, Dependabot, and the PR checklist (the definition of done) |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branches, Conventional Commits, PRs |
 
 ## Supply chain
 
@@ -60,72 +72,27 @@ a version, so nothing goes stale.
 | …including one-off tools (`uvx`, `pnpm dlx`/`create`, `npx`), which ignore project config | `scripts/setup-machine.sh --apply`, once per machine |
 | No trust downgrades, no git/tarball transitive deps, no unapproved install scripts | `frontend/pnpm-workspace.yaml` |
 | Actions and pre-commit hooks pinned to commit SHAs; read-only CI token | `.github/workflows/ci.yml`, `.pre-commit-config.yaml` |
-| Updates only after a 7-day cooldown; security fixes immediately | `.github/dependabot.yml` — also enable Dependabot alerts and security updates in the repo settings |
+| Updates only after a 7-day cooldown; security fixes immediately | `.github/dependabot.yml` |
 | Known CVEs in the lockfiles; hidden Unicode in instruction files | CI `audit` job (weekly and on every PR), pre-commit |
 
-A security patch you need before it is 7 days old is the one exception: exempt that single package,
-with the CVE and a removal date (`AGENTS.md`, "Supply chain").
-
-## Layout
-
-| Path | What is there |
-|---|---|
-| `AGENTS.md` | Rules for every coding agent: stack, contracts, supply chain, definition of done, review rules |
-| `CLAUDE.md` (and in each package) | One line, `@AGENTS.md` — how Claude Code loads the same rules |
-| `.agents/skills/` | Project skills. `.claude/skills` is a symlink to this directory |
-| [`backend/`](backend/README.md) | The API service |
-| [`frontend/`](frontend/README.md) | The web app — empty until `init-stack` runs |
-| `docs/` | Product documents, architecture, ADRs, plans, guides, page templates |
-| `docker-compose.yml` | Local Postgres and Redis; the backend image under `--profile app` |
-| `scripts/setup-machine.sh` | Per-machine supply-chain settings |
-| `.github/` | CI, Dependabot, and the PR checklist (the definition of done) |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branches, Conventional Commits, PRs |
+A security patch needed before it is 7 days old is the one exception: exempt that single package, with
+the advisory and a removal date (`AGENTS.md`, "Supply chain").
 
 ## Agent instructions and skills
 
-**Instructions.** `AGENTS.md` is the single source. Codex, Cursor, GitHub Copilot, OpenCode and most
-other agents read `AGENTS.md` files natively, from the root down to the directory they work in.
-Claude Code reads `CLAUDE.md`, and each `CLAUDE.md` here contains only `@AGENTS.md`, which imports
-the file beside it. Nested files (`backend/AGENTS.md`, `frontend/AGENTS.md`) add the rules for that
-package.
+`AGENTS.md` is the single source of agent rules; each `CLAUDE.md` contains only `@AGENTS.md`, so Codex,
+Claude Code and most other agents read the same copy. Nested files (`backend/AGENTS.md`,
+`frontend/AGENTS.md`) add the rules for that package. Skills in `.agents/skills/` follow the
+[Agent Skills](https://agentskills.io/specification) format:
 
-**Skills** follow the open [Agent Skills](https://agentskills.io/specification) format: a folder
-with a `SKILL.md` whose frontmatter has only `name` and `description`, which every tool understands.
-They live in `.agents/skills/`, the project folder Codex, Cursor, GitHub Copilot, Gemini CLI,
-OpenCode, Amp, Cline and Warp read. Claude Code reads `.claude/skills/`, a symlink to the same
-folder. A tool with its own folder (Windsurf, Goose, Roo, Kiro, …) gets another symlink:
-`ln -s ../.agents/skills .windsurf/skills`.
+| Skill | What it does |
+|---|---|
+| `init-stack` | Recommend and apply a stack from the product documents; update every seam a slot touches |
+| `agents-md` | Write, prune or test `AGENTS.md` / `CLAUDE.md` for signal density |
+| `adr` | Propose a decision record with options and a confirmation check; stop for a human decision |
+| `security-audit` | Adversarial audit of the diff: OWASP 2025, supply chain, agent config, LLM risks; no edits |
+| `optimization-audit` | Measured performance, cost and dead-code audit written to `OPTIMIZATIONS.md` |
 
-| Skill | What it does | Claude Code | Codex |
-|---|---|---|---|
-| `init-stack` | Read the idea/PRD, recommend and apply a stack, refresh versions, update every seam | `/init-stack` | `$init-stack` |
-| `agents-md` | Write, prune or test `AGENTS.md` / `CLAUDE.md` for signal density | `/agents-md` | `$agents-md` |
-| `adr` | Propose a decision record with options and a confirmation check; stop for a human decision | `/adr` | `$adr` |
-| `security-audit` | Adversarial audit of the diff: OWASP 2025, supply chain, agent config, LLM risks; no edits | `/security-audit` | `$security-audit` |
-| `optimization-audit` | Measured performance, cost and dead-code audit written to `OPTIMIZATIONS.md` | `/optimization-audit` | `$optimization-audit` |
+## License
 
-Agents also pick a skill by themselves when a request matches its `description`.
-
-**Using them in a repository not made from this template** (installs to `~/.agents/skills`, linked
-into each tool's folder; run `setup-machine.sh` first so `npx` gets the 7-day rule too):
-
-```bash
-npx skills add yigitcanozdemir/full-stack-project-template -g -a claude-code -a codex \
-  -s agents-md -s adr -s security-audit -s optimization-audit
-npx skills update -g        # later: pull changes pushed to this repository
-```
-
-`init-stack` is left out on purpose, because it only makes sense inside this template's layout.
-Treat third-party skills like code you are about to run: read them, and run
-`.agents/skills/security-audit/scripts/find_hidden_unicode.py` on them, before installing.
-
-**On another machine**, a project cloned from this template brings its rules and skills with it, so
-there is nothing to install. Per machine, run `scripts/setup-machine.sh --apply` and the
-`npx skills add … -g` commands again — neither is synced by git. On Windows, run
-`git config --global core.symlinks true` with Developer Mode on *before* cloning; otherwise
-`.claude/skills` is checked out as a plain text file.
-
-## Documentation
-
-Start at `docs/README.md`. The rules every change follows, including the definition
-of done, are in `AGENTS.md`.
+[MIT](LICENSE)

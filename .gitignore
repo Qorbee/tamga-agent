@@ -12,6 +12,10 @@ CLAUDE.local.md
 # Data — uncomment if data/ holds sensitive or large files (it usually does)
 # /data/
 
+# Product documents stay local: the PRD carries pilot specifics that must not become public.
+# What the repository needs is in docs/architecture/, docs/adr/ and docs/plans/.
+docs/product/
+
 # Python (backend)
 __pycache__/
 *.py[cod]

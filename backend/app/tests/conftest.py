@@ -13,11 +13,10 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/app_test"
 )
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    # Integration tests need docker compose's Postgres and Redis. They skip locally unless asked
+    # Integration tests need docker compose's Postgres. They skip locally unless asked
     # for, and CI sets INTEGRATION=1 — a tier that only ever skips is not coverage.
     if os.environ.get("INTEGRATION") == "1":
         return

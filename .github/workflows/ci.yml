@@ -4,8 +4,8 @@
 #
 # Supply chain: every action is pinned to a full commit SHA (a tag can be moved to malicious code —
 # the LiteLLM compromise of March 2026 began with a poisoned action). Dependabot proposes new SHAs
-# after its 7-day cooldown. Versions of Postgres, Redis, Python and Node are read from the files that
-# define them, never repeated here.
+# after its 7-day cooldown. Versions of Postgres, Python and Node are read from the files that define
+# them, never repeated here.
 name: CI
 
 on:
@@ -32,15 +32,14 @@ jobs:
         working-directory: backend
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app_test
-      REDIS_URL: redis://localhost:6379/15
       # Integration tests skip unless this is set. A tier that only ever skips is not coverage.
       INTEGRATION: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The images and versions in docker-compose.yml; it also creates the app_test database.
-      - name: Start Postgres and Redis
+      # The image and version in docker-compose.yml; it also creates the app_test database.
+      - name: Start Postgres
         working-directory: .
         run: docker compose up -d --wait
       # latest-known: the newest uv whose checksum this pinned action already ships.

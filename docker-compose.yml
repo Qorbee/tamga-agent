@@ -1,15 +1,14 @@
 # Local development infrastructure. Credentials are LOCAL ONLY and match backend/.env.example.
 #
-#   docker compose up -d                 # Postgres + Redis; run the backend with uv
+#   docker compose up -d                 # Postgres; run the backend with uv
 #   docker compose --profile app up -d   # ...plus the backend image, to test the container
 #
-# This file is the one place the Postgres and Redis versions are written: CI starts the same
-# services from it. A stack slot that is dropped (e.g. no Redis) is removed here too — the
-# init-stack skill lists every file a slot touches.
+# This file is the one place the Postgres version is written: CI starts the same service from it.
+# Background jobs run on this Postgres too (ADR-0001), so there is no Redis.
 
 services:
   postgres:
-    image: postgres:17
+    image: postgres:18
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -17,7 +16,11 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # 18+ keeps its data in a per-major subdirectory (/var/lib/postgresql/18/docker), so the volume
+      # is mounted one level up; mounting the old .../data path would start on an empty directory.
+      # A major-version bump, or a volume made before 18, starts an empty cluster beside the old data,
+      # which stays in the volume: dump and restore it, or `docker compose down -v` if nothing matters.
+      - postgres_data:/var/lib/postgresql
     configs:
       # Runs once, on an empty volume. The test suite gets its own database so it can never write
       # to the one you develop against.
@@ -29,35 +32,20 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     profiles: [app]
     build: ./backend
     env_file:
-      # Optional, so CI and fresh clones can start Postgres and Redis before anyone creates it.
+      # Optional, so CI and fresh clones can start Postgres before anyone creates it.
       - path: backend/.env
         required: false
     environment:
       # Service names, not localhost: inside the compose network each service is its own host.
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
-      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
 configs:
@@ -67,4 +55,3 @@ configs:
 
 volumes:
   postgres_data:
-  redis_data:

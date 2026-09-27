@@ -15,19 +15,15 @@ from fastapi.routing import APIRoute
 from app.config import get_settings
 from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
-from app.platform.redis_client import close_redis, init_redis
 from app.routers import health
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
-    init_db(str(settings.database_url))
-    init_redis(str(settings.redis_url))
+    init_db(str(get_settings().database_url))
     try:
         yield
     finally:
-        await close_redis()
         await dispose_db()
 
 
