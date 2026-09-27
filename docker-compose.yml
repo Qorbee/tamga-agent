@@ -1,0 +1,70 @@
+# Local development infrastructure. Credentials are LOCAL ONLY and match backend/.env.example.
+#
+#   docker compose up -d                 # Postgres + Redis; run the backend with uv
+#   docker compose --profile app up -d   # ...plus the backend image, to test the container
+#
+# This file is the one place the Postgres and Redis versions are written: CI starts the same
+# services from it. A stack slot that is dropped (e.g. no Redis) is removed here too — the
+# init-stack skill lists every file a slot touches.
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    configs:
+      # Runs once, on an empty volume. The test suite gets its own database so it can never write
+      # to the one you develop against.
+      - source: create-test-db
+        target: /docker-entrypoint-initdb.d/create-test-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    profiles: [app]
+    build: ./backend
+    env_file:
+      # Optional, so CI and fresh clones can start Postgres and Redis before anyone creates it.
+      - path: backend/.env
+        required: false
+    environment:
+      # Service names, not localhost: inside the compose network each service is its own host.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+configs:
+  create-test-db:
+    content: |
+      CREATE DATABASE app_test;
+
+volumes:
+  postgres_data:
+  redis_data:

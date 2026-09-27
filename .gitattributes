@@ -1,0 +1,14 @@
+# LF everywhere, so a Windows checkout doesn't rewrite every line of shell scripts and lockfiles.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+
+# Generated: collapsed in GitHub diffs and excluded from language stats.
+backend/uv.lock linguist-generated=true
+backend/openapi.json linguist-generated=true
+frontend/pnpm-lock.yaml linguist-generated=true
+frontend/src/lib/api-schema.d.ts linguist-generated=true

@@ -1,0 +1,153 @@
+# The same checks each package's AGENTS.md lists, as a merge gate. Stack-tolerant: the frontend jobs
+# run only once frontend/package.json exists and call only the contract scripts (lint, typecheck,
+# build, generate:api), so any framework that keeps the contract passes through.
+#
+# Supply chain: every action is pinned to a full commit SHA (a tag can be moved to malicious code —
+# the LiteLLM compromise of March 2026 began with a poisoned action). Dependabot proposes new SHAs
+# after its 7-day cooldown. Versions of Postgres, Redis, Python and Node are read from the files that
+# define them, never repeated here.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # weekly, so a newly disclosed vulnerability in a pinned dependency surfaces
+
+# Read-only token for every job; a job that needs more asks for it explicitly.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, types, migrations, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app_test
+      REDIS_URL: redis://localhost:6379/15
+      # Integration tests skip unless this is set. A tier that only ever skips is not coverage.
+      INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The images and versions in docker-compose.yml; it also creates the app_test database.
+      - name: Start Postgres and Redis
+        working-directory: .
+        run: docker compose up -d --wait
+      # latest-known: the newest uv whose checksum this pinned action already ships.
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: latest-known
+          enable-cache: true
+      - run: uv sync --locked
+      - name: ruff (lint)
+        run: uv run ruff check .
+      - name: ruff (format)
+        run: uv run ruff format --check .
+      - name: mypy
+        run: uv run mypy
+      # Migrations build the schema the way production does, in a database of their own, and
+      # `alembic check` fails when the models describe something no revision creates.
+      - name: Migrations apply and match the models
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/migrations_check
+        run: |
+          docker compose exec -T postgres createdb -U postgres migrations_check
+          uv run alembic upgrade head
+          uv run alembic check
+      # Includes test_openapi.py, which fails when backend/openapi.json is stale.
+      - name: pytest
+        run: uv run pytest -q
+
+  detect:
+    name: Detect stack slots
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.slots.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: slots
+        run: echo "frontend=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  frontend:
+    name: Frontend (API types, lint, types, build)
+    needs: detect
+    if: needs.detect.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # No `version:` — pnpm comes from package.json's packageManager field.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      # --frozen-lockfile installs exactly what is pinned; the release-age rule in
+      # pnpm-workspace.yaml was already applied when the lockfile was written.
+      - run: pnpm install --frozen-lockfile
+      # Frameworks that render at build time read their public env vars during the build.
+      - name: Prepare env
+        run: if [ -f .env.example ]; then cp .env.example .env; fi
+      # `git status --porcelain` rather than `git diff`, which ignores a file that was never
+      # committed. The pathspec is relative to this job's working directory.
+      - name: Generated API types match backend/openapi.json
+        run: |
+          pnpm generate:api
+          if [ -n "$(git status --porcelain -- src/lib/api-schema.d.ts)" ]; then
+            git diff -- src/lib/api-schema.d.ts
+            echo "::error::src/lib/api-schema.d.ts is stale or uncommitted. Run: pnpm generate:api"
+            exit 1
+          fi
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  audit:
+    name: Known vulnerabilities in the lockfiles
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # AGENTS.md, skills and code comments are read by agents; a reviewer can't see these characters.
+      - name: No hidden or bidi Unicode
+        run: python3 .agents/skills/security-audit/scripts/find_hidden_unicode.py .
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: latest-known
+      # The 7-day delay keeps out fresh malicious releases; this catches the opposite failure — an
+      # old pinned version with a published CVE. `uvx` ignores the project's exclude-newer, hence
+      # the flag.
+      - name: Python (pip-audit over backend/uv.lock)
+        working-directory: backend
+        run: |
+          uv export --locked --no-hashes --format requirements-txt > "$RUNNER_TEMP/requirements.txt"
+          uvx --exclude-newer "7 days" pip-audit --disable-pip --no-deps -r "$RUNNER_TEMP/requirements.txt"
+      - if: needs.detect.outputs.frontend == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: frontend/package.json
+      - name: JavaScript (pnpm audit over frontend/pnpm-lock.yaml)
+        if: needs.detect.outputs.frontend == 'true'
+        working-directory: frontend
+        run: pnpm audit --prod --audit-level high

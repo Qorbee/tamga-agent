@@ -1,0 +1,47 @@
+# One ignore file for the whole repository. Framework scaffolders may add their own inside frontend/.
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Personal agent settings — shared rules live in AGENTS.md and .agents/skills/
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Data — uncomment if data/ holds sensitive or large files (it usually does)
+# /data/
+
+# Python (backend)
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Node (frontend)
+node_modules/
+dist/
+.next/
+.astro/
+.vite/
+*.tsbuildinfo
+.scaffold-frontend/
+
+# Audit output the optimization-audit skill writes; remove this line to commit reports
+OPTIMIZATIONS.md
+
+# Logs
+*.log
+
+# Editor / OS
+*.code-workspace
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

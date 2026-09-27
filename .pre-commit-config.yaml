@@ -1,0 +1,61 @@
+# Local gate: the static checks CI runs, on staged files, before you push.
+#
+# One-time setup, per clone (the human runs it):
+#   uvx --exclude-newer "7 days" pre-commit install
+# Everything, on demand:
+#   uvx --exclude-newer "7 days" pre-commit run --all-files
+# (`uvx` ignores backend/pyproject.toml's exclude-newer; the flag, or scripts/setup-machine.sh, adds it.)
+#
+# ruff and mypy run through uv, so they are exactly the versions in backend/uv.lock — there is no
+# second version pin here to drift. Hook repos are pinned to a commit SHA, not a movable tag;
+# Dependabot proposes new ones after its 7-day cooldown.
+
+minimum_pre_commit_version: "3.5.0"
+
+# Generated files are compared byte-for-byte by tests and CI; fixers must not touch them.
+exclude: ^(backend/openapi\.json|frontend/src/lib/api-schema\.d\.ts)$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      # Invisible characters can hide instructions from a reviewer while an agent still reads them.
+      - id: hidden-unicode
+        name: no hidden or bidi Unicode
+        entry: python3 .agents/skills/security-audit/scripts/find_hidden_unicode.py
+        language: system
+        types: [text]
+      - id: ruff-check
+        name: ruff check (backend)
+        entry: bash -c 'cd backend && uv run ruff check --fix .'
+        language: system
+        files: ^backend/
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff format (backend)
+        entry: bash -c 'cd backend && uv run ruff format .'
+        language: system
+        files: ^backend/
+        pass_filenames: false
+      - id: mypy
+        name: mypy (backend)
+        entry: bash -c 'cd backend && uv run mypy'
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+      - id: frontend-lint
+        name: lint (frontend)
+        entry: bash -c '[ ! -f frontend/package.json ] || (cd frontend && pnpm lint)'
+        language: system
+        files: ^frontend/
+        pass_filenames: false

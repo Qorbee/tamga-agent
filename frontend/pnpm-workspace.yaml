@@ -1,0 +1,22 @@
+# pnpm settings. pnpm 11+ reads settings only from this file (.npmrc keeps only registry and auth),
+# and pnpm 10.16+ reads them here too. Supply-chain rules: root AGENTS.md, "Dependency policy".
+
+# Refuse any version published less than 7 days ago (in minutes). Compromised releases are usually
+# caught within hours. One genuinely needed fresh package: add it to minimumReleaseAgeExclude with a
+# comment saying why and when to remove it. Never lower this number.
+minimumReleaseAge: 10080
+
+# Refuse a version whose publishing trust got weaker than earlier releases (e.g. trusted publishing
+# with provenance, then a plain token upload) — the signature of a stolen maintainer token.
+trustPolicy: no-downgrade
+# ...but only for versions published in the last 30 days (in minutes), which is where a takeover
+# shows up. Without this, old backports with no provenance fail every install on pnpm 11+ —
+# semver@6.3.1 (2023, via @babel/core in every React app) is flagged as a "possible takeover".
+trustPolicyIgnoreAfter: 43200
+
+# Transitive dependencies come from the registry only, never from git URLs or tarballs.
+blockExoticSubdeps: true
+
+# Dependency install scripts stay blocked; an install fails until someone decides. `pnpm
+# approve-builds` records an approval, and that approval is a reviewed change.
+strictDepBuilds: true
