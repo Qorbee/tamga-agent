@@ -5,6 +5,19 @@
 # caught within hours. One genuinely needed fresh package: add it to minimumReleaseAgeExclude with a
 # comment saying why and when to remove it. Never lower this number.
 minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  # GHSA-vcvr-r3jv-pc5j: critical RCE in next/og's Node ImageResponse, next >=16.2.0 <16.3.6, fixed in
+  # 16.3.6 (published 2026-09-22). Remove after 2026-09-30, when 16.3.6 is older than the window.
+  - next@16.3.6
+  - "@next/env@16.3.6"
+  - "@next/swc-darwin-arm64@16.3.6"
+  - "@next/swc-darwin-x64@16.3.6"
+  - "@next/swc-linux-arm64-gnu@16.3.6"
+  - "@next/swc-linux-arm64-musl@16.3.6"
+  - "@next/swc-linux-x64-gnu@16.3.6"
+  - "@next/swc-linux-x64-musl@16.3.6"
+  - "@next/swc-win32-arm64-msvc@16.3.6"
+  - "@next/swc-win32-x64-msvc@16.3.6"
 
 # Refuse a version whose publishing trust got weaker than earlier releases (e.g. trusted publishing
 # with provenance, then a plain token upload) — the signature of a stolen maintainer token.
@@ -20,3 +33,8 @@ blockExoticSubdeps: true
 # Dependency install scripts stay blocked; an install fails until someone decides. `pnpm
 # approve-builds` records an approval, and that approval is a reviewed change.
 strictDepBuilds: true
+# Decided per package: false records "never run it". Both ship prebuilt binaries as optional
+# dependencies; their install scripts are only a build-from-source fallback.
+allowBuilds:
+  sharp: false
+  unrs-resolver: false

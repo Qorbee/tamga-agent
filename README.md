@@ -47,6 +47,13 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload               # http://localhost:8000/docs
 ```
 
+In another terminal:
+
+```bash
+cd frontend && cp .env.example .env && pnpm install
+pnpm dev                                           # http://localhost:3000
+```
+
 Once per clone: `uvx --exclude-newer "7 days" pre-commit install`.
 
 ## Layout
@@ -57,11 +64,11 @@ Once per clone: `uvx --exclude-newer "7 days" pre-commit install`.
 | `CLAUDE.md` (and in each package) | One line, `@AGENTS.md` — how Claude Code loads the same rules |
 | `.agents/skills/` | Project skills. `.claude/skills` is a symlink to this directory |
 | [`backend/`](backend/README.md) | The API service (FastAPI, PostgreSQL) |
-| [`frontend/`](frontend/README.md) | The web app — scaffolded in foundation phase B |
+| [`frontend/`](frontend/README.md) | The web app (Next.js, shadcn/ui, assistant-ui): landing page and the chat-first owner app |
 | `docs/` | Architecture, ADRs, plans, guides, page templates |
-| `docker-compose.yml` | Local Postgres; the backend image under `--profile app` |
+| `docker-compose.yml` | Local Postgres; the backend and web images under `--profile app` |
 | `scripts/setup-machine.sh` | Per-machine supply-chain settings |
-| `.github/` | CI, Dependabot, and the PR checklist (the definition of done) |
+| `.github/` | CI, Dependabot, the `main` ruleset, and the PR checklist (the definition of done) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branches, Conventional Commits, PRs |
 
 ## Supply chain

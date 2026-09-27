@@ -1,0 +1,196 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "tw-shimmer";
+
+/* Tamga's tokens, mapped once onto shadcn's variables so shadcn/ui and assistant-ui share them.
+   Components use these utilities (bg-primary, text-muted-foreground, text-success, …), never a raw
+   colour. Light theme only for now; a dark theme later redefines these tokens under `.dark`, so a
+   `dark:` class in a component names a token too, never a palette colour.
+   Contrast: every text token passes 4.5:1 on background, card and its soft tint — checked by
+   scripts/check-contrast.mjs. docs/architecture/07-web-app.md, "Look". */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #faf9f5;
+  --foreground: #141413;
+  --card: #ffffff;
+  --card-foreground: #141413;
+  --popover: #ffffff;
+  --popover-foreground: #141413;
+
+  /* Terracotta: actions, focus, and "needs you". */
+  --primary: #8f3a2e;
+  --primary-foreground: #faf9f5;
+
+  --secondary: #f0eee6;
+  --secondary-foreground: #141413;
+  --muted: #f0eee6;
+  /* #8a877e (the original grey) is 3.4:1 here — too faint for body-size text. */
+  --muted-foreground: #6b6860;
+  --accent: #ebe8de;
+  --accent-foreground: #141413;
+
+  --border: #e8e6dc;
+  --input: #e8e6dc;
+  --ring: #8f3a2e;
+
+  /* Status: a fill for dots and icons, a text colour, a soft tint for badges. Ochre as text is
+     3.9:1, hence its darker foreground. Blocked reuses terracotta. */
+  --success: #4f6b45;
+  --success-foreground: #4f6b45;
+  --success-soft: #eaf0e5;
+  --warning: #a8741a;
+  --warning-foreground: #7a5310;
+  --warning-soft: #f7eed9;
+  --danger: #8f3a2e;
+  --danger-foreground: #8f3a2e;
+  --danger-soft: #f6e6e1;
+  --destructive: #8f3a2e;
+
+  /* Behind dialogs and zoomed images, and under controls laid over a picture: dark in every theme,
+     unlike foreground, which a dark theme turns light. */
+  --scrim: #141413;
+  --scrim-foreground: #faf9f5;
+
+  --chart-1: #8f3a2e;
+  --chart-2: #4f6b45;
+  --chart-3: #a8741a;
+  --chart-4: #6b6860;
+  --chart-5: #c9c5b8;
+
+  /* The rail sits one step below the page. */
+  --sidebar: #f4f2eb;
+  --sidebar-foreground: #141413;
+  --sidebar-primary: #8f3a2e;
+  --sidebar-primary-foreground: #faf9f5;
+  --sidebar-accent: #ebe8de;
+  --sidebar-accent-foreground: #141413;
+  --sidebar-border: #e8e6dc;
+  --sidebar-ring: #8f3a2e;
+
+  /* 12px inputs; cards use radius-2xl (16px); buttons are pills in the preset. */
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-soft: var(--danger-soft);
+  --color-scrim: var(--scrim);
+  --color-scrim-foreground: var(--scrim-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* next/font variables, set on <html> in src/app/layout.tsx. Serif is for editorial moments on the
+     landing page only, never in the app. */
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-lora), ui-serif, Georgia, serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+  --radius-2xl: calc(var(--radius) * 1.3333);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+  }
+  @keyframes collapsible-up {
+    from {
+      height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+@theme {
+  /* The 13 / 15 / 17 / 20 / 24 / 32 scale. UI text (text-sm) is 15px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.625rem;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2rem;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 2.5rem;
+
+  /* Near-flat, tinted to the ink colour rather than pure black. */
+  --shadow-xs: 0 1px 1px rgb(20 20 19 / 0.03);
+  --shadow-sm: 0 1px 2px rgb(20 20 19 / 0.04);
+  --shadow-md: 0 2px 8px -2px rgb(20 20 19 / 0.06);
+  --shadow-lg: 0 12px 32px -12px rgb(20 20 19 / 0.1);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Money is read in columns: every figure lines up. */
+    font-variant-numeric: tabular-nums;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+  }
+}
+
+@custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
+
+@custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));

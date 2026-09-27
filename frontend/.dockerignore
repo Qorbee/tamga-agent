@@ -1,0 +1,10 @@
+# The build context is frontend/; the image installs from the lockfile and builds inside Docker.
+node_modules
+.next
+out
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+Dockerfile
+.dockerignore

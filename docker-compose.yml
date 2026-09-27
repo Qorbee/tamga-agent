@@ -1,7 +1,7 @@
 # Local development infrastructure. Credentials are LOCAL ONLY and match backend/.env.example.
 #
 #   docker compose up -d                 # Postgres; run the backend with uv
-#   docker compose --profile app up -d   # ...plus the backend image, to test the container
+#   docker compose --profile app up -d   # ...plus the backend and web images, to test the containers
 #
 # This file is the one place the Postgres version is written: CI starts the same service from it.
 # Background jobs run on this Postgres too (ADR-0001), so there is no Redis.
@@ -42,11 +42,26 @@ services:
     environment:
       # Service names, not localhost: inside the compose network each service is its own host.
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
+      # The web service's origin as the browser sees it; without it the browser's calls are blocked.
+      CORS_ORIGINS: http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
+
+  web:
+    profiles: [app]
+    build:
+      context: ./frontend
+      args:
+        # Inlined into browser JavaScript at build time: the API as the browser reaches it, so the
+        # host's port, not the compose service name.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
 
 configs:
   create-test-db:
