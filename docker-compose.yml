@@ -16,7 +16,7 @@ services:
       POSTGRES_DB: app
     # Loopback only: these credentials are local, and nothing else on the network should reach it.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       # 18+ keeps its data in a per-major subdirectory (/var/lib/postgresql/18/docker), so the volume
       # is mounted one level up; mounting the old .../data path would start on an empty directory.
@@ -42,7 +42,7 @@ services:
     command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-s3", "-s3.port=8333"]
     # Loopback only: it accepts any keys.
     ports:
-      - "127.0.0.1:8333:8333"
+      - "127.0.0.1:${STORAGE_PORT:-8333}:8333"
     volumes:
       - storage_data:/data
     healthcheck:
@@ -63,11 +63,13 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
       S3_ENDPOINT_URL: http://storage:8333
       # Presigned links are opened by the browser on the host, not inside the compose network.
-      S3_PUBLIC_ENDPOINT_URL: http://localhost:8333
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:${STORAGE_PORT:-8333}
       # The web service's origin as the browser sees it; without it the browser's calls are blocked.
-      CORS_ORIGINS: http://localhost:3000
+      CORS_ORIGINS: http://localhost:${WEB_PORT:-3000}
+      # Where invite links send people.
+      WEB_URL: http://localhost:${WEB_PORT:-3000}
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,9 +100,9 @@ services:
       args:
         # Inlined into browser JavaScript at build time: the API as the browser reaches it, so the
         # host's port, not the compose service name.
-        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_API_URL: http://localhost:${BACKEND_PORT:-8000}
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
       - backend
 

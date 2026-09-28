@@ -1,4 +1,4 @@
-"""Create a company and print its first owner's invite link.
+"""Create a company and print its id and its first owner's invite link.
 
 uv run python scripts/create_company.py --name "Acme Lojistik" --owner-email owner@example.com
 
@@ -21,7 +21,7 @@ from app.modules.identity import service  # noqa: E402
 from app.platform.db import dispose_db, get_session, init_db  # noqa: E402
 
 
-async def create(name: str, kind: CompanyKind, owner_email: str) -> str:
+async def create(name: str, kind: CompanyKind, owner_email: str) -> service.BootstrappedCompany:
     init_db(str(get_settings().database_url))
     try:
         async for db in get_session():
@@ -45,8 +45,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    url = asyncio.run(create(args.name, CompanyKind(args.kind), args.owner_email))
-    print(f"Owner invite (shown once, valid {get_settings().invite_days} days):\n{url}")
+    created = asyncio.run(create(args.name, CompanyKind(args.kind), args.owner_email))
+    print(f"Company id: {created.company_id}")
+    if args.kind == CompanyKind.PILOT:
+        print(f"For the mail poll, in backend/.env: PILOT_COMPANY_ID={created.company_id}")
+    days = get_settings().invite_days
+    print(f"Owner invite (shown once, valid {days} days):\n{created.invite_url}")
     return 0
 
 

@@ -11,10 +11,10 @@ PASSWORD = "correct horse battery"  # noqa: S105 (a test account's password)
 
 
 async def invite_token(db: AsyncSession, *, company: str, email: str) -> str:
-    url = await service.bootstrap_company(
+    created = await service.bootstrap_company(
         db, name=company, kind=CompanyKind.PILOT, owner_email=email
     )
-    return url.split("#", 1)[1]
+    return created.invite_url.split("#", 1)[1]
 
 
 async def test_an_invite_becomes_an_owner_session(

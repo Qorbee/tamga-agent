@@ -43,8 +43,14 @@ scripts/setup-machine.sh            # shows what it would change; --apply to cha
 
 Then:
 
+If another project already uses 5432 or 8333, copy `.env.example` to `.env` at the root and change
+the port there first, then use the same port in `backend/.env`. The root `.env` also moves 8000 and
+3000, but only for the images under compose's `app` profile. Run directly, as below, the two dev
+servers take a flag instead: `uvicorn … --port 8001`, `pnpm dev -p 3001`. Then set the API URL in
+`frontend/.env`, and `CORS_ORIGINS` and `WEB_URL` in `backend/.env`, to match.
+
 ```bash
-docker compose up -d                               # Postgres
+docker compose up -d                               # Postgres and file storage
 cd backend && cp .env.example .env && uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload               # http://localhost:8000/docs

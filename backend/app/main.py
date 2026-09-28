@@ -41,7 +41,8 @@ def create_app() -> FastAPI:
     logging.basicConfig(level=settings.log_level)
 
     app = FastAPI(
-        title=settings.app_name,
+        # A constant: the title is part of the committed openapi.json.
+        title="tamga",
         version="0.1.0",
         lifespan=lifespan,
         generate_unique_id_function=operation_id,

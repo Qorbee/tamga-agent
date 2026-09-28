@@ -174,9 +174,15 @@ async def create_invite(db: AsyncSession, actor: Actor, *, email: str, role: Rol
     )
 
 
+@dataclass(frozen=True, slots=True)
+class BootstrappedCompany:
+    company_id: uuid.UUID
+    invite_url: str
+
+
 async def bootstrap_company(
     db: AsyncSession, *, name: str, kind: CompanyKind, owner_email: str
-) -> str:
+) -> BootstrappedCompany:
     """A new company and its first owner's invite link, for the command line: nobody is signed in
     yet to invite them."""
     company = await companies.create_company(db, name=name, kind=kind)
@@ -184,7 +190,7 @@ async def bootstrap_company(
         db, company_id=company.id, email=normalise_email(owner_email), role=Role.OWNER
     )
     await db.commit()
-    return invite_url(token)
+    return BootstrappedCompany(company_id=company.id, invite_url=invite_url(token))
 
 
 async def preview_invite(db: AsyncSession, token: str) -> InvitePreview:
