@@ -1,0 +1,146 @@
+"""Parties and the identity graph: who the company deals with, and every way each one is recognised
+(docs/architecture/09, ADR-0010).
+
+The accounting system's customer and supplier cards are the backbone: their identifiers are
+confirmed. What is read from mail or documents is stored unconfirmed until the owner confirms it.
+These operations run inside the caller's transaction (a books sync, a linking job), so they flush
+and never commit.
+"""
+
+import uuid
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from typing import Final
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.companies import service as companies
+from app.modules.parties import repository
+from app.modules.parties.identifiers import normalise
+from app.modules.parties.models import (
+    IdentifierKind,
+    IdentifierSource,
+    Party,
+    PartyIdentifier,
+    PartyKind,
+)
+
+_CONFIRMING: Final = frozenset({IdentifierSource.BOOKS, IdentifierSource.OWNER})
+
+
+@dataclass(frozen=True, slots=True)
+class Identifier:
+    kind: IdentifierKind
+    value: str
+
+
+@dataclass(frozen=True, slots=True)
+class PartyMatch:
+    party: Party
+    confirmed: bool
+
+
+async def sync_party(
+    db: AsyncSession,
+    *,
+    company_id: uuid.UUID,
+    source: str,
+    source_id: str,
+    name: str,
+    kind: PartyKind,
+    identifiers: Iterable[Identifier] = (),
+) -> Party:
+    """The party behind an accounting card, created or updated, with the card's identifiers
+    confirmed. Identifiers that later leave the card are kept: an old phone still identifies the
+    messages it sent."""
+    party = await repository.upsert_from_source(
+        db, company_id=company_id, source=source, source_id=source_id, name=name, kind=kind
+    )
+    await add_identifiers(
+        db,
+        company_id=company_id,
+        party_id=party.id,
+        identifiers=[Identifier(IdentifierKind.NAME, name), *identifiers],
+        source=IdentifierSource.BOOKS,
+    )
+    return party
+
+
+async def create_party(
+    db: AsyncSession,
+    *,
+    company_id: uuid.UUID,
+    name: str,
+    kind: PartyKind,
+    identifiers: Iterable[Identifier] = (),
+    source: IdentifierSource,
+) -> Party:
+    party = await repository.add(db, Party(company_id=company_id, name=name, kind=kind))
+    await add_identifiers(
+        db,
+        company_id=company_id,
+        party_id=party.id,
+        identifiers=[Identifier(IdentifierKind.NAME, name), *identifiers],
+        source=source,
+    )
+    return party
+
+
+async def add_identifiers(
+    db: AsyncSession,
+    *,
+    company_id: uuid.UUID,
+    party_id: uuid.UUID,
+    identifiers: Iterable[Identifier],
+    source: IdentifierSource,
+) -> int:
+    """Stores each identifier that normalises; returns how many did. One that cannot be what it
+    claims (a malformed IBAN, a phone fragment) is skipped rather than stored."""
+    country = await _country(db, company_id)
+    stored = 0
+    for identifier in identifiers:
+        normalised = normalise(identifier.kind, identifier.value, country=country)
+        if normalised is None:
+            continue
+        await repository.add_identifier(
+            db,
+            company_id=company_id,
+            party_id=party_id,
+            kind=identifier.kind,
+            value=identifier.value.strip()[:300],
+            normalised=normalised[:300],
+            source=source,
+            confirmed=source in _CONFIRMING,
+        )
+        stored += 1
+    return stored
+
+
+async def find_parties(
+    db: AsyncSession, *, company_id: uuid.UUID, identifier: Identifier
+) -> list[PartyMatch]:
+    """Every party known by this identifier, confirmed matches first. More than one is normal for a
+    name or a shared office phone: the caller decides, and an unconfirmed match only suggests."""
+    normalised = normalise(
+        identifier.kind, identifier.value, country=await _country(db, company_id)
+    )
+    if normalised is None:
+        return []
+    rows = await repository.find_by_identifier(db, company_id, identifier.kind, normalised)
+    return [PartyMatch(party=party, confirmed=found.confirmed) for party, found in rows]
+
+
+async def get_parties(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, Party]:
+    return {party.id: party for party in await repository.get_many(db, company_id, ids)}
+
+
+async def get_identifiers(
+    db: AsyncSession, company_id: uuid.UUID, party_id: uuid.UUID
+) -> Sequence[PartyIdentifier]:
+    return await repository.get_identifiers(db, company_id, party_id)
+
+
+async def _country(db: AsyncSession, company_id: uuid.UUID) -> str:
+    return (await companies.get_companies(db, [company_id]))[company_id].country

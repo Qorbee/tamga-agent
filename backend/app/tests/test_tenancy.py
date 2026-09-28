@@ -13,7 +13,9 @@ def test_every_business_table_belongs_to_a_company() -> None:
         targets = (
             {fk.target_fullname for fk in column.foreign_keys} if column is not None else set()
         )
-        if column is None or column.nullable or targets != {"companies.id"}:
+        # A composite key such as (company_id, party_id) may also point company_id at its parent's
+        # company; it must still reference the company itself.
+        if column is None or column.nullable or "companies.id" not in targets:
             missing.append(table.name)
 
     assert missing == [], f"add CompanyScoped to {missing}, or name them in GLOBAL_TABLES"

@@ -27,7 +27,8 @@ from sqlalchemy.orm import DeclarativeBase
 # unnamed, autogenerate emits `drop_constraint(None, ...)` in downgrades, and every one needs a hand
 # fix. CHECK constraints are left out: name those explicitly.
 NAMING_CONVENTION: Final[dict[str, str]] = {
-    "ix": "ix_%(column_0_label)s",
+    # Every column: a composite index starting with company_id must not take its plain index's name.
+    "ix": "ix_%(table_name)s_%(column_0_N_name)s",
     "uq": "%(table_name)s_%(column_0_N_name)s_key",
     "fk": "%(table_name)s_%(column_0_N_name)s_fkey",
     "pk": "%(table_name)s_pkey",
