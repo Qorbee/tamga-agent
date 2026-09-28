@@ -14,15 +14,18 @@ testnet; nothing touches a company's bank or real money.
 
 ## How it works
 
-1. **Evidence arrives on the channels people already use** — WhatsApp, email, web upload — and is
-   linked to a project file (a job with a client above and subcontractors below).
+1. **Evidence arrives from what the company already uses, read-only** — its mailboxes, its accounting
+   system, WhatsApp items the owner shares, and one-tap links that drivers and dispatchers answer —
+   and is linked to a project file (a job with a client above, subcontractors below, and one entry per
+   truck). Tamga runs beside the company in *shadow mode*: it reads, drafts and proposes, and sends
+   nothing itself.
 2. **Specialist agents give opinions** — document extraction, match, risk, treasury — and a controller
    proposes one decision per payable, with its reasons.
 3. **Plain code applies the hard rules** (no independent proof, no payment; never pay the same invoice
    twice; a changed payee wallet waits out a timelock; amounts above the owner's approval limit go to
    the owner, and nothing above the contract's caps can be paid at all).
-4. **The owner approves the weekly payment run** card by card, in a chat-first app, or asks the
-   assistant why.
+4. **The owner approves each payment as it becomes due**, card by card, in a chat-first app on their
+   phone, or asks the assistant why; late clients are chased on a cadence the owner sets.
 5. **The executor settles** through the PolicyVault contract on Arc, and every decision lands in a
    hash-chained log anchored on-chain.
 
