@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
+import { GuestButton } from "@/features/session/guest-button";
 import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
 
@@ -30,7 +31,8 @@ export default async function LandingPage() {
         </h1>
         <p className="text-muted-foreground mt-6 max-w-[60ch] text-base">{t.landing.lede}</p>
         <div className="mt-10 flex flex-wrap items-center gap-4">
-          <Button asChild size="lg">
+          <GuestButton label={t.landing.tryPlayground} size="lg" />
+          <Button asChild size="lg" variant="outline">
             <Link href="/app">{t.landing.openApp}</Link>
           </Button>
           <span className="text-muted-foreground text-xs">{t.landing.status}</span>

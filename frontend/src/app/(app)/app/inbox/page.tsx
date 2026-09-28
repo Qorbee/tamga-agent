@@ -1,8 +1,7 @@
-import { InboxIcon } from "@hugeicons/core-free-icons";
 import type { Metadata } from "next";
 
-import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
+import { Inbox } from "@/features/inbox/inbox";
 import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
 
@@ -15,7 +14,7 @@ export default async function InboxPage() {
   return (
     <>
       <PageHeader title={t.nav.inbox} />
-      <EmptyState icon={InboxIcon} title={t.empty.inbox.title} body={t.empty.inbox.body} />
+      <Inbox />
     </>
   );
 }

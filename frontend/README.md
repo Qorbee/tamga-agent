@@ -12,7 +12,8 @@ together: `docs/architecture/07-web-app.md`.
 | `src/app/(marketing)/` | The landing page (`/`) |
 | `src/app/(app)/app/` | The owner app: its layout (chat runtime, sidebar, canvas), chat home, list pages, and the `@canvas` slot |
 | `src/app/globals.css` | The design tokens for both themes, mapped onto shadcn's variables — the only place colours are defined |
-| `src/features/` | Domain UI: `shell/` (sidebar, canvas, account menu, Search, Settings), `assistant/` (chat runtime, chat home, chat title) |
+| `src/app/(auth)/` | Sign-in and invite pages, outside the app shell |
+| `src/features/` | Domain UI: `shell/` (sidebar, canvas, account menu, Search, Settings), `assistant/` (chat runtime, chat home, chat title), `session/` (sign-in, invite, guest entry, the `/app` guard), `projects/` (the board), `upload/`, `inbox/` |
 | `src/components/ui/` | shadcn/ui components (Radix, `radix-maia` style) |
 | `src/components/assistant-ui/` | assistant-ui components from its registry |
 | `src/components/icons.tsx` | Lucide names drawn with Hugeicons, for registry components |
