@@ -12,7 +12,7 @@ together: `docs/architecture/07-web-app.md`.
 | `src/app/(marketing)/` | The landing page (`/`) |
 | `src/app/(app)/app/` | The owner app: its layout (chat runtime, sidebar, canvas), chat home, list pages, and the `@canvas` slot |
 | `src/app/globals.css` | The design tokens for both themes, mapped onto shadcn's variables — the only place colours are defined |
-| `src/features/` | Domain UI: `shell/` (sidebar, canvas, account menu, Settings), `assistant/` (chat runtime, chat home, chat title) |
+| `src/features/` | Domain UI: `shell/` (sidebar, canvas, account menu, Search, Settings), `assistant/` (chat runtime, chat home, chat title) |
 | `src/components/ui/` | shadcn/ui components (Radix, `radix-maia` style) |
 | `src/components/assistant-ui/` | assistant-ui components from its registry |
 | `src/components/icons.tsx` | Lucide names drawn with Hugeicons, for registry components |
@@ -57,7 +57,9 @@ re-apply them:
 - `thread-list.aui.tsx`: rows styled for the sidebar (`sidebar-accent`), and the open chat is
   highlighted only inside `[data-chat-open]`, so it does not compete with the open page. No Archive
   (there is no archive to find a chat in again); Delete opens `DeleteChatDialog` first; a long title
-  fades out (`truncate-fade`, in `globals.css`) instead of ending in "…".
+  fades out (`truncate-fade`, in `globals.css`) instead of ending in "…". A row is its own named group
+  (`group/thread`): the sidebar's wrapper is an unnamed `group`, so a plain `group-hover` showed every
+  row's "…" whenever the pointer was anywhere in the sidebar.
 - `thread.aui.tsx`: one text size (`text-sm`) for messages and the composer; messages share the
   composer's edges; a turn is tight and turns are further apart; a 48 rem column.
 - `markdown-text.tsx`: `useShallowStable` uses state, not a ref read during render (React Compiler);

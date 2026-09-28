@@ -1,23 +1,13 @@
 "use client";
 
 import { ThreadListPrimitive, useAuiState } from "@assistant-ui/react";
-import {
-  Folder01Icon,
-  InboxIcon,
-  PlusSignIcon,
-  TransactionHistoryIcon,
-  Wallet01Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { PlusSignIcon, Search01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, type MouseEvent } from "react";
+import type { MouseEvent } from "react";
 
-import {
-  ThreadListItems,
-  ThreadListRoot,
-  ThreadListSearch,
-} from "@/components/assistant-ui/elements/thread-list.aui";
+import { ThreadListItems, ThreadListRoot } from "@/components/assistant-ui/elements/thread-list.aui";
 import { BrandMark } from "@/components/brand-mark";
 import { ResizeHandle } from "@/components/resize-handle";
 import {
@@ -33,32 +23,22 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { SIDEBAR_SIZE, saveSize } from "@/lib/panel-sizes";
 import { cn } from "@/lib/utils";
 
 import { AccountMenu } from "./account-menu";
-
-const CHAT_PATH = "/app";
+import { CHAT_PATH, pages } from "./pages";
+import { useShellActions } from "./shell-actions";
 
 // Every row, pages and past chats alike, is 36px with an 18px icon; collapsed, a 40px square.
 const ROW =
   "h-9 [&_svg]:size-4.5 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-[11px]!";
 
-type Page = { href: string; label: keyof Dictionary["nav"]; icon: IconSvgElement };
-
-const pages: readonly Page[] = [
-  { href: "/app/projects", label: "projects", icon: Folder01Icon },
-  { href: "/app/payment-run", label: "paymentRun", icon: Wallet01Icon },
-  { href: "/app/inbox", label: "inbox", icon: InboxIcon },
-  { href: "/app/log", label: "log", icon: TransactionHistoryIcon },
-];
-
 /**
- * The owner app's sidebar: a new chat, the pages, past chats, and the account at its foot. It
- * collapses to icons (the button at the top, or Ctrl/⌘ B), its right edge drags to resize, and on a
- * phone it is a drawer.
+ * The owner app's sidebar: New chat and Search, the pages, past chats, and the account at its foot.
+ * It collapses to icons (the button at the top, or Ctrl/⌘ B), its right edge drags to resize, and on
+ * a phone it is a drawer.
  */
 export function AppSidebar({
   width,
@@ -71,7 +51,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { isMobile, setOpen, setOpenMobile } = useSidebar();
-  const [search, setSearch] = useState("");
+  const { openSearch } = useShellActions();
   const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
   const chatOpen = pathname === CHAT_PATH;
 
@@ -119,6 +99,19 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </ThreadListPrimitive.New>
             </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip={t.search.title}
+                onClick={() => {
+                  picked();
+                  openSearch();
+                }}
+                className={ROW}
+              >
+                <HugeiconsIcon icon={Search01Icon} strokeWidth={1.75} />
+                <span>{t.search.title}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
             {pages.map((page) => {
               const active = pathname.startsWith(page.href);
               const label = t.nav[page.label];
@@ -136,18 +129,20 @@ export function AppSidebar({
           </SidebarMenu>
         </SidebarGroup>
 
-        {hasThreads ? (
-          <SidebarGroup
-            data-chat-open={chatOpen || undefined}
-            className="group-data-[collapsible=icon]:hidden"
-          >
-            <SidebarGroupLabel>{t.shell.recents}</SidebarGroupLabel>
-            <ThreadListSearch value={search} onValueChange={setSearch} />
+        {/* Always there, so the sidebar keeps its shape before the first chat. */}
+        <SidebarGroup
+          data-chat-open={chatOpen || undefined}
+          className="group-data-[collapsible=icon]:hidden"
+        >
+          <SidebarGroupLabel>{t.shell.recents}</SidebarGroupLabel>
+          {hasThreads ? (
             <ThreadListRoot onClick={onThreadClick}>
-              <ThreadListItems searchQuery={search} />
+              <ThreadListItems />
             </ThreadListRoot>
-          </SidebarGroup>
-        ) : null}
+          ) : (
+            <p className="text-muted-foreground px-3 py-1.5 text-sm">{t.shell.recentsEmpty}</p>
+          )}
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>

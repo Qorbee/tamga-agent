@@ -4,7 +4,6 @@ import { Logout01Icon, Settings01Icon, UnfoldMoreIcon, UserIcon } from "@hugeico
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -19,7 +18,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui
 import { ApiError, getMe, signOut } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 
-import { SettingsDialog } from "./settings-dialog";
+import { useShellActions } from "./shell-actions";
 
 /**
  * The foot of the sidebar: who is signed in and to which company, with Settings and Sign out. When
@@ -29,7 +28,7 @@ export function AccountMenu() {
   const { t, locale } = useI18n();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { openSettings } = useShellActions();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   const leave = useMutation({
     mutationFn: signOut,
@@ -46,55 +45,52 @@ export function AccountMenu() {
   const label = name ?? (me.isPending ? "" : signedOut ? t.account.notSignedIn : t.account.offline);
 
   return (
-    <>
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <SidebarMenuButton
-                tooltip={label || t.account.menu}
-                aria-label={t.account.menu}
-                className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2"
-              >
-                <Avatar className="size-8">
-                  <AvatarFallback className="bg-secondary text-xs font-medium">
-                    {name ? initials(name, locale) : <HugeiconsIcon icon={UserIcon} strokeWidth={1.75} />}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="flex min-w-0 flex-1 flex-col text-start">
-                  <span className="truncate-fade text-sm font-medium">{label}</span>
-                  {me.data ? (
-                    <span className="text-muted-foreground truncate-fade text-xs">{me.data.company.name}</span>
-                  ) : null}
-                </span>
-                <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={1.75} className="text-muted-foreground" />
-              </SidebarMenuButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="start" className="min-w-56">
-              {user?.email ? (
-                <DropdownMenuLabel className="text-muted-foreground truncate font-normal">
-                  {user.email}
-                </DropdownMenuLabel>
-              ) : null}
-              <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
-                <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.75} />
-                {t.account.settings}
-              </DropdownMenuItem>
-              {me.data ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem disabled={leave.isPending} onSelect={() => leave.mutate()}>
-                    <HugeiconsIcon icon={Logout01Icon} strokeWidth={1.75} />
-                    {t.account.signOut}
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </SidebarMenuItem>
-      </SidebarMenu>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton
+              tooltip={label || t.account.menu}
+              aria-label={t.account.menu}
+              className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2"
+            >
+              <Avatar className="size-8">
+                <AvatarFallback className="bg-secondary text-xs font-medium">
+                  {name ? initials(name, locale) : <HugeiconsIcon icon={UserIcon} strokeWidth={1.75} />}
+                </AvatarFallback>
+              </Avatar>
+              <span className="flex min-w-0 flex-1 flex-col text-start">
+                <span className="truncate-fade text-sm font-medium">{label}</span>
+                {me.data ? (
+                  <span className="text-muted-foreground truncate-fade text-xs">{me.data.company.name}</span>
+                ) : null}
+              </span>
+              <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={1.75} className="text-muted-foreground" />
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="min-w-56">
+            {user?.email ? (
+              <DropdownMenuLabel className="text-muted-foreground truncate font-normal">
+                {user.email}
+              </DropdownMenuLabel>
+            ) : null}
+            <DropdownMenuItem onSelect={openSettings}>
+              <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.75} />
+              {t.account.settings}
+            </DropdownMenuItem>
+            {me.data ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={leave.isPending} onSelect={() => leave.mutate()}>
+                  <HugeiconsIcon icon={Logout01Icon} strokeWidth={1.75} />
+                  {t.account.signOut}
+                </DropdownMenuItem>
+              </>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 

@@ -305,7 +305,7 @@ export const ThreadListItem: FC = () => {
   return (
     <ThreadListItemPrimitive.Root
       data-slot="aui_thread-list-item"
-      className="group hover:bg-sidebar-accent focus-visible:bg-sidebar-accent in-data-chat-open:data-active:bg-sidebar-accent in-data-chat-open:data-active:font-medium has-focus-visible:bg-sidebar-accent has-data-[state=open]:bg-sidebar-accent relative flex h-9 items-center rounded-lg transition-colors focus-visible:outline-none"
+      className="group/thread hover:bg-sidebar-accent focus-visible:bg-sidebar-accent in-data-chat-open:data-active:bg-sidebar-accent in-data-chat-open:data-active:font-medium has-focus-visible:bg-sidebar-accent has-data-[state=open]:bg-sidebar-accent relative flex h-9 items-center rounded-lg transition-colors focus-visible:outline-none"
     >
       {isRenaming ? (
         <ThreadListItemRename
@@ -318,7 +318,7 @@ export const ThreadListItem: FC = () => {
         <ThreadListItemPrimitive.Trigger
           ref={triggerRef}
           data-slot="aui_thread-list-item-trigger"
-          className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-lg px-3 text-start text-sm outline-none group-hover:pe-9 group-has-focus-visible:pe-9 group-has-data-[state=open]:pe-9 group-data-active:pe-9 focus-visible:ring-1"
+          className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-lg px-3 text-start text-sm outline-none group-hover/thread:pe-9 group-has-focus-visible/thread:pe-9 group-has-data-[state=open]/thread:pe-9 focus-visible:ring-1"
         >
           {isRunning && (
             <Loader2Icon
@@ -422,7 +422,7 @@ const ThreadListItemMore: FC<{ onRename: () => void; onDelete: () => void }> = (
           variant="ghost"
           size="icon"
           data-slot="aui_thread-list-item-more"
-          className="hover:bg-sidebar-border data-[state=open]:bg-sidebar-border absolute end-1.5 top-1/2 size-6 -translate-y-1/2 p-0 opacity-0 group-hover:opacity-100 group-has-focus-visible:opacity-100 group-data-active:opacity-100 data-[state=open]:opacity-100"
+          className="hover:bg-sidebar-border data-[state=open]:bg-sidebar-border absolute end-1.5 top-1/2 size-6 -translate-y-1/2 p-0 opacity-0 group-hover/thread:opacity-100 group-has-focus-visible/thread:opacity-100 data-[state=open]:opacity-100"
         >
           <MoreHorizontalIcon className="size-3.5" />
           <span className="sr-only">{t.chat.moreOptions}</span>
