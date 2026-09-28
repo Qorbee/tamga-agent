@@ -57,6 +57,11 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def database_url_libpq(self) -> str:
+        """The same database for psycopg (the job queue's driver), which takes a plain libpq URL."""
+        return str(self.database_url).replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 

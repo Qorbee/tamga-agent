@@ -33,9 +33,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM debian:trixie-slim
 
-# CA certificates for outbound HTTPS (external APIs); nothing else from apt.
+# CA certificates for outbound HTTPS (external APIs), and libpq for psycopg, the job queue's
+# driver (its pure-Python build loads the system library). Nothing else from apt.
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates \
+    && apt-get install --yes --no-install-recommends ca-certificates libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --uid 10001 --no-create-home app

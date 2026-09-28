@@ -50,6 +50,20 @@ services:
       postgres:
         condition: service_healthy
 
+  # The same image and settings as the backend, running jobs instead of serving requests.
+  worker:
+    profiles: [app]
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   web:
     profiles: [app]
     build:

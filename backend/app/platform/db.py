@@ -8,6 +8,7 @@ never commits on its own, so a request that raises leaves nothing half-written.
 import importlib
 import pkgutil
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Final
@@ -56,17 +57,22 @@ def text_enum(enum: type[StrEnum], check_name: str) -> Enum:
 
 
 def import_all_models() -> None:
-    """Import every ``app/modules/<name>/models.py``, so ``Base.metadata`` knows every table.
+    """Import every module's ``models.py``, so ``Base.metadata`` knows every table: Alembic's
+    autogenerate proposes to drop a table whose model it cannot see."""
+    import_from_each_module("models")
 
-    Derived from the filesystem, so a new module needs no registration: Alembic's autogenerate
-    proposes to drop a table whose model it cannot see.
+
+def import_from_each_module(submodule: str) -> None:
+    """Import ``app/modules/<name>/<submodule>.py`` wherever it exists.
+
+    Derived from the filesystem, so a new module needs no registration anywhere.
     """
     import app.modules
 
     for module in pkgutil.iter_modules(app.modules.__path__):
         if not module.ispkg:
             continue
-        name = f"app.modules.{module.name}.models"
+        name = f"app.modules.{module.name}.{submodule}"
         try:
             importlib.import_module(name)
         except ModuleNotFoundError as exc:
@@ -94,6 +100,13 @@ async def dispose_db() -> None:
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
+    async with open_session() as session:
+        yield session
+
+
+@asynccontextmanager
+async def open_session() -> AsyncIterator[AsyncSession]:
+    """A session outside a request, for jobs and scripts. Same rule: the caller commits."""
     if _sessions is None:
         raise RuntimeError("init_db() has not run; the app lifespan opens the database")
     async with _sessions() as session:

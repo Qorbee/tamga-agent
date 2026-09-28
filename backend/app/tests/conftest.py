@@ -53,7 +53,10 @@ async def database(migrated_database: None) -> AsyncIterator[None]:
     """An empty database for each test, and the app's engine pointed at it."""
     url = str(get_settings().database_url)
     import_all_models()
-    tables = ", ".join(table.name for table in Base.metadata.sorted_tables)
+    # procrastinate_jobs has no model; CASCADE takes its events and periodic defers with it.
+    tables = ", ".join(
+        [*(table.name for table in Base.metadata.sorted_tables), "procrastinate_jobs"]
+    )
     engine = create_async_engine(url)
     async with engine.begin() as connection:
         await connection.execute(text(f"TRUNCATE {tables} CASCADE"))

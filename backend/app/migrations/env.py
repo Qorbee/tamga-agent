@@ -18,6 +18,14 @@ if config.config_file_name is not None:
 
 import_all_models()
 target_metadata = Base.metadata
+
+
+def include_name(name: str | None, type_: str, parent_names: object) -> bool:
+    """Leaves procrastinate's tables to their own revision: they have no models, so without this
+    autogenerate would propose dropping them."""
+    return not (type_ == "table" and name is not None and name.startswith("procrastinate_"))
+
+
 database_url = str(get_settings().database_url)
 
 
@@ -28,13 +36,19 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_name=include_name,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_name=include_name,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

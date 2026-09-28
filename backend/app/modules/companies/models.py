@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import String, func
+from sqlalchemy import CheckConstraint, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base, text_enum
@@ -26,6 +26,16 @@ class CompanyMode(StrEnum):
 
 class Company(Base):
     __tablename__ = "companies"
+    __table_args__ = (
+        # Only a replay has a cursor, and a replay always has one: clock.now reads it (ADR-0009).
+        CheckConstraint(
+            "(mode = 'replay') = (replay_cursor IS NOT NULL)", name="companies_replay_cursor_check"
+        ),
+        # Only a sandbox's clock runs ahead; a pilot's business time is the wall clock.
+        CheckConstraint(
+            "kind = 'sandbox' OR clock_offset = interval '0'", name="companies_clock_offset_check"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     name: Mapped[str] = mapped_column(String(200))
@@ -36,3 +46,9 @@ class Company(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Sandboxes only: when the cleanup deletes the company and everything it owns.
     expires_at: Mapped[datetime | None]
+    # Sandboxes only: how far the simulated clock is ahead of the wall clock ("skip two days").
+    clock_offset: Mapped[timedelta] = mapped_column(
+        default=timedelta(0), server_default=text("interval '0'")
+    )
+    # Replays only: how far the history has been fed. Nothing in the company may see past it.
+    replay_cursor: Mapped[datetime | None]
