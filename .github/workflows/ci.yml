@@ -138,6 +138,22 @@ jobs:
           persist-credentials: false
           # forge-std and OpenZeppelin at their pinned commits; their own submodules are not needed.
           submodules: true
+      # A submodule pin can be any commit: `forge install` stages the default branch's head unless
+      # corrected. Each one must carry a stable release tag of its upstream: vX.Y.Z, nothing after it.
+      - name: Libraries at release tags
+        working-directory: .
+        run: |
+          git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r key path; do
+            url="$(git config -f .gitmodules --get "${key%.path}.url")"
+            sha="$(git rev-parse "HEAD:$path")"
+            refs="$(git ls-remote --tags "$url")"
+            tags="$(awk -v sha="$sha" '$1 == sha { sub("^refs/tags/", "", $2); sub("\\^\\{\\}$", "", $2); print $2 }' <<<"$refs" | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+            if [ -z "$tags" ]; then
+              echo "::error::$path is at $sha, which is not a stable release tag of $url"
+              exit 1
+            fi
+            echo "$path: $sha = $(echo $tags)"
+          done
       - id: foundry
         run: echo "version=$(cat .foundry-version)" >> "$GITHUB_OUTPUT"
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1

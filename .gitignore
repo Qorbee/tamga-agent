@@ -42,8 +42,8 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/*/31337/
 contracts/broadcast/**/dry-run/
-# The submodule commit is the one pin: Dependabot moves only that, and a committed lock would drift
-# from it. `forge install` rebuilds this file from the checkouts.
+# The submodule commit is the one pin; a committed lock would be a second one that can drift from it.
+# `forge install` rebuilds this file from the checkouts.
 contracts/foundry.lock
 
 # Audit output the optimization-audit skill writes; remove this line to commit reports
