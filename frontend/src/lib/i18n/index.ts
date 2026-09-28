@@ -7,6 +7,9 @@ export const locales = ["en", "tr"] as const;
 export type Locale = (typeof locales)[number];
 export const defaultLocale: Locale = "en";
 
+/** Each language by its own name, the same in every dictionary: a reader finds their language in it. */
+export const localeNames: Record<Locale, string> = { en: "English", tr: "Türkçe" };
+
 /** Set when the user picks a language; the signed-in user's saved setting will take precedence. */
 export const LOCALE_COOKIE = "tamga_locale";
 

@@ -12,7 +12,7 @@ export function Welcome() {
   const cells = [t.today.available, t.today.needsYou, t.today.nextRun];
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-1 fill-mode-both mb-8 flex flex-col gap-6 px-1 duration-300">
+    <div className="animate-in fade-in slide-in-from-bottom-1 fill-mode-both mb-8 flex flex-col gap-6 duration-300">
       <h1 className="text-xl font-medium tracking-tight text-balance">{t.assistant.greeting}</h1>
       <section aria-label={t.today.title} className="border-border bg-card rounded-2xl border">
         <dl className="divide-border grid grid-cols-3 divide-x">

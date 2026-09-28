@@ -45,3 +45,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // One typed function per operation. The type is an alias, never a restated interface.
 export type Health = Schemas["Health"];
 export const getHealth = () => request<Health>("/health");
+
+export type Me = Schemas["Me"];
+/** The signed-in user and their company; a 401 `ApiError` when no one is signed in. */
+export const getMe = () => request<Me>("/me");
+export const signOut = () => request<void>("/sessions/current", { method: "DELETE" });

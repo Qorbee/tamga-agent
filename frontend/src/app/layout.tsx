@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono, Lora } from "next/font/google";
+import { cookies } from "next/headers";
 
 import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
+import { THEME_COOKIE, THEME_SCRIPT, readTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -26,12 +28,21 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const locale = await getLocale();
+  const theme = readTheme((await cookies()).get(THEME_COOKIE)?.value);
 
   return (
+    // THEME_SCRIPT adds data-theme before hydration; React must not treat it as a mismatch.
     <html
       lang={locale}
+      data-theme-preference={theme}
+      suppressHydrationWarning
       className={cn(dmSans.variable, lora.variable, jetbrainsMono.variable, "h-full antialiased")}
     >
+      <head>
+        {/* A plain script, not next/script: its beforeInteractive inline code waits for Next's
+            bootstrap, after the first paint, which is the flash this exists to prevent. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-full">
         <Providers locale={locale}>{children}</Providers>
       </body>

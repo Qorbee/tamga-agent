@@ -5,14 +5,16 @@
 
 /* Tamga's tokens, mapped once onto shadcn's variables so shadcn/ui and assistant-ui share them.
    Components use these utilities (bg-primary, text-muted-foreground, text-success, …), never a raw
-   colour. Light theme only for now; a dark theme later redefines these tokens under `.dark`, so a
-   `dark:` class in a component names a token too, never a palette colour.
-   Contrast: every text token passes 4.5:1 on background, card and its soft tint — checked by
-   scripts/check-contrast.mjs. docs/architecture/07-web-app.md, "Look". */
+   colour. The black theme redefines the same tokens under `data-theme="dark"` (src/lib/theme.ts sets
+   it from the owner's choice or the device's setting), so a `dark:` class in a component names a
+   token too, never a palette colour.
+   Contrast: every text token passes 4.5:1 on background, card and its soft tint, in both themes —
+   checked by scripts/check-contrast.mjs. docs/architecture/07-web-app.md, "Look". */
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
+  color-scheme: light;
   --background: #faf9f5;
   --foreground: #141413;
   --card: #ffffff;
@@ -72,6 +74,57 @@
 
   /* 12px inputs; cards use radius-2xl (16px); buttons are pills in the preset. */
   --radius: 0.75rem;
+}
+
+/* Black: Qorbee's charcoal, warm rather than pure black. Terracotta stays the light theme's, as a
+   fill only (buttons, the mark): as text or a focus ring it is 2.6:1 on charcoal, so links, focus
+   and active items are neutral here, and danger text takes the design system's dark status red. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #121110;
+  --foreground: #f7f3ea;
+  --card: #1a1814;
+  --card-foreground: #f7f3ea;
+  --popover: #1a1814;
+  --popover-foreground: #f7f3ea;
+
+  --primary: #8f3a2e;
+  --primary-foreground: #faf9f5;
+
+  --secondary: #211f1a;
+  --secondary-foreground: #f7f3ea;
+  --muted: #211f1a;
+  --muted-foreground: #9d978b;
+  --accent: #2a2721;
+  --accent-foreground: #f7f3ea;
+
+  --border: #302d26;
+  --input: #302d26;
+  --ring: #9d978b;
+
+  --success: #8fae84;
+  --success-foreground: #8fae84;
+  --success-soft: #1c2219;
+  --warning: #d9a441;
+  --warning-foreground: #d9a441;
+  --warning-soft: #2a2213;
+  --danger: #e08b7f;
+  --danger-foreground: #e08b7f;
+  --danger-soft: #2c1a17;
+  --destructive: #e08b7f;
+
+  --chart-4: #9d978b;
+  --chart-5: #302d26;
+
+  /* The sidebar sits one step below the page, as in the light theme. */
+  --sidebar: #0e0d0b;
+  --sidebar-foreground: #f7f3ea;
+  --sidebar-primary: #8f3a2e;
+  --sidebar-primary-foreground: #faf9f5;
+  --sidebar-accent: #221f1b;
+  --sidebar-accent-foreground: #f7f3ea;
+  --sidebar-border: #2a2721;
+  --sidebar-ring: #9d978b;
 }
 
 @theme inline {
@@ -152,13 +205,14 @@
 }
 
 @theme {
-  /* The 13 / 15 / 17 / 20 / 24 / 32 scale. UI text (text-sm) is 15px. */
-  --text-xs: 0.8125rem;
-  --text-xs--line-height: 1.125rem;
-  --text-sm: 0.9375rem;
-  --text-sm--line-height: 1.375rem;
-  --text-base: 1.0625rem;
-  --text-base--line-height: 1.625rem;
+  /* The 14 / 16 / 18 / 20 / 24 / 32 scale. UI and chat text (text-sm) is 16px, the size a chat app
+     reads at; captions (text-xs) are 14px. */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.75rem;
   --text-lg: 1.25rem;
   --text-lg--line-height: 1.75rem;
   --text-xl: 1.5rem;
@@ -189,6 +243,43 @@
   ::selection {
     background: color-mix(in oklab, var(--primary) 18%, transparent);
   }
+
+  /* Thin thumbs on a transparent track, so a scroll area never paints a gutter of its own. The
+     transparent border widens what the pointer can grab without widening what shows. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted-foreground) 35%, transparent) padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+    }
+  }
+}
+
+/* A line too long for its row fades into the row's own background instead of ending in "…", so it
+   reads as continuing (a sidebar's past chats). The mask only sets opacity, so it suits any theme
+   and any hover fill behind it. Put it on an element as wide as the row (a flex-1 span, a block),
+   not one sized to its text, or short text fades too. */
+@utility truncate-fade {
+  overflow: hidden;
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, black calc(100% - 1.75rem), transparent);
 }
 
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));

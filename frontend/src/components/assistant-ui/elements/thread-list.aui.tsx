@@ -13,8 +13,8 @@ import {
   useAui,
   useAuiState,
 } from "@assistant-ui/react";
+import { DeleteChatDialog } from "@/components/delete-chat-dialog";
 import {
-  ArchiveIcon,
   Loader2Icon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -57,7 +57,7 @@ export const ThreadListSearch = forwardRef<
 >(({ className, value, onValueChange, ...props }, ref) => {
   const { t } = useI18n();
   return (
-    <div data-slot="aui_thread-list-search" className="relative px-0.5 py-1">
+    <div data-slot="aui_thread-list-search" className="relative pb-1">
       <SearchIcon
         data-slot="aui_thread-list-search-icon"
         className="text-muted-foreground pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2"
@@ -213,7 +213,7 @@ const ThreadListItemGroups: FC<{ searchQuery?: string }> = ({
     <Fragment key={group.label}>
       <div
         data-slot="aui_thread-list-group-label"
-        className="text-muted-foreground px-2.5 pt-3 pb-1 text-xs font-medium"
+        className="text-muted-foreground px-3 pt-3 pb-1 text-xs font-medium"
       >
         {group.label}
       </div>
@@ -292,6 +292,7 @@ export const ThreadListItem: FC = () => {
   const { t } = useI18n();
   const isRunning = useAuiState((s) => s.threadListItem.isRunning);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef(false);
 
@@ -304,7 +305,7 @@ export const ThreadListItem: FC = () => {
   return (
     <ThreadListItemPrimitive.Root
       data-slot="aui_thread-list-item"
-      className="group hover:bg-muted focus-visible:bg-muted data-active:bg-muted has-focus-visible:bg-muted has-data-[state=open]:bg-muted relative flex h-8 items-center rounded-md transition-colors focus-visible:outline-none"
+      className="group hover:bg-sidebar-accent focus-visible:bg-sidebar-accent in-data-chat-open:data-active:bg-sidebar-accent in-data-chat-open:data-active:font-medium has-focus-visible:bg-sidebar-accent has-data-[state=open]:bg-sidebar-accent relative flex h-9 items-center rounded-lg transition-colors focus-visible:outline-none"
     >
       {isRenaming ? (
         <ThreadListItemRename
@@ -317,7 +318,7 @@ export const ThreadListItem: FC = () => {
         <ThreadListItemPrimitive.Trigger
           ref={triggerRef}
           data-slot="aui_thread-list-item-trigger"
-          className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-md px-2.5 text-start text-sm outline-none group-hover:pe-9 group-has-focus-visible:pe-9 group-has-data-[state=open]:pe-9 group-data-active:pe-9 focus-visible:ring-1"
+          className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-lg px-3 text-start text-sm outline-none group-hover:pe-9 group-has-focus-visible:pe-9 group-has-data-[state=open]:pe-9 group-data-active:pe-9 focus-visible:ring-1"
         >
           {isRunning && (
             <Loader2Icon
@@ -328,14 +329,18 @@ export const ThreadListItem: FC = () => {
           )}
           <span
             data-slot="aui_thread-list-item-title"
-            className="min-w-0 flex-1 truncate"
+            className="truncate-fade min-w-0 flex-1"
           >
             <ThreadListItemPrimitive.Title fallback={t.chat.newChat} />
           </span>
           {isRunning && <span className="sr-only">{t.chat.running}</span>}
         </ThreadListItemPrimitive.Trigger>
       )}
-      <ThreadListItemMore onRename={() => setIsRenaming(true)} />
+      <ThreadListItemMore
+        onRename={() => setIsRenaming(true)}
+        onDelete={() => setIsDeleting(true)}
+      />
+      <DeleteChatDialog open={isDeleting} onOpenChange={setIsDeleting} />
     </ThreadListItemPrimitive.Root>
   );
 };
@@ -405,7 +410,10 @@ const ThreadListItemRename: FC<{
   );
 };
 
-const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
+const ThreadListItemMore: FC<{ onRename: () => void; onDelete: () => void }> = ({
+  onRename,
+  onDelete,
+}) => {
   const { t } = useI18n();
   return (
     <ThreadListItemMorePrimitive.Root sharedFocusGroup>
@@ -414,7 +422,7 @@ const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
           variant="ghost"
           size="icon"
           data-slot="aui_thread-list-item-more"
-          className="data-[state=open]:bg-accent absolute end-1.5 top-1/2 size-6 -translate-y-1/2 p-0 opacity-0 group-hover:opacity-100 group-has-focus-visible:opacity-100 group-data-active:opacity-100 data-[state=open]:opacity-100"
+          className="hover:bg-sidebar-border data-[state=open]:bg-sidebar-border absolute end-1.5 top-1/2 size-6 -translate-y-1/2 p-0 opacity-0 group-hover:opacity-100 group-has-focus-visible:opacity-100 group-data-active:opacity-100 data-[state=open]:opacity-100"
         >
           <MoreHorizontalIcon className="size-3.5" />
           <span className="sr-only">{t.chat.moreOptions}</span>
@@ -435,24 +443,14 @@ const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
           <PencilIcon className="size-4" />
           {t.chat.rename}
         </ThreadListItemMorePrimitive.Item>
-        <ThreadListItemPrimitive.Archive asChild>
-          <ThreadListItemMorePrimitive.Item
-            data-slot="aui_thread-list-item-more-item"
-            className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
-          >
-            <ArchiveIcon className="size-4" />
-            {t.chat.archive}
-          </ThreadListItemMorePrimitive.Item>
-        </ThreadListItemPrimitive.Archive>
-        <ThreadListItemPrimitive.Delete asChild>
-          <ThreadListItemMorePrimitive.Item
-            data-slot="aui_thread-list-item-more-item"
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
-          >
-            <TrashIcon className="size-4" />
-            {t.chat.delete}
-          </ThreadListItemMorePrimitive.Item>
-        </ThreadListItemPrimitive.Delete>
+        <ThreadListItemMorePrimitive.Item
+          data-slot="aui_thread-list-item-more-item"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+          onSelect={onDelete}
+        >
+          <TrashIcon className="size-4" />
+          {t.chat.delete}
+        </ThreadListItemMorePrimitive.Item>
       </ThreadListItemMorePrimitive.Content>
     </ThreadListItemMorePrimitive.Root>
   );

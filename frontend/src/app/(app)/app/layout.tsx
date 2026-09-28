@@ -1,20 +1,29 @@
-import { Rail } from "@/features/shell/rail";
+import { cookies } from "next/headers";
+
+import { ChatRuntime } from "@/features/assistant/chat-runtime";
+import { AppShell } from "@/features/shell/app-shell";
+import { CANVAS_SIZE, SIDEBAR_OPEN_COOKIE, SIDEBAR_SIZE, readSize } from "@/lib/panel-sizes";
 
 /**
- * The owner app: rail, the page (the chat on the home route), and the canvas.
+ * The owner app: sidebar, the page (the chat on the home route), and the canvas.
  *
- * `canvas` is a parallel-route slot. A card opens its full record there — through an intercepting
- * route under `@canvas` — while the chat stays mounted beside it. With nothing open, `@canvas/default`
- * renders nothing and the aside collapses (`empty:hidden`).
+ * The chat runtime wraps the whole app, so the sidebar lists the same chats the chat page shows.
+ * `canvas` is a parallel-route slot: a card opens its full record there — through an intercepting
+ * route under `@canvas` that renders a `CanvasPanel` — while the chat stays mounted beside it.
  */
-export default function AppLayout({ children, canvas }: LayoutProps<"/app">) {
+export default async function AppLayout({ children, canvas }: LayoutProps<"/app">) {
+  const jar = await cookies();
+
   return (
-    <div className="bg-background flex h-dvh overflow-hidden">
-      <Rail />
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">{children}</main>
-      <aside className="border-border bg-card w-[min(40rem,45vw)] shrink-0 overflow-y-auto border-l empty:hidden max-lg:hidden">
-        {canvas}
-      </aside>
-    </div>
+    <ChatRuntime>
+      <AppShell
+        sidebarOpen={jar.get(SIDEBAR_OPEN_COOKIE)?.value !== "false"}
+        sidebarWidth={readSize(SIDEBAR_SIZE, jar.get(SIDEBAR_SIZE.cookie)?.value)}
+        canvasWidth={readSize(CANVAS_SIZE, jar.get(CANVAS_SIZE.cookie)?.value)}
+        canvas={canvas}
+      >
+        {children}
+      </AppShell>
+    </ChatRuntime>
   );
 }
