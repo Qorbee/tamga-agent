@@ -1,11 +1,12 @@
 # The same checks each package's AGENTS.md lists, as a merge gate. Stack-tolerant: the frontend jobs
 # run only once frontend/package.json exists and call only the contract scripts (lint, typecheck,
-# build, generate:api), so any framework that keeps the contract passes through.
+# build, generate:api), so any framework that keeps the contract passes through. The contracts job
+# runs once contracts/foundry.toml exists.
 #
 # Supply chain: every action is pinned to a full commit SHA (a tag can be moved to malicious code —
 # the LiteLLM compromise of March 2026 began with a poisoned action). Dependabot proposes new SHAs
 # after its 7-day cooldown. Versions of Postgres, Python and Node are read from the files that define
-# them, never repeated here.
+# them, never repeated here; so is Foundry's (contracts/.foundry-version).
 name: CI
 
 on:
@@ -72,12 +73,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       frontend: ${{ steps.slots.outputs.frontend }}
+      contracts: ${{ steps.slots.outputs.contracts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: slots
-        run: echo "frontend=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "frontend=$([ -f frontend/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "contracts=$([ -f contracts/foundry.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   frontend:
     name: Frontend (API types, lint, types, build)
@@ -119,6 +123,43 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+
+  contracts:
+    name: Contracts (format, build, tests, ABI)
+    needs: detect
+    if: needs.detect.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # forge-std and OpenZeppelin at their pinned commits; their own submodules are not needed.
+          submodules: true
+      - id: foundry
+        run: echo "version=$(cat .foundry-version)" >> "$GITHUB_OUTPUT"
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: ${{ steps.foundry.outputs.version }}
+        env:
+          # The action installs the newest foundryup unless told otherwise; this holds the installer
+          # to a release older than 7 days. The Foundry binaries are pinned by version above.
+          FOUNDRYUP_VERSION: 0.0.8
+      - run: forge fmt --check
+      # foundry.toml denies warnings, so a compiler warning fails here.
+      - run: forge build --sizes
+      - run: forge test -vvv
+      - name: ABI copies in backend/ match the contracts
+        working-directory: .
+        run: |
+          scripts/export-abi.sh
+          if [ -n "$(git status --porcelain -- backend/app/platform/abi)" ]; then
+            git status --porcelain -- backend/app/platform/abi
+            echo "::error::backend/app/platform/abi/ is stale or uncommitted. Run: scripts/export-abi.sh"
+            exit 1
+          fi
 
   audit:
     name: Known vulnerabilities in the lockfiles

@@ -1,0 +1,25 @@
+# The contract package — contracts/AGENTS.md. The compiler and the EVM it targets are written here
+# once; Foundry's own version is in .foundry-version, which CI and `foundryup --install` read.
+
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+
+solc_version = "0.8.37"
+# Arc runs the Osaka hard fork (docs.arc.io, "EVM differences"; on testnet, CLZ executes — checked
+# 2026-09-28). Pinned because the compiler's default target moves with solc releases.
+evm_version = "osaka"
+
+# A compiler warning fails the build: this code moves money.
+deny = "warnings"
+
+# Written out, because auto-detection also maps the libraries' own nested submodules, which exist
+# only in a recursive clone — CI and a local checkout would then compile against different paths.
+auto_detect_remappings = false
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]

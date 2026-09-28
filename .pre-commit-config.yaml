@@ -13,7 +13,7 @@
 minimum_pre_commit_version: "3.5.0"
 
 # Generated files are compared byte-for-byte by tests and CI; fixers must not touch them.
-exclude: ^(backend/openapi\.json|frontend/src/lib/api-schema\.d\.ts)$
+exclude: ^(backend/openapi\.json|frontend/src/lib/api-schema\.d\.ts|backend/app/platform/abi/.*\.json)$
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -58,4 +58,10 @@ repos:
         entry: bash -c '[ ! -f frontend/package.json ] || (cd frontend && pnpm lint)'
         language: system
         files: ^frontend/
+        pass_filenames: false
+      - id: contracts-fmt
+        name: forge fmt (contracts)
+        entry: bash -c 'cd contracts && forge fmt --check'
+        language: system
+        files: ^contracts/.*\.sol$
         pass_filenames: false

@@ -54,6 +54,9 @@ cd frontend && cp .env.example .env && pnpm install
 pnpm dev                                           # http://localhost:3000
 ```
 
+Contracts need Foundry at the release in `contracts/.foundry-version` and the library submodules
+(`git submodule update --init`) — [`contracts/README.md`](contracts/README.md).
+
 Once per clone: `uvx --exclude-newer "7 days" pre-commit install`.
 
 ## Layout
@@ -65,9 +68,10 @@ Once per clone: `uvx --exclude-newer "7 days" pre-commit install`.
 | `.agents/skills/` | Project skills. `.claude/skills` is a symlink to this directory |
 | [`backend/`](backend/README.md) | The API service (FastAPI, PostgreSQL) |
 | [`frontend/`](frontend/README.md) | The web app (Next.js, shadcn/ui, assistant-ui): landing page and the chat-first owner app |
+| [`contracts/`](contracts/README.md) | Solidity with Foundry: PolicyVault, the contract that caps the executor |
 | `docs/` | Architecture, ADRs, plans, guides, page templates |
 | `docker-compose.yml` | Local Postgres; the backend and web images under `--profile app` |
-| `scripts/setup-machine.sh` | Per-machine supply-chain settings |
+| `scripts/` | `setup-machine.sh` (per-machine supply-chain settings); `export-abi.sh` (contract ABIs into the backend) |
 | `.github/` | CI, Dependabot, the `main` ruleset, and the PR checklist (the definition of done) |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branches, Conventional Commits, PRs |
 
@@ -75,7 +79,7 @@ Once per clone: `uvx --exclude-newer "7 days" pre-commit install`.
 
 | Layer | Where |
 |---|---|
-| Nothing younger than 7 days is installed | `backend/pyproject.toml` (`exclude-newer`), `frontend/pnpm-workspace.yaml` (`minimumReleaseAge`) |
+| Nothing younger than 7 days is installed | `backend/pyproject.toml` (`exclude-newer`), `frontend/pnpm-workspace.yaml` (`minimumReleaseAge`); Foundry and contract libraries pinned by hand (`contracts/AGENTS.md`) |
 | …including one-off tools (`uvx`, `pnpm dlx`/`create`, `npx`), which ignore project config | `scripts/setup-machine.sh --apply`, once per machine |
 | No trust downgrades, no git/tarball transitive deps, no unapproved install scripts | `frontend/pnpm-workspace.yaml` |
 | Actions and pre-commit hooks pinned to commit SHAs; read-only CI token | `.github/workflows/ci.yml`, `.pre-commit-config.yaml` |
@@ -89,8 +93,8 @@ the advisory and a removal date (`AGENTS.md`, "Supply chain").
 
 `AGENTS.md` is the single source of agent rules; each `CLAUDE.md` contains only `@AGENTS.md`, so Codex,
 Claude Code and most other agents read the same copy. Nested files (`backend/AGENTS.md`,
-`frontend/AGENTS.md`) add the rules for that package. Skills in `.agents/skills/` follow the
-[Agent Skills](https://agentskills.io/specification) format:
+`frontend/AGENTS.md`, `contracts/AGENTS.md`) add the rules for that package. Skills in
+`.agents/skills/` follow the [Agent Skills](https://agentskills.io/specification) format:
 
 | Skill | What it does |
 |---|---|
