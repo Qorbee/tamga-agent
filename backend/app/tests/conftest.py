@@ -9,10 +9,12 @@ import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import boto3
 import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
+from botocore.exceptions import ClientError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -20,6 +22,11 @@ os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/app_test"
 )
+# The SeaweedFS service in docker-compose.yml, in a bucket of the tests' own.
+os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:8333")
+os.environ.setdefault("S3_BUCKET", "tamga-test")
+os.environ.setdefault("S3_ACCESS_KEY_ID", "local")
+os.environ.setdefault("S3_SECRET_ACCESS_KEY", "local")
 
 from app.config import get_settings  # noqa: E402  (the environment above must be set first)
 from app.main import create_app  # noqa: E402
@@ -80,3 +87,26 @@ async def client(database: None) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=create_app())
     async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def storage_bucket() -> None:
+    """SeaweedFS makes no bucket by itself (production's is created in Cloudflare), so the tests
+    make theirs."""
+    settings = get_settings()
+    secret = settings.s3_secret_access_key
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.s3_access_key_id,
+        aws_secret_access_key=secret.get_secret_value() if secret else None,
+        region_name=settings.s3_region,
+    )
+    try:
+        client.create_bucket(Bucket=str(settings.s3_bucket))
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") not in {
+            "BucketAlreadyOwnedByYou",
+            "BucketAlreadyExists",
+        }:
+            raise

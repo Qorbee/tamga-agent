@@ -1,9 +1,10 @@
 # Local development infrastructure. Credentials are LOCAL ONLY and match backend/.env.example.
 #
-#   docker compose up -d                 # Postgres; run the backend with uv
-#   docker compose --profile app up -d   # ...plus the backend and web images, to test the containers
+#   docker compose up -d                 # Postgres and file storage; run the backend with uv
+#   docker compose --profile app up -d   # ...plus the backend, worker and web images
 #
-# This file is the one place the Postgres version is written: CI starts the same service from it.
+# This file is the one place the Postgres and SeaweedFS versions are written: CI starts the same
+# services from it.
 # Background jobs run on this Postgres too (ADR-0001), so there is no Redis.
 
 services:
@@ -13,8 +14,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app
+    # Loopback only: these credentials are local, and nothing else on the network should reach it.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       # 18+ keeps its data in a per-major subdirectory (/var/lib/postgresql/18/docker), so the volume
       # is mounted one level up; mounting the old .../data path would start on an empty directory.
@@ -32,6 +34,23 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible file storage for local runs and CI; production uses Cloudflare R2 (ADR-0001).
+  # It creates no bucket by itself: `curl -X PUT http://localhost:8333/tamga` once (the tests do
+  # their own). With no identities configured it accepts any keys, which is fine on a laptop only.
+  storage:
+    image: chrislusf/seaweedfs:4.47
+    command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-s3", "-s3.port=8333"]
+    # Loopback only: it accepts any keys.
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - storage_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8333/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   backend:
     profiles: [app]
     build: ./backend
@@ -42,12 +61,17 @@ services:
     environment:
       # Service names, not localhost: inside the compose network each service is its own host.
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
+      S3_ENDPOINT_URL: http://storage:8333
+      # Presigned links are opened by the browser on the host, not inside the compose network.
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:8333
       # The web service's origin as the browser sees it; without it the browser's calls are blocked.
       CORS_ORIGINS: http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      storage:
         condition: service_healthy
 
   # The same image and settings as the backend, running jobs instead of serving requests.
@@ -60,8 +84,11 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
+      S3_ENDPOINT_URL: http://storage:8333
     depends_on:
       postgres:
+        condition: service_healthy
+      storage:
         condition: service_healthy
 
   web:
@@ -84,3 +111,4 @@ configs:
 
 volumes:
   postgres_data:
+  storage_data:

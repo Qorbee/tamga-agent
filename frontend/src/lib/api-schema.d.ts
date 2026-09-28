@@ -299,6 +299,8 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "unavailable";
+            /** Storage */
+            storage: boolean;
         };
         /**
          * Role

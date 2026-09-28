@@ -277,11 +277,16 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "storage": {
+            "title": "Storage",
+            "type": "boolean"
           }
         },
         "required": [
           "status",
-          "database"
+          "database",
+          "storage"
         ],
         "title": "Readiness",
         "type": "object"

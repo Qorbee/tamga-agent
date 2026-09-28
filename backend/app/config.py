@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import PostgresDsn, model_validator
+from pydantic import PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolved from this file rather than the working directory, so `uv run` from anywhere, Alembic and
@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     session_days: int = 30
     invite_days: int = 7
 
+    # Private file storage over the S3 API (ADR-0001): Cloudflare R2 in production, SeaweedFS from
+    # docker-compose.yml locally. Optional locally, so tools that never touch files (Alembic, the
+    # OpenAPI dump) run without it; required to start in staging and production.
+    s3_endpoint_url: str | None = None
+    # The same endpoint as a browser reaches it, for presigned URLs, when that differs.
+    s3_public_endpoint_url: str | None = None
+    s3_bucket: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: SecretStr | None = None
+    s3_region: str = "auto"
+
     # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
     guest_hours: int = 24
     guest_sessions_per_client_per_hour: int = 5
@@ -50,10 +61,16 @@ class Settings(BaseSettings):
     max_active_sandboxes: int = 200
 
     @model_validator(mode="after")
-    def _deployed_links_point_somewhere_real(self) -> Self:
+    def _deployed_settings_are_complete(self) -> Self:
+        if self.app_env not in ("staging", "production"):
+            return self
         # The default suits a laptop; deployed, it would send every invite to localhost.
-        if self.app_env in ("staging", "production") and self.web_url == LOCAL_WEB_URL:
+        if self.web_url == LOCAL_WEB_URL:
             raise ValueError("set WEB_URL to the deployed web app's address")
+        required = ("s3_endpoint_url", "s3_bucket", "s3_access_key_id", "s3_secret_access_key")
+        missing = [name.upper() for name in required if getattr(self, name) is None]
+        if missing:
+            raise ValueError(f"set {', '.join(missing)}: file storage is required when deployed")
         return self
 
     @property

@@ -15,9 +15,9 @@ def test_liveness_needs_no_backing_services() -> None:
 
 
 @pytest.mark.integration
-def test_readiness_reaches_postgres() -> None:
+def test_readiness_reaches_postgres_and_storage(storage_bucket: None) -> None:
     with TestClient(create_app()) as client:
         response = client.get("/health/ready")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "database": True}
+    assert response.json() == {"status": "ok", "database": True, "storage": True}

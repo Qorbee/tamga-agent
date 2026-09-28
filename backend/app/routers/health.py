@@ -12,6 +12,7 @@ from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.platform import storage
 from app.platform.db import SessionDep
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class Health(BaseModel):
 class Readiness(BaseModel):
     status: Literal["ok", "unavailable"]
     database: bool
+    storage: bool
 
 
 @router.get("/health")
@@ -45,6 +47,11 @@ async def ready(session: SessionDep, response: Response) -> Readiness:
         logger.exception("readiness: database check failed")
         database = False
 
-    if not database:
+    files = await storage.ready()
+    if not files:
+        logger.warning("readiness: file storage is not configured or not reachable")
+
+    ok = database and files
+    if not ok:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return Readiness(status="ok" if database else "unavailable", database=database)
+    return Readiness(status="ok" if ok else "unavailable", database=database, storage=files)
