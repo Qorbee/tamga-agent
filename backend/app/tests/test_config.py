@@ -29,7 +29,9 @@ def test_a_deployment_without_file_storage_does_not_start(monkeypatch: pytest.Mo
 
 def test_a_complete_deployment_starts() -> None:
     # The test environment sets the S3_* variables (conftest.py).
-    settings = load_settings(app_env="production", web_url="https://tamga.qorbee.com")
+    settings = load_settings(
+        app_env="production", web_url="https://tamga.qorbee.com", openai_api_key="sk-x"
+    )
 
     assert settings.web_url == "https://tamga.qorbee.com"
 
@@ -69,3 +71,57 @@ def test_a_deployment_never_reads_mail_in_the_clear() -> None:
 def test_a_mail_batch_of_zero_does_not_start() -> None:
     with pytest.raises(ValidationError, match="mail_batch"):
         load_settings(mail_batch=0)
+
+
+def test_a_model_must_name_a_known_provider() -> None:
+    with pytest.raises(ValidationError, match="provider:name"):
+        load_settings(agent_models={"linker": "claude-sonnet-5"})
+
+
+def test_a_deployment_needs_the_key_of_every_provider_its_models_name() -> None:
+    with pytest.raises(ValidationError, match="ANTHROPIC_API_KEY"):
+        load_settings(
+            app_env="production",
+            web_url="https://tamga.qorbee.com",
+            openai_api_key="sk-x",
+            agent_models={"linker": "anthropic:claude-sonnet-5"},
+        )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"langfuse_public_key": "pk-lf-x"},
+        {"circle_api_key": "TEST_API_KEY:x:y"},
+        {"books_api_key": "x", "books_email": "admin@example.com"},
+    ],
+)
+def test_a_half_set_connection_does_not_start(values: dict[str, str]) -> None:
+    with pytest.raises(ValidationError, match="or none"):
+        load_settings(**values)
+
+
+def test_books_needs_a_company_to_read_into() -> None:
+    with pytest.raises(ValidationError, match="PILOT_COMPANY_ID"):
+        load_settings(
+            books_api_key="x",
+            books_email="admin@example.com",
+            books_password="x",  # noqa: S106 (a test value)
+        )
+
+
+def test_a_live_circle_key_is_refused() -> None:
+    with pytest.raises(ValidationError, match="testnet"):
+        load_settings(
+            circle_api_key="LIVE_API_KEY:x:y",
+            circle_entity_secret="x",  # noqa: S106 (a test value)
+        )
+
+
+def test_a_blank_key_counts_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("BOOKS_API_KEY", "")
+
+    assert load_settings().openai_api_key is None
+    with pytest.raises(ValidationError, match="OPENAI_API_KEY"):
+        load_settings(app_env="production", web_url="https://tamga.qorbee.com")
