@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     s3_secret_access_key: SecretStr | None = None
     s3_region: str = "auto"
 
+    # The largest upload accepted, in bytes; a phone photo or a scanned CMR is a few MB.
+    upload_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+
     # The pilot's mailboxes, read into the pilot company (ADR-0008). Until a per-company connections
     # table exists, they are settings: a JSON list in MAILBOXES.
     pilot_company_id: uuid.UUID | None = None
@@ -88,6 +91,8 @@ class Settings(BaseSettings):
     # Reads a month Tamga allows itself, kept under the accounting system's quota of 3,000 so the owner's own
     # integrations still have room.
     books_monthly_reads: int = Field(default=2500, gt=0)
+    # How far back the first sync of the books reads, in days.
+    books_backfill_days: int = Field(default=90, gt=0)
 
     # Language models (ADR-0005). A model is "provider:name". Every agent uses DEFAULT_MODEL unless
     # AGENT_MODELS names another for it, so moving one agent to another provider is configuration.
@@ -108,6 +113,12 @@ class Settings(BaseSettings):
     # is refused (root AGENTS.md, invariant 4).
     circle_api_key: SecretStr | None = None
     circle_entity_secret: SecretStr | None = None
+    # Circle's name for the chain wallets are made on (root AGENTS.md, invariant 4).
+    circle_blockchain: Literal["ARC-TESTNET"] = "ARC-TESTNET"
+    # Printed by scripts/create_circle_wallets.py: the wallet set Tamga's wallets live in, and the
+    # company treasury in it.
+    circle_wallet_set_id: str | None = None
+    circle_treasury_wallet_id: str | None = None
 
     # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
     guest_hours: int = 24

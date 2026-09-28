@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies.models import Company, CompanyKind
@@ -29,3 +29,17 @@ async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:
         .where(Company.kind == CompanyKind.SANDBOX, Company.expires_at > now)
     )
     return count or 0
+
+
+async def expired_sandboxes(db: AsyncSession, now: datetime, limit: int) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(Company.id)
+        .where(Company.kind == CompanyKind.SANDBOX, Company.expires_at <= now)
+        .order_by(Company.expires_at)
+        .limit(limit)
+    )
+    return list(rows)
+
+
+async def delete_company(db: AsyncSession, company_id: uuid.UUID) -> None:
+    await db.execute(delete(Company).where(Company.id == company_id))

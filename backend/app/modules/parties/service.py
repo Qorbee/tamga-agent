@@ -144,3 +144,10 @@ async def get_identifiers(
 
 async def _country(db: AsyncSession, company_id: uuid.UUID) -> str:
     return (await companies.get_companies(db, [company_id]))[company_id].country
+
+
+async def get_synced_party(
+    db: AsyncSession, company_id: uuid.UUID, source: str, source_id: str
+) -> Party | None:
+    """The party synced from this accounting card, if it has been."""
+    return await repository.get_by_source(db, company_id, source, source_id)

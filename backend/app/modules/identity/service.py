@@ -27,8 +27,10 @@ from app.modules.identity.schemas import (
     MembershipOut,
     UserOut,
 )
+from app.platform import storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
+from app.platform.db import open_session
 from app.platform.errors import (
     BadRequest,
     Conflict,
@@ -238,6 +240,22 @@ async def accept_invite(
     opened = await _open_session(db, user, invite.company_id, expires_at)
     await db.commit()
     return opened
+
+
+async def expire_sandboxes(*, batch: int = 50) -> int:
+    """Deletes guest sandboxes past their lifetime: their stored files, the company with every
+    row it owns, and their guests. Returns how many sandboxes went. Files go first: a failure
+    there leaves the company for the next run, never files nothing points at."""
+    deleted = 0
+    async with open_session() as db:
+        for company_id in await companies.expired_sandboxes(db, utcnow(), limit=batch):
+            await storage.delete_prefix(f"{company_id}/")
+            await companies.delete_sandbox(db, company_id)
+            await db.commit()
+            deleted += 1
+        await repository.delete_orphan_guests(db)
+        await db.commit()
+    return deleted
 
 
 def invite_url(token: str) -> str:

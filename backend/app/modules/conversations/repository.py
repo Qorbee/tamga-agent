@@ -1,15 +1,19 @@
 import uuid
+from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.conversations.models import (
+    Channel,
+    Direction,
     MailFolder,
     Message,
     MessageAttachment,
     MessageLocation,
 )
+from app.platform.pagination import PageParams, escape_like
 
 
 async def get_message_by_hash(
@@ -132,3 +136,74 @@ async def save_folder(
             },
         )
     )
+
+
+async def message_exists(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> bool:
+    found = await db.scalar(
+        select(Message.id).where(Message.company_id == company_id, Message.id == message_id)
+    )
+    return found is not None
+
+
+async def list_messages(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    q: str | None,
+    direction: Direction | None,
+    channel: Channel | None,
+    page: PageParams,
+) -> tuple[Sequence[tuple[Message, int]], int]:
+    """Newest first, each with how many files it carried."""
+    filters: list[ColumnElement[bool]] = [Message.company_id == company_id]
+    if direction is not None:
+        filters.append(Message.direction == direction)
+    if channel is not None:
+        filters.append(Message.channel == channel)
+    if q:
+        pattern = f"%{escape_like(q)}%"
+        filters.append(
+            or_(
+                Message.subject.ilike(pattern, escape="\\"),
+                Message.sender.ilike(pattern, escape="\\"),
+                Message.body_text.ilike(pattern, escape="\\"),
+            )
+        )
+    total = await db.scalar(select(func.count()).select_from(Message).where(*filters))
+    attachments = (
+        select(func.count())
+        .select_from(MessageAttachment)
+        .where(MessageAttachment.message_id == Message.id)
+        .scalar_subquery()
+    )
+    rows = await db.execute(
+        select(Message, attachments)
+        .where(*filters)
+        .order_by(Message.sent_at.desc(), Message.id)
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return [(message, count) for message, count in rows.tuples()], total or 0
+
+
+async def get_message(
+    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID
+) -> Message | None:
+    message: Message | None = await db.scalar(
+        select(Message).where(Message.company_id == company_id, Message.id == message_id)
+    )
+    return message
+
+
+async def attachments_of(
+    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID
+) -> Sequence[MessageAttachment]:
+    rows = await db.scalars(
+        select(MessageAttachment)
+        .where(
+            MessageAttachment.company_id == company_id,
+            MessageAttachment.message_id == message_id,
+        )
+        .order_by(MessageAttachment.filename)
+    )
+    return rows.all()

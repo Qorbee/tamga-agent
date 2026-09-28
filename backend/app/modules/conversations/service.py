@@ -12,6 +12,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,12 +23,23 @@ from app.modules.conversations import repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
 from app.modules.conversations.mail import UNREADABLE, parse_mail
 from app.modules.conversations.models import Channel, Direction, Message
+from app.modules.conversations.schemas import (
+    AttachmentOut,
+    MessageOut,
+    MessagePage,
+    MessageSummary,
+)
 from app.modules.documents import service as documents
 from app.platform import storage
+from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
+from app.platform.errors import NotFound
+from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
+
+SNIPPET_LENGTH: Final = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,3 +244,74 @@ async def _store_new_mail(
             filename=attachment.filename,
         )
     return message
+
+
+# Reading what arrived
+
+
+async def message_exists(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> bool:
+    return await repository.message_exists(db, company_id, message_id)
+
+
+async def list_messages(
+    db: AsyncSession,
+    actor: Actor,
+    *,
+    q: str | None,
+    direction: Direction | None,
+    channel: Channel | None,
+    page: PageParams,
+) -> MessagePage:
+    rows, total = await repository.list_messages(
+        db,
+        actor.company_id,
+        q=q.strip() if q else None,
+        direction=direction,
+        channel=channel,
+        page=page,
+    )
+    return MessagePage(
+        items=[_summary(message, count) for message, count in rows],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> MessageOut:
+    message = await repository.get_message(db, actor.company_id, message_id)
+    if message is None:
+        raise NotFound("No such message")
+    attachments = await repository.attachments_of(db, actor.company_id, message_id)
+    files = await documents.get_documents(
+        db, actor.company_id, [attachment.document_id for attachment in attachments]
+    )
+    return MessageOut(
+        **_summary(message, len(attachments)).model_dump(),
+        body_text=message.body_text,
+        rfc_message_id=message.rfc_message_id,
+        in_reply_to=message.in_reply_to,
+        attachments=[
+            AttachmentOut(
+                document_id=attachment.document_id,
+                filename=attachment.filename,
+                content_type=files[attachment.document_id].content_type,
+                size=files[attachment.document_id].size,
+            )
+            for attachment in attachments
+        ],
+    )
+
+
+def _summary(message: Message, attachment_count: int) -> MessageSummary:
+    return MessageSummary(
+        id=message.id,
+        channel=message.channel,
+        direction=message.direction,
+        sender=message.sender,
+        recipients=message.recipients,
+        subject=message.subject,
+        snippet=" ".join(message.body_text.split())[:SNIPPET_LENGTH],
+        sent_at=message.sent_at,
+        attachment_count=attachment_count,
+    )

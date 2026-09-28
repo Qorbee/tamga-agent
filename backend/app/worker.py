@@ -9,6 +9,7 @@ Same image and settings as the api; a job gets its database session from
 import asyncio
 import logging
 
+from app import packs
 from app.config import get_settings
 from app.platform import jobs
 from app.platform.db import dispose_db, init_db
@@ -17,6 +18,7 @@ from app.platform.db import dispose_db, init_db
 async def main() -> None:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level)
+    packs.register_all()
     jobs.import_all_tasks()
     init_db(str(settings.database_url))
     try:

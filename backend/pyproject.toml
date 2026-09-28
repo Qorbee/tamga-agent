@@ -7,7 +7,9 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "asyncpg>=0.31",
     "boto3>=1.43.98",
+    "circle-developer-controlled-wallets>=9.6.0",
     "fastapi>=0.141",
+    "httpx>=0.28",
     "procrastinate>=3.9.0",
     "pydantic-settings>=2.15",
     "sqlalchemy[asyncio]>=2.0.54",
@@ -17,7 +19,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "boto3-stubs[s3]>=1.43.98",
-    "httpx>=0.28",
     "ipykernel>=7.3",
     "mypy>=2.3",
     "pytest>=9.1",

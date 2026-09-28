@@ -119,3 +119,16 @@ async def claim_invite(db: AsyncSession, token_hash: bytes, now: datetime) -> In
         .values(accepted_at=now)
         .returning(Invite)
     )
+
+
+async def delete_orphan_guests(db: AsyncSession) -> int:
+    """Guests whose sandbox is gone: a guest exists only inside its sandbox."""
+    result = await db.execute(
+        delete(User)
+        .where(
+            User.is_guest.is_(True),
+            ~select(Membership.id).where(Membership.user_id == User.id).exists(),
+        )
+        .returning(User.id)
+    )
+    return len(result.all())

@@ -12,8 +12,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
+from app import packs
 from app.config import get_settings
+from app.modules.books import router as books
+from app.modules.conversations import router as conversations
+from app.modules.documents import router as documents
 from app.modules.identity import router as identity
+from app.modules.projects import router as projects
+from app.packs.logistics import router as logistics
 from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
 from app.platform.origin import OriginCheck
@@ -39,6 +45,7 @@ def operation_id(route: APIRoute) -> str:
 def create_app() -> FastAPI:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level)
+    packs.register_all()
 
     app = FastAPI(
         # A constant: the title is part of the committed openapi.json.
@@ -66,6 +73,14 @@ def create_app() -> FastAPI:
     app.include_router(identity.sessions)
     app.include_router(identity.me)
     app.include_router(identity.invites)
+    app.include_router(projects.projects)
+    app.include_router(projects.links)
+    app.include_router(projects.proposals)
+    app.include_router(conversations.messages)
+    app.include_router(documents.documents)
+    app.include_router(books.invoices)
+    # Packs' routers: the core never imports a pack, the app factory does.
+    app.include_router(logistics.shipments)
 
     return app
 

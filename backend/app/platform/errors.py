@@ -56,6 +56,11 @@ class Gone(DomainError):
     code = "gone"
 
 
+class PayloadTooLarge(DomainError):
+    status = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+    code = "too_large"
+
+
 class TooManyRequests(DomainError):
     status = HTTPStatus.TOO_MANY_REQUESTS
     code = "rate_limited"

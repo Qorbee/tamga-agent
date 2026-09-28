@@ -1,7 +1,7 @@
 # Backend
 
 The API service: FastAPI on PostgreSQL, async throughout, one Docker image for every environment.
-The worker that runs background jobs will be the same image with another command.
+The worker that runs background jobs is the same image with another command (`python -m app.worker`).
 
 ## Map
 
@@ -12,7 +12,9 @@ The worker that runs background jobs will be the same image with another command
 | `app/platform/` | Infrastructure every module uses: the database session, domain errors |
 | `app/routers/health.py` | `/health` (liveness, touches nothing) and `/health/ready` (checks Postgres) |
 | `app/modules/` | Business domains, one package each ([shape](app/modules/README.md)) |
-| `app/migrations/` | Alembic; models are discovered from `app/modules/*/models.py` |
+| `app/packs/` | Country (`tr`) and sector (`logistics`) packs; each `register.py` plugs into the core |
+| `scripts/` | `create_company.py`, `create_circle_wallets.py`, `dump_openapi.py` |
+| `app/migrations/` | Alembic; models are discovered from `app/modules/*/models.py` and `app/packs/*/models.py` |
 | `openapi.json` | The API contract the frontend generates its types from. Generated, committed |
 
 ## Start reading at

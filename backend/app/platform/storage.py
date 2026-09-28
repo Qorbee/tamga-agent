@@ -21,6 +21,7 @@ from app.config import get_settings
 if TYPE_CHECKING:
     # Types only: the stubs are a dev dependency, absent from the production image.
     from mypy_boto3_s3 import S3Client
+    from mypy_boto3_s3.type_defs import ObjectIdentifierTypeDef
 
 PRESIGN_SECONDS: Final = 300
 
@@ -49,6 +50,26 @@ async def get(key: str) -> bytes:
 async def delete(key: str) -> None:
     client, bucket = _client(), _bucket()
     await asyncio.to_thread(client.delete_object, Bucket=bucket, Key=key)
+
+
+async def delete_prefix(prefix: str) -> int:
+    """Deletes every object under ``prefix`` (a company's ``<id>/``) and returns how many."""
+    if not prefix.endswith("/"):
+        raise ValueError("a prefix ends with /, so one company's never matches another's")
+    client, bucket = _client(), _bucket()
+
+    def run() -> int:
+        deleted = 0
+        for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+            keys: list[ObjectIdentifierTypeDef] = [
+                {"Key": item["Key"]} for item in page.get("Contents", []) if "Key" in item
+            ]
+            if keys:
+                client.delete_objects(Bucket=bucket, Delete={"Objects": keys, "Quiet": True})
+                deleted += len(keys)
+        return deleted
+
+    return await asyncio.to_thread(run)
 
 
 def presign(key: str, *, filename: str | None = None, seconds: int = PRESIGN_SECONDS) -> str:

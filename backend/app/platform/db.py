@@ -15,6 +15,7 @@ from typing import Annotated, Any, Final
 
 from fastapi import Depends
 from sqlalchemy import DateTime, Enum, MetaData
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -41,7 +42,7 @@ class Base(DeclarativeBase):
     type_annotation_map: dict[Any, Any] = {datetime: DateTime(timezone=True)}
 
 
-def text_enum(enum: type[StrEnum], check_name: str) -> Enum:
+def text_enum(enum: type[StrEnum], check_name: str, *, length: int = 16) -> Enum:
     """A ``StrEnum`` column stored as text under a named CHECK.
 
     Not a PostgreSQL enum type: adding a value is then a constraint swap, not an ``ALTER TYPE``.
@@ -52,7 +53,7 @@ def text_enum(enum: type[StrEnum], check_name: str) -> Enum:
         name=check_name,
         native_enum=False,
         create_constraint=True,
-        length=16,
+        length=length,
         values_callable=lambda members: [member.value for member in members],
     )
 
@@ -64,21 +65,25 @@ def import_all_models() -> None:
 
 
 def import_from_each_module(submodule: str) -> None:
-    """Import ``app/modules/<name>/<submodule>.py`` wherever it exists.
+    """Import ``app/modules/<name>/<submodule>.py`` and ``app/packs/<name>/<submodule>.py``
+    wherever they exist.
 
-    Derived from the filesystem, so a new module needs no registration anywhere.
+    Derived from the filesystem, so a new module or pack needs no registration anywhere. Packs are
+    imported here by name only: a core module still never imports one (``backend/AGENTS.md``).
     """
     import app.modules
+    import app.packs
 
-    for module in pkgutil.iter_modules(app.modules.__path__):
-        if not module.ispkg:
-            continue
-        name = f"app.modules.{module.name}.{submodule}"
-        try:
-            importlib.import_module(name)
-        except ModuleNotFoundError as exc:
-            if exc.name != name:
-                raise
+    for package in (app.modules, app.packs):
+        for module in pkgutil.iter_modules(package.__path__):
+            if not module.ispkg:
+                continue
+            name = f"{package.__name__}.{module.name}.{submodule}"
+            try:
+                importlib.import_module(name)
+            except ModuleNotFoundError as exc:
+                if exc.name != name:
+                    raise
 
 
 _engine: AsyncEngine | None = None
@@ -115,3 +120,11 @@ async def open_session() -> AsyncIterator[AsyncSession]:
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def violated_constraint(exc: IntegrityError) -> str | None:
+    """The name of the constraint a failed write broke, so a service can turn the one violation it
+    expects into a domain error and let any other surface."""
+    cause = getattr(exc.orig, "__cause__", None)
+    name = getattr(cause, "constraint_name", None) or getattr(exc.orig, "constraint_name", None)
+    return str(name) if name else None

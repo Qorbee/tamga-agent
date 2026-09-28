@@ -37,3 +37,18 @@ async def get_companies(db: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid
 async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:
     """Also serialises sandbox creation until the caller commits: call it right before creating."""
     return await repository.count_live_sandboxes(db, now)
+
+
+async def expired_sandboxes(db: AsyncSession, now: datetime, *, limit: int) -> list[uuid.UUID]:
+    return await repository.expired_sandboxes(db, now, limit)
+
+
+async def delete_sandbox(db: AsyncSession, company_id: uuid.UUID) -> None:
+    """Deletes a sandbox and, by cascade, every row it owns. Only a sandbox: a pilot's data is
+    never deleted by this path."""
+    company = (await get_companies(db, [company_id])).get(company_id)
+    if company is None:
+        return
+    if company.kind is not CompanyKind.SANDBOX:
+        raise ValueError("only a sandbox is deleted on expiry")
+    await repository.delete_company(db, company_id)

@@ -115,3 +115,14 @@ async def get_identifiers(
         .order_by(PartyIdentifier.kind, PartyIdentifier.created_at)
     )
     return identifiers.all()
+
+
+async def get_by_source(
+    db: AsyncSession, company_id: uuid.UUID, source: str, source_id: str
+) -> Party | None:
+    party: Party | None = await db.scalar(
+        select(Party).where(
+            Party.company_id == company_id, Party.source == source, Party.source_id == source_id
+        )
+    )
+    return party

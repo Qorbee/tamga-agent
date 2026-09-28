@@ -6,7 +6,8 @@ Real environment variables win, which is how CI points the suite at its service 
 """
 
 import os
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import boto3
@@ -110,3 +111,20 @@ def storage_bucket() -> None:
             "BucketAlreadyExists",
         }:
             raise
+
+
+@pytest.fixture(autouse=True)
+def fresh_rate_limits() -> Iterator[None]:
+    # Every test client is 127.0.0.1, so one test's attempts would count against the next.
+    from app.modules.identity import service
+
+    service._password_limiter.cache_clear()
+    service._guest_limiter.cache_clear()
+    yield
+
+
+async def guest_client(client: httpx.AsyncClient) -> uuid.UUID:
+    """Signs ``client`` in as the owner of a fresh sandbox; returns the sandbox's company id."""
+    response = await client.post("/sessions/guest")
+    assert response.status_code == 201, response.text
+    return uuid.UUID(response.json()["company"]["id"])
