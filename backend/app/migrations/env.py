@@ -1,8 +1,6 @@
 """Alembic environment: async engine, URL from settings, models found by walking ``app/modules``."""
 
 import asyncio
-import importlib
-import pkgutil
 from logging.config import fileConfig
 
 from alembic import context
@@ -10,30 +8,12 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-import app.modules
 from app.config import get_settings
-from app.platform.db import Base
+from app.platform.db import Base, import_all_models
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
-
-def import_all_models() -> None:
-    """Import every ``app/modules/<name>/models.py`` so autogenerate sees every table.
-
-    Derived from the filesystem, so a new module needs no registration here — a model autogenerate
-    cannot see is a table it proposes to drop.
-    """
-    for module in pkgutil.iter_modules(app.modules.__path__):
-        if not module.ispkg:
-            continue
-        name = f"app.modules.{module.name}.models"
-        try:
-            importlib.import_module(name)
-        except ModuleNotFoundError as exc:
-            if exc.name != name:
-                raise
 
 
 import_all_models()

@@ -13,8 +13,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
 from app.config import get_settings
+from app.modules.identity import router as identity
 from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
+from app.platform.origin import OriginCheck
 from app.routers import health
 
 
@@ -44,6 +46,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         generate_unique_id_function=operation_id,
     )
+    # Added before CORS, so it runs inside it: CORS answers preflights before the check sees them.
+    app.add_middleware(OriginCheck, allowed_origins=settings.cors_origin_list)
     if settings.cors_origin_list:
         # Explicit origins, never "*": credentials are allowed, and browsers refuse the wildcard
         # with credentials anyway.
@@ -57,9 +61,10 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
 
     app.include_router(health.router)
-    # Mount each module's router here, one line per module:
-    #   from app.modules.orders.router import router as orders_router
-    #   app.include_router(orders_router)
+    # Each module's routers, one line each.
+    app.include_router(identity.sessions)
+    app.include_router(identity.me)
+    app.include_router(identity.invites)
 
     return app
 

@@ -5,11 +5,15 @@ through ``SessionDep``; the service layer owns the transaction and commits it â€
 never commits on its own, so a request that raises leaves nothing half-written.
 """
 
+import importlib
+import pkgutil
 from collections.abc import AsyncIterator
-from typing import Annotated, Final
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Any, Final
 
 from fastapi import Depends
-from sqlalchemy import MetaData
+from sqlalchemy import DateTime, Enum, MetaData
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -31,6 +35,43 @@ NAMING_CONVENTION: Final[dict[str, str]] = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    # Every timestamp is timezone-aware: a naive one would be read as the server's local time.
+    type_annotation_map: dict[Any, Any] = {datetime: DateTime(timezone=True)}
+
+
+def text_enum(enum: type[StrEnum], check_name: str) -> Enum:
+    """A ``StrEnum`` column stored as text under a named CHECK.
+
+    Not a PostgreSQL enum type: adding a value is then a constraint swap, not an ``ALTER TYPE``.
+    The CHECK is named here because ``NAMING_CONVENTION`` leaves CHECK constraints out.
+    """
+    return Enum(
+        enum,
+        name=check_name,
+        native_enum=False,
+        create_constraint=True,
+        length=16,
+        values_callable=lambda members: [member.value for member in members],
+    )
+
+
+def import_all_models() -> None:
+    """Import every ``app/modules/<name>/models.py``, so ``Base.metadata`` knows every table.
+
+    Derived from the filesystem, so a new module needs no registration: Alembic's autogenerate
+    proposes to drop a table whose model it cannot see.
+    """
+    import app.modules
+
+    for module in pkgutil.iter_modules(app.modules.__path__):
+        if not module.ispkg:
+            continue
+        name = f"app.modules.{module.name}.models"
+        try:
+            importlib.import_module(name)
+        except ModuleNotFoundError as exc:
+            if exc.name != name:
+                raise
 
 
 _engine: AsyncEngine | None = None

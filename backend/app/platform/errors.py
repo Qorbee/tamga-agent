@@ -49,6 +49,18 @@ class Conflict(DomainError):
     code = "conflict"
 
 
+class Gone(DomainError):
+    """Existed once and cannot be used again: a spent invite, an expired or revoked link."""
+
+    status = HTTPStatus.GONE
+    code = "gone"
+
+
+class TooManyRequests(DomainError):
+    status = HTTPStatus.TOO_MANY_REQUESTS
+    code = "rate_limited"
+
+
 def install_error_handlers(app: FastAPI) -> None:
     async def handle_domain_error(request: Request, exc: Exception) -> JSONResponse:
         if not isinstance(exc, DomainError):  # registered for DomainError only; narrows the type

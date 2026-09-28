@@ -8,14 +8,17 @@ A new variable goes here, in ``.env.example`` with a comment, and nowhere else.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolved from this file rather than the working directory, so `uv run` from anywhere, Alembic and
 # the test runner all read the same `.env`. Real environment variables win over the file.
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+
+LOCAL_WEB_URL = "http://localhost:3000"
 
 
 class Settings(BaseSettings):
@@ -29,6 +32,29 @@ class Settings(BaseSettings):
 
     # Comma-separated, because a list-typed field would demand JSON in the environment.
     cors_origins: str = ""
+
+    # The web app's address, for links the backend hands out (invites).
+    web_url: str = LOCAL_WEB_URL
+
+    # Sign-in (ADR-0004). An empty domain makes the cookie host-only, which is right locally; in
+    # production it is the parent domain the web and API hosts share.
+    session_cookie_domain: str = ""
+    session_days: int = 30
+    invite_days: int = 7
+
+    # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
+    guest_hours: int = 24
+    guest_sessions_per_client_per_hour: int = 5
+    # Sign-ins and invite acceptances that check a password, per client address.
+    password_attempts_per_client_per_hour: int = 20
+    max_active_sandboxes: int = 200
+
+    @model_validator(mode="after")
+    def _deployed_links_point_somewhere_real(self) -> Self:
+        # The default suits a laptop; deployed, it would send every invite to localhost.
+        if self.app_env in ("staging", "production") and self.web_url == LOCAL_WEB_URL:
+            raise ValueError("set WEB_URL to the deployed web app's address")
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:
