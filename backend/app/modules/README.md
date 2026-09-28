@@ -9,7 +9,8 @@ modules/<name>/
 ├── schemas.py      # Pydantic request/response models: the API contract
 ├── repository.py   # reads and writes this module's tables; returns models, never HTTP responses
 ├── service.py      # business rules and the transaction; raises app.platform.errors, not HTTPException
-└── router.py       # parses input, calls one service operation, shapes the output — nothing else
+├── router.py       # parses input, calls one service operation, shapes the output — nothing else
+└── tasks.py        # background jobs (jobs.task, jobs.periodic) — the worker finds this file itself
 ```
 
 Register the router in `app/main.py` (one line). Tests go in `app/tests/<name>/`.

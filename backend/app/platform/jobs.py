@@ -56,6 +56,19 @@ def task(
     return register
 
 
+def periodic(name: str, *, cron: str) -> Callable[[Callable[[int], Awaitable[None]]], Job]:
+    """Declares a job the worker defers on a schedule (``cron``, e.g. ``"*/2 * * * *"``). It gets
+    the scheduled time as a Unix timestamp. Runs of one job never overlap, and a run that is still
+    queued when the next is due absorbs it, so a slow run never builds a backlog."""
+
+    def register(function: Callable[[int], Awaitable[None]]) -> Job:
+        job: Job = app.task(name=name, lock=name, queueing_lock=name)(function)
+        app.periodic(cron=cron)(job)
+        return job
+
+    return register
+
+
 async def defer(
     db: AsyncSession,
     job: Job,
