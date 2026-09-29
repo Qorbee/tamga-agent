@@ -59,10 +59,15 @@ async def test_a_spreadsheet_is_read_into_rows(
     xlsx = await upload(client, "sefer.xlsx", out.getvalue(), "application/octet-stream")
     photo = await upload(client, "teslim.png", PNG, "image/png")
 
-    [read] = (await client.get(f"/documents/{xlsx}/sheets")).json()
+    workbook = (await client.get(f"/documents/{xlsx}/sheets")).json()
     not_a_sheet = await client.get(f"/documents/{photo}/sheets")
 
-    assert read["rows"] == [["Plaka", "Tutar"], ["34 ABC 12", "1250"]]
+    [read] = workbook["sheets"]
+    assert [[cell["value"] for cell in row["cells"]] for row in read["rows"]] == [
+        ["Plaka", "Tutar"],
+        ["34 ABC 12", 1250],
+    ]
+    assert workbook["omitted"] == 0
     assert not_a_sheet.status_code == 400
 
 

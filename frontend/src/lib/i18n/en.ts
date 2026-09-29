@@ -255,6 +255,8 @@ export const en = {
     pages: (count: number) => `${count} ${count === 1 ? "page" : "pages"}`,
     truncated: (rows: number, columns: number) =>
       `Showing the first ${rows} rows and ${columns} columns. Download the file for the rest.`,
+    omittedSheets: (count: number) =>
+      `${count} more ${count === 1 ? "sheet is" : "sheets are"} not shown. Download the file for them.`,
     emptySheet: "This sheet is empty.",
     noPreview: "This file can't be shown here",
     noPreviewBody: "Download it to open it on your device.",

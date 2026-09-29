@@ -11,8 +11,8 @@ from app.modules.documents.schemas import (
     DocumentPage,
     DocumentTypeOut,
     DocumentUpdate,
-    SheetOut,
     UploadOut,
+    WorkbookOut,
 )
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
@@ -97,8 +97,9 @@ async def get_document_content(document_id: uuid.UUID, actor: ActorDep, db: Sess
 @documents.get("/documents/{document_id}/sheets")
 async def get_document_sheets(
     document_id: uuid.UUID, actor: ActorDep, db: SessionDep
-) -> list[SheetOut]:
-    """A spreadsheet's cells as text, capped at a thousand rows and fifty columns a sheet."""
+) -> WorkbookOut:
+    """A spreadsheet as Excel lays it out: each cell's value and number format, the styles, merged
+    cells, widths and heights. At most 20 sheets of a thousand rows and fifty columns."""
     return await service.get_sheets(db, actor, document_id)
 
 

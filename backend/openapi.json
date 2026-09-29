@@ -46,6 +46,250 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "CellOut": {
+        "properties": {
+          "format": {
+            "title": "Format",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "number",
+              "date",
+              "text",
+              "bool",
+              "error",
+              "blank"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "style": {
+            "title": "Style",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "format",
+          "style"
+        ],
+        "title": "CellOut",
+        "type": "object"
+      },
+      "CellStyleOut": {
+        "properties": {
+          "align": {
+            "anyOf": [
+              {
+                "enum": [
+                  "left",
+                  "center",
+                  "right",
+                  "justify"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Align"
+          },
+          "bold": {
+            "title": "Bold",
+            "type": "boolean"
+          },
+          "bottom": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thin",
+                  "medium",
+                  "thick",
+                  "double",
+                  "dashed",
+                  "dotted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bottom"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill"
+          },
+          "font": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font"
+          },
+          "indent": {
+            "title": "Indent",
+            "type": "integer"
+          },
+          "italic": {
+            "title": "Italic",
+            "type": "boolean"
+          },
+          "left": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thin",
+                  "medium",
+                  "thick",
+                  "double",
+                  "dashed",
+                  "dotted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left"
+          },
+          "right": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thin",
+                  "medium",
+                  "thick",
+                  "double",
+                  "dashed",
+                  "dotted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "boolean"
+          },
+          "top": {
+            "anyOf": [
+              {
+                "enum": [
+                  "thin",
+                  "medium",
+                  "thick",
+                  "double",
+                  "dashed",
+                  "dotted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top"
+          },
+          "underline": {
+            "title": "Underline",
+            "type": "boolean"
+          },
+          "valign": {
+            "anyOf": [
+              {
+                "enum": [
+                  "top",
+                  "middle",
+                  "bottom"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valign"
+          },
+          "wrap": {
+            "title": "Wrap",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bold",
+          "italic",
+          "underline",
+          "strike",
+          "font",
+          "size",
+          "color",
+          "fill",
+          "align",
+          "valign",
+          "wrap",
+          "indent",
+          "top",
+          "right",
+          "bottom",
+          "left"
+        ],
+        "title": "CellStyleOut",
+        "type": "object"
+      },
       "Channel": {
         "description": "Where an item came from (docs/architecture/06).",
         "enum": [
@@ -58,6 +302,31 @@
         ],
         "title": "Channel",
         "type": "string"
+      },
+      "ColumnOut": {
+        "properties": {
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "width",
+          "hidden"
+        ],
+        "title": "ColumnOut",
+        "type": "object"
       },
       "CompanyKind": {
         "description": "Whose data the company holds (ADR-0003).",
@@ -1272,6 +1541,34 @@
         "title": "MembershipOut",
         "type": "object"
       },
+      "MergeOut": {
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "integer"
+          },
+          "columns": {
+            "title": "Columns",
+            "type": "integer"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row",
+          "column",
+          "rows",
+          "columns"
+        ],
+        "title": "MergeOut",
+        "type": "object"
+      },
       "MessageOut": {
         "properties": {
           "attachment_count": {
@@ -2105,27 +2402,86 @@
         "title": "Role",
         "type": "string"
       },
+      "RowOut": {
+        "properties": {
+          "cells": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CellOut"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cells",
+          "height",
+          "hidden"
+        ],
+        "title": "RowOut",
+        "type": "object"
+      },
       "SheetOut": {
         "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnOut"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "default_height": {
+            "title": "Default Height",
+            "type": "number"
+          },
+          "default_width": {
+            "title": "Default Width",
+            "type": "integer"
+          },
+          "merges": {
+            "items": {
+              "$ref": "#/components/schemas/MergeOut"
+            },
+            "title": "Merges",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"
           },
           "rows": {
             "items": {
-              "items": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "type": "array"
+              "$ref": "#/components/schemas/RowOut"
             },
             "title": "Rows",
+            "type": "array"
+          },
+          "styles": {
+            "items": {
+              "$ref": "#/components/schemas/CellStyleOut"
+            },
+            "title": "Styles",
             "type": "array"
           },
           "truncated": {
@@ -2135,8 +2491,13 @@
         },
         "required": [
           "name",
+          "columns",
           "rows",
-          "truncated"
+          "merges",
+          "styles",
+          "truncated",
+          "default_width",
+          "default_height"
         ],
         "title": "SheetOut",
         "type": "object"
@@ -2799,6 +3160,44 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WorkbookOut": {
+        "properties": {
+          "font": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font"
+          },
+          "font_size": {
+            "title": "Font Size",
+            "type": "number"
+          },
+          "omitted": {
+            "title": "Omitted",
+            "type": "integer"
+          },
+          "sheets": {
+            "items": {
+              "$ref": "#/components/schemas/SheetOut"
+            },
+            "title": "Sheets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sheets",
+          "omitted",
+          "font",
+          "font_size"
+        ],
+        "title": "WorkbookOut",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -3188,7 +3587,7 @@
     },
     "/documents/{document_id}/sheets": {
       "get": {
-        "description": "A spreadsheet's cells as text, capped at a thousand rows and fifty columns a sheet.",
+        "description": "A spreadsheet as Excel lays it out: each cell's value and number format, the styles, merged\ncells, widths and heights. At most 20 sheets of a thousand rows and fifty columns.",
         "operationId": "documents.get_document_sheets",
         "parameters": [
           {
@@ -3207,11 +3606,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SheetOut"
-                  },
-                  "title": "Response Documents.Get Document Sheets",
-                  "type": "array"
+                  "$ref": "#/components/schemas/WorkbookOut"
                 }
               }
             },

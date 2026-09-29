@@ -188,7 +188,8 @@ function DocumentRow({ document, types }: { document: Document; types: DocumentT
   return (
     <li className="flex flex-wrap items-center gap-3 px-4 py-3">
       <HugeiconsIcon icon={fileIcon(document.preview)} strokeWidth={1.75} className="text-muted-foreground size-4" />
-      <div className="min-w-0 flex-1">
+      {/* Its type and download move to a line of their own before the name is squeezed. */}
+      <div className="min-w-40 flex-1">
         <CanvasLink
           view={{ kind: "document", id: document.id }}
           className="block truncate text-sm underline-offset-4 hover:underline"

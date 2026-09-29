@@ -73,7 +73,7 @@ function SheetPreview({ id }: { id: string }) {
   const sheets = useQuery({ queryKey: ["document-sheets", id], queryFn: () => getDocumentSheets(id) });
   if (sheets.isError) return <NoPreview id={id} failed />;
   if (!sheets.data) return <Skeleton className="m-4 h-64 rounded-xl" />;
-  return <SheetView sheets={sheets.data} />;
+  return <SheetView workbook={sheets.data} />;
 }
 
 function DrawnPreview({ id, preview, name }: { id: string; preview: "image" | "pdf"; name: string }) {

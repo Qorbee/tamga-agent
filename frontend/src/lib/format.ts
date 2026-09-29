@@ -1,3 +1,5 @@
+import type { Sheet } from "@/lib/api";
+import { formatExcelDate, formatExcelNumber, formatExcelText } from "@/lib/excel-format";
 import type { Locale } from "@/lib/i18n";
 
 /**
@@ -64,4 +66,18 @@ export function formatBytes(bytes: number, locale: Locale): string {
   const digits = unit > 0 && value < 10 ? 1 : 0;
   const figure = new Intl.NumberFormat(intlLocale[locale], { maximumFractionDigits: digits }).format(value);
   return `${figure} ${units[unit]}`;
+}
+
+type SheetCell = NonNullable<Sheet["rows"][number]["cells"][number]>;
+
+/** A spreadsheet cell as Excel shows it to a reader in this language (`lib/excel-format.ts`). */
+export function formatSheetCell(cell: SheetCell, locale: Locale): string {
+  if (cell.kind === "number" && typeof cell.value === "number") {
+    return formatExcelNumber(cell.value, cell.format, intlLocale[locale]);
+  }
+  if (cell.kind === "date" && typeof cell.value === "string") {
+    return formatExcelDate(cell.value, cell.format, intlLocale[locale]);
+  }
+  if (cell.kind === "text" && typeof cell.value === "string") return formatExcelText(cell.value, cell.format);
+  return String(cell.value);
 }

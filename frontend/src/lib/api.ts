@@ -147,11 +147,13 @@ export type Upload = Schemas["UploadOut"];
 export const listDocuments = (params: { q?: string; limit?: number }) =>
   request<DocumentPage>(`/documents${query({ ...params, limit: params.limit ?? 50 })}`);
 export type Preview = NonNullable<Document["preview"]>;
+export type Workbook = Schemas["WorkbookOut"];
 export type Sheet = Schemas["SheetOut"];
+export type SheetStyle = Schemas["CellStyleOut"];
 export const getDocument = (id: string) => request<DocumentDetail>(`/documents/${id}`);
 /** Drawable only as a verified image or PDF; anything else arrives as a download. */
 export const getDocumentFile = (id: string) => requestBlob(`/documents/${id}/content`);
-export const getDocumentSheets = (id: string) => request<Sheet[]>(`/documents/${id}/sheets`);
+export const getDocumentSheets = (id: string) => request<Workbook>(`/documents/${id}/sheets`);
 export const listDocumentTypes = () => request<DocumentType[]>("/document-types");
 export const setDocumentType = (id: string, docType: string | null) =>
   request<Document>(`/documents/${id}`, json("PATCH", { doc_type: docType }));

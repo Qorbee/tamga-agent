@@ -255,6 +255,7 @@ export const tr: Dictionary = {
     pages: (count: number) => `${count} sayfa`,
     truncated: (rows: number, columns: number) =>
       `İlk ${rows} satır ve ${columns} sütun gösteriliyor. Tamamı için dosyayı indirin.`,
+    omittedSheets: (count: number) => `${count} sayfa daha gösterilmiyor. Onlar için dosyayı indirin.`,
     emptySheet: "Bu sayfa boş.",
     noPreview: "Bu dosya burada gösterilemiyor",
     noPreviewBody: "Cihazınızda açmak için indirin.",

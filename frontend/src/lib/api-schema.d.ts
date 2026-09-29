@@ -86,7 +86,8 @@ export interface paths {
         };
         /**
          * Get Document Sheets
-         * @description A spreadsheet's cells as text, capped at a thousand rows and fifty columns a sheet.
+         * @description A spreadsheet as Excel lays it out: each cell's value and number format, the styles, merged
+         *     cells, widths and heights. At most 20 sheets of a thousand rows and fifty columns.
          */
         get: operations["documents.get_document_sheets"];
         put?: never;
@@ -591,12 +592,68 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** CellOut */
+        CellOut: {
+            /** Format */
+            format: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "number" | "date" | "text" | "bool" | "error" | "blank";
+            /** Style */
+            style: number;
+            /** Value */
+            value: string | number;
+        };
+        /** CellStyleOut */
+        CellStyleOut: {
+            /** Align */
+            align: ("left" | "center" | "right" | "justify") | null;
+            /** Bold */
+            bold: boolean;
+            /** Bottom */
+            bottom: ("thin" | "medium" | "thick" | "double" | "dashed" | "dotted") | null;
+            /** Color */
+            color: string | null;
+            /** Fill */
+            fill: string | null;
+            /** Font */
+            font: string | null;
+            /** Indent */
+            indent: number;
+            /** Italic */
+            italic: boolean;
+            /** Left */
+            left: ("thin" | "medium" | "thick" | "double" | "dashed" | "dotted") | null;
+            /** Right */
+            right: ("thin" | "medium" | "thick" | "double" | "dashed" | "dotted") | null;
+            /** Size */
+            size: number | null;
+            /** Strike */
+            strike: boolean;
+            /** Top */
+            top: ("thin" | "medium" | "thick" | "double" | "dashed" | "dotted") | null;
+            /** Underline */
+            underline: boolean;
+            /** Valign */
+            valign: ("top" | "middle" | "bottom") | null;
+            /** Wrap */
+            wrap: boolean;
+        };
         /**
          * Channel
          * @description Where an item came from (docs/architecture/06).
          * @enum {string}
          */
         Channel: "email" | "upload" | "share" | "link" | "simulated" | "whatsapp";
+        /** ColumnOut */
+        ColumnOut: {
+            /** Hidden */
+            hidden: boolean;
+            /** Width */
+            width: number | null;
+        };
         /**
          * CompanyKind
          * @description Whose data the company holds (ADR-0003).
@@ -1041,6 +1098,17 @@ export interface components {
             company: components["schemas"]["CompanySummary"];
             role: components["schemas"]["Role"];
         };
+        /** MergeOut */
+        MergeOut: {
+            /** Column */
+            column: number;
+            /** Columns */
+            columns: number;
+            /** Row */
+            row: number;
+            /** Rows */
+            rows: number;
+        };
         /** MessageOut */
         MessageOut: {
             /** Attachment Count */
@@ -1346,12 +1414,31 @@ export interface components {
          * @enum {string}
          */
         Role: "owner" | "ops" | "viewer";
+        /** RowOut */
+        RowOut: {
+            /** Cells */
+            cells: (components["schemas"]["CellOut"] | null)[];
+            /** Height */
+            height: number | null;
+            /** Hidden */
+            hidden: boolean;
+        };
         /** SheetOut */
         SheetOut: {
+            /** Columns */
+            columns: components["schemas"]["ColumnOut"][];
+            /** Default Height */
+            default_height: number;
+            /** Default Width */
+            default_width: number;
+            /** Merges */
+            merges: components["schemas"]["MergeOut"][];
             /** Name */
             name: string;
             /** Rows */
-            rows: (string | null)[][];
+            rows: components["schemas"]["RowOut"][];
+            /** Styles */
+            styles: components["schemas"]["CellStyleOut"][];
             /** Truncated */
             truncated: boolean;
         };
@@ -1542,6 +1629,17 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WorkbookOut */
+        WorkbookOut: {
+            /** Font */
+            font: string | null;
+            /** Font Size */
+            font_size: number;
+            /** Omitted */
+            omitted: number;
+            /** Sheets */
+            sheets: components["schemas"]["SheetOut"][];
         };
     };
     responses: never;
@@ -1758,7 +1856,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SheetOut"][];
+                    "application/json": components["schemas"]["WorkbookOut"];
                 };
             };
             /** @description Validation Error */

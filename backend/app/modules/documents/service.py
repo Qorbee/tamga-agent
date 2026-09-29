@@ -18,8 +18,8 @@ from app.modules.documents.schemas import (
     DocumentOut,
     DocumentPage,
     DocumentTypeOut,
-    SheetOut,
     UploadOut,
+    WorkbookOut,
 )
 from app.platform import filetypes, storage
 from app.platform.auth import Actor, Role
@@ -156,17 +156,17 @@ async def get_content(db: AsyncSession, actor: Actor, document_id: uuid.UUID) ->
     )
 
 
-async def get_sheets(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> list[SheetOut]:
+async def get_sheets(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> WorkbookOut:
     document = await _document(db, actor.company_id, document_id)
     media = filetypes.media_type(document.content_type, document.filename)
     if media is None or media not in filetypes.SHEETS:
         raise BadRequest("The document is not a spreadsheet")
     data = await storage.get(document.storage_key)
     try:
-        read = await asyncio.to_thread(sheets.read_sheets, data, media)
+        read = await asyncio.to_thread(sheets.read_workbook, data, media)
     except sheets.Unreadable as error:
         raise BadRequest(str(error)) from error
-    return [SheetOut(name=sheet.name, rows=sheet.rows, truncated=sheet.truncated) for sheet in read]
+    return WorkbookOut.model_validate(read, from_attributes=True)
 
 
 def preview_of(content_type: str, filename: str) -> filetypes.Preview | None:
