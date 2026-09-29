@@ -48,6 +48,56 @@ async def test_the_inbox_lists_mail_newest_first_with_its_files(
     assert (await client.get("/messages", params={"q": "100%_"})).json()["total"] == 0
 
 
+async def test_search_finds_mail_however_it_is_typed(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    mail = email.message.EmailMessage()
+    mail["From"] = "Ayşe Kaya <ops@kaya.example>"
+    mail["Subject"] = "Ağustos faturası"
+    mail.set_content("Ödeme yapıldı. Plaka 34 ABC 12, yatırım planı ekte.")
+    mail.add_alternative('<p>Ödeme yapıldı.</p><img src="cid:logo@kaya">', subtype="html")
+    html = mail.get_body(preferencelist=("html",))
+    assert html is not None
+    html.add_related(PNG, "image", "png", cid="<logo@kaya>", filename="image001.png")
+    mail.add_attachment(
+        b"%PDF cmr", maintype="application", subtype="pdf", filename="CMR-34ABC12.pdf"
+    )
+    other = email.message.EmailMessage()
+    other["From"] = "x@x.example"
+    other["Subject"] = "Başka iş"
+    other.set_content("Tır yarın yüklenecek.")
+    async with open_session() as db:
+        for uid, raw in enumerate((mail.as_bytes(), other.as_bytes()), start=1):
+            await service.ingest_mail(
+                db,
+                company_id=company_id,
+                place=service.FolderPlace(
+                    mailbox="ops@acme.example", folder="INBOX", uidvalidity=1, sent=False
+                ),
+                fetched=FetchedMail(uid=uid, raw=raw, internaldate=None),
+                own_addresses={"ops@acme.example"},
+            )
+        await db.commit()
+
+    async def subjects(q: str) -> list[str]:
+        page = (await client.get("/messages", params={"q": q})).json()
+        return [row["subject"] for row in page["items"]]
+
+    # Any case, Turkish letters or not, words in any order and typed in part.
+    assert await subjects("FATURA agustos") == ["Ağustos faturası"]
+    assert await subjects("odeme fatu") == ["Ağustos faturası"]
+    # A number is found with its spaces and punctuation ignored, in the text or a file's name.
+    assert await subjects("34abc12") == ["Ağustos faturası"]
+    assert await subjects("cmr-34ABC12.pdf") == ["Ağustos faturası"]
+    # A word matches from a word's start: `yatırım` holds `tır` but is no truck.
+    assert await subjects("tır") == ["Başka iş"]
+    assert await subjects('"ayşe kaya"') == ["Ağustos faturası"]
+    assert await subjects('"kaya ayşe"') == []
+    # The body's own images are not files beside it; their names would match every mail.
+    assert await subjects("image001") == []
+
+
 async def test_an_html_mail_shows_its_logo_in_the_body_not_as_a_file(
     client: httpx.AsyncClient, storage_bucket: None
 ) -> None:

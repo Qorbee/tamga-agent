@@ -27,6 +27,11 @@ const HEADER =
   /^(?:(?:From|Kimden|Gönderen|Von|De)\s*:.{0,400}?(?:Sent|Date|Gönderildi|Gönderilme Tarihi|Tarih|Gesendet|Envoyé)\s*:|-{2,}\s*(?:Original Message|Özgün İleti|Orijinal Mesaj|Orijinal İleti)|On\s.{0,300}?\swrote:)/i;
 const HEADER_START = /^\s*(?:From|Kimden|Gönderen|Von|De|-{2,}|On)\b/i;
 
+// A picture the frame will not load, drawn as a box in its place (`frameDocument` styles it).
+export const HELD_IMAGE = "data-held-image";
+// Smaller than this and without alt text, an image is a tracking pixel or a spacer: it only goes.
+const SEEN = 16;
+
 // A forward is the mail the sender wants read, not history to fold.
 const FORWARD = /^\s*(?:-{2,}\s*(?:Forwarded message|İletilen ileti|Iletilen ileti)|Begin forwarded message)/i;
 
@@ -39,11 +44,7 @@ export function splitQuotedHtml(html: string, images: Record<string, string>, fo
     if (url) image.setAttribute("src", url);
     else image.removeAttribute("src");
   }
-  // An image left without a source (from the web, or a file that is no image) shows its alt text;
-  // one without alt text, a tracking pixel most often, would only leave a gap.
-  for (const image of doc.querySelectorAll("img:not([src])")) {
-    if (!image.getAttribute("alt")?.trim()) image.remove();
-  }
+  for (const image of doc.querySelectorAll("img:not([src])")) holdImage(image);
   // Both halves keep the mail's stylesheet: it lays out the quote as much as the reply.
   const styles = [...doc.querySelectorAll("style")].map((style) => {
     style.remove();
@@ -60,9 +61,43 @@ export function splitQuotedHtml(html: string, images: Record<string, string>, fo
   holder.append(range.extractContents());
   trimEnd(doc.body);
 
-  const ownIsEmpty = !doc.body.textContent?.trim() && !doc.body.querySelector("img");
+  const ownIsEmpty = !doc.body.textContent?.trim() && !doc.body.querySelector(`img, [${HELD_IMAGE}]`);
   if (ownIsEmpty || FORWARD.test(holder.textContent ?? "")) return { own: whole, quoted: null };
   return { own: styles.join("") + doc.body.innerHTML, quoted: styles.join("") + holder.innerHTML };
+}
+
+/**
+ * An image left without a source (a picture on the web, which is never fetched, or a file that is no
+ * image) as mail clients show a blocked picture: a box of its size holding its alt text, instead of
+ * the browser's broken-image icon. Without alt text and too small to see, it goes.
+ */
+function holdImage(image: Element): void {
+  const alt = image.getAttribute("alt")?.trim() ?? "";
+  const width = pixels(image, "width");
+  const height = pixels(image, "height");
+  if (!alt && !(width >= SEEN && height >= SEEN)) {
+    image.remove();
+    return;
+  }
+  const box = image.ownerDocument.createElement("span");
+  box.setAttribute(HELD_IMAGE, "");
+  box.textContent = alt;
+  if (width) box.style.width = `${width}px`;
+  if (height) box.style.height = `${height}px`;
+  image.replaceWith(box);
+}
+
+/**
+ * A size the mail gave an image in pixels, by inline style or attribute; 0 when it gave none. A
+ * responsive newsletter image styles `width:100%;height:auto` over `width="600"`: the attribute
+ * still says how big it is.
+ */
+function pixels(image: Element, side: "width" | "height"): number {
+  for (const given of [(image as HTMLElement).style?.[side], image.getAttribute(side)]) {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/.exec(given ?? "");
+    if (match) return Math.round(Number(match[1]));
+  }
+  return 0;
 }
 
 function findMarker(body: HTMLElement): Element | null {
@@ -101,8 +136,8 @@ function trimEnd(body: HTMLElement): void {
         ? !last.textContent?.trim()
         : last instanceof Element &&
           !last.textContent?.trim() &&
-          !last.matches("img, table") &&
-          !last.querySelector("img, table");
+          !last.matches(`img, table, [${HELD_IMAGE}]`) &&
+          !last.querySelector(`img, table, [${HELD_IMAGE}]`);
     if (!empty) return;
     last.remove();
   }

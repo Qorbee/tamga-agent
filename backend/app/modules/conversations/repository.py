@@ -3,7 +3,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, ScalarSelect, Text, cast, func, or_, select, tuple_, update
+from sqlalchemy import (
+    ColumnElement,
+    ScalarSelect,
+    Text,
+    and_,
+    cast,
+    func,
+    select,
+    true,
+    tuple_,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +26,7 @@ from app.modules.conversations.models import (
     MessageAttachment,
     MessageLocation,
 )
+from app.platform import search
 from app.platform.pagination import PageParams, escape_like
 
 
@@ -239,13 +251,16 @@ async def list_messages(
 
 
 def _matches(q: str) -> ColumnElement[bool]:
-    pattern = f"%{escape_like(q)}%"
-    return or_(
-        Message.subject.ilike(pattern, escape="\\"),
-        Message.sender.ilike(pattern, escape="\\"),
-        Message.sender_name.ilike(pattern, escape="\\"),
-        Message.body_text.ilike(pattern, escape="\\"),
-    )
+    """Every term of the query found in the mail, both folded alike (`platform/search.py`); a
+    query with no letters or digits matches every mail."""
+    return and_(true(), *(_found(term) for term in search.terms(q)))
+
+
+def _found(term: search.Term) -> ColumnElement[bool]:
+    if term.anywhere:
+        return Message.search_compact.like(f"%{escape_like(term.compact)}%", escape="\\")
+    # The stored text puts a space before every word, so this matches from a word's start.
+    return Message.search_text.like(f"% {escape_like(term.words)}%", escape="\\")
 
 
 @dataclass(frozen=True, slots=True)

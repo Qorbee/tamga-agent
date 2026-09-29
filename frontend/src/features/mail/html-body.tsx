@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getDocumentFile, type Message } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 
-import { splitQuotedHtml } from "./quoted-html";
+import { HELD_IMAGE, splitQuotedHtml } from "./quoted-html";
 
 // The frame loads nothing but images the app already holds: a URL left in the mail's own CSS, or
 // anything the sanitizer missed, is refused by the browser.
@@ -16,7 +16,12 @@ const FRAME_POLICY = "default-src 'none'; img-src data: blob:; style-src 'unsafe
 const FRAME_STYLE =
   ":root{color-scheme:light}html,body{height:auto!important}html{overflow-x:auto}" +
   "body{margin:0;padding:16px;background:Canvas;color:CanvasText;font:15px/1.5 system-ui,sans-serif;overflow-wrap:break-word}" +
-  "img{max-width:100%;height:auto}";
+  "img{max-width:100%;height:auto}" +
+  // A picture the frame will not load: a quiet box of its size, holding its alt text.
+  `[${HELD_IMAGE}]{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;` +
+  "max-width:100%;min-height:24px;padding:4px 8px;overflow:hidden;vertical-align:middle;text-align:center;" +
+  "border:1px dashed color-mix(in srgb,CanvasText 25%,Canvas);border-radius:4px;" +
+  "background:color-mix(in srgb,CanvasText 4%,Canvas);color:GrayText;font:12px/1.4 system-ui,sans-serif}";
 
 function frameDocument(body: string): string {
   return (

@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from sqlalchemy import (
     BigInteger,
+    Computed,
     ForeignKey,
     Index,
     LargeBinary,
@@ -47,6 +48,19 @@ class Message(CompanyScoped, Base):
         Index("ix_messages_company_id_thread_key", "company_id", "thread_key"),
         # A reply finds its parent's thread by the parent's Message-ID.
         Index("ix_messages_company_id_rfc_message_id", "company_id", "rfc_message_id"),
+        # Search matches typed terms inside these (LIKE '%…%'), which trigrams serve.
+        Index(
+            "ix_messages_search_text",
+            "search_text",
+            postgresql_using="gin",
+            postgresql_ops={"search_text": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_messages_search_compact",
+            "search_compact",
+            postgresql_using="gin",
+            postgresql_ops={"search_compact": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -69,6 +83,13 @@ class Message(CompanyScoped, Base):
     recipients: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     subject: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str] = mapped_column(Text, default="")
+    # What a search looks in, folded (`platform/search.py`): subject, sender, recipients, the names
+    # of the files beside the text, and the text. Words are matched from their start in it, and a
+    # term with a digit (a plate, a number) anywhere in its copy without spaces.
+    search_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    search_compact: Mapped[str] = mapped_column(
+        Text, Computed("replace(search_text, ' ', '')", persisted=True)
+    )
     # The message's own time (its Date header, else the server's arrival time), which the replay
     # orders by; received_at is when Tamga stored it.
     sent_at: Mapped[datetime] = mapped_column(index=True)

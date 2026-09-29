@@ -32,7 +32,7 @@ from app.modules.conversations.schemas import (
     ThreadSummary,
 )
 from app.modules.documents import service as documents
-from app.platform import storage
+from app.platform import search, storage
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -228,6 +228,7 @@ async def _store_new_mail(
         recipients=parsed.recipients,
         subject=parsed.subject,
         body_text=parsed.body_text,
+        search_text=_search_text(parsed),
         sent_at=parsed.sent_at or fetched.internaldate or utcnow(),
     )
     message = await repository.insert_message_unless_stored(db, candidate)
@@ -258,6 +259,19 @@ async def _store_new_mail(
     return message
 
 
+def _search_text(parsed: ParsedMail) -> str:
+    """What a search finds the mail by. Files the body shows (a logo, `image001.png`) are left out:
+    their names would match every mail from the sender."""
+    return search.search_text(
+        parsed.subject,
+        parsed.sender_name,
+        parsed.sender,
+        *parsed.recipients,
+        *(file.filename for file in parsed.attachments if not file.inline),
+        parsed.body_text,
+    )
+
+
 async def _thread_key(
     db: AsyncSession, company_id: uuid.UUID, parsed: ParsedMail, content_hash: bytes
 ) -> str:
@@ -277,7 +291,8 @@ async def reread_stored_mail(
     db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int = 200
 ) -> uuid.UUID | None:
     """Reads one batch of stored originals again, to fill what the parser learned to keep after
-    they were stored: the sender's name, and which files the body shows inline. Returns the last
+    they were stored: the sender's name, which files the body shows inline, and the text a search
+    looks in. Returns the last
     message read, to pass as ``after`` for the next batch; None when every mail has been read. The
     caller commits."""
     batch = await repository.mail_after(db, company_id, after=after, limit=limit)
@@ -290,6 +305,7 @@ async def reread_stored_mail(
             logger.warning("stored mail %s could not be parsed again", message.id)
             continue
         message.sender_name = parsed.sender_name
+        message.search_text = _search_text(parsed)
         await _mark_inline(db, company_id, message.id, parsed)
     return batch[-1].id if batch else None
 
