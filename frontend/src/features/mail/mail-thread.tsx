@@ -9,9 +9,9 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
@@ -298,8 +298,8 @@ function Attachments({ files }: { files: Attachment[] }) {
         <ul className="flex flex-wrap gap-2">
           {others.map((file) => (
             <li key={file.document_id} className="max-w-full">
-              <Link
-                href={`/app/documents/${file.document_id}`}
+              <CanvasLink
+                view={{ kind: "document", id: file.document_id }}
                 className="border-border hover:bg-accent/50 flex max-w-full items-center gap-2 rounded-xl border px-3 py-2"
               >
                 <HugeiconsIcon icon={fileIcon(file.preview)} strokeWidth={1.75} className="text-muted-foreground size-4 shrink-0" />
@@ -307,7 +307,7 @@ function Attachments({ files }: { files: Attachment[] }) {
                 <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                   {formatBytes(file.size, locale)}
                 </span>
-              </Link>
+              </CanvasLink>
             </li>
           ))}
         </ul>
@@ -325,8 +325,8 @@ function PhotoTile({ file }: { file: Attachment }) {
   // A file the backend would not vouch for as an image arrives as a download, never drawn.
   const url = useObjectUrl(bytes.data?.type.startsWith("image/") ? bytes.data : undefined);
   return (
-    <Link
-      href={`/app/documents/${file.document_id}`}
+    <CanvasLink
+      view={{ kind: "document", id: file.document_id }}
       title={file.filename}
       className="border-border bg-muted hover:ring-ring/40 grid size-24 place-items-center overflow-hidden rounded-xl border hover:ring-2"
     >
@@ -337,7 +337,7 @@ function PhotoTile({ file }: { file: Attachment }) {
       ) : (
         <HugeiconsIcon icon={fileIcon(file.preview)} strokeWidth={1.75} className="text-muted-foreground size-5" />
       )}
-    </Link>
+    </CanvasLink>
   );
 }
 

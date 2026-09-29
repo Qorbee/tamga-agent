@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 import { AppSidebar } from "./app-sidebar";
-import { CanvasFrame } from "./canvas";
 import { SearchDialog } from "./search-dialog";
 import { SettingsDialog } from "./settings-dialog";
 import { ShellActionsContext } from "./shell-actions";
@@ -13,18 +12,16 @@ import { ShellActionsContext } from "./shell-actions";
 /**
  * The owner app's frame: sidebar, the page, and the canvas, plus the two dialogs any part of it
  * opens (Search, Settings). The sizes come from the layout, which reads them from cookies, so the
- * first render already has the owner's widths.
+ * first render already has the owner's widths. `canvas` is the canvas, sized by the layout too.
  */
 export function AppShell({
   sidebarOpen,
   sidebarWidth,
-  canvasWidth,
   canvas,
   children,
 }: {
   sidebarOpen: boolean;
   sidebarWidth: number;
-  canvasWidth: number;
   canvas: ReactNode;
   children: ReactNode;
 }) {
@@ -68,7 +65,7 @@ export function AppShell({
       >
         <AppSidebar width={width} onWidthChange={setWidth} />
         <SidebarInset className="min-w-0 overflow-y-auto">{children}</SidebarInset>
-        <CanvasFrame initialWidth={canvasWidth}>{canvas}</CanvasFrame>
+        {canvas}
       </SidebarProvider>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

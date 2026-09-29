@@ -3,10 +3,9 @@
 import { Attachment01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useDeferredValue, useState } from "react";
 
+import { CanvasLink } from "@/components/canvas-link";
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +21,7 @@ import {
   type Project,
   type ProjectLink,
 } from "@/lib/api";
+import type { CanvasView } from "@/lib/canvas-view";
 import { formatListDate } from "@/lib/format";
 import { conversationName, ownSnippet } from "@/lib/mail-text";
 import { useI18n } from "@/lib/i18n/client";
@@ -29,10 +29,10 @@ import { useI18n } from "@/lib/i18n/client";
 /** Projects an item can still be placed in. */
 const OPEN = ["draft", "proposed", "active"] as const;
 
-/** Where a linked item opens, in the canvas. */
-const ITEM_PAGES: Partial<Record<ProjectLink["item_kind"], string>> = {
-  message: "/app/mail",
-  document: "/app/documents",
+/** What a linked item opens as in the canvas. */
+const ITEM_VIEWS: Partial<Record<ProjectLink["item_kind"], CanvasView["kind"]>> = {
+  message: "mail",
+  document: "document",
 };
 
 /**
@@ -94,10 +94,13 @@ function SuggestedLinks({ projects }: { projects: Map<string, Project> }) {
               <li key={link.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">
-                    {ITEM_PAGES[link.item_kind] ? (
-                      <Link href={`${ITEM_PAGES[link.item_kind]}/${link.item_id}`} className="underline-offset-4 hover:underline">
+                    {ITEM_VIEWS[link.item_kind] ? (
+                      <CanvasLink
+                        view={{ kind: ITEM_VIEWS[link.item_kind]!, id: link.item_id }}
+                        className="underline-offset-4 hover:underline"
+                      >
                         {t.inbox.kinds[link.item_kind]}
-                      </Link>
+                      </CanvasLink>
                     ) : (
                       t.inbox.kinds[link.item_kind]
                     )}{" "}
@@ -194,7 +197,6 @@ function display(value: unknown): string {
 
 function Mail() {
   const { t, locale } = useI18n();
-  const pathname = usePathname();
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
   const [limit, setLimit] = useState(30);
@@ -231,14 +233,12 @@ function Mail() {
         <>
           <ul className="divide-border border-border divide-y overflow-hidden rounded-2xl border">
             {threads.data.items.map((thread) => {
-              const href = `/app/mail/${thread.latest.id}`;
               const who = thread.participants.slice(0, 3).join(", ") || thread.latest.sender || "—";
               return (
                 <li key={thread.thread_key}>
-                  <Link
-                    href={href}
-                    aria-current={pathname === href ? "page" : undefined}
-                    className="hover:bg-accent/40 aria-[current=page]:bg-secondary flex items-start gap-3 px-4 py-3"
+                  <CanvasLink
+                    view={{ kind: "mail", id: thread.latest.id }}
+                    className="hover:bg-accent/40 aria-[current=true]:bg-secondary flex items-start gap-3 px-4 py-3"
                   >
                     <PersonAvatar name={thread.participants[0] ?? who} className="mt-0.5" />
                     <span className="min-w-0 flex-1">
@@ -273,7 +273,7 @@ function Mail() {
                         {ownSnippet(thread.latest.snippet)}
                       </span>
                     </span>
-                  </Link>
+                  </CanvasLink>
                 </li>
               );
             })}

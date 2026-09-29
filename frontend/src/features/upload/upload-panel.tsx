@@ -3,9 +3,9 @@
 import { CloudUploadIcon, Download01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useRef, useState, type DragEvent, type FormEvent } from "react";
 
+import { CanvasLink } from "@/components/canvas-link";
 import { Field } from "@/components/field";
 import { fileIcon } from "@/components/file-icon";
 import { Button } from "@/components/ui/button";
@@ -189,12 +189,12 @@ function DocumentRow({ document, types }: { document: Document; types: DocumentT
     <li className="flex flex-wrap items-center gap-3 px-4 py-3">
       <HugeiconsIcon icon={fileIcon(document.preview)} strokeWidth={1.75} className="text-muted-foreground size-4" />
       <div className="min-w-0 flex-1">
-        <Link
-          href={`/app/documents/${document.id}`}
+        <CanvasLink
+          view={{ kind: "document", id: document.id }}
           className="block truncate text-sm underline-offset-4 hover:underline"
         >
           {document.filename}
-        </Link>
+        </CanvasLink>
         <p className="text-muted-foreground text-xs tabular-nums">
           {formatDate(new Date(document.created_at), locale, "dateTime")} ·{" "}
           {kilobytes(document.size, locale)}
