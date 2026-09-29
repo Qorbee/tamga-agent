@@ -1,7 +1,8 @@
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 from app.modules.documents import service
 from app.modules.documents.schemas import (
@@ -10,6 +11,7 @@ from app.modules.documents.schemas import (
     DocumentPage,
     DocumentTypeOut,
     DocumentUpdate,
+    SheetOut,
     UploadOut,
 )
 from app.modules.identity.deps import ActorDep
@@ -66,6 +68,38 @@ async def list_documents(
 @documents.get("/documents/{document_id}")
 async def get_document(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> DocumentDetail:
     return await service.get_document(db, actor, document_id)
+
+
+@documents.get(
+    "/documents/{document_id}/content",
+    response_class=Response,
+    responses={200: {"content": {"application/octet-stream": {}}, "description": "The file"}},
+)
+async def get_document_content(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> Response:
+    """The file itself, for the web app to draw: inline only as a verified image or PDF."""
+    file = await service.get_content(db, actor, document_id)
+    disposition = "inline" if file.inline else "attachment"
+    name = quote(file.filename, safe="")
+    return Response(
+        content=file.data,
+        media_type=file.media_type,
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{name}",
+            "X-Content-Type-Options": "nosniff",
+            # Opened in a tab, a file from outside still never runs as a page on the API's origin.
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            # A company's file never stays in a shared browser for the next person who signs in.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@documents.get("/documents/{document_id}/sheets")
+async def get_document_sheets(
+    document_id: uuid.UUID, actor: ActorDep, db: SessionDep
+) -> list[SheetOut]:
+    """A spreadsheet's cells as text, capped at a thousand rows and fifty columns a sheet."""
+    return await service.get_sheets(db, actor, document_id)
 
 
 @documents.patch("/documents/{document_id}")

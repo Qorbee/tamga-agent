@@ -21,7 +21,7 @@ export class ApiError extends Error {
 type ErrorBody = { error?: { code: string; message: string; field?: string } };
 
 /** The only function that calls `fetch`; it speaks the backend's error envelope. */
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function send(path: string, init?: RequestInit): Promise<Response> {
   // The base URL is concatenated rather than resolved with `new URL(path, base)`, which would drop
   // a path prefix on the base (`https://host/api` + `/health` → `https://host/health`).
   const response = await fetch(`${env.apiUrl}${path}`, {
@@ -39,7 +39,17 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body?.error?.field,
     );
   }
+  return response;
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await send(path, init);
   return (response.status === 204 ? undefined : await response.json()) as T;
+}
+
+/** A file's bytes, for a viewer to draw. */
+async function requestBlob(path: string): Promise<Blob> {
+  return (await send(path)).blob();
 }
 
 // One typed function per operation. The type is an alias, never a restated interface.
@@ -115,9 +125,18 @@ export const decideProposal = (id: string, status: Schemas["ProposalDecision"]["
 export type MessageSummary = Schemas["MessageSummary"];
 export type MessagePage = Schemas["MessagePage"];
 export type Message = Schemas["MessageOut"];
-export const listMessages = (params: { q?: string; limit?: number; offset?: number }) =>
+export type Attachment = Schemas["AttachmentOut"];
+export const listMessages = (params: { q?: string; thread_key?: string; limit?: number; offset?: number }) =>
   request<MessagePage>(`/messages${query({ ...params, limit: params.limit ?? 30 })}`);
 export const getMessage = (id: string) => request<Message>(`/messages/${id}`);
+/** The original mail (.eml). A link, not a fetch: the browser downloads it with the session cookie. */
+export const rawMessageUrl = (id: string) => `${env.apiUrl}/messages/${id}/raw`;
+
+// Conversations: mails sharing a thread key.
+export type ThreadSummary = Schemas["ThreadSummary"];
+export type ThreadPage = Schemas["ThreadPage"];
+export const listThreads = (params: { q?: string; limit?: number; offset?: number }) =>
+  request<ThreadPage>(`/threads${query({ ...params, limit: params.limit ?? 30 })}`);
 
 // Documents
 export type Document = Schemas["DocumentOut"];
@@ -127,7 +146,12 @@ export type DocumentType = Schemas["DocumentTypeOut"];
 export type Upload = Schemas["UploadOut"];
 export const listDocuments = (params: { q?: string; limit?: number }) =>
   request<DocumentPage>(`/documents${query({ ...params, limit: params.limit ?? 50 })}`);
+export type Preview = NonNullable<Document["preview"]>;
+export type Sheet = Schemas["SheetOut"];
 export const getDocument = (id: string) => request<DocumentDetail>(`/documents/${id}`);
+/** Drawable only as a verified image or PDF; anything else arrives as a download. */
+export const getDocumentFile = (id: string) => requestBlob(`/documents/${id}/content`);
+export const getDocumentSheets = (id: string) => request<Sheet[]>(`/documents/${id}/sheets`);
 export const listDocumentTypes = () => request<DocumentType[]>("/document-types");
 export const setDocumentType = (id: string, docType: string | null) =>
   request<Document>(`/documents/${id}`, json("PATCH", { doc_type: docType }));

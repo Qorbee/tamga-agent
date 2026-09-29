@@ -38,3 +38,8 @@ strictDepBuilds: true
 allowBuilds:
   sharp: false
   unrs-resolver: false
+
+# pdfjs-dist renders in the browser; its optional @napi-rs/canvas (a native binary) only serves Node,
+# where Tamga never renders a PDF.
+ignoredOptionalDependencies:
+  - "@napi-rs/canvas"

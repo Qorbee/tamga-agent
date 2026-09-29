@@ -48,22 +48,34 @@ export function CanvasFrame({ initialWidth, children }: { initialWidth: number; 
 }
 
 /**
- * A record open in the canvas: its title, a close button and the record, which scrolls on its own.
- * A canvas route (an intercepting route under `@canvas`) renders one; closing goes back to the page
- * the owner opened it from.
+ * A record open in the canvas: its title, its actions (a download), a close button and the record,
+ * which scrolls on its own. A canvas route (an intercepting route under `@canvas`) renders one;
+ * closing goes back to the page the owner opened it from. `title` can load with the record, so the
+ * panel is named by `label` until it has.
  */
-export function CanvasPanel({ title, children }: { title: string; children: ReactNode }) {
+export function CanvasPanel({
+  label,
+  title,
+  actions,
+  children,
+}: {
+  label: string;
+  title?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   const { t } = useI18n();
   const router = useRouter();
 
   return (
     <section
       data-slot="canvas-panel"
-      aria-label={title}
+      aria-label={label}
       className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]"
     >
-      <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b ps-4 pe-2">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{title}</h2>
+      <header className="border-border flex h-12 shrink-0 items-center gap-1 border-b ps-4 pe-2">
+        <h2 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-medium">{title ?? label}</h2>
+        {actions}
         <Button variant="ghost" size="icon-sm" onClick={() => router.back()}>
           <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} />
           <span className="sr-only">{t.shell.closeCanvas}</span>

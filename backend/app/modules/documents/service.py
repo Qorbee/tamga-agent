@@ -1,24 +1,27 @@
 """Documents: files stored once per company by content (ADR-0001 storage, private), what kind of
 document each is (the registry), and the files people upload by hand."""
 
+import asyncio
 import hashlib
 import uuid
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.documents import registry, repository
+from app.modules.documents import registry, repository, sheets
 from app.modules.documents.models import Document, Upload
 from app.modules.documents.schemas import (
     DocumentDetail,
     DocumentOut,
     DocumentPage,
     DocumentTypeOut,
+    SheetOut,
     UploadOut,
 )
-from app.platform import storage
+from app.platform import filetypes, storage
 from app.platform.auth import Actor, Role
 from app.platform.errors import BadRequest, NotFound, PayloadTooLarge
 from app.platform.pagination import PageParams
@@ -130,6 +133,47 @@ async def get_document(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -
     )
 
 
+@dataclass(frozen=True, slots=True)
+class FileContent:
+    data: bytes
+    filename: str
+    # The verified type when the browser may show the file itself; else application/octet-stream.
+    media_type: str
+    inline: bool
+
+
+async def get_content(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> FileContent:
+    """The file's bytes, for the web app to draw. An image or a PDF whose first bytes prove it is
+    shown; anything else is only ever a download (filetypes)."""
+    document = await _document(db, actor.company_id, document_id)
+    data = await storage.get(document.storage_key)
+    shown_as = filetypes.inline_type(document.content_type, document.filename, data)
+    return FileContent(
+        data=data,
+        filename=document.filename,
+        media_type=shown_as or "application/octet-stream",
+        inline=shown_as is not None,
+    )
+
+
+async def get_sheets(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> list[SheetOut]:
+    document = await _document(db, actor.company_id, document_id)
+    media = filetypes.media_type(document.content_type, document.filename)
+    if media is None or media not in filetypes.SHEETS:
+        raise BadRequest("The document is not a spreadsheet")
+    data = await storage.get(document.storage_key)
+    try:
+        read = await asyncio.to_thread(sheets.read_sheets, data, media)
+    except sheets.Unreadable as error:
+        raise BadRequest(str(error)) from error
+    return [SheetOut(name=sheet.name, rows=sheet.rows, truncated=sheet.truncated) for sheet in read]
+
+
+def preview_of(content_type: str, filename: str) -> filetypes.Preview | None:
+    """How the web app shows a file under this name, for a module listing its own attachments."""
+    return filetypes.preview(content_type, filename)
+
+
 async def set_type(
     db: AsyncSession, actor: Actor, document_id: uuid.UUID, doc_type: str | None
 ) -> DocumentOut:
@@ -194,4 +238,5 @@ def _out(document: Document) -> DocumentOut:
         doc_type=document.doc_type,
         sha256=document.sha256.hex(),
         created_at=document.created_at,
+        preview=filetypes.preview(document.content_type, document.filename),
     )

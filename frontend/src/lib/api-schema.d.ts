@@ -57,6 +57,46 @@ export interface paths {
         patch: operations["documents.update_document"];
         trace?: never;
     };
+    "/documents/{document_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Content
+         * @description The file itself, for the web app to draw: inline only as a verified image or PDF.
+         */
+        get: operations["documents.get_document_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{document_id}/sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Sheets
+         * @description A spreadsheet's cells as text, capped at a thousand rows and fifty columns a sheet.
+         */
+        get: operations["documents.get_document_sheets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/field-proposals": {
         parameters: {
             query?: never;
@@ -236,6 +276,26 @@ export interface paths {
         };
         /** Get Message */
         get: operations["messages.get_message"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{message_id}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Message Raw
+         * @description The mail as its server gave it (.eml), headers and every part, for a mail client.
+         */
+        get: operations["messages.get_message_raw"];
         put?: never;
         post?: never;
         delete?: never;
@@ -490,6 +550,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Threads
+         * @description Conversations, the most recently active first; ``q`` matches any of their mails.
+         */
+        get: operations["threads.list_threads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -505,6 +585,7 @@ export interface components {
             document_id: string;
             /** Filename */
             filename: string;
+            preview: components["schemas"]["Preview"] | null;
             /** Size */
             size: number;
         };
@@ -571,6 +652,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            preview: components["schemas"]["Preview"] | null;
             /** Sha256 */
             sha256: string;
             /** Size */
@@ -594,6 +676,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            preview: components["schemas"]["Preview"] | null;
             /** Sha256 */
             sha256: string;
             /** Size */
@@ -979,6 +1062,8 @@ export interface components {
             rfc_message_id: string | null;
             /** Sender */
             sender: string | null;
+            /** Sender Name */
+            sender_name: string | null;
             /**
              * Sent At
              * Format: date-time
@@ -988,6 +1073,8 @@ export interface components {
             snippet: string;
             /** Subject */
             subject: string | null;
+            /** Thread Key */
+            thread_key: string;
         };
         /** MessagePage */
         MessagePage: {
@@ -1013,8 +1100,12 @@ export interface components {
             id: string;
             /** Recipients */
             recipients: string[];
+            /** Rfc Message Id */
+            rfc_message_id: string | null;
             /** Sender */
             sender: string | null;
+            /** Sender Name */
+            sender_name: string | null;
             /**
              * Sent At
              * Format: date-time
@@ -1024,6 +1115,8 @@ export interface components {
             snippet: string;
             /** Subject */
             subject: string | null;
+            /** Thread Key */
+            thread_key: string;
         };
         /** NumberingOut */
         NumberingOut: {
@@ -1039,6 +1132,12 @@ export interface components {
             /** Next Seq */
             next_seq?: number | null;
         };
+        /**
+         * Preview
+         * @description How the web app shows a file; a file with none is only downloaded.
+         * @enum {string}
+         */
+        Preview: "image" | "pdf" | "sheet";
         /** ProjectCreate */
         ProjectCreate: {
             /** Name */
@@ -1237,6 +1336,15 @@ export interface components {
          * @enum {string}
          */
         Role: "owner" | "ops" | "viewer";
+        /** SheetOut */
+        SheetOut: {
+            /** Name */
+            name: string;
+            /** Rows */
+            rows: (string | null)[][];
+            /** Truncated */
+            truncated: boolean;
+        };
         /** ShipmentCreate */
         ShipmentCreate: {
             /** Delivery Date */
@@ -1339,6 +1447,44 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /** ThreadPage */
+        ThreadPage: {
+            /** Items */
+            items: components["schemas"]["ThreadSummary"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ThreadSummary
+         * @description A conversation: every mail sharing a thread key, a copy in another mailbox counted once.
+         */
+        ThreadSummary: {
+            /** Attachment Count */
+            attachment_count: number;
+            /**
+             * First Sent At
+             * Format: date-time
+             */
+            first_sent_at: string;
+            /**
+             * Last Sent At
+             * Format: date-time
+             */
+            last_sent_at: string;
+            latest: components["schemas"]["MessageSummary"];
+            /** Message Count */
+            message_count: number;
+            /** Participants */
+            participants: string[];
+            /** Subject */
+            subject: string | null;
+            /** Thread Key */
+            thread_key: string;
         };
         /** UploadOut */
         UploadOut: {
@@ -1541,6 +1687,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "documents.get_document_content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "documents.get_document_sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetOut"][];
                 };
             };
             /** @description Validation Error */
@@ -1833,6 +2041,7 @@ export interface operations {
                 q?: string | null;
                 direction?: components["schemas"]["Direction"] | null;
                 channel?: components["schemas"]["Channel"] | null;
+                thread_key?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -1880,6 +2089,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "messages.get_message_raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The original mail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "message/rfc822": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2568,6 +2808,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "threads.list_threads": {
+        parameters: {
+            query?: {
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPage"];
                 };
             };
             /** @description Validation Error */

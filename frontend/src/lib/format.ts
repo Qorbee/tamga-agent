@@ -39,3 +39,29 @@ export function formatDate(
     ...(style === "dateTime" ? { hour: "2-digit", minute: "2-digit" } : {}),
   }).format(date);
 }
+
+/** A list row's time: the hour today, the day this year, the full date before. */
+export function formatListDate(date: Date, locale: Locale, now: Date = new Date()): string {
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const sameDay = sameYear && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  return new Intl.DateTimeFormat(
+    intlLocale[locale],
+    sameDay
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) },
+  ).format(date);
+}
+
+/** A file's size in decimal units, as file managers show it. */
+export function formatBytes(bytes: number, locale: Locale): string {
+  const units = ["B", "kB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  const digits = unit > 0 && value < 10 ? 1 : 0;
+  const figure = new Intl.NumberFormat(intlLocale[locale], { maximumFractionDigits: digits }).format(value);
+  return `${figure} ${units[unit]}`;
+}

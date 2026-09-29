@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.platform.filetypes import Preview
+
 
 class DocumentOut(BaseModel):
     id: uuid.UUID
@@ -13,11 +15,21 @@ class DocumentOut(BaseModel):
     doc_type: str | None
     sha256: str
     created_at: datetime
+    # How the web app can show it (GET /documents/{id}/content or /sheets); null: download only.
+    preview: Preview | None
 
 
 class DocumentDetail(DocumentOut):
     # A short-lived link that downloads the file under its name.
     download_url: str
+
+
+class SheetOut(BaseModel):
+    name: str
+    # Each cell as the text a person reads, null when empty; rows are not padded to one length.
+    rows: list[list[str | None]]
+    # The sheet has more rows or columns than are shown.
+    truncated: bool
 
 
 class DocumentPage(BaseModel):

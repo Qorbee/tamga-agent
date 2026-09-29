@@ -77,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.links)
     app.include_router(projects.proposals)
     app.include_router(conversations.messages)
+    app.include_router(conversations.threads)
     app.include_router(documents.documents)
     app.include_router(books.invoices)
     # Packs' routers: the core never imports a pack, the app factory does.

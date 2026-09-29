@@ -40,4 +40,5 @@ async def test_the_inbox_lists_mail_newest_first_with_its_files(
     assert row["subject"] == "CMR 34 ABC 12" and row["attachment_count"] == 1
     assert row["snippet"].startswith("Ekte CMR var.")
     assert detail["attachments"][0]["filename"] == "cmr.pdf"
+    assert detail["attachments"][0]["preview"] == "pdf"
     assert (await client.get("/messages", params={"q": "100%_"})).json()["total"] == 0

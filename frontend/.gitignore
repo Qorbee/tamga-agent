@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# pdf.js's run-time files, copied from node_modules by scripts/copy-pdfjs-assets.mjs
+/public/pdfjs/
+
 # production
 /build
 

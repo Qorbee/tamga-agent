@@ -11,7 +11,7 @@ import imaplib
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,13 +21,15 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.conversations import repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
-from app.modules.conversations.mail import UNREADABLE, parse_mail
+from app.modules.conversations.mail import UNREADABLE, ParsedMail, parse_mail
 from app.modules.conversations.models import Channel, Direction, Message
 from app.modules.conversations.schemas import (
     AttachmentOut,
     MessageOut,
     MessagePage,
     MessageSummary,
+    ThreadPage,
+    ThreadSummary,
 )
 from app.modules.documents import service as documents
 from app.platform import storage
@@ -204,6 +206,11 @@ async def _store_new_mail(
         parsed = UNREADABLE
     raw_key = storage.content_key(company_id, fetched.raw)
     await storage.put(raw_key, fetched.raw, content_type="message/rfc822")
+    # Replies stored before the first mail with this Message-ID were keyed by it, for want of it.
+    # Once any mail has the ID, a later one (a copy, or another mail reusing it) moves nothing.
+    new_id = parsed.message_id
+    if new_id is not None and await repository.thread_of(db, company_id, new_id) is not None:
+        new_id = None
     candidate = Message(
         company_id=company_id,
         channel=Channel.EMAIL,
@@ -215,7 +222,9 @@ async def _store_new_mail(
         rfc_message_id=parsed.message_id,
         in_reply_to=parsed.in_reply_to,
         references=parsed.references,
+        thread_key=await _thread_key(db, company_id, parsed, content_hash),
         sender=parsed.sender,
+        sender_name=parsed.sender_name,
         recipients=parsed.recipients,
         subject=parsed.subject,
         body_text=parsed.body_text,
@@ -227,6 +236,8 @@ async def _store_new_mail(
         if existing is None:
             raise RuntimeError("message vanished between insert and select")
         return existing
+    if new_id is not None and new_id != message.thread_key:
+        await repository.move_thread(db, company_id, from_key=new_id, to_key=message.thread_key)
 
     for attachment in parsed.attachments:
         document = await documents.store_file(
@@ -246,6 +257,40 @@ async def _store_new_mail(
     return message
 
 
+async def _thread_key(
+    db: AsyncSession, company_id: uuid.UUID, parsed: ParsedMail, content_hash: bytes
+) -> str:
+    """References start with the thread's first mail, which keys itself by its own Message-ID, so a
+    reply and the mail it answers agree without either being stored first. A reply that names only
+    its parent joins the parent's thread when the parent is here, and is moved there when the
+    parent arrives later."""
+    if parsed.references:
+        return parsed.references[0]
+    if parsed.in_reply_to:
+        parent = await repository.thread_of(db, company_id, parsed.in_reply_to)
+        return parent or parsed.in_reply_to
+    return parsed.message_id or f"<{content_hash.hex()}>"
+
+
+async def fill_sender_names(
+    db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int = 200
+) -> uuid.UUID | None:
+    """Reads the sender's name from the stored originals of one batch of mail stored before the
+    parser kept it. Returns the last message read, to pass as ``after`` for the next batch; None
+    when every mail has been read. The caller commits."""
+    batch = await repository.mail_after(db, company_id, after=after, limit=limit)
+    for message in batch:
+        if message.raw_key is None:
+            continue
+        try:
+            parsed = parse_mail(await storage.get(message.raw_key))
+        except Exception:  # an unreadable original keeps what it has, as it did when stored
+            logger.warning("stored mail %s could not be parsed again", message.id)
+            continue
+        message.sender_name = parsed.sender_name
+    return batch[-1].id if batch else None
+
+
 # Reading what arrived
 
 
@@ -260,6 +305,7 @@ async def list_messages(
     q: str | None,
     direction: Direction | None,
     channel: Channel | None,
+    thread_key: str | None = None,
     page: PageParams,
 ) -> MessagePage:
     rows, total = await repository.list_messages(
@@ -268,6 +314,7 @@ async def list_messages(
         q=q.strip() if q else None,
         direction=direction,
         channel=channel,
+        thread_key=thread_key,
         page=page,
     )
     return MessagePage(
@@ -276,6 +323,59 @@ async def list_messages(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+async def list_threads(
+    db: AsyncSession, actor: Actor, *, q: str | None, page: PageParams
+) -> ThreadPage:
+    rows, total = await repository.list_threads(
+        db, actor.company_id, q=q.strip() if q else None, page=page
+    )
+    by_thread: dict[str, list[tuple[Message, int]]] = {}
+    for message, count in await repository.thread_messages(
+        db, actor.company_id, [row.thread_key for row in rows]
+    ):
+        by_thread.setdefault(message.thread_key, []).append((message, count))
+    items = []
+    for row in rows:
+        mails = by_thread[row.thread_key]
+        participants = dict.fromkeys(
+            message.sender_name or message.sender for message, _ in mails if message.sender
+        )
+        latest, latest_count = mails[-1]
+        items.append(
+            ThreadSummary(
+                thread_key=row.thread_key,
+                subject=mails[0][0].subject,
+                message_count=row.message_count,
+                attachment_count=sum(count for _, count in _once(mails)),
+                participants=[name for name in participants if name],
+                first_sent_at=row.first_sent_at,
+                last_sent_at=row.last_sent_at,
+                latest=_summary(latest, latest_count),
+            )
+        )
+    return ThreadPage(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+def _once(mails: list[tuple[Message, int]]) -> list[tuple[Message, int]]:
+    """Each mail once, however many mailboxes held a copy (the same Message-ID and Date)."""
+    seen: set[tuple[str, datetime]] = set()
+    kept = []
+    for message, count in mails:
+        key = (message.rfc_message_id or str(message.id), message.sent_at)
+        if key not in seen:
+            seen.add(key)
+            kept.append((message, count))
+    return kept
+
+
+async def get_raw(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> bytes:
+    """The mail exactly as the server gave it, for opening in a mail client."""
+    message = await repository.get_message(db, actor.company_id, message_id)
+    if message is None or message.raw_key is None:
+        raise NotFound("No such message")
+    return await storage.get(message.raw_key)
 
 
 async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> MessageOut:
@@ -289,7 +389,6 @@ async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> 
     return MessageOut(
         **_summary(message, len(attachments)).model_dump(),
         body_text=message.body_text,
-        rfc_message_id=message.rfc_message_id,
         in_reply_to=message.in_reply_to,
         attachments=[
             AttachmentOut(
@@ -297,6 +396,9 @@ async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> 
                 filename=attachment.filename,
                 content_type=files[attachment.document_id].content_type,
                 size=files[attachment.document_id].size,
+                preview=documents.preview_of(
+                    files[attachment.document_id].content_type, attachment.filename
+                ),
             )
             for attachment in attachments
         ],
@@ -308,7 +410,10 @@ def _summary(message: Message, attachment_count: int) -> MessageSummary:
         id=message.id,
         channel=message.channel,
         direction=message.direction,
+        thread_key=message.thread_key,
+        rfc_message_id=message.rfc_message_id,
         sender=message.sender,
+        sender_name=message.sender_name,
         recipients=message.recipients,
         subject=message.subject,
         snippet=" ".join(message.body_text.split())[:SNIPPET_LENGTH],

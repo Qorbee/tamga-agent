@@ -10,10 +10,12 @@ dependencies = [
     "circle-developer-controlled-wallets>=9.6.0",
     "fastapi>=0.141",
     "httpx>=0.28",
+    "openpyxl>=3.1.5",
     "procrastinate>=3.9.0",
     "pydantic-settings>=2.15",
     "sqlalchemy[asyncio]>=2.0.54",
     "uvicorn[standard]>=0.53",
+    "xlrd>=2.0.2",
 ]
 
 [dependency-groups]
@@ -24,6 +26,7 @@ dev = [
     "pytest>=9.1",
     "pytest-asyncio>=1.4",
     "ruff>=0.16",
+    "types-openpyxl>=3.1.5.20260827",
 ]
 
 [tool.uv]
@@ -49,6 +52,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "ASYNC", "S"]
 [tool.mypy]
 strict = true
 packages = ["app"]
+
+[[tool.mypy.overrides]]
+# xlrd ships no types and has no stubs; documents/sheets.py turns what it reads into typed rows.
+module = ["xlrd", "xlrd.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]

@@ -56,7 +56,7 @@ export function ProjectBoard() {
     trucks.set(shipment.project_id, (trucks.get(shipment.project_id) ?? 0) + 1);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 px-3 pb-6 md:px-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex items-center gap-2">
         <div className="relative max-w-xs flex-1">
           <HugeiconsIcon
@@ -83,7 +83,7 @@ export function ProjectBoard() {
           {t.errors.load}
         </p>
       ) : (
-        <div className="-mx-3 flex min-h-0 flex-1 snap-x scroll-px-3 gap-3 overflow-x-auto px-3 md:mx-0 md:grid md:grid-cols-4 md:px-0">
+        <div className="-mx-4 flex min-h-0 flex-1 snap-x scroll-px-4 gap-3 overflow-x-auto px-4 md:mx-0 md:grid md:grid-cols-4 md:px-0">
           {COLUMNS.map((status) => {
             const items = projects.data?.items.filter((project) => project.status === status) ?? [];
             return (

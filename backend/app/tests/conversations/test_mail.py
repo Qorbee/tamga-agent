@@ -26,7 +26,7 @@ def test_headers_and_a_turkish_body_are_read() -> None:
 
     parsed = parse_mail(message.as_bytes())
 
-    assert parsed.sender == "dispatch@carrier.example"
+    assert parsed.sender == "dispatch@carrier.example" and parsed.sender_name == "Dispeçer"
     assert parsed.recipients == ["ops@broker.example", "owner@broker.example"]
     assert parsed.subject == "34 ABC 12 Kapıkule'de"
     assert parsed.sent_at == datetime(2026, 9, 28, 6, 15, tzinfo=UTC)

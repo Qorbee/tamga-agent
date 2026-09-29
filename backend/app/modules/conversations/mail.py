@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # RFC 5321: no deliverable address is longer. A longer one is not an address.
 _MAX_ADDRESS = 254
+_MAX_NAME = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,8 @@ class ParsedMail:
     in_reply_to: str | None
     references: list[str]
     sender: str | None
+    # The name the sender's client wrote beside the address ("Ayşe Kaya"), if any.
+    sender_name: str | None
     recipients: list[str]
     subject: str | None
     body_text: str
@@ -46,6 +49,7 @@ UNREADABLE = ParsedMail(
     in_reply_to=None,
     references=[],
     sender=None,
+    sender_name=None,
     recipients=[],
     subject=None,
     body_text="",
@@ -61,6 +65,7 @@ def parse_mail(raw: bytes) -> ParsedMail:
         in_reply_to=_header(message, "In-Reply-To"),
         references=(_header(message, "References") or "").split(),
         sender=_address(message, "From"),
+        sender_name=_name(message, "From"),
         recipients=_addresses(message, "To", "Cc"),
         subject=_header(message, "Subject"),
         body_text=_text_of(body) if body is not None else "",
@@ -88,6 +93,12 @@ def _clean(text: str) -> str:
 def _address(message: Message, name: str) -> str | None:
     _, address = parseaddr(_header(message, name) or "")
     return address.lower() if 0 < len(address) <= _MAX_ADDRESS else None
+
+
+def _name(message: Message, name: str) -> str | None:
+    display, _ = parseaddr(_header(message, name) or "")
+    display = " ".join(display.split()).strip("'\" ")
+    return display[:_MAX_NAME] or None
 
 
 def _addresses(message: Message, *names: str) -> list[str]:

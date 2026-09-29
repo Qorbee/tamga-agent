@@ -1,35 +1,44 @@
 "use client";
 
-import { Mail01Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import { Attachment01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useDeferredValue, useState } from "react";
 
-import { NativeSelect } from "@/components/native-select";
+import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  createLink,
   decideProposal,
-  getMessage,
   listLinks,
-  listMessages,
   listProjects,
   listProposals,
+  listThreads,
   updateLink,
   type FieldProposal,
-  type MessageSummary,
   type Project,
   type ProjectLink,
 } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatListDate } from "@/lib/format";
+import { conversationName, ownSnippet } from "@/lib/mail-text";
 import { useI18n } from "@/lib/i18n/client";
 
 /** Projects an item can still be placed in. */
 const OPEN = ["draft", "proposed", "active"] as const;
 
-/** What needs the owner: links to confirm, changes to accept, and the mail as it arrives. */
+/** Where a linked item opens, in the canvas. */
+const ITEM_PAGES: Partial<Record<ProjectLink["item_kind"], string>> = {
+  message: "/app/mail",
+  document: "/app/documents",
+};
+
+/**
+ * What needs the owner: links to confirm and changes to accept, shown only while there are some,
+ * then the mail as conversations. A conversation opens in the canvas.
+ */
 export function Inbox() {
   const projects = useQuery({
     queryKey: ["projects", { open: true }],
@@ -38,10 +47,10 @@ export function Inbox() {
   const byId = new Map(projects.data?.items.map((project) => [project.id, project]));
 
   return (
-    <div className="grid w-full max-w-3xl gap-10 px-3 pb-10 md:px-6">
+    <div className="grid gap-10">
       <SuggestedLinks projects={byId} />
       <OpenProposals />
-      <Mail projects={projects.data?.items ?? []} />
+      <Mail />
     </div>
   );
 }
@@ -71,14 +80,12 @@ function SuggestedLinks({ projects }: { projects: Map<string, Project> }) {
     },
   });
 
+  // Shown only while something waits: an empty section is noise above the mail.
+  if (!links.isError && !links.data?.items.length) return null;
   return (
     <Section title={t.inbox.suggested}>
-      {links.isPending ? (
-        <Skeleton className="h-16 rounded-2xl" />
-      ) : links.isError ? (
+      {links.isError ? (
         <p className="text-danger-foreground text-sm">{t.errors.load}</p>
-      ) : links.data.items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{t.inbox.suggestedEmpty}</p>
       ) : (
         <ul className="divide-border border-border divide-y rounded-2xl border">
           {links.data.items.map((link) => {
@@ -87,7 +94,14 @@ function SuggestedLinks({ projects }: { projects: Map<string, Project> }) {
               <li key={link.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm">
-                    {t.inbox.kinds[link.item_kind]} →{" "}
+                    {ITEM_PAGES[link.item_kind] ? (
+                      <Link href={`${ITEM_PAGES[link.item_kind]}/${link.item_id}`} className="underline-offset-4 hover:underline">
+                        {t.inbox.kinds[link.item_kind]}
+                      </Link>
+                    ) : (
+                      t.inbox.kinds[link.item_kind]
+                    )}{" "}
+                    →{" "}
                     <span className="font-mono text-xs">{project?.number ?? "…"}</span>{" "}
                     {project?.name}
                   </p>
@@ -136,14 +150,11 @@ function OpenProposals() {
     },
   });
 
+  if (!proposals.isError && !proposals.data?.items.length) return null;
   return (
     <Section title={t.inbox.proposals}>
-      {proposals.isPending ? (
-        <Skeleton className="h-16 rounded-2xl" />
-      ) : proposals.isError ? (
+      {proposals.isError ? (
         <p className="text-danger-foreground text-sm">{t.errors.load}</p>
-      ) : proposals.data.items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{t.inbox.proposalsEmpty}</p>
       ) : (
         <ul className="divide-border border-border divide-y rounded-2xl border">
           {proposals.data.items.map((proposal) => (
@@ -181,19 +192,21 @@ function display(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
-function Mail({ projects }: { projects: Project[] }) {
-  const { t } = useI18n();
+function Mail() {
+  const { t, locale } = useI18n();
+  const pathname = usePathname();
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
   const [limit, setLimit] = useState(30);
-  const messages = useQuery({
-    queryKey: ["messages", { q, limit }],
-    queryFn: () => listMessages({ q, limit }),
+  const threads = useQuery({
+    queryKey: ["threads", { q, limit }],
+    queryFn: () => listThreads({ q, limit }),
+    placeholderData: keepPreviousData,
   });
 
   return (
     <Section title={t.inbox.mail}>
-      <div className="relative max-w-xs">
+      <div className="relative">
         <HugeiconsIcon
           icon={Search01Icon}
           strokeWidth={1.75}
@@ -208,118 +221,70 @@ function Mail({ projects }: { projects: Project[] }) {
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      {messages.isPending ? (
-        <Skeleton className="h-24 rounded-2xl" />
-      ) : messages.isError ? (
+      {threads.isPending ? (
+        <Skeleton className="h-64 rounded-2xl" />
+      ) : threads.isError ? (
         <p className="text-danger-foreground text-sm">{t.errors.load}</p>
-      ) : messages.data.items.length === 0 ? (
+      ) : threads.data.items.length === 0 ? (
         <p className="text-muted-foreground text-sm">{t.inbox.mailEmpty}</p>
       ) : (
         <>
-          <ul className="divide-border border-border divide-y rounded-2xl border">
-            {messages.data.items.map((message) => (
-              <MailRow key={message.id} message={message} projects={projects} />
-            ))}
+          <ul className="divide-border border-border divide-y overflow-hidden rounded-2xl border">
+            {threads.data.items.map((thread) => {
+              const href = `/app/mail/${thread.latest.id}`;
+              const who = thread.participants.slice(0, 3).join(", ") || thread.latest.sender || "—";
+              return (
+                <li key={thread.thread_key}>
+                  <Link
+                    href={href}
+                    aria-current={pathname === href ? "page" : undefined}
+                    className="hover:bg-accent/40 aria-[current=page]:bg-secondary flex items-start gap-3 px-4 py-3"
+                  >
+                    <PersonAvatar name={thread.participants[0] ?? who} className="mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline gap-2">
+                        <span className="truncate text-sm font-medium">{who}</span>
+                        {thread.message_count > 1 ? (
+                          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                            {thread.message_count}
+                          </span>
+                        ) : null}
+                        <time
+                          dateTime={thread.last_sent_at}
+                          className="text-muted-foreground ms-auto shrink-0 text-xs tabular-nums"
+                        >
+                          {formatListDate(new Date(thread.last_sent_at), locale)}
+                        </time>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm">
+                          {thread.subject ? conversationName(thread.subject) : t.inbox.noSubject}
+                        </span>
+                        {thread.attachment_count > 0 ? (
+                          <HugeiconsIcon
+                            icon={Attachment01Icon}
+                            strokeWidth={1.75}
+                            aria-label={t.inbox.hasFiles}
+                            className="text-muted-foreground size-3.5 shrink-0"
+                          />
+                        ) : null}
+                      </span>
+                      <span className="text-muted-foreground block truncate text-xs">
+                        {ownSnippet(thread.latest.snippet)}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
-          {messages.data.total > messages.data.items.length ? (
-            <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setLimit(limit + 30)}>
+          {threads.data.total > threads.data.items.length ? (
+            <Button variant="ghost" size="sm" className="justify-self-center" onClick={() => setLimit(limit + 30)}>
               {t.inbox.showMore}
             </Button>
           ) : null}
         </>
       )}
     </Section>
-  );
-}
-
-function MailRow({ message, projects }: { message: MessageSummary; projects: Project[] }) {
-  const { t, locale } = useI18n();
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [projectId, setProjectId] = useState("");
-  const detail = useQuery({
-    queryKey: ["message", message.id],
-    queryFn: () => getMessage(message.id),
-    enabled: open,
-  });
-  const attach = useMutation({
-    mutationFn: (project: string) =>
-      createLink({ item_kind: "message", item_id: message.id, project_id: project, proof_of_delivery: false }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["project-links"] });
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-    },
-  });
-
-  return (
-    <li className="px-4 py-3">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-start gap-3 text-start"
-      >
-        <HugeiconsIcon icon={Mail01Icon} strokeWidth={1.75} className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-medium">{message.subject || t.inbox.noSubject}</span>
-            <span className="text-muted-foreground ms-auto shrink-0 text-xs tabular-nums">
-              {formatDate(new Date(message.sent_at), locale, "dateTime")}
-            </span>
-          </span>
-          <span className="text-muted-foreground block truncate text-xs">
-            {message.sender}
-            {message.attachment_count > 0 ? ` · ${t.inbox.attachments(message.attachment_count)}` : ""}
-          </span>
-          {open ? null : <span className="text-muted-foreground line-clamp-1 text-xs">{message.snippet}</span>}
-        </span>
-      </button>
-      {open ? (
-        <div className="mt-3 grid gap-3 ps-7">
-          {detail.isPending ? (
-            <Skeleton className="h-20 rounded-xl" />
-          ) : detail.isError ? (
-            <p className="text-danger-foreground text-sm">{t.errors.load}</p>
-          ) : (
-            <>
-              {/* The mail's text is shown as plain text: data, never markup (invariant 3). */}
-              <p className="max-h-80 overflow-y-auto text-sm whitespace-pre-wrap">{detail.data.body_text}</p>
-              {detail.data.attachments.length > 0 ? (
-                <ul className="text-muted-foreground grid gap-1 text-xs">
-                  {detail.data.attachments.map((file) => (
-                    <li key={file.document_id}>{file.filename}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          )}
-          <div className="flex flex-wrap items-center gap-2">
-            <NativeSelect
-              aria-label={t.inbox.attachTo}
-              className="h-8 w-64"
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-            >
-              <option value="">{t.inbox.attachTo}</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.number} · {project.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!projectId || attach.isPending}
-              onClick={() => attach.mutate(projectId)}
-            >
-              {t.inbox.attach}
-            </Button>
-            {attach.isSuccess ? <span className="text-success-foreground text-xs">{t.inbox.attached}</span> : null}
-            {attach.isError ? <span className="text-danger-foreground text-xs">{t.errors.generic}</span> : null}
-          </div>
-        </div>
-      ) : null}
-    </li>
   );
 }

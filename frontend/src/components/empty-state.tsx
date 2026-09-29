@@ -11,12 +11,12 @@ export function EmptyState({
   body: string;
 }) {
   return (
-    <div className="flex flex-1 flex-col items-start justify-center px-6 pt-16 pb-[18vh] md:px-10">
+    <div className="flex flex-1 flex-col items-center justify-center pt-10 pb-[18vh] text-center">
       <div className="bg-secondary text-muted-foreground grid size-11 place-items-center rounded-2xl">
         <HugeiconsIcon icon={icon} strokeWidth={1.75} className="size-5" />
       </div>
       <h2 className="mt-5 text-base font-medium">{title}</h2>
-      <p className="text-muted-foreground mt-1.5 max-w-[52ch] text-sm">{body}</p>
+      <p className="text-muted-foreground mt-1.5 max-w-[46ch] text-sm text-balance">{body}</p>
     </div>
   );
 }

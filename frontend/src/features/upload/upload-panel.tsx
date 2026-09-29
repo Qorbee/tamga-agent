@@ -1,18 +1,20 @@
 "use client";
 
-import { CloudUploadIcon, Download01Icon, File01Icon } from "@hugeicons/core-free-icons";
+import { CloudUploadIcon, Download01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRef, useState, type DragEvent, type FormEvent } from "react";
 
 import { Field } from "@/components/field";
-import { NativeSelect } from "@/components/native-select";
+import { fileIcon } from "@/components/file-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDownload } from "@/hooks/use-download";
 import {
   ApiError,
-  getDocument,
   listDocuments,
   listDocumentTypes,
   setDocumentType,
@@ -24,6 +26,9 @@ import { formatDate, formatNumber } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
+
+// A select item cannot have an empty value, so "type not known yet" has its own.
+const UNKNOWN = "__unknown";
 
 /** The upload page: a file from the phone or the desk, typed if the owner knows what it is. */
 export function UploadPanel() {
@@ -58,7 +63,7 @@ export function UploadPanel() {
   const tooLarge = upload.error instanceof ApiError && upload.error.status === 413;
 
   return (
-    <div className="grid w-full max-w-3xl gap-10 px-3 pb-10 md:px-6">
+    <div className="grid gap-10">
       <form onSubmit={onSubmit} className="grid gap-4">
         <label
           htmlFor="upload-file"
@@ -91,14 +96,22 @@ export function UploadPanel() {
         </label>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label={t.upload.type} htmlFor="upload-type">
-            <NativeSelect id="upload-type" value={docType} onChange={(event) => setDocType(event.target.value)}>
-              <option value="">{t.upload.typeUnknown}</option>
-              {types.data?.map((type) => (
-                <option key={type.key} value={type.key}>
-                  {type.label}
-                </option>
-              ))}
-            </NativeSelect>
+            <Select
+              value={docType || UNKNOWN}
+              onValueChange={(value) => setDocType(value === UNKNOWN ? "" : value)}
+            >
+              <SelectTrigger id="upload-type" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNKNOWN}>{t.upload.typeUnknown}</SelectItem>
+                {types.data?.map((type) => (
+                  <SelectItem key={type.key} value={type.key}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field label={t.upload.note} htmlFor="upload-note">
             <Input
@@ -170,36 +183,40 @@ function DocumentRow({ document, types }: { document: Document; types: DocumentT
     mutationFn: (docType: string | null) => setDocumentType(document.id, docType),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
   });
-  const download = useMutation({
-    // The link is signed for five minutes, so it is fetched when asked for, not with the list.
-    mutationFn: () => getDocument(document.id),
-    onSuccess: (detail) => window.open(detail.download_url, "_blank", "noopener"),
-  });
+  const download = useDownload(document.id);
 
   return (
     <li className="flex flex-wrap items-center gap-3 px-4 py-3">
-      <HugeiconsIcon icon={File01Icon} strokeWidth={1.75} className="text-muted-foreground size-4" />
+      <HugeiconsIcon icon={fileIcon(document.preview)} strokeWidth={1.75} className="text-muted-foreground size-4" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm">{document.filename}</p>
+        <Link
+          href={`/app/documents/${document.id}`}
+          className="block truncate text-sm underline-offset-4 hover:underline"
+        >
+          {document.filename}
+        </Link>
         <p className="text-muted-foreground text-xs tabular-nums">
           {formatDate(new Date(document.created_at), locale, "dateTime")} ·{" "}
           {kilobytes(document.size, locale)}
         </p>
       </div>
-      <NativeSelect
-        aria-label={t.upload.setType}
-        className="h-8 w-44"
-        value={document.doc_type ?? ""}
+      <Select
+        value={document.doc_type ?? UNKNOWN}
         disabled={retype.isPending}
-        onChange={(event) => retype.mutate(event.target.value || null)}
+        onValueChange={(value) => retype.mutate(value === UNKNOWN ? null : value)}
       >
-        <option value="">{t.upload.typeUnknown}</option>
-        {types.map((type) => (
-          <option key={type.key} value={type.key}>
-            {type.label}
-          </option>
-        ))}
-      </NativeSelect>
+        <SelectTrigger size="sm" aria-label={t.upload.setType} className="w-44">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={UNKNOWN}>{t.upload.typeUnknown}</SelectItem>
+          {types.map((type) => (
+            <SelectItem key={type.key} value={type.key}>
+              {type.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Button
         variant="ghost"
         size="icon-sm"

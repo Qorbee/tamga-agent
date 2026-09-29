@@ -1,7 +1,9 @@
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, Text, cast, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,6 +140,35 @@ async def save_folder(
     )
 
 
+async def thread_of(db: AsyncSession, company_id: uuid.UUID, rfc_message_id: str) -> str | None:
+    thread: str | None = await db.scalar(
+        select(Message.thread_key)
+        .where(Message.company_id == company_id, Message.rfc_message_id == rfc_message_id)
+        .limit(1)
+    )
+    return thread
+
+
+async def move_thread(
+    db: AsyncSession, company_id: uuid.UUID, *, from_key: str, to_key: str
+) -> None:
+    await db.execute(
+        update(Message)
+        .where(Message.company_id == company_id, Message.thread_key == from_key)
+        .values(thread_key=to_key)
+    )
+
+
+async def mail_after(
+    db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int
+) -> Sequence[Message]:
+    filters = [Message.company_id == company_id, Message.channel == Channel.EMAIL]
+    if after is not None:
+        filters.append(Message.id > after)
+    rows = await db.scalars(select(Message).where(*filters).order_by(Message.id).limit(limit))
+    return rows.all()
+
+
 async def message_exists(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> bool:
     found = await db.scalar(
         select(Message.id).where(Message.company_id == company_id, Message.id == message_id)
@@ -152,6 +183,7 @@ async def list_messages(
     q: str | None,
     direction: Direction | None,
     channel: Channel | None,
+    thread_key: str | None,
     page: PageParams,
 ) -> tuple[Sequence[tuple[Message, int]], int]:
     """Newest first, each with how many files it carried."""
@@ -160,15 +192,10 @@ async def list_messages(
         filters.append(Message.direction == direction)
     if channel is not None:
         filters.append(Message.channel == channel)
+    if thread_key is not None:
+        filters.append(Message.thread_key == thread_key)
     if q:
-        pattern = f"%{escape_like(q)}%"
-        filters.append(
-            or_(
-                Message.subject.ilike(pattern, escape="\\"),
-                Message.sender.ilike(pattern, escape="\\"),
-                Message.body_text.ilike(pattern, escape="\\"),
-            )
-        )
+        filters.append(_matches(q))
     total = await db.scalar(select(func.count()).select_from(Message).where(*filters))
     attachments = (
         select(func.count())
@@ -184,6 +211,77 @@ async def list_messages(
         .offset(page.offset)
     )
     return [(message, count) for message, count in rows.tuples()], total or 0
+
+
+def _matches(q: str) -> ColumnElement[bool]:
+    pattern = f"%{escape_like(q)}%"
+    return or_(
+        Message.subject.ilike(pattern, escape="\\"),
+        Message.sender.ilike(pattern, escape="\\"),
+        Message.sender_name.ilike(pattern, escape="\\"),
+        Message.body_text.ilike(pattern, escape="\\"),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadRow:
+    thread_key: str
+    message_count: int
+    first_sent_at: datetime
+    last_sent_at: datetime
+
+
+async def list_threads(
+    db: AsyncSession, company_id: uuid.UUID, *, q: str | None, page: PageParams
+) -> tuple[list[ThreadRow], int]:
+    """Conversations, most recently active first. A mail stored twice (a copy in another mailbox)
+    counts once — the same Message-ID and Date, as a sender that reuses a Message-ID gives two mails
+    different Dates; a thread matches ``q`` when any of its mails does."""
+    filters: list[ColumnElement[bool]] = [Message.company_id == company_id]
+    if q:
+        filters.append(
+            Message.thread_key.in_(
+                select(Message.thread_key).where(Message.company_id == company_id, _matches(q))
+            )
+        )
+    one_mail = tuple_(
+        func.coalesce(Message.rfc_message_id, cast(Message.id, Text)), Message.sent_at
+    )
+    grouped = (
+        select(
+            Message.thread_key,
+            func.count(one_mail.distinct()).label("message_count"),
+            func.min(Message.sent_at).label("first_sent_at"),
+            func.max(Message.sent_at).label("last_sent_at"),
+        )
+        .where(*filters)
+        .group_by(Message.thread_key)
+    )
+    total = await db.scalar(select(func.count(func.distinct(Message.thread_key))).where(*filters))
+    rows = await db.execute(
+        grouped.order_by(func.max(Message.sent_at).desc(), Message.thread_key)
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return [ThreadRow(*row) for row in rows.tuples()], total or 0
+
+
+async def thread_messages(
+    db: AsyncSession, company_id: uuid.UUID, thread_keys: Sequence[str]
+) -> Sequence[tuple[Message, int]]:
+    """Every mail of these threads, oldest first, each with how many files it carried."""
+    attachments = (
+        select(func.count())
+        .select_from(MessageAttachment)
+        .where(MessageAttachment.message_id == Message.id)
+        .scalar_subquery()
+    )
+    rows = await db.execute(
+        select(Message, attachments)
+        .where(Message.company_id == company_id, Message.thread_key.in_(thread_keys))
+        .order_by(Message.sent_at, Message.id)
+    )
+    return rows.tuples().all()
 
 
 async def get_message(

@@ -2,7 +2,16 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, ForeignKey, LargeBinary, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    ForeignKey,
+    Index,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,7 +41,12 @@ class Message(CompanyScoped, Base):
     text is data, never instructions (root AGENTS.md, invariant 3)."""
 
     __tablename__ = "messages"
-    __table_args__ = (UniqueConstraint("company_id", "content_hash"),)
+    __table_args__ = (
+        UniqueConstraint("company_id", "content_hash"),
+        Index("ix_messages_company_id_thread_key", "company_id", "thread_key"),
+        # A reply finds its parent's thread by the parent's Message-ID.
+        Index("ix_messages_company_id_rfc_message_id", "company_id", "rfc_message_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     channel: Mapped[Channel] = mapped_column(text_enum(Channel, "messages_channel_check"))
@@ -45,7 +59,12 @@ class Message(CompanyScoped, Base):
     rfc_message_id: Mapped[str | None] = mapped_column(Text)
     in_reply_to: Mapped[str | None] = mapped_column(Text)
     references: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    # The conversation it belongs to: the first Message-ID in its References (the thread's first
+    # mail), else its parent's thread, else its own Message-ID. Copies of one mail in several
+    # mailboxes share it.
+    thread_key: Mapped[str] = mapped_column(Text)
     sender: Mapped[str | None] = mapped_column(String(320))
+    sender_name: Mapped[str | None] = mapped_column(String(200))
     recipients: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
     subject: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str] = mapped_column(Text, default="")

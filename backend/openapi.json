@@ -16,6 +16,16 @@
             "title": "Filename",
             "type": "string"
           },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Preview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -25,7 +35,8 @@
           "document_id",
           "filename",
           "content_type",
-          "size"
+          "size",
+          "preview"
         ],
         "title": "AttachmentOut",
         "type": "object"
@@ -147,6 +158,16 @@
             "title": "Id",
             "type": "string"
           },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Preview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
@@ -164,6 +185,7 @@
           "doc_type",
           "sha256",
           "created_at",
+          "preview",
           "download_url"
         ],
         "title": "DocumentDetail",
@@ -200,6 +222,16 @@
             "title": "Id",
             "type": "string"
           },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Preview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
@@ -216,7 +248,8 @@
           "size",
           "doc_type",
           "sha256",
-          "created_at"
+          "created_at",
+          "preview"
         ],
         "title": "DocumentOut",
         "type": "object"
@@ -1302,6 +1335,17 @@
             ],
             "title": "Sender"
           },
+          "sender_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender Name"
+          },
           "sent_at": {
             "format": "date-time",
             "title": "Sent At",
@@ -1321,20 +1365,26 @@
               }
             ],
             "title": "Subject"
+          },
+          "thread_key": {
+            "title": "Thread Key",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "channel",
           "direction",
+          "thread_key",
+          "rfc_message_id",
           "sender",
+          "sender_name",
           "recipients",
           "subject",
           "snippet",
           "sent_at",
           "attachment_count",
           "body_text",
-          "rfc_message_id",
           "in_reply_to",
           "attachments"
         ],
@@ -1396,6 +1446,17 @@
             "title": "Recipients",
             "type": "array"
           },
+          "rfc_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rfc Message Id"
+          },
           "sender": {
             "anyOf": [
               {
@@ -1406,6 +1467,17 @@
               }
             ],
             "title": "Sender"
+          },
+          "sender_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender Name"
           },
           "sent_at": {
             "format": "date-time",
@@ -1426,13 +1498,20 @@
               }
             ],
             "title": "Subject"
+          },
+          "thread_key": {
+            "title": "Thread Key",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "channel",
           "direction",
+          "thread_key",
+          "rfc_message_id",
           "sender",
+          "sender_name",
           "recipients",
           "subject",
           "snippet",
@@ -1487,6 +1566,16 @@
         ],
         "title": "NumberingUpdate",
         "type": "object"
+      },
+      "Preview": {
+        "description": "How the web app shows a file; a file with none is only downloaded.",
+        "enum": [
+          "image",
+          "pdf",
+          "sheet"
+        ],
+        "title": "Preview",
+        "type": "string"
       },
       "ProjectCreate": {
         "properties": {
@@ -1985,6 +2074,42 @@
         "title": "Role",
         "type": "string"
       },
+      "SheetOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "rows",
+          "truncated"
+        ],
+        "title": "SheetOut",
+        "type": "object"
+      },
       "ShipmentCreate": {
         "properties": {
           "delivery_date": {
@@ -2429,6 +2554,97 @@
           "password"
         ],
         "title": "SignIn",
+        "type": "object"
+      },
+      "ThreadPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ThreadPage",
+        "type": "object"
+      },
+      "ThreadSummary": {
+        "description": "A conversation: every mail sharing a thread key, a copy in another mailbox counted once.",
+        "properties": {
+          "attachment_count": {
+            "title": "Attachment Count",
+            "type": "integer"
+          },
+          "first_sent_at": {
+            "format": "date-time",
+            "title": "First Sent At",
+            "type": "string"
+          },
+          "last_sent_at": {
+            "format": "date-time",
+            "title": "Last Sent At",
+            "type": "string"
+          },
+          "latest": {
+            "$ref": "#/components/schemas/MessageSummary"
+          },
+          "message_count": {
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "participants": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "thread_key": {
+            "title": "Thread Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread_key",
+          "subject",
+          "message_count",
+          "attachment_count",
+          "participants",
+          "first_sent_at",
+          "last_sent_at",
+          "latest"
+        ],
+        "title": "ThreadSummary",
         "type": "object"
       },
       "UploadOut": {
@@ -2889,6 +3105,104 @@
           }
         ],
         "summary": "Update Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/content": {
+      "get": {
+        "description": "The file itself, for the web app to draw: inline only as a verified image or PDF.",
+        "operationId": "documents.get_document_content",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "The file"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Document Content",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/sheets": {
+      "get": {
+        "description": "A spreadsheet's cells as text, capped at a thousand rows and fifty columns a sheet.",
+        "operationId": "documents.get_document_sheets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SheetOut"
+                  },
+                  "title": "Response Documents.Get Document Sheets",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Document Sheets",
         "tags": [
           "documents"
         ]
@@ -3431,6 +3745,23 @@
           },
           {
             "in": "query",
+            "name": "thread_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Key"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -3529,6 +3860,51 @@
           }
         ],
         "summary": "Get Message",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/messages/{message_id}/raw": {
+      "get": {
+        "description": "The mail as its server gave it (.eml), headers and every part, for a mail client.",
+        "operationId": "messages.get_message_raw",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "message/rfc822": {}
+            },
+            "description": "The original mail"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Message Raw",
         "tags": [
           "messages"
         ]
@@ -4704,6 +5080,85 @@
         "summary": "Add Location",
         "tags": [
           "shipments"
+        ]
+      }
+    },
+    "/threads": {
+      "get": {
+        "description": "Conversations, the most recently active first; ``q`` matches any of their mails.",
+        "operationId": "threads.list_threads",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Threads",
+        "tags": [
+          "threads"
         ]
       }
     }
