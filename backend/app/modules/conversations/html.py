@@ -7,19 +7,25 @@ it may run, reach the network or leave the frame. Three layers hold that:
   script, form, frame, object or event handler survives, and links only to http(s), mailto and tel;
 - an image the mail carries, which its HTML names by Content-ID (``cid:``, RFC 2392), stays a
   ``cid:`` reference when its bytes prove to be an image; the web app draws it from the stored
-  file, so a logo repeated through a thread loads once. Images on the web are dropped and counted:
-  fetching one tells the sender the mail was read (a tracking pixel), and a company in shadow mode
-  signals nothing (invariant 6);
+  file, so a logo repeated through a thread loads once. Images on the web keep their address and
+  are counted, but Tamga never fetches one: fetching tells the sender the mail was read (a tracking
+  pixel), and a company in shadow mode signals nothing on its own (invariant 6). The person reading
+  may load them, as they may follow a link;
 - the web app's frame runs no script, and its Content-Security-Policy loads nothing but images it
-  holds itself (data: and blob:), which also covers any URL in the mail's own CSS.
+  holds itself (data: and blob:), which also covers any URL in the mail's own CSS, until that
+  person asks for the pictures of that one mail.
 
-The mail's ``<style>`` is kept, since mail clients lay a body out with it; inside that frame it can
-only style the mail.
+The mail's CSS is kept whole, in its ``<style>`` and in each ``style`` attribute, as are its
+``<body>``'s attributes (its background and base style), since mail clients lay a body out with
+them: inside that frame they can only style the mail.
 """
 
 import hashlib
+import re
 from dataclasses import dataclass
 from email.message import Message
+from html import escape
+from html.parser import HTMLParser
 from typing import Final
 from urllib.parse import unquote
 
@@ -68,32 +74,17 @@ _ATTRIBUTES: Final = {
     "th": {"colspan", "nowrap", "rowspan", "scope"},
     "ul": {"type"},
 }  # fmt: skip
-# Layout and type only: nothing that places the mail over the page around it.
-_STYLE: Final = frozenset(
-    {
-        "background", "background-color", "border", "border-bottom", "border-bottom-color",
-        "border-bottom-style", "border-bottom-width", "border-collapse", "border-color",
-        "border-left", "border-left-color", "border-left-style", "border-left-width",
-        "border-radius", "border-right", "border-right-color", "border-right-style",
-        "border-right-width", "border-spacing", "border-style", "border-top", "border-top-color",
-        "border-top-style", "border-top-width", "border-width", "clear", "color", "direction",
-        "display", "float", "font", "font-family", "font-size", "font-style", "font-variant",
-        "font-weight", "height", "letter-spacing", "line-height", "list-style-type", "margin",
-        "margin-bottom", "margin-left", "margin-right", "margin-top", "max-height", "max-width",
-        "min-height", "min-width", "opacity", "overflow", "padding", "padding-bottom",
-        "padding-left", "padding-right", "padding-top", "table-layout", "text-align",
-        "text-decoration", "text-indent", "text-transform", "vertical-align", "visibility",
-        "white-space", "width", "word-break", "word-spacing", "word-wrap", "overflow-wrap",
-    }
-)  # fmt: skip
 _URL_SCHEMES: Final = frozenset({"http", "https", "mailto", "tel", "cid", "data"})
 _LINK_SCHEMES: Final = frozenset({"http", "https", "mailto", "tel"})
+_BODY_TAG: Final = re.compile(r"<body\b[^>]*>", re.I)
+# A picture the mail's CSS draws from the web, inline or in its `<style>`.
+_CSS_PICTURE: Final = re.compile(r"background(?:-image)?\s*:[^;}\"]*url\(\s*['\"]?\s*https?:", re.I)
 
 
 @dataclass(frozen=True, slots=True)
 class MailHtml:
     html: str
-    # Images on the web the mail pointed at, none of which was fetched.
+    # Images on the web the mail points at, which the web app loads only when asked.
     remote_images: int
     # The images the HTML shows by `cid:`, each by the SHA-256 of its bytes (a stored file's key).
     images: dict[str, bytes]
@@ -107,8 +98,17 @@ def render(raw: bytes) -> MailHtml | None:
     if part is None:
         return None
     images = _Images(_carried(message))
-    html = nh3.clean(
-        text_of_part(part),
+    source = text_of_part(part)
+    html = _clean(source, images)
+    remote = images.remote + len(_CSS_PICTURE.findall(html))
+    if body := _body_attributes(source, images):
+        html = f"<body{body}>{html}</body>"
+    return MailHtml(html=html, remote_images=remote, images=images.shown)
+
+
+def _clean(html: str, images: _Images) -> str:
+    return nh3.clean(
+        html,
         tags=set(_TAGS),
         clean_content_tags=set(_DROPPED),
         attributes={tag: set(names) for tag, names in _ATTRIBUTES.items()},
@@ -116,9 +116,31 @@ def render(raw: bytes) -> MailHtml | None:
         url_schemes=set(_URL_SCHEMES),
         link_rel="noopener noreferrer nofollow",
         set_tag_attribute_values={"a": {"target": "_blank"}},
-        filter_style_properties=set(_STYLE),
     )
-    return MailHtml(html=html, remote_images=images.remote, images=images.shown)
+
+
+def _body_attributes(html: str, images: _Images) -> str:
+    """The `<body>`'s attributes, sanitized as any element's, as markup (` style="…"`), or "".
+    nh3 drops the tag and them with it; the web app puts them back on its frame's body."""
+    tag = _BODY_TAG.search(html)
+    found = _BodyTag()
+    found.feed(tag.group(0) if tag else "")
+    if not found.attributes:
+        return ""
+    given = "".join(
+        f' {name}="{escape(value or "", quote=True)}"' for name, value in found.attributes
+    )
+    kept = re.fullmatch(r"<div([^>]*)></div>", _clean(f"<div{given}></div>", images))
+    return kept.group(1) if kept else ""
+
+
+class _BodyTag(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attributes: list[tuple[str, str | None]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.attributes = attrs
 
 
 def _carried(message: Message) -> dict[str, bytes]:
@@ -161,6 +183,7 @@ class _Images:
             return value if media in filetypes.IMAGES else None
         if scheme in ("http", "https"):
             self.remote += 1
+            return value
         return None
 
 

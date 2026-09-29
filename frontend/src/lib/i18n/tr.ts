@@ -232,8 +232,9 @@ export const tr: Dictionary = {
   },
   mail: {
     body: "E-posta",
-    remoteImages: (count: number) => `Webden ${count} görsel yüklenmedi`,
-    remoteImagesWhy: "Yüklemek, gönderene bu e-postanın açıldığını bildirirdi.",
+    remoteImages: (count: number) => `Webden ${count} görsel yüklenmedi.`,
+    remoteImagesWhy: "Gösterilirse gönderen, bu e-postanın açıldığını öğrenebilir.",
+    showRemoteImages: "Görselleri göster",
     conversation: "Yazışma",
     messages: (count: number) => `${count} e-posta`,
     to: (names: string) => `alıcı: ${names}`,

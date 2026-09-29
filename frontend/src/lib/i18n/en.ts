@@ -232,8 +232,9 @@ export const en = {
   mail: {
     body: "Mail",
     remoteImages: (count: number) =>
-      `${count} ${count === 1 ? "picture" : "pictures"} from the web not loaded`,
-    remoteImagesWhy: "Loading them would tell the sender this mail was opened.",
+      `${count} ${count === 1 ? "picture" : "pictures"} from the web not loaded.`,
+    remoteImagesWhy: "Showing them may tell the sender this mail was opened.",
+    showRemoteImages: "Show pictures",
     conversation: "Conversation",
     messages: (count: number) => `${count} ${count === 1 ? "message" : "messages"}`,
     to: (names: string) => `to ${names}`,

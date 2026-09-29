@@ -194,10 +194,24 @@ function MailCard({ summary, startOpen }: { summary: MessageSummary; startOpen: 
 function MailBody({ message }: { message: Message }) {
   const { t } = useI18n();
   const [plain, setPlain] = useState(false);
+  const [pictures, setPictures] = useState(false);
   const files = message.attachments.filter((file) => !file.inline);
 
   return (
     <div className="grid gap-3">
+      {!plain && !pictures && message.body_html && message.remote_images > 0 ? (
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+          <p className="flex min-w-0 flex-1 basis-60 items-start gap-1.5">
+            <HugeiconsIcon icon={ImageNotFound01Icon} strokeWidth={1.75} className="mt-px size-3.5 shrink-0" />
+            <span>
+              {t.mail.remoteImages(message.remote_images)} {t.mail.remoteImagesWhy}
+            </span>
+          </p>
+          <Button variant="outline" size="xs" onClick={() => setPictures(true)}>
+            {t.mail.showRemoteImages}
+          </Button>
+        </div>
+      ) : null}
       {plain ? (
         <pre className="bg-muted/50 overflow-x-auto rounded-xl p-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
           {message.body_text}
@@ -206,17 +220,12 @@ function MailBody({ message }: { message: Message }) {
         <HtmlBody
           message={message}
           forward={isForward(message.subject ?? "")}
+          remote={pictures}
           toggle={(quoted) => <Quoted>{quoted}</Quoted>}
         />
       ) : (
         <TextBody text={message.body_text} />
       )}
-      {!plain && message.body_html && message.remote_images > 0 ? (
-        <p className="text-muted-foreground flex items-center gap-1.5 text-xs" title={t.mail.remoteImagesWhy}>
-          <HugeiconsIcon icon={ImageNotFound01Icon} strokeWidth={1.75} className="size-3.5 shrink-0" />
-          {t.mail.remoteImages(message.remote_images)}
-        </p>
-      ) : null}
 
       <Attachments files={files} />
 
