@@ -585,6 +585,8 @@ export interface components {
             document_id: string;
             /** Filename */
             filename: string;
+            /** Inline */
+            inline: boolean;
             preview: components["schemas"]["Preview"] | null;
             /** Size */
             size: number;
@@ -1045,6 +1047,8 @@ export interface components {
             attachment_count: number;
             /** Attachments */
             attachments: components["schemas"]["AttachmentOut"][];
+            /** Body Html */
+            body_html: string | null;
             /** Body Text */
             body_text: string;
             channel: components["schemas"]["Channel"];
@@ -1056,8 +1060,14 @@ export interface components {
             id: string;
             /** In Reply To */
             in_reply_to: string | null;
+            /** Inline Images */
+            inline_images: {
+                [key: string]: string;
+            };
             /** Recipients */
             recipients: string[];
+            /** Remote Images */
+            remote_images: number;
             /** Rfc Message Id */
             rfc_message_id: string | null;
             /** Sender */

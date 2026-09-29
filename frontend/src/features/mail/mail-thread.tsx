@@ -1,29 +1,40 @@
 "use client";
 
-import { Attachment01Icon, Download04Icon, MoreHorizontalIcon, TextIcon } from "@hugeicons/core-free-icons";
+import {
+  Attachment01Icon,
+  Download04Icon,
+  ImageNotFound01Icon,
+  MoreHorizontalIcon,
+  TextIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fileIcon } from "@/components/file-icon";
 import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useObjectUrl } from "@/hooks/use-object-url";
 import {
   createLink,
+  getDocumentFile,
   getMessage,
   listMessages,
   listProjects,
   rawMessageUrl,
+  type Attachment,
   type Message,
   type MessageSummary,
 } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
-import { conversationName, ownSnippet, splitQuoted, tidy } from "@/lib/mail-text";
+import { conversationName, isForward, ownSnippet, splitQuoted, tidy } from "@/lib/mail-text";
 import { cn } from "@/lib/utils";
+
+import { HtmlBody } from "./html-body";
 
 
 function useMessage(id: string) {
@@ -42,7 +53,8 @@ export function MailSubject({ id }: { id: string }) {
 /**
  * A conversation, oldest mail first, the way a mail app shows one: the mail that was opened and the
  * newest are unfolded, the rest are a line each. A mail stored from several mailboxes shows once.
- * Every mail's text is shown as text, never as markup: it is data, not instructions (invariant 3).
+ * A mail is data, not instructions (invariant 3): its HTML is drawn sanitized in a sandboxed frame,
+ * its text as text.
  */
 export function MailThread({ id }: { id: string }) {
   const { t } = useI18n();
@@ -180,10 +192,9 @@ function MailCard({ summary, startOpen }: { summary: MessageSummary; startOpen: 
 }
 
 function MailBody({ message }: { message: Message }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [plain, setPlain] = useState(false);
-  const [showQuoted, setShowQuoted] = useState(false);
-  const { own, quoted } = splitQuoted(message.body_text);
+  const files = message.attachments.filter((file) => !file.inline);
 
   return (
     <div className="grid gap-3">
@@ -191,35 +202,101 @@ function MailBody({ message }: { message: Message }) {
         <pre className="bg-muted/50 overflow-x-auto rounded-xl p-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
           {message.body_text}
         </pre>
+      ) : message.body_html ? (
+        <HtmlBody
+          message={message}
+          forward={isForward(message.subject ?? "")}
+          toggle={(quoted) => <Quoted>{quoted}</Quoted>}
+        />
       ) : (
-        <>
-          <div className="text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-            {own || <span className="text-muted-foreground">{t.mail.noText}</span>}
-          </div>
-          {quoted ? (
-            <div className="grid justify-items-start gap-2">
-              <Button
-                variant="secondary"
-                size="icon-xs"
-                aria-expanded={showQuoted}
-                onClick={() => setShowQuoted(!showQuoted)}
-              >
-                <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
-                <span className="sr-only">{t.mail.showQuoted}</span>
-              </Button>
-              {showQuoted ? (
-                <div className="border-border text-muted-foreground border-s-2 ps-3 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-                  {tidy(quoted)}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </>
+        <TextBody text={message.body_text} />
       )}
+      {!plain && message.body_html && message.remote_images > 0 ? (
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs" title={t.mail.remoteImagesWhy}>
+          <HugeiconsIcon icon={ImageNotFound01Icon} strokeWidth={1.75} className="size-3.5 shrink-0" />
+          {t.mail.remoteImages(message.remote_images)}
+        </p>
+      ) : null}
 
-      {message.attachments.length > 0 ? (
+      <Attachments files={files} />
+
+      <div className="flex flex-wrap gap-1">
+        <Button variant="ghost" size="xs" aria-pressed={plain} onClick={() => setPlain(!plain)}>
+          <HugeiconsIcon icon={TextIcon} strokeWidth={1.75} />
+          {plain ? t.mail.readingView : t.mail.plainText}
+        </Button>
+        <Button variant="ghost" size="xs" asChild>
+          <a href={rawMessageUrl(message.id)}>
+            <HugeiconsIcon icon={Download04Icon} strokeWidth={1.75} />
+            {t.mail.original}
+          </a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** A mail with no HTML body: its text, with the quoted mails folded. */
+function TextBody({ text }: { text: string }) {
+  const { t } = useI18n();
+  const { own, quoted } = splitQuoted(text);
+  return (
+    <>
+      <div className="text-[15px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+        {own || <span className="text-muted-foreground">{t.mail.noText}</span>}
+      </div>
+      {quoted ? (
+        <Quoted>
+          <div className="border-border text-muted-foreground border-s-2 ps-3 text-sm leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {tidy(quoted)}
+          </div>
+        </Quoted>
+      ) : null}
+    </>
+  );
+}
+
+/** The earlier mails a reply quotes, behind "···": the thread shows each of them on its own. */
+function Quoted({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="grid gap-2">
+      <Button
+        variant="secondary"
+        size="icon-xs"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="justify-self-start"
+      >
+        <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={2} />
+        <span className="sr-only">{t.mail.showQuoted}</span>
+      </Button>
+      {open ? children : null}
+    </div>
+  );
+}
+
+/** The files beside the text: photos as thumbnails, anything else as a chip. Each opens in the canvas. */
+function Attachments({ files }: { files: Attachment[] }) {
+  const { locale } = useI18n();
+  if (files.length === 0) return null;
+  const photos = files.filter((file) => file.preview === "image");
+  const others = files.filter((file) => file.preview !== "image");
+  return (
+    <div className="grid gap-2">
+      {photos.length > 0 ? (
         <ul className="flex flex-wrap gap-2">
-          {message.attachments.map((file) => (
+          {photos.map((file) => (
+            <li key={file.document_id}>
+              <PhotoTile file={file} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {others.length > 0 ? (
+        <ul className="flex flex-wrap gap-2">
+          {others.map((file) => (
             <li key={file.document_id} className="max-w-full">
               <Link
                 href={`/app/documents/${file.document_id}`}
@@ -235,20 +312,32 @@ function MailBody({ message }: { message: Message }) {
           ))}
         </ul>
       ) : null}
-
-      <div className="flex flex-wrap gap-1">
-        <Button variant="ghost" size="xs" aria-pressed={plain} onClick={() => setPlain(!plain)}>
-          <HugeiconsIcon icon={TextIcon} strokeWidth={1.75} />
-          {plain ? t.mail.readingView : t.mail.plainText}
-        </Button>
-        <Button variant="ghost" size="xs" asChild>
-          <a href={rawMessageUrl(message.id)}>
-            <HugeiconsIcon icon={Download04Icon} strokeWidth={1.75} />
-            {t.mail.original}
-          </a>
-        </Button>
-      </div>
     </div>
+  );
+}
+
+function PhotoTile({ file }: { file: Attachment }) {
+  const bytes = useQuery({
+    queryKey: ["document-file", file.document_id],
+    queryFn: () => getDocumentFile(file.document_id),
+    staleTime: Infinity,
+  });
+  // A file the backend would not vouch for as an image arrives as a download, never drawn.
+  const url = useObjectUrl(bytes.data?.type.startsWith("image/") ? bytes.data : undefined);
+  return (
+    <Link
+      href={`/app/documents/${file.document_id}`}
+      title={file.filename}
+      className="border-border bg-muted hover:ring-ring/40 grid size-24 place-items-center overflow-hidden rounded-xl border hover:ring-2"
+    >
+      {url ? (
+        // A blob of a verified image: next/image cannot take one.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={file.filename} className="size-full object-cover" />
+      ) : (
+        <HugeiconsIcon icon={fileIcon(file.preview)} strokeWidth={1.75} className="text-muted-foreground size-5" />
+      )}
+    </Link>
   );
 }
 

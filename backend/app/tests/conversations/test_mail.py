@@ -3,6 +3,8 @@ from email.message import EmailMessage
 
 from app.modules.conversations.mail import parse_mail
 
+PNG = b"\x89PNG\r\n\x1a\n"
+
 
 def mail(**headers: str) -> EmailMessage:
     message = EmailMessage()
@@ -63,6 +65,42 @@ def test_files_are_found_even_inside_a_forwarded_mail() -> None:
         ("CMR.pdf", "application/pdf"),
     }
     assert parsed.body_text == "See below"
+
+
+def test_a_file_the_html_body_shows_is_inline_and_an_attached_one_is_not() -> None:
+    message = mail(From="ops@kaya.example", Subject="Teslim")
+    message.set_content("Teslim edildi.")
+    message.add_alternative(
+        '<p>Teslim edildi.</p><img src="cid:logo%40kaya"><a href="cid:fatura@kaya">Fatura</a>'
+        '<img src="cid:fake@kaya">',
+        subtype="html",
+    )
+    html = message.get_body(preferencelist=("html",))
+    assert html is not None
+    html.add_related(PNG + b" logo", "image", "png", cid="<Logo@Kaya>", filename="image001.png")
+    # Named by a link, not drawn: a file beside the text.
+    html.add_related(b"%PDF fatura", "application", "pdf", cid="<fatura@kaya>", filename="f.pdf")
+    # Drawn, but its bytes are no picture: the frame cannot show it, so it stays a file.
+    html.add_related(b"<html>", "image", "png", cid="<fake@kaya>", filename="fake.png")
+    message.add_attachment(b"\x89PNG photo", maintype="image", subtype="png", filename="teslim.png")
+    # A mail forwarded as a file is not drawn, so its files stay beside the text, even one that
+    # happens to share a Content-ID with the outer body.
+    forwarded = mail(From="carrier@example.com", Subject="CMR")
+    forwarded.set_content("CMR")
+    forwarded.add_attachment(
+        b"\x89PNG cmr", maintype="image", subtype="png", filename="cmr.png", cid="<logo@kaya>"
+    )
+    message.add_attachment(forwarded)
+
+    parsed = parse_mail(message.as_bytes())
+
+    assert {(a.filename, a.inline) for a in parsed.attachments} == {
+        ("image001.png", True),
+        ("f.pdf", False),
+        ("fake.png", False),
+        ("teslim.png", False),
+        ("cmr.png", False),
+    }
 
 
 def test_a_broken_date_is_left_for_the_server_time() -> None:

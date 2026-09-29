@@ -231,6 +231,9 @@ export const tr: Dictionary = {
     targets: { project: "Proje", shipment: "Tır" },
   },
   mail: {
+    body: "E-posta",
+    remoteImages: (count: number) => `Webden ${count} görsel yüklenmedi`,
+    remoteImagesWhy: "Yüklemek, gönderene bu e-postanın açıldığını bildirirdi.",
     conversation: "Yazışma",
     messages: (count: number) => `${count} e-posta`,
     to: (names: string) => `alıcı: ${names}`,

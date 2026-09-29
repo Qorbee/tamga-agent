@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, Text, cast, func, or_, select, tuple_, update
+from sqlalchemy import ColumnElement, ScalarSelect, Text, cast, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,18 +84,49 @@ async def add_attachment(
     message_id: uuid.UUID,
     document_id: uuid.UUID,
     filename: str,
+    inline: bool,
 ) -> None:
+    statement = insert(MessageAttachment).values(
+        company_id=company_id,
+        message_id=message_id,
+        document_id=document_id,
+        filename=filename[:300],
+        inline=inline,
+    )
     await db.execute(
-        insert(MessageAttachment)
-        .values(
-            company_id=company_id,
-            message_id=message_id,
-            document_id=document_id,
-            filename=filename[:300],
+        statement.on_conflict_do_update(
+            index_elements=[MessageAttachment.message_id, MessageAttachment.document_id],
+            # One file shown in the body and also attached beside it is an attachment.
+            set_={"inline": MessageAttachment.inline & statement.excluded.inline},
         )
-        .on_conflict_do_nothing(
-            index_elements=[MessageAttachment.message_id, MessageAttachment.document_id]
+    )
+
+
+async def set_inline(
+    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID, document_ids: set[uuid.UUID]
+) -> None:
+    """Marks which of a mail's files its body shows, and only those."""
+    await db.execute(
+        update(MessageAttachment)
+        .where(
+            MessageAttachment.company_id == company_id,
+            MessageAttachment.message_id == message_id,
         )
+        .values(inline=MessageAttachment.document_id.in_(document_ids))
+    )
+
+
+def _file_count() -> ScalarSelect[int]:
+    """How many files a mail carried beside its text: the images its body shows are not counted."""
+    return (
+        select(func.count())
+        .select_from(MessageAttachment)
+        .where(
+            MessageAttachment.company_id == Message.company_id,
+            MessageAttachment.message_id == Message.id,
+            MessageAttachment.inline.is_(False),
+        )
+        .scalar_subquery()
     )
 
 
@@ -197,14 +228,8 @@ async def list_messages(
     if q:
         filters.append(_matches(q))
     total = await db.scalar(select(func.count()).select_from(Message).where(*filters))
-    attachments = (
-        select(func.count())
-        .select_from(MessageAttachment)
-        .where(MessageAttachment.message_id == Message.id)
-        .scalar_subquery()
-    )
     rows = await db.execute(
-        select(Message, attachments)
+        select(Message, _file_count())
         .where(*filters)
         .order_by(Message.sent_at.desc(), Message.id)
         .limit(page.limit)
@@ -270,14 +295,8 @@ async def thread_messages(
     db: AsyncSession, company_id: uuid.UUID, thread_keys: Sequence[str]
 ) -> Sequence[tuple[Message, int]]:
     """Every mail of these threads, oldest first, each with how many files it carried."""
-    attachments = (
-        select(func.count())
-        .select_from(MessageAttachment)
-        .where(MessageAttachment.message_id == Message.id)
-        .scalar_subquery()
-    )
     rows = await db.execute(
-        select(Message, attachments)
+        select(Message, _file_count())
         .where(Message.company_id == company_id, Message.thread_key.in_(thread_keys))
         .order_by(Message.sent_at, Message.id)
     )

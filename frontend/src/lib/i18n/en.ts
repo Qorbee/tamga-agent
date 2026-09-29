@@ -230,6 +230,10 @@ export const en = {
     targets: { project: "Project", shipment: "Truck" },
   },
   mail: {
+    body: "Mail",
+    remoteImages: (count: number) =>
+      `${count} ${count === 1 ? "picture" : "pictures"} from the web not loaded`,
+    remoteImagesWhy: "Loading them would tell the sender this mail was opened.",
     conversation: "Conversation",
     messages: (count: number) => `${count} ${count === 1 ? "message" : "messages"}`,
     to: (names: string) => `to ${names}`,

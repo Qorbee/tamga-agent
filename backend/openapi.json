@@ -16,6 +16,10 @@
             "title": "Filename",
             "type": "string"
           },
+          "inline": {
+            "title": "Inline",
+            "type": "boolean"
+          },
           "preview": {
             "anyOf": [
               {
@@ -36,7 +40,8 @@
           "filename",
           "content_type",
           "size",
-          "preview"
+          "preview",
+          "inline"
         ],
         "title": "AttachmentOut",
         "type": "object"
@@ -1280,6 +1285,17 @@
             "title": "Attachments",
             "type": "array"
           },
+          "body_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Html"
+          },
           "body_text": {
             "title": "Body Text",
             "type": "string"
@@ -1306,12 +1322,24 @@
             ],
             "title": "In Reply To"
           },
+          "inline_images": {
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Inline Images",
+            "type": "object"
+          },
           "recipients": {
             "items": {
               "type": "string"
             },
             "title": "Recipients",
             "type": "array"
+          },
+          "remote_images": {
+            "title": "Remote Images",
+            "type": "integer"
           },
           "rfc_message_id": {
             "anyOf": [
@@ -1385,6 +1413,9 @@
           "sent_at",
           "attachment_count",
           "body_text",
+          "body_html",
+          "inline_images",
+          "remote_images",
           "in_reply_to",
           "attachments"
         ],

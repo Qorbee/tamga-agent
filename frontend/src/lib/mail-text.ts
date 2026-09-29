@@ -61,3 +61,10 @@ const REPLY_PREFIX = /^\s*(?:(?:re|fw|fwd|ynt|yanıt|ilt|ilet|aw|wg)\s*(?:\[\d+\
 export function conversationName(subject: string): string {
   return subject.replace(REPLY_PREFIX, "").trim() || subject;
 }
+
+const FORWARD_PREFIX = /^\s*(?:fw|fwd|ilt|ilet|wg)\s*(?:\[\d+\])?\s*:/i;
+
+/** A forwarded mail: the mail it carries is the one to read, not history to fold. */
+export function isForward(subject: string): boolean {
+  return FORWARD_PREFIX.test(subject);
+}

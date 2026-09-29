@@ -10,6 +10,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -117,3 +118,5 @@ class MessageAttachment(CompanyScoped, Base):
     )
     # The name in this mail, which can differ from the document's first name.
     filename: Mapped[str] = mapped_column(String(300))
+    # Shown inside the mail's HTML body by its Content-ID (a signature logo, a pasted screenshot).
+    inline: Mapped[bool] = mapped_column(default=False, server_default=false())

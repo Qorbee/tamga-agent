@@ -1,4 +1,5 @@
-"""Fills the sender's name on mail stored before the parser kept it, from the stored originals.
+"""Reads stored mail again, to fill what the parser learned to keep after it was stored: the
+sender's name, and which files a mail's HTML body shows inline.
 
 uv run python scripts/reparse_mail.py                  (the pilot company, PILOT_COMPANY_ID)
 uv run python scripts/reparse_mail.py --company-id <id>
@@ -27,7 +28,7 @@ async def reparse(company_id: uuid.UUID) -> int:
         async for db in get_session():
             after: uuid.UUID | None = None
             while True:
-                after = await service.fill_sender_names(db, company_id, after=after)
+                after = await service.reread_stored_mail(db, company_id, after=after)
                 await db.commit()
                 if after is None:
                     return read

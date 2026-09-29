@@ -26,6 +26,8 @@ GIF: Final = "image/gif"
 WEBP: Final = "image/webp"
 BMP: Final = "image/bmp"
 PDF: Final = "application/pdf"
+# The picture types a browser draws.
+IMAGES: Final = frozenset({PNG, JPEG, GIF, WEBP, BMP})
 XLSX: Final = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 XLS: Final = "application/vnd.ms-excel"
 

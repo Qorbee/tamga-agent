@@ -10,6 +10,7 @@ dependencies = [
     "circle-developer-controlled-wallets>=9.6.0",
     "fastapi>=0.141",
     "httpx>=0.28",
+    "nh3>=0.3.7",
     "openpyxl>=3.1.5",
     "procrastinate>=3.9.0",
     "pydantic-settings>=2.15",

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Mailbox, get_settings
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
-from app.modules.conversations import repository
+from app.modules.conversations import html, repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
 from app.modules.conversations.mail import UNREADABLE, ParsedMail, parse_mail
 from app.modules.conversations.models import Channel, Direction, Message
@@ -253,6 +253,7 @@ async def _store_new_mail(
             message_id=message.id,
             document_id=document.id,
             filename=attachment.filename,
+            inline=attachment.inline,
         )
     return message
 
@@ -272,12 +273,13 @@ async def _thread_key(
     return parsed.message_id or f"<{content_hash.hex()}>"
 
 
-async def fill_sender_names(
+async def reread_stored_mail(
     db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int = 200
 ) -> uuid.UUID | None:
-    """Reads the sender's name from the stored originals of one batch of mail stored before the
-    parser kept it. Returns the last message read, to pass as ``after`` for the next batch; None
-    when every mail has been read. The caller commits."""
+    """Reads one batch of stored originals again, to fill what the parser learned to keep after
+    they were stored: the sender's name, and which files the body shows inline. Returns the last
+    message read, to pass as ``after`` for the next batch; None when every mail has been read. The
+    caller commits."""
     batch = await repository.mail_after(db, company_id, after=after, limit=limit)
     for message in batch:
         if message.raw_key is None:
@@ -288,7 +290,22 @@ async def fill_sender_names(
             logger.warning("stored mail %s could not be parsed again", message.id)
             continue
         message.sender_name = parsed.sender_name
+        await _mark_inline(db, company_id, message.id, parsed)
     return batch[-1].id if batch else None
+
+
+async def _mark_inline(
+    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID, parsed: ParsedMail
+) -> None:
+    shown = {hashlib.sha256(file.data).digest() for file in parsed.attachments if file.inline}
+    beside = {hashlib.sha256(file.data).digest() for file in parsed.attachments if not file.inline}
+    attachments = await repository.attachments_of(db, company_id, message_id)
+    files = await documents.get_documents(
+        db, company_id, [attachment.document_id for attachment in attachments]
+    )
+    # One file shown in the body and also attached beside it is an attachment, as when stored.
+    inline = {document_id for document_id, file in files.items() if file.sha256 in shown - beside}
+    await repository.set_inline(db, company_id, message_id, inline)
 
 
 # Reading what arrived
@@ -386,9 +403,15 @@ async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> 
     files = await documents.get_documents(
         db, actor.company_id, [attachment.document_id for attachment in attachments]
     )
+    shown = await _html_of(message)
+    stored = {file.sha256: document_id for document_id, file in files.items()}
+    images = shown.images.items() if shown else []
     return MessageOut(
-        **_summary(message, len(attachments)).model_dump(),
+        **_summary(message, sum(not attachment.inline for attachment in attachments)).model_dump(),
         body_text=message.body_text,
+        body_html=shown.html if shown else None,
+        remote_images=shown.remote_images if shown else 0,
+        inline_images={cid: stored[digest] for cid, digest in images if digest in stored},
         in_reply_to=message.in_reply_to,
         attachments=[
             AttachmentOut(
@@ -399,10 +422,22 @@ async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> 
                 preview=documents.preview_of(
                     files[attachment.document_id].content_type, attachment.filename
                 ),
+                inline=attachment.inline,
             )
             for attachment in attachments
         ],
     )
+
+
+async def _html_of(message: Message) -> html.MailHtml | None:
+    """The mail's HTML body, sanitized as it is read: a stricter sanitizer needs no backfill."""
+    if message.raw_key is None:
+        return None
+    try:
+        return await asyncio.to_thread(html.render, await storage.get(message.raw_key))
+    except Exception:  # an unreachable original or a broken body; the stored text is still shown
+        logger.exception("the HTML of mail %s could not be read", message.id)
+        return None
 
 
 def _summary(message: Message, attachment_count: int) -> MessageSummary:

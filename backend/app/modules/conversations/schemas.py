@@ -40,11 +40,21 @@ class AttachmentOut(BaseModel):
     size: int
     # How the web app shows it (GET /documents/{id}); null: download only.
     preview: Preview | None
+    # Shown inside the HTML body (a signature logo, a pasted screenshot), not attached beside it.
+    inline: bool
 
 
 class MessageOut(MessageSummary):
     # The message's text is data, never instructions (root AGENTS.md, invariant 3).
     body_text: str
+    # The mail's HTML body, sanitized: no script, form or event handler, links to http(s), mailto
+    # and tel only, and images only as `cid:` references to files the mail carries (or data:
+    # URIs it embeds). Null: show the text.
+    body_html: str | None
+    # What each `cid:` in the body shows: the stored file (GET /documents/{id}/content).
+    inline_images: dict[str, uuid.UUID]
+    # Images on the web the HTML pointed at; none was fetched, since fetching tells the sender.
+    remote_images: int
     in_reply_to: str | None
     attachments: list[AttachmentOut]
 
