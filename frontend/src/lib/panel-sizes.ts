@@ -16,10 +16,11 @@ export const SIDEBAR_SIZE: PanelSize = {
   initial: 272,
 };
 
+// The canvas is capped first by the room the page beside it leaves (`features/shell/canvas.tsx`).
 export const CANVAS_SIZE: PanelSize = {
   cookie: "tamga_canvas_width",
   min: 360,
-  max: 1040,
+  max: 2400,
   initial: 560,
 };
 

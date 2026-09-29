@@ -2,7 +2,7 @@
 
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { useCloseCanvas } from "@/components/canvas-link";
 import { ResizeHandle } from "@/components/resize-handle";
@@ -11,16 +11,25 @@ import { useI18n } from "@/lib/i18n/client";
 import { CANVAS_SIZE, saveSize } from "@/lib/panel-sizes";
 import { cn } from "@/lib/utils";
 
+// The page beside the canvas keeps at least this much room; the canvas may take all the rest.
+const PAGE_MIN = 400;
+// The canvas's margin at its outer edge.
+const GAP = 8;
+
 /**
- * The canvas: a card floating beside the page, its left edge dragged to resize (well past the
- * minimum, it closes); full screen below the `lg` breakpoint. It slides in when a record opens and
- * out when it closes, keeping the last record on screen until it is gone; its content keeps the
- * panel's width while it slides, so nothing reflows. `content` is null while nothing is open.
+ * The canvas: a card floating beside the page, its left edge dragged to resize between its minimum
+ * and all the room the page can give; full screen below the `lg` breakpoint. Only its close button
+ * closes it. It slides in when a record opens and out when it closes, keeping the last record on
+ * screen until it is gone; its content keeps the panel's width while it slides, so nothing reflows.
+ * `content` is null while nothing is open.
  */
 export function CanvasFrame({ initialWidth, content }: { initialWidth: number; content: ReactNode }) {
   const { t } = useI18n();
-  const close = useCloseCanvas();
   const [width, setWidth] = useState(initialWidth);
+  // The widest the canvas can be now: the row it shares with the page, less the page's minimum.
+  // Null until measured.
+  const [room, setRoom] = useState<number | null>(null);
+  const frame = useRef<HTMLElement>(null);
   // The record shown, which outlives `content` for as long as the closing slide lasts.
   const [shown, setShown] = useState<ReactNode>(content);
   if (content !== null && content !== shown) setShown(content);
@@ -33,11 +42,31 @@ export function CanvasFrame({ initialWidth, content }: { initialWidth: number; c
     return () => clearTimeout(timer);
   }, [closing]);
 
-  if (shown === null) return null;
+  const open = shown !== null;
+  useLayoutEffect(() => {
+    const aside = frame.current;
+    const row = aside?.parentElement;
+    const page = aside?.previousElementSibling;
+    if (!aside || !row || !page) return;
+    // The page starts where the sidebar ends, so this follows the sidebar opening and closing too.
+    const measure = () => {
+      const free = row.getBoundingClientRect().right - page.getBoundingClientRect().left;
+      setRoom(Math.max(CANVAS_SIZE.min, Math.floor(free - PAGE_MIN - GAP)));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    observer.observe(page);
+    measure();
+    return () => observer.disconnect();
+  }, [open]);
+
+  if (!open) return null;
+  const shownWidth = Math.min(width, room ?? width);
   return (
     <aside
+      ref={frame}
       data-state={closing ? "closed" : "open"}
-      style={{ "--canvas-width": `${width}px` } as CSSProperties}
+      style={{ "--canvas-width": `${shownWidth}px` } as CSSProperties}
       onAnimationEnd={(event) => {
         if (closing && event.target === event.currentTarget) setShown(null);
       }}
@@ -46,22 +75,20 @@ export function CanvasFrame({ initialWidth, content }: { initialWidth: number; c
         "max-lg:bg-card max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:duration-200",
         "max-lg:data-[state=open]:animate-in max-lg:data-[state=open]:fade-in max-lg:data-[state=open]:slide-in-from-bottom-6",
         "max-lg:data-[state=closed]:animate-out max-lg:data-[state=closed]:fade-out max-lg:data-[state=closed]:slide-out-to-bottom-6 max-lg:data-[state=closed]:fill-mode-forwards",
-        "lg:bg-card lg:border-border lg:m-2 lg:ms-0 lg:w-(--canvas-width) lg:max-w-[55vw] lg:rounded-2xl lg:border lg:shadow-lg",
+        "lg:bg-card lg:border-border lg:m-2 lg:ms-0 lg:w-(--canvas-width) lg:rounded-2xl lg:border lg:shadow-lg",
         "lg:data-[state=open]:animate-canvas-open lg:data-[state=closed]:animate-canvas-close",
       )}
     >
       <ResizeHandle
         label={t.shell.resizeCanvas}
-        size={CANVAS_SIZE}
-        width={width}
+        size={{ ...CANVAS_SIZE, max: room ?? CANVAS_SIZE.max }}
+        width={shownWidth}
         edge="left"
         onResize={setWidth}
         onResizeEnd={(settled) => saveSize(CANVAS_SIZE, settled)}
-        // Dragged well past its minimum, the canvas closes, as its close button does.
-        onCollapse={close}
         className="max-lg:hidden"
       />
-      <div className="flex min-h-0 flex-1 flex-col lg:w-[min(var(--canvas-width),55vw)] lg:self-end">{shown}</div>
+      <div className="flex min-h-0 flex-1 flex-col lg:w-(--canvas-width) lg:self-end">{shown}</div>
     </aside>
   );
 }
