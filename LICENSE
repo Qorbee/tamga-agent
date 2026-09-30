@@ -1,0 +1,145 @@
+Tamga — Proprietary Source Licence
+All Rights Reserved / Tüm Hakları Saklıdır
+
+Copyright © 2026 Yiğit Can Özdemir, trading as Qorbee (Türkiye). All rights reserved.
+Permissions: support@qorbee.com
+
+
+1. Definitions
+
+"Licensor" means Yiğit Can Özdemir, trading as Qorbee, who owns the rights in the Software.
+
+"Software" means everything in this repository and in its history: source code, object code, smart
+contracts, database schemas and migrations, prompts and agent instructions, tests, documentation,
+designs, images and any other material, except the Third-Party Components.
+
+"Third-Party Components" means the material listed in THIRD_PARTY_NOTICES and every dependency that
+a package manager or a Git submodule brings in. Each is governed by its own licence.
+
+"You" means any person or entity that accesses the Software.
+
+
+2. Ownership
+
+The Software is a work protected under Law No. 5846 on Intellectual and Artistic Works of the
+Republic of Türkiye (FSEK); in the member states of the European Union under their laws
+implementing Directive 2009/24/EC on the legal protection of computer programs; and internationally
+under the Berne Convention for the Protection of Literary and Artistic Works and the TRIPS
+Agreement.
+
+All rights in the Software remain with the Licensor. These include the economic rights of
+adaptation, reproduction, distribution, performance and communication to the public (FSEK Articles
+21 to 25) and all moral rights. Making the source code publicly viewable grants no licence. No right
+is granted by implication, estoppel or otherwise, except as section 3 expressly states.
+
+
+3. What you may do
+
+(a) View. You may view the Software on GitHub and use the functions GitHub's Terms of Service
+    provide for public repositories, such as viewing and forking within GitHub. A fork grants no
+    right beyond this section.
+
+(b) Evaluate. The organisers of the Tameion Agents Hackathon (Canteen and Circle), its judges, and
+    the reviewers of the Arc Showcase may clone, build, install and run the Software solely to
+    evaluate this project for that hackathon, that showcase and any funding decision arising from
+    them, for as long as that evaluation lasts. This permission is non-exclusive, non-transferable
+    and non-sublicensable.
+
+(c) Mandatory rights. Nothing in this licence restricts a right that cannot be excluded or limited
+    by contract under the law that applies to you, including FSEK Article 38 and Articles 5 and 6
+    of Directive 2009/24/EC.
+
+
+4. What you may not do
+
+Except as section 3 allows, or with the Licensor's prior written consent, you may not, in whole or
+in part:
+
+(a) use, install or run the Software;
+(b) copy or reproduce it;
+(c) modify, adapt or translate it, create derivative works of it, or combine it with other
+    software;
+(d) distribute, publish, sell, rent, lend or sublicense it, or otherwise make it available to
+    anyone;
+(e) offer it, or anything derived from it, as a hosted or managed service;
+(f) use it, its design, its architecture, its prompts or its documentation to build, train or
+    benchmark a competing product or service;
+(g) use it for text and data mining, or to train, fine-tune or evaluate any artificial-intelligence
+    or machine-learning model. The Licensor expressly reserves these uses, including under
+    Article 4(3) of Directive (EU) 2019/790;
+(h) remove or alter any copyright, licence or proprietary notice.
+
+
+5. Written consent
+
+Written consent means a document or an email from the Licensor that names you and states the use it
+permits. Requests go to support@qorbee.com.
+
+
+6. Third-Party Components
+
+Third-Party Components are licensed to you under their own licences, set out in THIRD_PARTY_NOTICES
+and in the components themselves. Nothing in this licence limits the rights those licences give you
+in those components.
+
+
+7. Earlier revisions
+
+Before this licence was adopted, the Software was private, and it was never published or
+distributed. Any licence text in an earlier revision was never granted to anyone, is withdrawn, and
+gives no rights. This licence governs every revision of the Software, in this repository and in any
+copy of it.
+
+
+8. Contributions
+
+The Licensor does not accept contributions. If you send feedback or suggestions, the Licensor may use
+them freely, with no obligation to you.
+
+
+9. Trademarks
+
+This licence grants no right to use the names "Tamga" or "Qorbee", or any logo or trademark of the
+Licensor.
+
+
+10. No warranty
+
+To the extent the applicable law permits, the Software is provided "as is", without warranty of any
+kind, express or implied, including warranties of merchantability, fitness for a particular purpose
+and non-infringement.
+
+
+11. Limitation of liability
+
+To the extent the applicable law permits, the Licensor is not liable for any damage arising from the
+Software or its use, including lost profits, lost data and indirect damage. This does not limit
+liability that cannot be excluded or limited under the applicable law, including liability for
+intent or gross negligence (Turkish Code of Obligations No. 6098, Article 115).
+
+
+12. Termination
+
+The permission in section 3(b) ends automatically when the evaluation ends, or when you breach this
+licence. You must then stop using the Software and delete every copy in your control. Sections 2, 4
+and 6 to 14 survive.
+
+
+13. Governing law and jurisdiction
+
+This licence, and any dispute arising from it, is governed by the laws of the Republic of Türkiye,
+excluding their conflict-of-laws rules. The United Nations Convention on Contracts for the
+International Sale of Goods does not apply.
+
+To the extent the law allows such an agreement (Code of Civil Procedure No. 6100, Article 17), the
+courts and enforcement offices (icra daireleri) at the Licensor's place of residence in Türkiye have
+exclusive jurisdiction. Mandatory rules that protect consumers under the law of their country of
+residence remain unaffected.
+
+
+14. General
+
+If a provision of this licence is held invalid, the rest remains in effect, and the invalid
+provision is replaced by the valid one closest to its purpose. Not enforcing a provision is not a
+waiver of it. This licence is written in English; a translation is for convenience only, and the
+English text prevails.

@@ -58,3 +58,6 @@ OPTIMIZATIONS.md
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# The public copy's banned words that must not be in git either: the pilot's name, people, domains
+.public/banned-words.local

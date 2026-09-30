@@ -34,7 +34,7 @@ repos:
       # Invisible characters can hide instructions from a reviewer while an agent still reads them.
       - id: hidden-unicode
         name: no hidden or bidi Unicode
-        entry: python3 .agents/skills/security-audit/scripts/find_hidden_unicode.py
+        entry: python3 scripts/find_hidden_unicode.py
         language: system
         types: [text]
       - id: ruff-check
