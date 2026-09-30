@@ -1,7 +1,7 @@
 """The ``BooksSource`` interface: one per accounting product, reads only (ADR-0008). A connected
 system is never written: a source defines no write call, and has nowhere to put one.
 
-A country pack implements a source (the accounting system in ``app/packs/tr/``) and registers a factory here.
+A country pack implements a source for its accounting product and registers a factory here.
 The factory returns None when its connection is not configured, so an unconfigured product is
 skipped rather than failing every sync.
 """

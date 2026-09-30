@@ -81,14 +81,14 @@ class Settings(BaseSettings):
     # Zero would read nothing, yet move a new folder's cursor past all of its mail.
     mail_batch: int = Field(default=200, gt=0)
 
-    # The pilot's accounting system, the accounting system, read-only into PILOT_COMPANY_ID (ADR-0008): the
-    # API key and the admin account it signs in as. Its login answers with every other call's base
-    # URL.
+    # The pilot's accounting system, read-only into PILOT_COMPANY_ID (ADR-0008): the API key and
+    # the admin account it signs in as. The country pack that reads it knows its address; a URL
+    # here replaces that one, e.g. for the product's test environment.
     books_api_key: SecretStr | None = None
     books_email: str | None = None
     books_password: SecretStr | None = None
-    books_login_url: str = "https://accounting.example.com"
-    # Reads a month Tamga allows itself, kept under the accounting system's quota of 3,000 so the owner's own
+    books_login_url: str | None = None
+    # Reads a month Tamga allows itself, kept under the product's own quota so the owner's other
     # integrations still have room.
     books_monthly_reads: int = Field(default=2500, gt=0)
     # How far back the first sync of the books reads, in days.
@@ -160,7 +160,7 @@ class Settings(BaseSettings):
             if any(value is None for value in values) and any(v is not None for v in values):
                 raise ValueError(f"set all of {names}, or none")
         if self.books_api_key is not None and self.pilot_company_id is None:
-            raise ValueError("set PILOT_COMPANY_ID: the accounting system is read into that company")
+            raise ValueError("set PILOT_COMPANY_ID: the books are read into that company")
         if (
             self.circle_api_key is not None
             and not self.circle_api_key.get_secret_value().startswith("TEST_API_KEY:")

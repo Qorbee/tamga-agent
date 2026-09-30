@@ -101,7 +101,7 @@ def test_a_half_set_connection_does_not_start(values: dict[str, str]) -> None:
         load_settings(**values)
 
 
-def test_books_needs_a_company_to_read_into() -> None:
+def test_the_books_need_a_company_to_read_into() -> None:
     with pytest.raises(ValidationError, match="PILOT_COMPANY_ID"):
         load_settings(
             books_api_key="x",

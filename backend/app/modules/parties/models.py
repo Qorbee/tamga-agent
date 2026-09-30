@@ -59,7 +59,7 @@ class Party(CompanyScoped, Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     name: Mapped[str] = mapped_column(String(300))
     kind: Mapped[PartyKind] = mapped_column(text_enum(PartyKind, "parties_kind_check"))
-    # The accounting card this party is synced from ("books" and its id), so a re-sync updates it.
+    # The accounting card this party is synced from (its source and id), so a re-sync updates it.
     source: Mapped[str | None] = mapped_column(String(40))
     source_id: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

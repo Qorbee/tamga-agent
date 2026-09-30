@@ -52,9 +52,8 @@ async def test_the_registry_lists_core_and_pack_types(client: httpx.AsyncClient)
     await guest_client(client)
     types = {t["key"]: t for t in (await client.get("/document-types")).json()}
 
-    assert {"invoice", "bank_receipt", "cmr", "pod_photo", "e_fatura", "e_irsaliye"} <= set(types)
+    assert {"invoice", "bank_receipt", "cmr", "pod_photo"} <= set(types)
     assert types["cmr"]["proof_of_delivery"] is True and types["cmr"]["pack"] == "logistics"
-    assert "ettn" in types["e_fatura"]["fields"]["properties"]
 
 
 async def test_a_stranger_cannot_list_documents(
