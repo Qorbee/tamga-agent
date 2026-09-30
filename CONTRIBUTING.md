@@ -56,7 +56,8 @@ fix(auth): refresh the token before it expires, not after
 docs(adr): record the choice of Next.js for the frontend
 ```
 
-No AI attribution trailers: a commit's author is the human who made it.
+No AI attribution anywhere: no assistant trailers in commits, and no "Generated with …" footer or
+agent session link in a PR, a comment or an issue. A commit's author is the human who made it.
 
 ## Who runs Git
 
