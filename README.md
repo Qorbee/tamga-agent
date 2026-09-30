@@ -72,15 +72,56 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload               # http://localhost:8000/docs
 ```
 
-In another terminal:
+In a second terminal, the worker, which runs the background jobs: it polls the connected mailboxes
+every 2 minutes (`mail.poll`), syncs a connected accounting system every 6 hours (`books.sync`), and
+deletes expired guest sandboxes (`sandboxes.expire`). Without it no mail arrives.
+
+```bash
+cd backend && uv run watchfiles "python -m app.worker" app   # restarts when the code changes
+```
+
+In a third, the web app:
 
 ```bash
 cd frontend && cp .env.example .env && pnpm install
 pnpm dev                                           # http://localhost:3000
 ```
 
+**Getting in.** Open http://localhost:3000 and choose *Try it as a guest*: a private sandbox of your
+own, deleted after a day. For a company of your own, create it with its first owner; the command
+prints the invite link where the owner sets a password:
+
+```bash
+cd backend && uv run python scripts/create_company.py --name "Acme Lojistik" --owner-email owner@example.com
+```
+
+**What turns on what.** Every setting is in `backend/.env.example`, with a comment. Unset, Tamga
+still runs, and each feature waits for its own:
+- mail: `PILOT_COMPANY_ID` and `MAILBOXES` (read-only IMAP);
+- the language models: the key of the provider `DEFAULT_MODEL` names (`OPENAI_API_KEY` or
+  `ANTHROPIC_API_KEY`);
+- Circle wallets on Arc testnet: `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET`, then
+  `uv run python scripts/create_circle_wallets.py` once, from `backend/`;
+- traces: `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`.
+
 Contracts need Foundry at the release in `contracts/.foundry-version` and the library submodules
 (`git submodule update --init`) — [`contracts/README.md`](contracts/README.md).
+
+## Checks
+
+The ones CI runs, each from its package's directory:
+
+```bash
+# backend/, with docker compose up; the tests include the API contract check
+uv run ruff format --check . && uv run ruff check . && uv run mypy && INTEGRATION=1 uv run pytest -q
+# frontend/
+pnpm lint && pnpm typecheck && pnpm build
+# contracts/
+forge fmt --check && forge build && forge test
+```
+
+If the root `.env` moved the ports, export `DATABASE_URL` and `S3_ENDPOINT_URL` with them before the
+backend tests (`backend/README.md`).
 
 ## Layout
 
