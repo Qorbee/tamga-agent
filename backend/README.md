@@ -19,8 +19,7 @@ The worker that runs background jobs is the same image with another command (`py
 
 ## Start reading at
 
-`app/main.py`, then `app/modules/README.md` for where new code goes. How the modules fit together:
-`docs/architecture/02-backend-modules.md`.
+`app/main.py`, then `app/modules/README.md` for where new code goes.
 
 ## Running it
 
@@ -43,7 +42,3 @@ uv run python scripts/dump_openapi.py     # after an API change
 
 The integration tests reach Postgres on 5432 and storage on 8333 (`app/tests/conftest.py`). If the
 root `.env` moved those ports, export `DATABASE_URL` and `S3_ENDPOINT_URL` with the new ports first.
-
-## Rules that apply here
-
-`AGENTS.md` in this directory and the root `AGENTS.md`.

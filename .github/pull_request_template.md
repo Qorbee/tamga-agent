@@ -16,6 +16,5 @@
 
 - [ ] A new system (job, integration, credential, pipeline, module) has its architecture section or README
 - [ ] A decision that is expensive to reverse has its ADR, linked here
-- [ ] No `docs/architecture/` claim is made false by this change
 
 <!-- Not applicable? Tick it and write "n/a", so a reviewer can tell skipped from considered. -->

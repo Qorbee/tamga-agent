@@ -18,12 +18,6 @@ allowlist. PolicyVault has its own plan; this package is the scaffold it builds 
 Generated from here: `backend/app/platform/abi/<Name>.json`, the ABI the backend reads the chain with
 (`scripts/export-abi.sh`).
 
-## Start reading at
-
-The contract's design — its functions, events and failure modes — is in
-`docs/architecture/05-decisions-and-settlement.md`,
-"The contract".
-
 ## Setting up
 
 Install the Foundry release in `.foundry-version` straight from its GitHub release, checked against
@@ -58,7 +52,3 @@ Arc runs the Osaka hard fork, so `evm_version` is `osaka`. USDC is the gas token
 has 6 decimals, and the native balance, the same funds, has 18. Forge tests run on Foundry's own EVM,
 not Arc's rules. Circle's fork, [`arc-foundry`](https://github.com/circlefin/arc-foundry), runs them
 under Arc's rules if a test ever depends on them.
-
-## Rules that apply here
-
-`AGENTS.md` in this directory and the root `AGENTS.md`.

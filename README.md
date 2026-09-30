@@ -42,6 +42,28 @@ Arc testnet; nothing touches a company's bank or real money.
 - **Testnet by default.** The network, the chain id, the RPC and every address come from settings;
   mainnet needs an explicit opt-in.
 
+## Where it stands
+
+"How it works" is the whole design. Built and running today:
+- **Sign-in and tenancy:** companies, owners by invite, and guest sandboxes that expire after a day;
+  every row belongs to one company.
+- **Company modes:** shadow, replay and live, checked where an effect would happen, and each
+  company's own business time.
+- **Mail, read-only:** mailboxes read over IMAP every two minutes, grouped into conversations, shown
+  as their senders laid them out (web pictures only on request), and searchable however a word is
+  typed.
+- **Files:** uploads and mail attachments, stored once and opened in a canvas beside the chat: PDFs,
+  spreadsheets as Excel lays them out, images.
+- **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
+- **Projects and shipments:** the data model and the projects board.
+- **The books:** a read-only accounting sync, through a country pack.
+- **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled.
+
+Next, in this order: linking mail and documents to projects, and rebuilding the past three months
+from them (the replay); the policy engine, its decisions and their log; PolicyVault on Arc testnet
+and the executor through Circle; the assistant, the driver and dispatcher links, and the
+playground's scenarios.
+
 ## This repository
 
 The public copy of Tamga's private repository, generated at every merge: each commit here is one

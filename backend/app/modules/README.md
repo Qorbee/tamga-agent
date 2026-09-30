@@ -24,5 +24,3 @@ module's `repository.py` or `models.py` (an enum a schema exposes is the one exc
 Every business table mixes in `app.platform.tenancy.CompanyScoped`, and its repository functions
 take `company_id` as a required argument (ADR-0003). `app/tests/test_tenancy.py` fails on a
 business table without the column; the argument is checked in review.
-
-Rules: `backend/AGENTS.md`.

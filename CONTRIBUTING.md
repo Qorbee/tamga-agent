@@ -62,5 +62,4 @@ agent session link in a PR, a comment or an issue. A commit's author is the huma
 ## Who runs Git
 
 **A human runs every Git operation.** Coding agents edit the working tree and say when a change is
-ready to commit; branching, staging, committing, pushing and PRs are done by the human. This is the
-root `AGENTS.md` "Git and commits" rule.
+ready to commit; branching, staging, committing, pushing and PRs are done by the human.

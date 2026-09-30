@@ -2,8 +2,7 @@
 
 The Tamga web app: the landing page, the owner app (a chat with a canvas) and, later, the playground —
 one Next.js App Router project on Tailwind v4, shadcn/ui and assistant-ui. It holds no business rules;
-everything it shows comes from the FastAPI backend through the generated API contract. How it fits
-together: `docs/architecture/07-web-app.md`.
+everything it shows comes from the FastAPI backend through the generated API contract.
 
 ## Map
 
@@ -74,7 +73,3 @@ re-apply them:
   0.15.21, which lacks `submission` and `dismissible`. Upgrading to 0.15.22+ (Oct 1): bump the
   package and put those two back by hand from the registry's version — re-adding the files would
   drop every edit above.
-
-## Rules that apply here
-
-`AGENTS.md` in this directory and the root `AGENTS.md`.
