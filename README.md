@@ -51,7 +51,9 @@ Arc testnet; nothing touches a company's bank or real money.
   company's own business time.
 - **Mail, read-only:** mailboxes read over IMAP every two minutes, grouped into conversations, shown
   as their senders laid them out (web pictures only on request), and searchable however a word is
-  typed.
+  typed. Each mail is read once, copies from other mailboxes included, from what its writer typed
+  (the history it quotes cut off), and code reads its plates, IBANs and invoice, order and CMR
+  numbers.
 - **Files:** uploads and mail attachments, stored once and opened in a canvas beside the chat: PDFs,
   spreadsheets as Excel lays them out, images.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
@@ -97,8 +99,9 @@ uv run uvicorn app.main:app --reload               # http://localhost:8000/docs
 ```
 
 In a second terminal, the worker, which runs the background jobs: it polls the connected mailboxes
-every 2 minutes (`mail.poll`), syncs a connected accounting system every 6 hours (`books.sync`), and
-deletes expired guest sandboxes (`sandboxes.expire`). Without it no mail arrives.
+every 2 minutes (`mail.poll`) and reads each new mail once (`mail.process`), syncs a connected
+accounting system every 6 hours (`books.sync`), and deletes expired guest sandboxes
+(`sandboxes.expire`). Without it no mail arrives.
 
 ```bash
 cd backend && uv run watchfiles "python -m app.worker" app   # restarts when the code changes

@@ -35,3 +35,31 @@ async def test_reading_an_item_again_keeps_one_fact_at_its_best_confidence(
         db, company_id=company.id, kind="plate", normalised="34ABC12"
     )
     assert shared.item_id == mail
+
+
+async def test_an_items_facts_are_written_together_the_same_one_once(db: AsyncSession) -> None:
+    company = await companies.create_company(db, name="Acme", kind=CompanyKind.PILOT)
+    mail = uuid.uuid4()
+
+    stored = await service.record_facts(
+        db,
+        company_id=company.id,
+        item_kind=ItemKind.MESSAGE,
+        item_id=mail,
+        facts=[
+            NewFact("plate", "34 ABC 12", "34ABC12", 0.7, "regex"),
+            NewFact("plate", "34ABC12", "34ABC12", 0.85, "regex"),
+            NewFact("order_number", "4500123", "4500123", 0.8, "regex"),
+        ],
+    )
+
+    assert sorted((fact.kind, fact.confidence) for fact in stored) == [
+        ("order_number", 0.8),
+        ("plate", 0.85),
+    ]
+    assert (
+        await service.record_facts(
+            db, company_id=company.id, item_kind=ItemKind.MESSAGE, item_id=mail, facts=[]
+        )
+        == []
+    )

@@ -12,3 +12,11 @@ async def poll_mail(timestamp: int) -> None:
     stored = await service.poll_pilot_mailboxes()
     if stored:
         logger.info("mail poll stored %d new messages", stored)
+
+
+@jobs.periodic("mail.process", cron="* * * * *")
+async def process_mail(timestamp: int) -> None:
+    """Stored mail read within a minute or two: its own text and the facts code finds in it."""
+    processed = await service.process_pending()
+    if processed:
+        logger.info("processed %d messages", processed)

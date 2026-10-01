@@ -8,11 +8,13 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     LargeBinary,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
     false,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
@@ -46,6 +48,13 @@ class Message(CompanyScoped, Base):
     __table_args__ = (
         UniqueConstraint("company_id", "content_hash"),
         Index("ix_messages_company_id_thread_key", "company_id", "thread_key"),
+        # What waits to be processed, oldest first.
+        Index(
+            "ix_messages_pending",
+            "company_id",
+            "sent_at",
+            postgresql_where=text("processed_at IS NULL"),
+        ),
         # A reply finds its parent's thread by the parent's Message-ID.
         Index("ix_messages_company_id_rfc_message_id", "company_id", "rfc_message_id"),
         # Search matches typed terms inside these (LIKE '%…%'), which trigrams serve.
@@ -94,6 +103,21 @@ class Message(CompanyScoped, Base):
     # orders by; received_at is when Tamga stored it.
     sent_at: Mapped[datetime] = mapped_column(index=True)
     received_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # What its writer typed: the text above the quoted history (quoted.py), which facts are read
+    # from. Filled when the message is processed.
+    own_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # The copy processed in its place: the same mail stored from another mailbox (the same
+    # Message-ID and text, other delivery headers), so it is read once.
+    copy_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL")
+    )
+    # When the pipeline read it; null while it waits (conversations/service.py, process_pending).
+    processed_at: Mapped[datetime | None]
+    # Times processing it failed, and when it last did. After PROCESS_TRIES it is tried once an
+    # hour, so one mail the pipeline cannot read never holds up the rest, and one that failed on a
+    # bug or an outage is read once the cause is gone.
+    process_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    process_failed_at: Mapped[datetime | None]
 
 
 class MessageLocation(CompanyScoped, Base):

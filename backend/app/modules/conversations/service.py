@@ -3,6 +3,10 @@
 Mail arrives by polling the company's mailboxes over IMAP, read-only (ADR-0008). Each folder keeps
 a cursor, because nothing on the server records what Tamga has read; each message is stored once,
 by the hash of its raw bytes, with every folder it was seen in beside it.
+
+A stored message waits to be processed: a job reads it once, oldest first, keeping the text its
+writer typed and the facts code finds in it. A copy of a mail stored from a second mailbox is read
+as the first one was, not again.
 """
 
 import asyncio
@@ -19,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Mailbox, get_settings
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
-from app.modules.conversations import html, repository
+from app.modules.conversations import html, quoted, repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
 from app.modules.conversations.mail import UNREADABLE, ParsedMail, parse_mail
 from app.modules.conversations.models import Channel, Direction, Message
@@ -32,16 +36,25 @@ from app.modules.conversations.schemas import (
     ThreadSummary,
 )
 from app.modules.documents import service as documents
+from app.modules.facts import extractors
+from app.modules.facts import service as facts
 from app.platform import search, storage
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import NotFound
+from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
 
 SNIPPET_LENGTH: Final = 200
+# Messages one company has processed per run; the next run, a minute later, takes the rest.
+PROCESS_BATCH: Final = 100
+# How many times a message is tried each run before it waits an hour between tries (a bug, an
+# outage, or a mail nobody can read).
+PROCESS_TRIES: Final = 3
+PROCESS_RETRY_AFTER: Final = timedelta(hours=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +335,87 @@ async def _mark_inline(
     # One file shown in the body and also attached beside it is an attachment, as when stored.
     inline = {document_id for document_id, file in files.items() if file.sha256 in shown - beside}
     await repository.set_inline(db, company_id, message_id, inline)
+
+
+# Processing what arrived
+
+
+async def process_pending() -> int:
+    """Processes the mail that waits, oldest first, each message in a transaction of its own, so one
+    that fails leaves the rest processed. A failure is counted against its message, which is tried
+    again next run, up to PROCESS_TRIES times, then once an hour. Returns how many were
+    processed."""
+    retry_before = utcnow() - PROCESS_RETRY_AFTER
+    async with open_session() as db:
+        company_ids = await repository.companies_with_pending(
+            db, tries=PROCESS_TRIES, retry_before=retry_before
+        )
+    processed = 0
+    for company_id in company_ids:
+        async with open_session() as db:
+            pending = await repository.pending_mail(
+                db,
+                company_id,
+                tries=PROCESS_TRIES,
+                retry_before=retry_before,
+                limit=PROCESS_BATCH,
+            )
+        for message_id in pending:
+            try:
+                async with open_session() as db:
+                    await process_message(db, company_id, message_id)
+                    await db.commit()
+            except Exception as error:  # one mail that fails never stops the others
+                # The error's type only: a database error's text can carry the values it wrote.
+                logger.warning("processing message %s failed: %s", message_id, type(error).__name__)
+                async with open_session() as db:
+                    await repository.add_process_failure(db, company_id, message_id, utcnow())
+                    await db.commit()
+                continue
+            processed += 1
+    return processed
+
+
+async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> None:
+    """Reads one stored message once: its own text, without the history it quotes, and the facts
+    code finds in that text and its subject. A copy of a mail already read is marked as such and
+    read no further. Runs in the caller's transaction and does not commit."""
+    message = await repository.get_message(db, company_id, message_id)
+    if message is None or message.processed_at is not None:
+        return
+    original = await _processed_copy(db, message)
+    if original is not None:
+        message.copy_of_id = original.id
+    else:
+        message.own_text = quoted.own_text(message.body_text, message.subject)
+        text = "\n".join(part for part in (message.subject, message.own_text) if part)
+        await facts.record_facts(
+            db,
+            company_id=company_id,
+            item_kind=ItemKind.MESSAGE,
+            item_id=message.id,
+            facts=extractors.from_text(text),
+        )
+    message.processed_at = utcnow()
+
+
+async def _processed_copy(db: AsyncSession, message: Message) -> Message | None:
+    """The same mail from another mailbox: its Message-ID, subject and text agree, while its
+    delivery headers, and so its raw hash, differ. A sender that reuses a Message-ID sends another
+    subject or text, whose facts are read too."""
+    if message.rfc_message_id is None:
+        return None
+    for other in await repository.processed_copies(
+        db, message.company_id, message.rfc_message_id, exclude=message.id
+    ):
+        if _as_read(other) == _as_read(message):
+            return other
+    return None
+
+
+def _as_read(message: Message) -> tuple[str, str]:
+    """What facts are read from, with runs of spaces made one."""
+    return " ".join((message.subject or "").split()), " ".join(message.body_text.split())
 
 
 # Reading what arrived

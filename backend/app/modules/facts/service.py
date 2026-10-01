@@ -34,25 +34,27 @@ async def record_facts(
     item_id: uuid.UUID,
     facts: Iterable[NewFact],
 ) -> list[Fact]:
-    """Stores each fact once per item; reading the item again returns the same rows."""
-    stored = []
+    """Stores each fact once per item, in one statement; reading the item again returns the same
+    rows."""
+    best: dict[tuple[str, str], tuple[str, str, str, float, str]] = {}
     for fact in facts:
         if not fact.normalised or not 0 <= fact.confidence <= 1:
             raise ValueError(f"a {fact.kind} fact needs a normalised value and a 0-1 confidence")
-        stored.append(
-            await repository.upsert(
-                db,
-                company_id=company_id,
-                item_kind=item_kind,
-                item_id=item_id,
-                kind=fact.kind[:40],
-                value=fact.value,
-                normalised=fact.normalised[:300],
-                confidence=fact.confidence,
-                extractor=fact.extractor[:60],
-            )
+        row = (
+            fact.kind[:40],
+            fact.value,
+            fact.normalised[:300],
+            fact.confidence,
+            fact.extractor[:60],
         )
-    return stored
+        # One statement cannot touch a row twice: the same fact twice keeps its best reading.
+        key = (row[0], row[2])
+        if key not in best or row[3] > best[key][3]:
+            best[key] = row
+    stored = await repository.upsert(
+        db, company_id=company_id, item_kind=item_kind, item_id=item_id, facts=list(best.values())
+    )
+    return list(stored)
 
 
 async def facts_of(

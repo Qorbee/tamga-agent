@@ -339,3 +339,63 @@ async def attachments_of(
         .order_by(MessageAttachment.filename)
     )
     return rows.all()
+
+
+def _waiting(tries: int, retry_before: datetime) -> ColumnElement[bool]:
+    """Not processed yet, and not failed too often lately: one that failed ``tries`` times waits
+    until its last failure is older than ``retry_before``."""
+    return Message.processed_at.is_(None) & (
+        (Message.process_failures < tries) | (Message.process_failed_at <= retry_before)
+    )
+
+
+async def companies_with_pending(
+    db: AsyncSession, *, tries: int, retry_before: datetime
+) -> list[uuid.UUID]:
+    """The companies with mail waiting to be processed. The one read across companies, and it reads
+    only their ids: each company's mail is then read under its own."""
+    rows = await db.scalars(
+        select(Message.company_id).where(_waiting(tries, retry_before)).distinct()
+    )
+    return list(rows)
+
+
+async def pending_mail(
+    db: AsyncSession, company_id: uuid.UUID, *, tries: int, retry_before: datetime, limit: int
+) -> list[uuid.UUID]:
+    """Oldest first, so a mail is read before the replies that answer it."""
+    rows = await db.scalars(
+        select(Message.id)
+        .where(Message.company_id == company_id, _waiting(tries, retry_before))
+        .order_by(Message.sent_at, Message.id)
+        .limit(limit)
+    )
+    return list(rows)
+
+
+async def add_process_failure(
+    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID, at: datetime
+) -> None:
+    await db.execute(
+        update(Message)
+        .where(Message.company_id == company_id, Message.id == message_id)
+        .values(process_failures=Message.process_failures + 1, process_failed_at=at)
+    )
+
+
+async def processed_copies(
+    db: AsyncSession, company_id: uuid.UUID, rfc_message_id: str, *, exclude: uuid.UUID
+) -> Sequence[Message]:
+    """Processed messages with this Message-ID that were read themselves, not as a copy."""
+    rows = await db.scalars(
+        select(Message)
+        .where(
+            Message.company_id == company_id,
+            Message.rfc_message_id == rfc_message_id,
+            Message.id != exclude,
+            Message.processed_at.is_not(None),
+            Message.copy_of_id.is_(None),
+        )
+        .order_by(Message.processed_at, Message.id)
+    )
+    return rows.all()

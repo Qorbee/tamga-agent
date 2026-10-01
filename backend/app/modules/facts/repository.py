@@ -15,26 +15,31 @@ async def upsert(
     company_id: uuid.UUID,
     item_kind: ItemKind,
     item_id: uuid.UUID,
-    kind: str,
-    value: str,
-    normalised: str,
-    confidence: float,
-    extractor: str,
-) -> Fact:
-    """One row per (item, kind, normalised value). Read again, it keeps the higher confidence and
-    the extractor that gave it."""
+    facts: Sequence[tuple[str, str, str, float, str]],
+) -> Sequence[Fact]:
+    """One row per (item, kind, normalised value), for all of an item's facts in one statement;
+    each is ``(kind, value, normalised, confidence, extractor)``, at most once per kind and value.
+    Read again, a fact keeps the higher confidence and the extractor that gave it."""
+    if not facts:
+        return []
     statement = insert(Fact).values(
-        company_id=company_id,
-        item_kind=item_kind,
-        item_id=item_id,
-        kind=kind,
-        value=value,
-        normalised=normalised,
-        confidence=confidence,
-        extractor=extractor,
+        [
+            {
+                "id": uuid.uuid7(),
+                "company_id": company_id,
+                "item_kind": item_kind,
+                "item_id": item_id,
+                "kind": kind,
+                "value": value,
+                "normalised": normalised,
+                "confidence": confidence,
+                "extractor": extractor,
+            }
+            for kind, value, normalised, confidence, extractor in facts
+        ]
     )
     higher = statement.excluded.confidence > Fact.confidence
-    fact = await db.scalar(
+    rows = await db.scalars(
         statement.on_conflict_do_update(
             index_elements=[
                 Fact.company_id,
@@ -51,9 +56,7 @@ async def upsert(
         .returning(Fact)
         .execution_options(populate_existing=True)
     )
-    if fact is None:  # an upsert always returns its row
-        raise RuntimeError("fact upsert returned nothing")
-    return fact
+    return rows.all()
 
 
 async def for_item(
