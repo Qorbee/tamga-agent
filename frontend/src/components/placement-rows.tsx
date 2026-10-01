@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowRight01Icon,
   Attachment01Icon,
   Building03Icon,
   Cancel01Icon,
@@ -8,6 +9,7 @@ import {
   PackageIcon,
   Route01Icon,
   Tick02Icon,
+  TruckIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -43,29 +45,87 @@ export function Count({ icon, count, label }: { icon: IconSvgElement; count: num
   );
 }
 
-/** What was read of the job a project was proposed for: who it is for, the route, the load. */
-export function JobFacts({ reading, className }: { reading: Placement["reading"]; className?: string }) {
+type Reading = NonNullable<Placement["reading"]>;
+
+/** Names as they were read, one of each however it was capitalised: mail writes a firm in
+ * capitals as often as not, and a Turkish İ or ı is its own letter. */
+function distinct(names: (string | null | undefined)[]): string[] {
+  const seen = new Map<string, string>();
+  for (const name of names) {
+    if (!name) continue;
+    const folded = name.replace(/[İIı]/g, "i").toLowerCase();
+    if (!seen.has(folded)) seen.set(folded, name);
+  }
+  return [...seen.values()];
+}
+
+function Fact({ icon, label, children }: { icon: IconSvgElement; label: string; children: ReactNode }) {
+  return (
+    <span className="flex max-w-full min-w-0 items-start gap-1.5" title={label}>
+      <HugeiconsIcon icon={icon} strokeWidth={1.75} className="mt-0.5 size-4 shrink-0" aria-label={label} />
+      <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
+    </span>
+  );
+}
+
+/**
+ * What was read of a project's job across its conversations: who gave it and who it was given on
+ * to, the route, the load. A long value wraps; nothing is cut at the edge.
+ */
+export function JobFacts({ placements, className }: { placements: Placement[]; className?: string }) {
   const { t } = useI18n();
-  if (!reading) return null;
-  const route = [reading.origin, reading.destination].filter(Boolean).join(" → ");
-  const facts: [IconSvgElement, string, string | undefined][] = [
-    [Building03Icon, t.project.client, reading.client],
-    [Route01Icon, t.project.route, route || undefined],
-    [PackageIcon, t.project.cargo, reading.cargo],
-  ];
-  const shown = facts.filter((fact) => fact[2]);
-  if (shown.length === 0) return null;
+  const readings = placements.flatMap((placement) => (placement.reading ? [placement.reading] : []));
+  const first = (key: "client" | "origin" | "destination" | "cargo") =>
+    readings.find((reading) => reading[key])?.[key] ?? undefined;
+  const dealtWith = (role: Reading["party_role"]) =>
+    readings.filter((reading) => reading.party_role === role).map((reading) => reading.party);
+  const client = first("client") ?? distinct(dealtWith("client"))[0];
+  const subcontractors = distinct([...readings.map((reading) => reading.subcontractor), ...dealtWith("subcontractor")]);
+  const route = [first("origin"), first("destination")].filter(Boolean).join(" → ");
+  const cargo = first("cargo");
+  if (!client && subcontractors.length === 0 && !route && !cargo) return null;
   return (
     <ul className={cn("text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm", className)}>
-      {shown.map(([icon, label, value]) => (
-        <li key={label} className="inline-flex min-w-0 items-center gap-1.5" title={label}>
-          <HugeiconsIcon icon={icon} strokeWidth={1.75} className="size-4 shrink-0" aria-label={label} />
-          <span className="truncate">{value}</span>
+      {client || subcontractors.length > 0 ? (
+        <li className="flex max-w-full min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+          {client ? (
+            <Fact icon={Building03Icon} label={t.project.client}>
+              {client}
+            </Fact>
+          ) : null}
+          {client && subcontractors.length > 0 ? (
+            <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.75} className="mt-1 size-3.5 shrink-0" aria-hidden />
+          ) : null}
+          {subcontractors.length > 0 ? (
+            <Fact icon={TruckIcon} label={t.project.subcontractor}>
+              {subcontractors.join(", ")}
+            </Fact>
+          ) : null}
         </li>
-      ))}
+      ) : null}
+      {route ? (
+        <li className="flex max-w-full min-w-0">
+          <Fact icon={Route01Icon} label={t.project.route}>
+            {route}
+          </Fact>
+        </li>
+      ) : null}
+      {cargo ? (
+        <li className="flex max-w-full min-w-0">
+          <Fact icon={PackageIcon} label={t.project.cargo}>
+            {cargo}
+          </Fact>
+        </li>
+      ) : null}
     </ul>
   );
 }
+
+/** What the firm the company deals with in a conversation is to it in this job. */
+const ROLE_ICONS: Partial<Record<NonNullable<Reading["party_role"]>, IconSvgElement>> = {
+  client: Building03Icon,
+  subcontractor: TruckIcon,
+};
 
 /**
  * Conversations placed in a project, one row each however many mails it holds: what it is, who
@@ -92,6 +152,10 @@ function PlacementRow({ placement }: { placement: Placement }) {
   const conversation = placement.conversation;
   if (!conversation) return null;
   const who = conversation.participants.slice(0, 2).join(", ") || conversation.latest.sender || "—";
+  const role = placement.reading?.party_role;
+  const roleIcon = role ? ROLE_ICONS[role] : undefined;
+  const roleLabel =
+    role === "client" ? t.project.client : role === "subcontractor" ? t.project.subcontractor : "";
   const reason =
     placement.reason ||
     (placement.placed_by === "keys" ? t.inbox.byNumbers : placement.placed_by === "thread" ? t.inbox.byThread : "");
@@ -108,7 +172,14 @@ function PlacementRow({ placement }: { placement: Placement }) {
             {conversation.subject ? conversationName(conversation.subject) : t.inbox.noSubject}
           </span>
           <span className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-            <span className="max-w-full truncate">{who}</span>
+            <span className="inline-flex max-w-full min-w-0 items-center gap-1">
+              {roleIcon ? (
+                <span className="text-foreground/80 shrink-0" title={`${roleLabel}: ${placement.reading?.party ?? ""}`}>
+                  <HugeiconsIcon icon={roleIcon} strokeWidth={1.75} className="size-3.5" aria-label={roleLabel} />
+                </span>
+              ) : null}
+              <span className="truncate">{who}</span>
+            </span>
             <Count icon={Mail01Icon} count={conversation.message_count} label={t.mail.messages(conversation.message_count)} />
             {conversation.attachment_count > 0 ? (
               <Count

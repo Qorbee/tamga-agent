@@ -203,6 +203,8 @@ async def test_a_longer_window_reads_the_older_mail_newest_first_and_then_stops_
     company = await companies.create_company(db, name="Acme Lojistik", kind=CompanyKind.PILOT)
     await db.commit()
     monkeypatch.setattr(get_settings(), "mail_batch", 2)
+    # Whatever the developer's own .env asks for.
+    monkeypatch.setattr(get_settings(), "mail_backfill_days", 90)
     today = utcnow().date()
     inbox = Folder(
         uidvalidity=7,

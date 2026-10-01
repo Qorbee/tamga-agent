@@ -53,7 +53,8 @@ async def test_a_placement_says_what_the_conversation_is_where_it_went_and_why(
 
     assert placement["outcome"] == "proposed" and placement["placed_by"] == "model:linker"
     assert placement["reason"] == "why" and placement["confidence"] == 0.8
-    assert placement["reading"] == {"origin": "Istanbul", "cargo": "steel coils"}
+    read = {key: value for key, value in placement["reading"].items() if value is not None}
+    assert read == {"origin": "Istanbul", "cargo": "steel coils"}
     assert placement["suggested_links"] == 2
     conversation = placement["conversation"]
     assert conversation["subject"] == "Munich load" and conversation["message_count"] == 2

@@ -138,7 +138,6 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
     },
     onSettled: invalidate,
   });
-  const reading = waiting.find((placement) => placement.reading)?.reading ?? null;
   const shown = all ? waiting : waiting.slice(0, SHOWN);
 
   return (
@@ -189,7 +188,7 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
           >
             {project.name}
           </CanvasLink>
-          <JobFacts reading={reading} className="mt-1.5" />
+          <JobFacts placements={waiting} className="mt-1.5" />
         </div>
       </header>
       {answer.isError ? (

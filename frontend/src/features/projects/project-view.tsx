@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getProject, listAllPlacements } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 
+import { EditProjectDialog } from "./edit-project-dialog";
 import { ProjectActions, STATUS_ICONS } from "./project-actions";
 
 function useProject(id: string) {
@@ -46,20 +47,21 @@ export function ProjectView({ id }: { id: string }) {
     );
   if (!project.data) return <Skeleton className="m-5 h-32 rounded-2xl" />;
 
-  const { name, status, aliases } = project.data;
+  const { number, name, status, aliases } = project.data;
   const held = (placements.data ?? []).filter((placement) => placement.conversation);
   const waitingFirst = [...held].sort(
     (a, b) => Number(b.suggested_links > 0) - Number(a.suggested_links > 0),
   );
-  const reading = held.find((placement) => placement.reading)?.reading ?? null;
 
   return (
-    <div className="grid gap-6 p-4 sm:p-5">
-      <header className="grid gap-2">
-        {aliases.length > 0 ? (
-          <p className="text-muted-foreground font-mono text-xs">{t.board.aliases(aliases.join(", "))}</p>
-        ) : null}
-        <h3 className="text-xl font-medium tracking-tight text-pretty break-words">{name}</h3>
+    // One column no wider than the canvas: a long word wraps instead of widening the grid.
+    <div className="grid grid-cols-1 gap-6 p-4 sm:p-5">
+      <header className="grid grid-cols-1 gap-2">
+        <p className="text-muted-foreground flex flex-wrap items-baseline gap-x-2 font-mono text-xs">
+          <span className="text-foreground">{number}</span>
+          {aliases.length > 0 ? <span>{t.board.aliases(aliases.join(", "))}</span> : null}
+        </p>
+        <h3 className="text-xl font-medium tracking-tight text-pretty [overflow-wrap:anywhere]">{name}</h3>
         <div className="flex items-center gap-2">
           {status !== "rejected" ? (
             <span className="bg-secondary text-secondary-foreground inline-flex items-center gap-1.5 rounded-full py-1 ps-2 pe-2.5 text-xs font-medium">
@@ -68,11 +70,12 @@ export function ProjectView({ id }: { id: string }) {
             </span>
           ) : null}
           <ProjectActions project={project.data} />
+          <EditProjectDialog project={project.data} />
         </div>
-        <JobFacts reading={reading} className="mt-1" />
+        <JobFacts placements={held} className="mt-1" />
       </header>
 
-      <section className="grid gap-2">
+      <section className="grid grid-cols-1 gap-2">
         <h4 className="flex items-baseline gap-2 text-sm font-medium">
           {t.project.conversations}
           <span className="text-muted-foreground tabular-nums">{placements.data ? held.length : ""}</span>

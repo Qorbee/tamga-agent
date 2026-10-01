@@ -34,7 +34,7 @@ from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.modules.linking import agents, repository
 from app.modules.linking.models import Outcome, Placement
-from app.modules.linking.schemas import PlacementOut, PlacementPage
+from app.modules.linking.schemas import JobReading, PlacementOut, PlacementPage
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProjectStatus
 from app.platform import llm
@@ -460,7 +460,7 @@ def _follows(project_id: uuid.UUID, found: _Found, placement: Placement) -> _Dec
         evidence=found.keys.get(project_id, frozenset()),
         reason=placement.reason if placement.project_id == project_id else "",
         cited=tuple(placement.cited) if placement.project_id == project_id else (),
-        reading=placement.reading if proposed else None,
+        reading=placement.reading if placement.project_id == project_id else None,
     )
 
 
@@ -476,6 +476,12 @@ def _from_model(
         if 1 <= number <= len(thread.mails)
     )
     unplaced = _Decision(Outcome.UNPLACED, agents.MODEL_PLACED, reason=reason, cited=cited)
+    # A role says nothing without the firm it is the role of.
+    party = (
+        {"party": placing.party, "party_role": placing.party_role}
+        if placing.party and placing.party.strip() and placing.party_role
+        else {}
+    )
     if placing.decision == "link":
         project_id = desk.projects.get(agents.bare(placing.project or ""))
         if project_id is None or project_id in found.ties.refused:
@@ -488,6 +494,7 @@ def _from_model(
             evidence=found.keys.get(project_id, frozenset()),
             reason=reason,
             cited=cited,
+            reading=_as_read(party),
         )
     if placing.decision == "ask":
         shown = [desk.projects.get(agents.bare(number)) for number in placing.alternatives]
@@ -506,7 +513,7 @@ def _from_model(
         name = " ".join(placing.new_project.name.replace("\x00", "").split())[:300]
         if not name:
             return unplaced
-        reading = placing.new_project.model_dump(exclude={"name"}, exclude_none=True)
+        job = placing.new_project.model_dump(exclude={"name"}, exclude_none=True)
         return _Decision(
             Outcome.PROPOSED,
             agents.MODEL_PLACED,
@@ -514,9 +521,17 @@ def _from_model(
             confidence=placing.confidence,
             reason=reason,
             cited=cited,
-            reading={key: " ".join(str(value).split())[:300] for key, value in reading.items()},
+            reading=_as_read(job | party),
         )
     return unplaced
+
+
+def _as_read(read: dict[str, Any]) -> dict[str, str] | None:
+    """What a model read, as it is kept: one line a value, the empty ones left out."""
+    kept = {
+        key: " ".join(str(value).replace("\x00", "").split())[:300] for key, value in read.items()
+    }
+    return {key: value for key, value in kept.items() if value} or None
 
 
 async def _apply(
@@ -570,6 +585,11 @@ async def _apply(
                 confidence=decision.confidence or 0.0,
                 evidence=sorted(decision.evidence),
             )
+    # Read again and left in its project, a conversation keeps what was read of the job before.
+    stays = project_id is not None and project_id == placement.project_id
+    reading = (
+        {**(placement.reading or {}), **(decision.reading or {})} if stays else decision.reading
+    )
     placement.outcome = decision.outcome
     placement.placed_by = decision.placed_by
     placement.project_id = project_id
@@ -577,7 +597,7 @@ async def _apply(
     placement.reason = decision.reason
     placement.confidence = decision.confidence
     placement.cited = list(decision.cited)
-    placement.reading = decision.reading
+    placement.reading = reading or None
     placement.mails = len(thread.mails)
     placement.last_mail_at = thread.mails[-1].sent_at
     placement.files_read = found.files_read
@@ -719,11 +739,7 @@ async def _describe(
                 reason=placement.reason,
                 confidence=placement.confidence,
                 cited=list(placement.cited),
-                reading=(
-                    {key: str(value) for key, value in placement.reading.items()}
-                    if placement.reading
-                    else None
-                ),
+                reading=JobReading.model_validate(placement.reading) if placement.reading else None,
                 placed_at=placement.placed_at,
                 suggested_links=sum(
                     (mail_id, placement.project_id) in suggested

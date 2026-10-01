@@ -63,6 +63,10 @@ export const tr: Dictionary = {
   project: {
     title: "Proje",
     client: "Müşteri",
+    subcontractor: "Taşeron",
+    edit: "Adı ve numarayı düzenle",
+    numberKept: "Eski numara da bu projeyi bulur.",
+    save: "Kaydet",
     route: "Güzergâh",
     cargo: "Yük",
     conversations: "Yazışmalar",

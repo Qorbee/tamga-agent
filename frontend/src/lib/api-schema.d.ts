@@ -1115,6 +1115,26 @@ export interface components {
          */
         ItemKind: "message" | "document" | "invoice" | "location";
         /**
+         * JobReading
+         * @description What a model read in a conversation: a proposal for the owner, never a fact.
+         */
+        JobReading: {
+            /** Cargo */
+            cargo?: string | null;
+            /** Client */
+            client?: string | null;
+            /** Destination */
+            destination?: string | null;
+            /** Origin */
+            origin?: string | null;
+            /** Party */
+            party?: string | null;
+            /** Party Role */
+            party_role?: ("client" | "subcontractor" | "other") | null;
+            /** Subcontractor */
+            subcontractor?: string | null;
+        };
+        /**
          * Language
          * @enum {string}
          */
@@ -1458,10 +1478,7 @@ export interface components {
             placed_by: string | null;
             /** Project Id */
             project_id: string | null;
-            /** Reading */
-            reading: {
-                [key: string]: string;
-            } | null;
+            reading: components["schemas"]["JobReading"] | null;
             /** Reason */
             reason: string;
             /** Suggested Links */

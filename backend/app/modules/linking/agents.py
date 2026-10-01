@@ -82,6 +82,8 @@ class NewProject(BaseModel):
     # The client and the job, short: "Stone GmbH, Istanbul to Munich, steel coils".
     name: str
     client: str | None = None
+    # The carrier the company gave the job to, when the mail shows one.
+    subcontractor: str | None = None
     origin: str | None = None
     destination: str | None = None
     cargo: str | None = None
@@ -94,6 +96,10 @@ class Placing(BaseModel):
     # ask: the numbers of the projects that fit equally.
     alternatives: list[str] = []
     new_project: NewProject | None = None
+    # link, new_project: the other side of this conversation, and what it is to the company in
+    # this job.
+    party: str | None = None
+    party_role: Literal["client", "subcontractor", "other"] | None = None
     # One or two plain sentences for the owner.
     reason: str
     # The mails of this conversation the decision rests on, by their number in it.
@@ -127,6 +133,18 @@ the project by the client and the job, and fill what the mail says of it.
 - unplaced: it is not about one job (a price list, an introduction, a general question, a quote \
 asked for and not agreed), or you cannot tell. Between a guess and unplaced, answer unplaced: a \
 wrong link is worse than a missing one.
+
+For link and new_project, say who the company deals with in this conversation (`party`, the \
+other firm's name as the mail writes it) and what that firm is to the company in this job \
+(`party_role`):
+- client: it gives the company the job. It orders or confirms the transport, asks where the \
+truck is, and is the one the company invoices.
+- subcontractor: the company gives it the job. It offers or supplies the truck and the driver, \
+reports to the company, and invoices the company.
+- other: anyone else, such as a customs agent, a warehouse or the consignee.
+A freight company can be either: go by who orders and who carries in this conversation, never \
+by the firm's name. Leave both empty when the mail does not show it. In a new project, \
+`subcontractor` is the carrier the company gave the job to, when the mail shows one.
 
 `reason` is one or two plain sentences for the owner: what the conversation is, and what \
 ties it to the project. `cited_mails` are the numbers of the mails of this conversation you \

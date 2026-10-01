@@ -87,7 +87,9 @@ class Placement(CompanyScoped, Base):
     cited: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(Uuid), default=list, server_default=text("'{}'")
     )
-    # What the model read of a job it proposed a project for: client, origin, destination, cargo.
+    # What the model read: of the conversation, who the company deals with in it and what that
+    # firm is to it in this job (party, party_role); of a job it proposed a project for, also
+    # client, subcontractor, origin, destination, cargo.
     reading: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # How many mails it held when it was read, and the newest of them. A change that brings no
     # mail (a copy stored from a second mailbox) is not read again, and a later mail soon after

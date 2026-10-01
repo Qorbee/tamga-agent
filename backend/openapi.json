@@ -1216,6 +1216,95 @@
         "title": "ItemKind",
         "type": "string"
       },
+      "JobReading": {
+        "description": "What a model read in a conversation: a proposal for the owner, never a fact.",
+        "properties": {
+          "cargo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cargo"
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "party": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party"
+          },
+          "party_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "client",
+                  "subcontractor",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Role"
+          },
+          "subcontractor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subcontractor"
+          }
+        },
+        "title": "JobReading",
+        "type": "object"
+      },
       "Language": {
         "enum": [
           "en",
@@ -2215,16 +2304,12 @@
           "reading": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/JobReading"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Reading"
+            ]
           },
           "reason": {
             "title": "Reason",

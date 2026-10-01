@@ -309,7 +309,13 @@ async def test_a_second_conversation_about_the_job_is_found_by_search_and_linked
     script = model(
         tool("search_mail", words="Munich"),
         tool("open_conversation", conversation=1),
-        answer("link", project=project.number, cited_mails=[1, 7]),
+        answer(
+            "link",
+            project=project.number,
+            cited_mails=[1, 7],
+            party=" Hauler  Ltd ",
+            party_role="subcontractor",
+        ),
     )
 
     assert await service.place_pending() == 1
@@ -328,6 +334,8 @@ async def test_a_second_conversation_about_the_job_is_found_by_search_and_linked
     placed = await placement(company_id, "<driver@x>")
     # A mail number the conversation does not have is dropped, not guessed at.
     assert placed.outcome is Outcome.LINKED and placed.cited == [link.item_id]
+    # Who the company deals with in it, and that it carries the job for the company.
+    assert placed.reading == {"party": "Hauler Ltd", "party_role": "subcontractor"}
     assert await the_projects(other) == []
 
 
@@ -535,6 +543,10 @@ async def test_new_mail_soon_follows_its_conversation_and_later_mail_is_read_aga
     assert "[mail 3] 2026-09-20" in script.prompt()
     assert "the quoted history" not in script.prompt()
     assert len(await links(company_id, "<order@x>")) == 3
+    # Left in its project, it keeps what was read of the job when the project was proposed.
+    placed = await placement(company_id, "<order@x>")
+    assert placed.outcome is Outcome.LINKED
+    assert placed.reading == {"origin": "Istanbul", "cargo": "steel coils"}
     assert (await placement(company_id, "<order@x>")).placed_by == "model:linker"
 
 

@@ -61,6 +61,10 @@ export const en = {
   project: {
     title: "Project",
     client: "Client",
+    subcontractor: "Subcontractor",
+    edit: "Edit name and number",
+    numberKept: "The old number still finds this project.",
+    save: "Save",
     route: "Route",
     cargo: "Cargo",
     conversations: "Conversations",
