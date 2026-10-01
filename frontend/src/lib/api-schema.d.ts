@@ -712,10 +712,14 @@ export interface components {
              */
             id: string;
             preview: components["schemas"]["Preview"] | null;
+            read_state: components["schemas"]["ReadState"] | null;
             /** Sha256 */
             sha256: string;
             /** Size */
             size: number;
+            /** Truncated */
+            truncated: boolean;
+            unreadable_reason: components["schemas"]["Reason"] | null;
         };
         /** DocumentOut */
         DocumentOut: {
@@ -736,10 +740,14 @@ export interface components {
              */
             id: string;
             preview: components["schemas"]["Preview"] | null;
+            read_state: components["schemas"]["ReadState"] | null;
             /** Sha256 */
             sha256: string;
             /** Size */
             size: number;
+            /** Truncated */
+            truncated: boolean;
+            unreadable_reason: components["schemas"]["Reason"] | null;
         };
         /** DocumentPage */
         DocumentPage: {
@@ -1397,6 +1405,13 @@ export interface components {
          * @enum {string}
          */
         ProposalTarget: "project" | "shipment";
+        /**
+         * ReadState
+         * @description Whether Tamga has read what a file says (ADR-0012). A document nobody asked to read (an
+         *     inline logo) has none.
+         * @enum {string}
+         */
+        ReadState: "pending" | "read" | "unreadable";
         /** Readiness */
         Readiness: {
             /** Database */
@@ -1409,6 +1424,12 @@ export interface components {
             /** Storage */
             storage: boolean;
         };
+        /**
+         * Reason
+         * @description Why a file could not be read, as the owner is told (ADR-0012).
+         * @enum {string}
+         */
+        Reason: "password" | "unsupported" | "damaged" | "too_large" | "limits";
         /**
          * Role
          * @enum {string}
@@ -1431,6 +1452,8 @@ export interface components {
             default_height: number;
             /** Default Width */
             default_width: number;
+            /** Hidden */
+            hidden: boolean;
             /** Merges */
             merges: components["schemas"]["MergeOut"][];
             /** Name */

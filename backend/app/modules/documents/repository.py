@@ -1,11 +1,12 @@
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.documents.models import Document
+from app.modules.documents.models import Document, ReadState
 from app.platform.pagination import PageParams, escape_like
 
 
@@ -82,3 +83,64 @@ async def list_documents(
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def request_reading(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> None:
+    """Marks documents nobody asked to read yet as waiting; one waiting or read is left alone."""
+    if not ids:
+        return
+    await db.execute(
+        update(Document)
+        .where(
+            Document.company_id == company_id,
+            Document.id.in_(ids),
+            Document.read_state.is_(None),
+        )
+        .values(read_state=ReadState.PENDING)
+    )
+
+
+def _waiting(tries: int, retry_before: datetime) -> ColumnElement[bool]:
+    """Waiting for code to read it: not left for the vision model, and not failed too often lately
+    (one that failed ``tries`` times waits until its last failure is older than
+    ``retry_before``)."""
+    return (
+        (Document.read_state == ReadState.PENDING)
+        & Document.needs_vision.is_(False)
+        & ((Document.read_failures < tries) | (Document.read_failed_at <= retry_before))
+    )
+
+
+async def companies_with_pending(
+    db: AsyncSession, *, tries: int, retry_before: datetime
+) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone: each company's files are then read under
+    its own."""
+    rows = await db.scalars(
+        select(Document.company_id).where(_waiting(tries, retry_before)).distinct()
+    )
+    return list(rows)
+
+
+async def pending(
+    db: AsyncSession, company_id: uuid.UUID, *, tries: int, retry_before: datetime, limit: int
+) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(Document.id)
+        .where(Document.company_id == company_id, _waiting(tries, retry_before))
+        .order_by(Document.created_at, Document.id)
+        .limit(limit)
+    )
+    return list(rows)
+
+
+async def add_read_failure(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, at: datetime
+) -> None:
+    await db.execute(
+        update(Document)
+        .where(Document.company_id == company_id, Document.id == document_id)
+        .values(read_failures=Document.read_failures + 1, read_failed_at=at)
+    )

@@ -11,7 +11,7 @@ import logging
 
 from app import packs
 from app.config import get_settings
-from app.platform import jobs, tracing
+from app.platform import isolated, jobs, tracing
 from app.platform.db import dispose_db, init_db
 
 
@@ -21,6 +21,8 @@ async def main() -> None:
     packs.register_all()
     jobs.import_all_tasks()
     init_db(str(settings.database_url))
+    # Before any other thread starts: the forkserver starts with a narrowed environment.
+    isolated.start()
     tracing.init_tracing("worker")
     try:
         async with jobs.app.open_async():

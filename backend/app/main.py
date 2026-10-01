@@ -21,7 +21,7 @@ from app.modules.documents import router as documents
 from app.modules.identity import router as identity
 from app.modules.projects import router as projects
 from app.packs.logistics import router as logistics
-from app.platform import tracing
+from app.platform import isolated, tracing
 from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
 from app.platform.origin import OriginCheck
@@ -31,6 +31,8 @@ from app.routers import health
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db(str(get_settings().database_url))
+    # Before any other thread starts: the forkserver starts with a narrowed environment.
+    isolated.start()
     tracing.init_tracing("api")
     try:
         yield

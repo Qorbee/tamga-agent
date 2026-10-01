@@ -378,8 +378,11 @@ async def process_pending() -> int:
 
 async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> None:
     """Reads one stored message once: its own text, without the history it quotes, and the facts
-    code finds in that text and its subject. A copy of a mail already read is marked as such and
-    read no further. Runs in the caller's transaction and does not commit."""
+    code finds in that text and its subject; and asks for its attachments to be read, all but the
+    pictures its body shows inline. A copy of a mail already read is marked as such and its text
+    read no further; its attachments are still asked for, since a mailbox can keep a file another
+    copy lost (a file both hold is one document, asked for once). Runs in the caller's transaction
+    and does not commit."""
     message = await repository.get_message(db, company_id, message_id)
     if message is None or message.processed_at is not None:
         return
@@ -396,6 +399,10 @@ async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: u
             item_id=message.id,
             facts=extractors.from_text(text),
         )
+    attachments = await repository.attachments_of(db, company_id, message.id)
+    await documents.request_reading(
+        db, company_id, [file.document_id for file in attachments if not file.inline]
+    )
     message.processed_at = utcnow()
 
 

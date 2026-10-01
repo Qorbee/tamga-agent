@@ -4,8 +4,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.modules.documents.models import ReadState
 from app.modules.documents.sheets import Border, CellKind, HAlign, VAlign
 from app.platform.filetypes import Preview
+from app.platform.isolated import Reason
 
 
 class DocumentOut(BaseModel):
@@ -18,6 +20,12 @@ class DocumentOut(BaseModel):
     created_at: datetime
     # How the web app can show it (GET /documents/{id}/content or /sheets); null: download only.
     preview: Preview | None
+    # Whether Tamga has read what it says; null when nobody asked (an inline logo).
+    read_state: ReadState | None
+    # Why it could not be read, when read_state is unreadable.
+    unreadable_reason: Reason | None
+    # Read only in part: pages, sheets, rows or columns past what a file is read for.
+    truncated: bool
 
 
 class DocumentDetail(DocumentOut):
@@ -94,6 +102,8 @@ class SheetOut(BaseModel):
     # A column's width in pixels and a row's height in points, where the sheet sets none.
     default_width: int
     default_height: float
+    # Hidden by its workbook: Excel shows no tab for it.
+    hidden: bool
 
 
 class WorkbookOut(BaseModel):

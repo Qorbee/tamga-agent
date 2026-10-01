@@ -442,6 +442,16 @@
               }
             ]
           },
+          "read_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
@@ -449,6 +459,20 @@
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reason"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -460,6 +484,9 @@
           "sha256",
           "created_at",
           "preview",
+          "read_state",
+          "unreadable_reason",
+          "truncated",
           "download_url"
         ],
         "title": "DocumentDetail",
@@ -506,6 +533,16 @@
               }
             ]
           },
+          "read_state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sha256": {
             "title": "Sha256",
             "type": "string"
@@ -513,6 +550,20 @@
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reason"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -523,7 +574,10 @@
           "doc_type",
           "sha256",
           "created_at",
-          "preview"
+          "preview",
+          "read_state",
+          "unreadable_reason",
+          "truncated"
         ],
         "title": "DocumentOut",
         "type": "object"
@@ -2366,6 +2420,16 @@
         "title": "ProposalTarget",
         "type": "string"
       },
+      "ReadState": {
+        "description": "Whether Tamga has read what a file says (ADR-0012). A document nobody asked to read (an\ninline logo) has none.",
+        "enum": [
+          "pending",
+          "read",
+          "unreadable"
+        ],
+        "title": "ReadState",
+        "type": "string"
+      },
       "Readiness": {
         "properties": {
           "database": {
@@ -2392,6 +2456,18 @@
         ],
         "title": "Readiness",
         "type": "object"
+      },
+      "Reason": {
+        "description": "Why a file could not be read, as the owner is told (ADR-0012).",
+        "enum": [
+          "password",
+          "unsupported",
+          "damaged",
+          "too_large",
+          "limits"
+        ],
+        "title": "Reason",
+        "type": "string"
       },
       "Role": {
         "enum": [
@@ -2459,6 +2535,10 @@
             "title": "Default Width",
             "type": "integer"
           },
+          "hidden": {
+            "title": "Hidden",
+            "type": "boolean"
+          },
           "merges": {
             "items": {
               "$ref": "#/components/schemas/MergeOut"
@@ -2497,7 +2577,8 @@
           "styles",
           "truncated",
           "default_width",
-          "default_height"
+          "default_height",
+          "hidden"
         ],
         "title": "SheetOut",
         "type": "object"

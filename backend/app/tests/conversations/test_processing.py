@@ -1,4 +1,6 @@
+import email
 import email.message
+import email.policy
 import uuid
 from datetime import timedelta
 
@@ -9,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.conversations import service
 from app.modules.conversations.adapters.imap import FetchedMail
-from app.modules.conversations.models import Message
+from app.modules.conversations.models import Message, MessageAttachment
+from app.modules.documents.models import Document
 from app.modules.facts import service as facts
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -172,3 +175,62 @@ async def test_a_mail_that_fails_leaves_the_rest_processed_and_waits_an_hour_aft
     later = utcnow() + service.PROCESS_RETRY_AFTER + timedelta(minutes=1)
     monkeypatch.setattr(service, "utcnow", lambda: later)
     assert await service.process_pending() == 1
+
+
+async def test_a_mail_asks_for_its_attachments_to_be_read_but_not_its_inline_pictures(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    message = email.message.EmailMessage()
+    message["From"] = "ayse@kaya.example"
+    message["Subject"] = "CMR"
+    message["Date"] = "Mon, 28 Sep 2026 09:00:00 +0300"
+    message["Message-ID"] = "<cmr@k>"
+    message.set_content("CMR attached.")
+    message.add_alternative('<p>CMR attached.</p><img src="cid:logo">', subtype="html")
+    html = message.get_body(preferencelist=("html",))
+    assert isinstance(html, email.message.EmailMessage)
+    html.add_related(b"\x89PNG\r\n\x1a\n logo", "image", "png", cid="<logo>")
+    message.add_attachment(b"%PDF-1.7 cmr", "application", "pdf", filename="cmr.pdf")
+    await store(company_id, "ops@acme.example", 1, message.as_bytes())
+
+    await service.process_pending()
+
+    async with open_session() as db:
+        files = (
+            await db.execute(
+                select(MessageAttachment.inline, Document.read_state)
+                .join(Document, Document.id == MessageAttachment.document_id)
+                .where(MessageAttachment.company_id == company_id)
+            )
+        ).all()
+    assert sorted((inline, state or "") for inline, state in files) == [
+        (False, "pending"),
+        (True, ""),
+    ]
+
+
+async def test_a_copy_asks_for_a_file_the_mail_read_before_did_not_have(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    await store(company_id, "ops@acme.example", 1, mail("<cmr@k>", "CMR", "CMR attached."))
+    await service.process_pending()
+    kept = email.message_from_bytes(
+        mail("<cmr@k>", "CMR", "CMR attached."), policy=email.policy.default
+    )
+    assert isinstance(kept, email.message.EmailMessage)
+    kept.add_attachment(b"%PDF-1.7 cmr", "application", "pdf", filename="cmr.pdf")
+    await store(company_id, "deniz@acme.example", 1, kept.as_bytes())
+
+    await service.process_pending()
+
+    async with open_session() as db:
+        copy = await db.scalar(
+            select(Message).where(Message.company_id == company_id, Message.copy_of_id.is_not(None))
+        )
+        states = await db.scalars(
+            select(Document.read_state).where(Document.company_id == company_id)
+        )
+        assert copy is not None
+        assert list(states) == ["pending"]

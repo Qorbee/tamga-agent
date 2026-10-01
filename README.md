@@ -55,7 +55,9 @@ Arc testnet; nothing touches a company's bank or real money.
   (the history it quotes cut off), and code reads its plates, IBANs and invoice, order and CMR
   numbers.
 - **Files:** uploads and mail attachments, stored once and opened in a canvas beside the chat: PDFs,
-  spreadsheets as Excel lays them out, images.
+  spreadsheets as Excel lays them out, images. Each is read once, in a locked child process: a PDF's
+  text layer and a spreadsheet's visible cells, with hidden text left out and counted, and the facts
+  code finds in them.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
 - **Projects and shipments:** the data model and the projects board.
 - **The books:** a read-only accounting sync, through a country pack.

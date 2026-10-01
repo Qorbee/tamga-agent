@@ -134,6 +134,8 @@ class Sheet:
     # A column's width in pixels and a row's height in points, where the sheet sets none of its own.
     default_width: int = _DEFAULT_WIDTH
     default_height: float = _DEFAULT_HEIGHT
+    # Hidden by its workbook: Excel shows no tab for it.
+    hidden: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +149,10 @@ class Workbook:
 
 
 class Unreadable(ValueError):
+    pass
+
+
+class TooLarge(Unreadable):
     pass
 
 
@@ -183,7 +189,7 @@ class _Styles:
 def _xlsx(data: bytes) -> Workbook:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         if sum(entry.file_size for entry in archive.infolist()) > _MAX_UNZIPPED:
-            raise Unreadable("The spreadsheet is too large to show")
+            raise TooLarge("The spreadsheet is too large to show")
         book = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         try:
             theme = _theme_colours(book.loaded_theme)
@@ -258,6 +264,7 @@ def _xlsx_sheet(
         truncated=truncated or _cut_across(layout.merges, len(rows)),
         default_width=layout.width,
         default_height=layout.height,
+        hidden=sheet.sheet_state != "visible",
     )
 
 
@@ -606,6 +613,8 @@ def _xls_sheet(book: xlrd.Book, sheet: xlrd.sheet.Sheet, normal: _Normal) -> She
         default_height=sheet.default_row_height / 20
         if sheet.default_row_height
         else _DEFAULT_HEIGHT,
+        # 1 is hidden, 2 very hidden (shown by no menu in Excel).
+        hidden=sheet.visibility != 0,
     )
 
 
@@ -773,3 +782,48 @@ def _clip(merges: list[Merge], rows: int) -> list[Merge]:
             )
         )
     return [merge for merge in clipped if merge.rows * merge.columns > 1]
+
+
+# What a person sees
+
+
+def visible_text(book: Workbook) -> tuple[str, int]:
+    """The cells a person sees in Excel, a sheet at a time and a row a line, cells split by tabs;
+    and how many cells with a value were left out because the workbook hides their sheet, row or
+    column (ADR-0013). A whole number is written without its ".0", as Excel shows it."""
+    lines: list[str] = []
+    hidden = 0
+    for sheet in book.sheets:
+        filled = [
+            (row, index, cell)
+            for row in sheet.rows
+            for index, cell in enumerate(row.cells)
+            if cell is not None and cell.value != ""
+        ]
+        shown = [
+            (row, index, cell)
+            for row, index, cell in filled
+            if not sheet.hidden
+            and not row.hidden
+            and not (index < len(sheet.columns) and sheet.columns[index].hidden)
+        ]
+        hidden += len(filled) - len(shown)
+        if not shown:
+            continue
+        lines.append(f"# {sheet.name}")
+        current: Row | None = None
+        cells: list[str] = []
+        for row, _, cell in shown:
+            if row is not current:
+                if cells:
+                    lines.append("\t".join(cells))
+                current, cells = row, []
+            cells.append(_shown(cell))
+        lines.append("\t".join(cells))
+    return "\n".join(lines), hidden
+
+
+def _shown(cell: Cell) -> str:
+    if isinstance(cell.value, float) and cell.value.is_integer():
+        return str(int(cell.value))
+    return str(cell.value).strip()
