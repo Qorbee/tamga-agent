@@ -28,12 +28,19 @@ os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:8333")
 os.environ.setdefault("S3_BUCKET", "tamga-test")
 os.environ.setdefault("S3_ACCESS_KEY_ID", "local")
 os.environ.setdefault("S3_SECRET_ACCESS_KEY", "local")
+# A key the model layer can build a client with; the tests never reach the provider (below).
+os.environ.setdefault("OPENAI_API_KEY", "test-key-never-sent")
+
+import pydantic_ai.models  # noqa: E402
 
 from app.config import get_settings  # noqa: E402  (the environment above must be set first)
 from app.main import create_app  # noqa: E402
 from app.platform.db import Base, dispose_db, get_session, import_all_models, init_db  # noqa: E402
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
+
+# No test calls a real model: an agent under test runs on a test model through Agent.override.
+pydantic_ai.models.ALLOW_MODEL_REQUESTS = False
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

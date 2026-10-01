@@ -23,6 +23,12 @@ _INITIAL_MODE: Final[dict[CompanyKind, CompanyMode]] = {
 }
 
 
+def traces_content(kind: CompanyKind) -> bool:
+    """Whether an agent run's prompts and answers may go to tracing (ADR-0007): only for a company
+    whose data is synthetic. A pilot's, its replay's included, never leave the server."""
+    return kind in (CompanyKind.DEMO, CompanyKind.SANDBOX)
+
+
 async def create_company(
     db: AsyncSession, *, name: str, kind: CompanyKind, expires_at: datetime | None = None
 ) -> Company:

@@ -11,7 +11,7 @@ import logging
 
 from app import packs
 from app.config import get_settings
-from app.platform import jobs
+from app.platform import jobs, tracing
 from app.platform.db import dispose_db, init_db
 
 
@@ -21,10 +21,13 @@ async def main() -> None:
     packs.register_all()
     jobs.import_all_tasks()
     init_db(str(settings.database_url))
+    tracing.init_tracing("worker")
     try:
         async with jobs.app.open_async():
             await jobs.app.run_worker_async()
     finally:
+        # Sending what is batched waits on the network: never on the event loop.
+        await asyncio.to_thread(tracing.shutdown_tracing)
         await dispose_db()
 
 
