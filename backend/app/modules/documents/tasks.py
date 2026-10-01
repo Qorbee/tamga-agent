@@ -15,6 +15,14 @@ async def read_documents(timestamp: int) -> None:
         logger.info("read %d documents", read)
 
 
+@jobs.periodic("documents.read_vision", cron="* * * * *")
+async def read_with_vision(timestamp: int) -> None:
+    """Photos and scanned pages, read by the vision model within each company's daily budget."""
+    read = await service.read_pending_with_vision()
+    if read:
+        logger.info("the vision model read %d documents", read)
+
+
 @jobs.task("documents.forget_file", retry=5)
 async def forget_file(company_id: str, sha256: str, storage_key: str) -> None:
     """A deleted document's stored bytes, removed once its deletion has committed."""

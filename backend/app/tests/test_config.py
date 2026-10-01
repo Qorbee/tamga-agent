@@ -73,6 +73,15 @@ def test_a_mail_batch_of_zero_does_not_start() -> None:
         load_settings(mail_batch=0)
 
 
+def test_a_vision_budget_is_none_or_enough_for_the_largest_file() -> None:
+    # Under a smaller one, a twenty-page scan would wait for ever, and every file behind it.
+    with pytest.raises(ValidationError, match="VISION_PAGES_PER_DAY"):
+        load_settings(vision_pages_per_day=19)
+
+    assert load_settings().vision_pages_per_day == 0
+    assert load_settings(vision_pages_per_day=20).vision_pages_per_day == 20
+
+
 def test_a_model_must_name_a_known_provider() -> None:
     with pytest.raises(ValidationError, match="provider:name"):
         load_settings(agent_models={"linker": "claude-sonnet-5"})

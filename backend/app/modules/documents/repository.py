@@ -6,7 +6,13 @@ from sqlalchemy import ColumnElement, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.documents.models import Document, DocumentPart, ReadState, Upload
+from app.modules.documents.models import (
+    Document,
+    DocumentPart,
+    ReadState,
+    Upload,
+    VisionRead,
+)
 from app.platform.pagination import PageParams, escape_like
 
 
@@ -128,38 +134,61 @@ async def request_reading(
     )
 
 
-def _waiting(tries: int, retry_before: datetime) -> ColumnElement[bool]:
-    """Waiting for code to read it: not left for the vision model, and not failed too often lately
-    (one that failed ``tries`` times waits until its last failure is older than
-    ``retry_before``)."""
+def _waiting(tries: int, retry_before: datetime, *, vision: bool) -> ColumnElement[bool]:
+    """Waiting to be read, by code or (``vision``) by the vision model code left it for, and not
+    failed too often lately (one that failed ``tries`` times waits until its last failure is older
+    than ``retry_before``)."""
     return (
         (Document.read_state == ReadState.PENDING)
-        & Document.needs_vision.is_(False)
+        & Document.needs_vision.is_(vision)
         & ((Document.read_failures < tries) | (Document.read_failed_at <= retry_before))
     )
 
 
 async def companies_with_pending(
-    db: AsyncSession, *, tries: int, retry_before: datetime
+    db: AsyncSession, *, tries: int, retry_before: datetime, vision: bool = False
 ) -> list[uuid.UUID]:
     """The one read across companies, of their ids alone: each company's files are then read under
     its own."""
     rows = await db.scalars(
-        select(Document.company_id).where(_waiting(tries, retry_before)).distinct()
+        select(Document.company_id).where(_waiting(tries, retry_before, vision=vision)).distinct()
     )
     return list(rows)
 
 
 async def pending(
-    db: AsyncSession, company_id: uuid.UUID, *, tries: int, retry_before: datetime, limit: int
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    tries: int,
+    retry_before: datetime,
+    limit: int,
+    vision: bool = False,
 ) -> list[uuid.UUID]:
     rows = await db.scalars(
         select(Document.id)
-        .where(Document.company_id == company_id, _waiting(tries, retry_before))
+        .where(Document.company_id == company_id, _waiting(tries, retry_before, vision=vision))
         .order_by(Document.created_at, Document.id)
         .limit(limit)
     )
     return list(rows)
+
+
+async def vision_pages_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
+    """Pictures the vision model was shown for this company since then: what its budget counts."""
+    pages = await db.scalar(
+        select(func.coalesce(func.sum(VisionRead.pages), 0)).where(
+            VisionRead.company_id == company_id, VisionRead.read_at >= since
+        )
+    )
+    return int(pages or 0)
+
+
+async def add_vision_read(
+    db: AsyncSession, company_id: uuid.UUID, pages: int, at: datetime
+) -> None:
+    db.add(VisionRead(company_id=company_id, pages=pages, read_at=at))
+    await db.flush()
 
 
 async def add_read_failure(

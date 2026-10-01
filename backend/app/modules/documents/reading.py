@@ -4,6 +4,7 @@
 Each reader runs only through ``isolated.run``, gets the bytes and returns JSON:
 - a PDF's text layer, page by page, without text drawn invisible or under 1 pt; a page with no text
   is a scan, for the vision model;
+- a PDF's pages as pictures, as a viewer paints them: what the vision model is shown of a scan;
 - a spreadsheet's visible cells, row by row, without hidden sheets, rows and columns;
 - the spreadsheet as Excel lays it out, for the canvas;
 - a web page's text as the canvas shows it, XML's values, a text file as it is.
@@ -11,9 +12,13 @@ Each reader runs only through ``isolated.run``, gets the bytes and returns JSON:
 What is left out is counted, so a file full of hidden text is itself a signal.
 """
 
+import base64
 import ctypes
 import dataclasses
+import math
 import re
+import struct
+import zlib
 from html import unescape
 from typing import Final
 
@@ -21,6 +26,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 from pydantic import BaseModel, Field
 
+from app.config import VISION_PAGES_PER_FILE
 from app.modules.documents import sheets
 from app.platform import filetypes, html
 from app.platform.isolated import Json, Reason, Refused, register
@@ -32,6 +38,23 @@ class PdfText(BaseModel):
     pages: list[str]
     page_count: int = Field(ge=0)
     hidden: int = Field(ge=0)
+
+
+# Pages of one PDF drawn as pictures in one run: what one call shows a model (ADR-0013).
+MAX_PICTURED: Final = VISION_PAGES_PER_FILE
+
+
+class PagesHint(BaseModel):
+    """What ``page_images`` is told: which pages to draw, counted from zero."""
+
+    pages: list[int] = Field(max_length=MAX_PICTURED)
+
+
+class PageImages(BaseModel):
+    """What ``page_images`` sends back, as the parent checks it: a PNG per page asked for, in
+    base64."""
+
+    images: list[str] = Field(max_length=MAX_PICTURED)
 
 
 class SheetText(BaseModel):
@@ -76,6 +99,12 @@ _STROKED: Final = {
     pdfium_c.FPDF_TEXTRENDERMODE_STROKE_CLIP,
     pdfium_c.FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP,
 }
+# A page is drawn at 144 dots an inch, where small print on a form stays legible, and never as
+# more pixels than this, give or take the row and column that rounding a side up adds (an A4 page
+# is two million): twenty pages that do not compress at all then still fit, in base64, in the
+# 64 MiB a child may send back.
+_PICTURE_SCALE: Final = 2.0
+_PICTURE_PIXELS: Final = 2_100_000
 # XML: a CDATA section's text is a value as it stands; a comment is none; a tag or a declaration
 # is what lies between the values.
 _CDATA: Final = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.S)
@@ -85,14 +114,18 @@ _TAG: Final = re.compile(r"<[^>]*>")
 _CONTROL: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-@register("documents.pdf_text")
-def pdf_text(data: bytes, hint: str) -> Json:
+def _pdf(data: bytes) -> pdfium.PdfDocument:
     try:
-        document = pdfium.PdfDocument(data)
+        return pdfium.PdfDocument(data)
     except pdfium.PdfiumError as error:
         if error.err_code == pdfium_c.FPDF_ERR_PASSWORD:
             raise Refused(Reason.PASSWORD) from error
         raise Refused(Reason.DAMAGED) from error
+
+
+@register("documents.pdf_text")
+def pdf_text(data: bytes, hint: str) -> Json:
+    document = _pdf(data)
     try:
         count = len(document)
         pages: list[Json] = []
@@ -134,7 +167,13 @@ def _visible_text(textpage: pdfium_c.FPDF_TEXTPAGE) -> tuple[str, int]:
         # UTF-16 and decoded once, so a pair becomes its character and a lone half a U+FFFD.
         units.append(chr(code).encode("utf-16-le", "surrogatepass"))
     text = b"".join(units).decode("utf-16-le", errors="replace")
-    return _CONTROL.sub("", text.replace("\r\n", "\n").replace("\r", "\n")), left_out
+    return plain(text), left_out
+
+
+def plain(text: str) -> str:
+    """Text a column keeps: one kind of line break, and no control character (a NUL the database
+    refuses, a form feed that would read as a page's end)."""
+    return _CONTROL.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
 
 
 def _painted(textpage: pdfium_c.FPDF_TEXTPAGE, index: int, mode: int) -> bool:
@@ -148,6 +187,64 @@ def _painted(textpage: pdfium_c.FPDF_TEXTPAGE, index: int, mode: int) -> bool:
     return any(
         mode in modes and read(textpage, index, *colour) and alpha.value > 0
         for modes, read in parts
+    )
+
+
+@register("documents.page_images")
+def page_images(data: bytes, hint: str) -> Json:
+    """The pages asked for, each as a viewer paints it, as a grey PNG. Text drawn invisible is not
+    painted, so what ``pdf_text`` left out is not in the picture either; what is typed into a form's
+    fields is painted, though it is not in the text layer."""
+    request = PagesHint.model_validate_json(hint)
+    document = _pdf(data)
+    try:
+        # Before any page is opened: a form's fields are drawn only for pages opened after it.
+        document.init_forms()
+        images: list[Json] = []
+        for index in request.pages:
+            if not 0 <= index < len(document):
+                raise Refused(Reason.DAMAGED)
+            page = document[index]
+            try:
+                width, height = page.get_size()
+                area = max(width * height, 1.0)
+                bitmap = page.render(
+                    scale=min(_PICTURE_SCALE, math.sqrt(_PICTURE_PIXELS / area)),
+                    grayscale=True,
+                )
+            except (pdfium.PdfiumError, ValueError) as error:
+                raise Refused(Reason.DAMAGED) from error
+            finally:
+                page.close()
+            try:
+                images.append(base64.b64encode(_png(bitmap)).decode("ascii"))
+            finally:
+                bitmap.close()
+    finally:
+        document.close()
+    return {"images": images}
+
+
+def _png(bitmap: pdfium.PdfBitmap) -> bytes:
+    """A grey bitmap as a PNG: a byte a pixel, each row unfiltered, deflated. Written here because
+    it is this short; an imaging library would be a dependency for one function."""
+    width, height, stride = bitmap.width, bitmap.height, bitmap.stride
+    if bitmap.n_channels != 1:
+        raise Refused(Reason.DAMAGED)
+    pixels = bytes(bitmap.buffer)
+    rows = b"".join(b"\x00" + pixels[row * stride : row * stride + width] for row in range(height))
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(rows, 6))
+        + chunk(b"IEND", b"")
     )
 
 

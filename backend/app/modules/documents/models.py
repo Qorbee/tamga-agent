@@ -71,8 +71,9 @@ class Document(CompanyScoped, Base):
     unreadable_reason: Mapped[Reason | None] = mapped_column(
         text_enum(Reason, "documents_unreadable_reason_check")
     )
-    # What a person sees in it, read by code: a PDF's text layer (pages split by form feeds), a
-    # spreadsheet's visible cells. Facts are read from it; empty for a photo or a scan.
+    # What a person sees in it: a PDF's text layer (pages split by form feeds), a spreadsheet's
+    # visible cells, read by code; a photo's or a scanned page's words, read by the vision model
+    # (`vision_pages`). Facts are read from it.
     text: Mapped[str] = mapped_column(Text, default="", server_default="")
     # Pieces with content that its viewer hides and the reading left out (ADR-0013): a signal.
     hidden_parts: Mapped[int] = mapped_column(default=0, server_default="0")
@@ -80,6 +81,11 @@ class Document(CompanyScoped, Base):
     parts: Mapped[int | None]
     # A photo or a scanned page: only a vision model can read it, so code leaves it pending.
     needs_vision: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Pictures of it the vision model was shown (a photo is one, a PDF one per scanned page).
+    # Above zero, a model wrote some of `text`: what rests on it proposes, never decides (ADR-0013).
+    vision_pages: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    # What the vision model said the file is, in a line; empty unless it read it.
+    description: Mapped[str] = mapped_column(String(300), default="", server_default="")
     # What was read stops short of the file: pages past the hundredth, sheets, rows or columns past
     # what a workbook is read for, text past a million characters. What is missing may matter.
     truncated: Mapped[bool] = mapped_column(default=False, server_default=false())
@@ -88,6 +94,19 @@ class Document(CompanyScoped, Base):
     read_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     read_failed_at: Mapped[datetime | None]
     read_at: Mapped[datetime | None]
+
+
+class VisionRead(CompanyScoped, Base):
+    """Pictures one call showed the vision model: what a company's budget for a day counts
+    (VISION_PAGES_PER_DAY). A row of its own, not a count on the document, so deleting a file does
+    not give its pictures back. A request made again after an answer that failed its checks shows
+    the pictures again, and counts again."""
+
+    __tablename__ = "vision_reads"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    pages: Mapped[int] = mapped_column(SmallInteger)
+    read_at: Mapped[datetime]
 
 
 class Upload(CompanyScoped, Base):

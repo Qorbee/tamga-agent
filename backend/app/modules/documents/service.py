@@ -4,6 +4,7 @@ a locked child process (ADR-0012) without what its viewer hides (ADR-0013)."""
 
 import asyncio
 import base64
+import dataclasses
 import hashlib
 import logging
 import unicodedata
@@ -16,11 +17,12 @@ from pathlib import PurePosixPath
 from typing import Final
 
 from pydantic import BaseModel, ValidationError
+from pydantic_ai import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.companies import service as companies
-from app.modules.documents import reading, registry, repository, unpacking
+from app.modules.documents import agents, reading, registry, repository, unpacking
 from app.modules.documents.models import Document, DocumentPart, ReadState, Upload
 from app.modules.documents.schemas import (
     DocumentDetail,
@@ -37,7 +39,7 @@ from app.modules.documents.schemas import (
 )
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import converter, filetypes, html, isolated, jobs, storage
+from app.platform import converter, filetypes, html, isolated, jobs, llm, storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -62,6 +64,19 @@ MAX_TEXT: Final = 1_000_000
 _SCANNED_PAGE: Final = 20
 # The largest web page, XML or text file read or shown; past it, it is only downloaded.
 MAX_TEXT_FILE: Final = 10 * 1024 * 1024
+# Files one company has read by the vision model per run: a call each, the next run takes the rest.
+VISION_BATCH: Final = 10
+# The budget of pictures (VISION_PAGES_PER_DAY) counts those read in this long.
+VISION_WINDOW: Final = timedelta(days=1)
+# The largest photo sent to the vision model.
+MAX_PICTURE: Final = 20 * 1024 * 1024
+# The picture types the vision model takes as they are; a BMP it does not.
+_SHOWN_AS_IT_IS: Final = frozenset(filetypes.IMAGES - {filetypes.BMP})
+# A model can misread a character that a pattern then accepts, so a fact found in what it wrote is
+# never surer than this, nor than the pattern's own confidence.
+_MODEL_CONFIDENCE: Final = 0.8
+# One answer, and two more requests when it fails the output's checks.
+_VISION_LIMITS: Final = UsageLimits(request_limit=3)
 
 # The runs that take files out of an archive read up to 200 MB of it, so each gets two minutes.
 _UNPACK_LIMITS: Final = isolated.Limits(deadline_seconds=120.0)
@@ -590,6 +605,207 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         item_id=document.id,
         facts=extractors.from_text(document.text),
     )
+
+
+# Reading what only a vision model can
+
+
+async def read_pending_with_vision() -> int:
+    """Has the vision model read the photos and scanned pages that wait, oldest first, within each
+    company's budget of pictures for a day (VISION_PAGES_PER_DAY; at zero nothing is read and no
+    file leaves for the model's provider). A file is read whole or not yet: when the oldest one
+    needs more pictures than the budget has left, the company's files wait until earlier readings
+    are a day old. Only a request made again for one file can pass the budget, by that file's
+    pictures. A failure outside the file counts as in ``read_pending``. Returns how many files
+    were read."""
+    budget = get_settings().vision_pages_per_day
+    if budget == 0:
+        return 0
+    now = utcnow()
+    retry_before = now - READ_RETRY_AFTER
+    async with open_session() as db:
+        company_ids = await repository.companies_with_pending(
+            db, tries=READ_TRIES, retry_before=retry_before, vision=True
+        )
+    read = 0
+    for company_id in company_ids:
+        async with open_session() as db:
+            spent = await repository.vision_pages_since(db, company_id, now - VISION_WINDOW)
+            pending = await repository.pending(
+                db,
+                company_id,
+                tries=READ_TRIES,
+                retry_before=retry_before,
+                limit=VISION_BATCH,
+                vision=True,
+            )
+            company = (await companies.get_companies(db, [company_id])).get(company_id)
+        left = budget - spent
+        trace_content = company is not None and companies.traces_content(company.kind)
+        for document_id in pending:
+            try:
+                pictures = await read_with_vision(
+                    company_id, document_id, left=left, trace_content=trace_content
+                )
+            except Exception as error:  # one file that fails never stops the others
+                # The error's type only: its text can carry what the file holds.
+                logger.warning(
+                    "the vision model reading document %s failed: %s",
+                    document_id,
+                    type(error).__name__,
+                )
+                async with open_session() as db:
+                    await repository.add_read_failure(db, company_id, document_id, utcnow())
+                    await db.commit()
+                continue
+            if pictures is None:
+                break
+            left -= pictures
+            read += 1
+    return read
+
+
+async def read_with_vision(
+    company_id: uuid.UUID, document_id: uuid.UUID, *, left: int, trace_content: bool
+) -> int | None:
+    """Has the vision model read one file: a photo as it is, a PDF's scanned pages as pictures
+    drawn in the locked child, in a call with no tools (ADR-0013). Returns the pictures the model
+    was shown, counted once per request and recorded against the company's budget
+    (``vision_reads``), or None when the file needs more than ``left``.
+
+    No transaction is open while the pages are drawn and the model reads: that takes a minute or
+    more. The file is locked again to write, and left alone if it changed or went meanwhile."""
+    async with open_session() as db:
+        found = await repository.get_many(db, company_id, [document_id])
+        if not found or not _awaits_vision(found[0]):
+            return 0
+        filename, text = found[0].filename, found[0].text
+        key = found[0].rendition_key or found[0].storage_key
+    data = await storage.get(key)
+    is_pdf = filetypes.sniff(data) == filetypes.PDF
+    scanned = _scanned_pages(text) if is_pdf else []
+    shown = scanned[: reading.MAX_PICTURED]
+    if (len(shown) if is_pdf else 1) > left:
+        return None
+    pictures = await _drawn(data, shown) if is_pdf else _photo(data)
+    seen: agents.Reading | isolated.Reason
+    spent = 0
+    if isinstance(pictures, isolated.Reason):
+        seen = pictures
+    elif not pictures:
+        seen = agents.Reading(shows="", pages=[])
+    else:
+        try:
+            run = await llm.run(
+                agents.reader,
+                agents.pictures(filename, pictures),
+                deps=len(pictures),
+                limits=_VISION_LIMITS,
+                trace_content=trace_content,
+            )
+            seen, requests = run.output, run.usage.requests
+        except llm.NoAnswer as error:
+            logger.warning("the vision model gave no reading of %s: %s", document_id, error)
+            seen, requests = isolated.Reason.UNSUPPORTED, error.requests
+        # Every request shows the pictures again and is paid for, whatever came of its answer.
+        spent = len(pictures) * max(requests, 1)
+    async with open_session() as db:
+        if spent:
+            await repository.add_vision_read(db, company_id, spent, utcnow())
+        document = await repository.lock_document(db, company_id, document_id, share=True)
+        if document is not None and _awaits_vision(document) and document.text == text:
+            document.vision_pages = len(pictures) if spent else 0
+            if isinstance(seen, isolated.Reason) and is_pdf:
+                # What code read of it stays, and says its scanned pages are missing.
+                document.read_state, document.read_at = ReadState.READ, utcnow()
+                document.truncated = True
+            elif isinstance(seen, isolated.Reason):
+                _unreadable(document, seen)
+            else:
+                await _keep_reading(
+                    db, document, seen, shown if is_pdf else None, more=len(scanned) > len(shown)
+                )
+        await db.commit()
+    return spent
+
+
+async def _keep_reading(
+    db: AsyncSession,
+    document: Document,
+    seen: agents.Reading,
+    shown: Sequence[int] | None,
+    *,
+    more: bool,
+) -> None:
+    """Writes what the vision model read onto the file: a photo's words as its text, a PDF's
+    scanned pages (``shown``) into their places among the pages code read. The facts found in what
+    the model wrote say a model read them, and are never surer than ``_MODEL_CONFIDENCE``: where
+    code found the same fact in the file's own text, code's stays (facts, ``upsert``)."""
+    written = [reading.plain(page.text) for page in seen.pages]
+    if shown is None:
+        text = "\n".join(written)
+    else:
+        pages = document.text.split("\f")
+        for index, page in zip(shown, written, strict=True):
+            pages[index] = page
+        text = "\f".join(pages)
+    document.text = text[:MAX_TEXT]
+    document.truncated = document.truncated or more or len(text) > MAX_TEXT
+    document.description = " ".join(reading.plain(seen.shows).split())[:300]
+    document.read_state, document.read_at = ReadState.READ, utcnow()
+    await facts.record_facts(
+        db,
+        company_id=document.company_id,
+        item_kind=ItemKind.DOCUMENT,
+        item_id=document.id,
+        facts=[
+            dataclasses.replace(
+                fact,
+                extractor=agents.MODEL_READ,
+                confidence=min(fact.confidence, _MODEL_CONFIDENCE),
+            )
+            for fact in extractors.from_text("\n".join(written))
+        ],
+    )
+
+
+def _awaits_vision(document: Document) -> bool:
+    return document.read_state == ReadState.PENDING and document.needs_vision
+
+
+def _scanned_pages(text: str) -> list[int]:
+    """The pages of a PDF's text with too little on them to be anything but a scan."""
+    return [
+        index for index, page in enumerate(text.split("\f")) if len(page.strip()) < _SCANNED_PAGE
+    ]
+
+
+async def _drawn(data: bytes, pages: Sequence[int]) -> list[tuple[bytes, str]] | isolated.Reason:
+    """These pages of a PDF as the PNGs the locked child draws of them, each with its type."""
+    if not pages:
+        return []
+    hint = reading.PagesHint(pages=list(pages)).model_dump_json()
+    drawn = _checked(reading.PageImages, await isolated.run("documents.page_images", data, hint))
+    if isinstance(drawn, isolated.Reason):
+        return drawn
+    try:
+        images = [base64.b64decode(image, validate=True) for image in drawn.images]
+    except ValueError:
+        return isolated.Reason.DAMAGED
+    # A child a crafted file took over can send anything: only PNGs, one per page, go on.
+    if len(images) != len(pages) or any(filetypes.sniff(i) != filetypes.PNG for i in images):
+        return isolated.Reason.DAMAGED
+    return [(image, filetypes.PNG) for image in images]
+
+
+def _photo(data: bytes) -> list[tuple[bytes, str]] | isolated.Reason:
+    """A photo as the vision model is shown it: its own bytes, under the type they prove."""
+    real = filetypes.sniff(data)
+    if real not in _SHOWN_AS_IT_IS:
+        return isolated.Reason.UNSUPPORTED
+    if len(data) > MAX_PICTURE:
+        return isolated.Reason.TOO_LARGE
+    return [(data, real)]
 
 
 class ConverterMissing(RuntimeError):

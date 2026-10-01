@@ -17,6 +17,7 @@ from pydantic import (
     PostgresDsn,
     SecretStr,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,6 +29,10 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 LOCAL_WEB_URL = "http://localhost:3000"
 EvmAddress = Annotated[str, StringConstraints(pattern=r"^0x[0-9a-fA-F]{40}$")]
+# The most pictures of one file a call shows the vision model (ADR-0013): the documents module
+# draws no more (reading.MAX_PICTURED), and a budget of pictures is never smaller.
+VISION_PAGES_PER_FILE = 20
+
 # The model providers an agent's model may name, and the setting holding each one's key (ADR-0005).
 MODEL_PROVIDER_KEYS = {"openai": "openai_api_key", "anthropic": "anthropic_api_key"}
 
@@ -114,6 +119,9 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     # TypeSafe's Jev, for classification agents only; unset, they run on a language model.
     typesafe_api_key: SecretStr | None = None
+    # Pictures (a photo, a scanned page) the vision model may read for one company in 24 hours.
+    # Zero: photos and scans wait, and no file goes to the model's provider.
+    vision_pages_per_day: int = Field(default=0, ge=0)
 
     # Traces of agent runs, to Langfuse Cloud's EU region (ADR-0007). Unset: nothing is exported.
     langfuse_public_key: str | None = None
@@ -143,6 +151,18 @@ class Settings(BaseSettings):
     # Sign-ins and invite acceptances that check a password, per client address.
     password_attempts_per_client_per_hour: int = 20
     max_active_sandboxes: int = 200
+
+    @field_validator("vision_pages_per_day")
+    @classmethod
+    def _a_vision_budget_reads_every_file(cls, pages: int) -> int:
+        # A file is read whole or not yet, and the oldest goes first: under a budget smaller than
+        # one file's pictures, that file would wait for ever and hold back every file behind it.
+        if 0 < pages < VISION_PAGES_PER_FILE:
+            raise ValueError(
+                f"VISION_PAGES_PER_DAY is 0, or at least {VISION_PAGES_PER_FILE}: "
+                "the most pictures one file shows the model"
+            )
+        return pages
 
     @model_validator(mode="after")
     def _mailboxes_are_usable(self) -> Self:
