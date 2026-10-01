@@ -19,7 +19,7 @@ an agent whose instructions end with ``OUTSIDE_DATA`` (ADR-0013).
 import secrets
 from collections.abc import Sequence
 from functools import cache
-from typing import Final
+from typing import Any, Final
 
 from pydantic_ai import Agent, AgentRunResult, UsageLimits
 from pydantic_ai.capabilities import Instrumentation
@@ -165,6 +165,34 @@ def _written_in(language: Language) -> str:
     )
 
 
+def _traced(trace_content: bool) -> list[Instrumentation]:
+    """Tracing for one run (ADR-0007), with its content only when the caller says its company's
+    data is synthetic."""
+    provider = tracing.tracer_provider()
+    if provider is None:
+        return []
+    settings = InstrumentationSettings(
+        tracer_provider=provider,
+        include_content=trace_content,
+        include_binary_content=trace_content,
+    )
+    return [Instrumentation(settings=settings)]
+
+
+def stream_arguments(
+    agent_name: str, *, language: Language | None, trace_content: bool = False
+) -> dict[str, Any]:
+    """What ``run`` gives an agent, for a run this module does not make itself: one whose
+    events a UI adapter streams to a reader as they come (the assistant's). The model settings
+    name for the agent, its effort, the line on the language of its own words, and tracing."""
+    return {
+        "model": model_for(agent_name),
+        "model_settings": ModelSettings(thinking=effort(agent_name)),
+        "instructions": None if language is None else _written_in(language),
+        "capabilities": _traced(trace_content),
+    }
+
+
 async def run[DepsT, OutputT](
     agent: Agent[DepsT, OutputT],
     prompt: str | Sequence[UserContent],
@@ -189,15 +217,7 @@ async def run[DepsT, OutputT](
     standard one: work that waits for a model is never held up by the saving."""
     if agent.name is None:
         raise ValueError("an agent needs a name: its model and its traces are keyed on it")
-    capabilities = []
-    provider = tracing.tracer_provider()
-    if provider is not None:
-        settings = InstrumentationSettings(
-            tracer_provider=provider,
-            include_content=trace_content,
-            include_binary_content=trace_content,
-        )
-        capabilities.append(Instrumentation(settings=settings))
+    capabilities = _traced(trace_content)
     usage = usage if usage is not None else RunUsage()
     name = agent.name
 

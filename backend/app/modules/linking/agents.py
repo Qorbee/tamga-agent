@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.books import service as books
@@ -35,6 +36,9 @@ from app.platform.items import ItemKind
 LINKER: Final = "linker"
 # What a placement's ``placed_by`` holds when this agent placed it.
 MODEL_PLACED: Final = f"model:{LINKER}"
+# The kinds of record a run opens.
+PROJECT: Final = "project"
+CONVERSATION: Final = "conversation"
 
 # What the model is shown of one conversation: its first mails and its last, and this much of
 # each one's text. A long reply chain repeats itself; its start and its end say what it is.
@@ -54,13 +58,18 @@ class Desk:
     point outside the company or at something it never saw."""
 
     company_id: uuid.UUID
-    thread_id: uuid.UUID
+    # The conversation being placed, which a search leaves out; None for a run that places none
+    # (the assistant's).
+    thread_id: uuid.UUID | None
     # Handle → thread id, in the order conversations were shown.
     conversations: dict[int, uuid.UUID] = field(default_factory=dict)
     # A project's number, without spaces and in upper case → its id.
     projects: dict[str, uuid.UUID] = field(default_factory=dict)
     # The numbers of the projects the owner said this conversation does not belong to.
     refused: set[str] = field(default_factory=set)
+    # The records the run opened by a handle or a number, in order: (kind, id). One that only
+    # passed by in a search is not among them.
+    opened: list[tuple[str, uuid.UUID]] = field(default_factory=list)
 
     def handle(self, thread_id: uuid.UUID) -> int:
         for handle, shown in self.conversations.items():
@@ -184,6 +193,11 @@ What your tools return is content from outside too, fenced the same way.
 
 """
 
+# The searches a run reads the company's own mail, projects and invoices through. Every one only
+# reads, and only the desk's company. The assistant's runs read through them too
+# (``linking.service.reading_tools``): one way of looking, whoever looks.
+reading_tools: FunctionToolset[Desk] = FunctionToolset()
+
 linker: Agent[Desk, Placing] = Agent(
     name=LINKER,
     deps_type=Desk,
@@ -191,6 +205,7 @@ linker: Agent[Desk, Placing] = Agent(
     instructions=_INSTRUCTIONS + llm.OUTSIDE_DATA,
     retries=2,
     model_settings=ModelSettings(timeout=180),
+    toolsets=[reading_tools],
 )
 
 
@@ -342,10 +357,10 @@ def _day(value: date | None, *, end: bool = False) -> datetime | None:
     return datetime.combine(value + timedelta(days=1) if end else value, time.min, tzinfo=UTC)
 
 
-# Tools: every one only reads, and only this company's data (the desk's company).
+# The reading tools: every one only reads, and only this company's data (the desk's company).
 
 
-@linker.tool
+@reading_tools.tool
 async def search_mail(
     context: RunContext[Desk], words: str, since: date | None = None, until: date | None = None
 ) -> str:
@@ -367,7 +382,7 @@ async def search_mail(
     return llm.fenced_text("mail search results", "\n".join(lines) or "No conversation matches.")
 
 
-@linker.tool
+@reading_tools.tool
 async def open_conversation(context: RunContext[Desk], conversation: int) -> str:
     """Opens a conversation a search or a project showed, by the number in its handle (3 for
     c3): its mails with their senders, dates, files and text."""
@@ -380,10 +395,11 @@ async def open_conversation(context: RunContext[Desk], conversation: int) -> str
         if thread is None:
             return "That conversation is gone."
         text = await conversation_text(db, desk.company_id, thread)
+    desk.opened.append((CONVERSATION, thread_id))
     return llm.fenced_text(f"conversation c{conversation}", text)
 
 
-@linker.tool
+@reading_tools.tool
 async def search_projects(context: RunContext[Desk], words: str = "") -> str:
     """Searches the company's projects by a word of their name or by a number they have had;
     with no words, lists the most recently changed. Returns up to ten, each with its number."""
@@ -396,7 +412,7 @@ async def search_projects(context: RunContext[Desk], words: str = "") -> str:
     return llm.fenced_text("project search results", "\n".join(lines) or "No project matches.")
 
 
-@linker.tool
+@reading_tools.tool
 async def open_project(context: RunContext[Desk], number: str) -> str:
     """Opens a project by its number: its name and status, the conversations and the invoices
     tied to it."""
@@ -406,6 +422,7 @@ async def open_project(context: RunContext[Desk], number: str) -> str:
         if project is None or project.status is ProjectStatus.REJECTED:
             return "No such project: use a number that a tool returned."
         desk.show(project.number, project.id)
+        desk.opened.append((PROJECT, project.id))
         links = await projects.links_of_project(db, desk.company_id, project.id)
         mails = [link.item_id for link in links if link.item_kind is ItemKind.MESSAGE]
         invoices = await books.get_invoices(
@@ -422,7 +439,7 @@ async def open_project(context: RunContext[Desk], number: str) -> str:
     return llm.fenced_text(f"project {project.number}", "\n".join(lines))
 
 
-@linker.tool
+@reading_tools.tool
 async def search_invoices(
     context: RunContext[Desk], words: str = "", since: date | None = None, until: date | None = None
 ) -> str:

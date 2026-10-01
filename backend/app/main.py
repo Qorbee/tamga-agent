@@ -15,6 +15,7 @@ from fastapi.routing import APIRoute
 
 from app import packs
 from app.config import get_settings
+from app.modules.assistant import router as assistant
 from app.modules.books import router as books
 from app.modules.conversations import router as conversations
 from app.modules.documents import router as documents
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations.threads)
     app.include_router(documents.documents)
     app.include_router(books.invoices)
+    app.include_router(assistant.chats)
     # Packs' routers: the core never imports a pack, the app factory does.
     app.include_router(logistics.shipments)
 

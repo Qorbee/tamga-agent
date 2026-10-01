@@ -49,6 +49,11 @@ from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
 
+# For the assistant's runs: the same searches the linker reads through, and the desk they keep
+# what a run was shown on.
+Desk = agents.Desk
+reading_tools = agents.reading_tools
+
 # Conversations one company has read by the model per run: each takes up to a minute, and they
 # are read one after another, so that a project proposed for one is there for the next.
 PLACE_BATCH: Final = 10

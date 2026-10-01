@@ -145,6 +145,13 @@ class Settings(BaseSettings):
     # Characters a model may write for one company in 24 hours when what Tamga wrote is asked for
     # in another language. Zero: nothing is translated, and no text goes to the model's provider.
     translated_chars_per_day: int = Field(default=0, ge=0)
+    # Requests the assistant may make of its model for one company in 24 hours, a chat's answer
+    # being several (one per round of tool calls). Zero: the chat answers nothing, and nothing
+    # goes to the model's provider.
+    chat_requests_per_day: int = Field(default=0, ge=0)
+    # The tokens a chat may hold before it is compacted: well under the model's own window, past
+    # which the provider charges a long prompt at a higher rate.
+    chat_context_tokens: int = Field(default=120_000, ge=10_000)
 
     # Traces of agent runs, to Langfuse Cloud's EU region (ADR-0007). Unset: nothing is exported.
     langfuse_public_key: str | None = None
