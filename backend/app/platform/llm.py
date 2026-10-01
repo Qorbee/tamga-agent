@@ -2,9 +2,12 @@
 
 An agent is defined once, in its module's ``agents.py``, with a name and no model. ``run`` gives it
 the model settings name for it (``AGENT_MODELS``, else ``DEFAULT_MODEL``), the reasoning effort
-they name (``AGENT_EFFORTS``, else ``DEFAULT_EFFORT``), the usage limits its caller sets, and
-tracing (ADR-0007). Only this file imports a provider's SDK, so moving an agent to another
-provider is configuration.
+they name (``AGENT_EFFORTS``, else ``DEFAULT_EFFORT``), the provider's tier (``AGENT_TIERS``), the
+usage limits its caller sets, and tracing (ADR-0007). Only this file imports a provider's SDK, so
+moving an agent to another provider is configuration.
+
+An agent's caller can give a hard case to the agent's second model (``AGENT_SECOND_MODELS``):
+what is hard is the caller's to say, which model is stronger is configuration.
 
 Tracing content is off unless the caller turns it on for a company whose data is synthetic: a
 forgotten flag hides a demo's prompts, never exposes a pilot's.
@@ -29,7 +32,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
-from app.config import Effort, get_settings
+from app.config import Effort, Tier, get_settings
 from app.platform import tracing
 from app.platform.language import ENGLISH_NAMES, Language
 
@@ -96,8 +99,36 @@ def effort(agent_name: str) -> Effort:
     return settings.agent_efforts.get(agent_name, settings.default_effort)
 
 
+def tier(agent_name: str) -> Tier:
+    return get_settings().agent_tiers.get(agent_name, "default")
+
+
+def second_model_name(agent_name: str) -> str | None:
+    """The model this agent's hard cases are given to again, when settings name one."""
+    return get_settings().agent_second_models.get(agent_name)
+
+
 def model_for(agent_name: str) -> Model:
     return _model(model_name(agent_name))
+
+
+def second_model_for(agent_name: str) -> Model:
+    name = second_model_name(agent_name)
+    if name is None:
+        raise ModelUnavailable(f"AGENT_SECOND_MODELS names no model for {agent_name!r}")
+    return _model(name)
+
+
+def _no_room(error: ModelHTTPError) -> bool:
+    """Whether a provider's cheaper tier had no room for a call (a 429 that says so, which it
+    does not charge), or the call waited too long there (408). Any other 429 is the account's
+    limit, which the standard tier shares: asking again there would only add load."""
+    if error.status_code == 408:
+        return True
+    body = error.body if isinstance(error.body, dict) else {}
+    inner = body.get("error")
+    code = str((inner if isinstance(inner, dict) else body).get("code") or "")
+    return error.status_code == 429 and code == "resource_unavailable"
 
 
 # Pydantic AI learns what a model can do from its name, and the release installed (the newest
@@ -143,14 +174,19 @@ async def run[DepsT, OutputT](
     language: Language | None,
     trace_content: bool = False,
     usage: RunUsage | None = None,
+    second: bool = False,
 ) -> AgentRunResult[OutputT]:
-    """Runs ``agent`` once on its configured model. ``language`` is the one its answer's own
+    """Runs ``agent`` once on its configured model, or (``second``) on the one its hard cases
+    go to. ``language`` is the one its answer's own
     words are written in (the company's), or None for an agent that answers in the language it is
     written to. ``trace_content`` sends prompts and answers to
     tracing: only for a company whose data is synthetic (companies ``traces_content``). Raises
     ``NoAnswer`` when the model answered and the answer cannot be used. A caller that counts
     requests passes its own ``usage``: it holds the requests answered so far when the run ends
-    in any other error."""
+    in any other error.
+
+    A run on the cheaper tier that the provider has no room for is made once more on the
+    standard one: work that waits for a model is never held up by the saving."""
     if agent.name is None:
         raise ValueError("an agent needs a name: its model and its traces are keyed on it")
     capabilities = []
@@ -163,18 +199,31 @@ async def run[DepsT, OutputT](
         )
         capabilities.append(Instrumentation(settings=settings))
     usage = usage if usage is not None else RunUsage()
-    try:
+    name = agent.name
+
+    async def ask(tier: Tier) -> AgentRunResult[OutputT]:
+        # Over the agent's own settings (its timeout), which stay.
+        settings = ModelSettings(thinking=effort(name))
+        if tier != "default":
+            settings["service_tier"] = tier
         return await agent.run(
             prompt,
             deps=deps,
-            model=model_for(agent.name),
+            model=second_model_for(name) if second else model_for(name),
             instructions=None if language is None else _written_in(language),
-            # Over the agent's own settings (its timeout), which stay.
-            model_settings=ModelSettings(thinking=effort(agent.name)),
+            model_settings=settings,
             usage_limits=limits,
             usage=usage,
             capabilities=capabilities,
         )
+
+    try:
+        try:
+            return await ask(tier(name))
+        except ModelHTTPError as error:
+            if tier(name) == "default" or not _no_room(error):
+                raise
+            return await ask("default")
     except (UnexpectedModelBehavior, UsageLimitExceeded) as error:
         raise NoAnswer(type(error).__name__, usage.requests) from error
     except ModelHTTPError as error:

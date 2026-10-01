@@ -8,6 +8,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import SecretStr
 from pydantic_ai import Agent, UsageLimits
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -120,6 +121,68 @@ async def test_a_run_is_sent_its_effort_beside_the_agents_own_settings(
 
     assert sent[0].model_request_parameters.thinking == "high"
     assert sent[0].model_settings == {"timeout": 60}
+
+
+async def test_a_background_agent_runs_on_the_cheaper_tier_and_on_the_standard_one_when_it_is_full(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tiers: list[object] = []
+    full = True
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tier = (info.model_settings or {}).get("service_tier")
+        tiers.append(tier)
+        if tier == "flex" and full:
+            # What the provider answers when the tier has no room: nothing was charged.
+            raise ModelHTTPError(429, "stand-in", {"error": {"code": "resource_unavailable"}})
+        return ModelResponse(parts=[TextPart(ANSWER)])
+
+    monkeypatch.setattr(llm, "model_for", lambda name: FunctionModel(respond))
+    monkeypatch.setitem(get_settings().agent_tiers, "reader", "flex")
+    limits = UsageLimits(request_limit=1)
+
+    waits: Agent[None, str] = Agent(name="reader")
+    assert (await llm.run(waits, PROMPT, deps=None, limits=limits, language=None)).output == ANSWER
+    assert tiers == ["flex", None]
+
+    full = False
+    await llm.run(waits, PROMPT, deps=None, limits=limits, language=None)
+    # The account's own limit is the standard tier's too: it is not asked again there.
+    limited = ModelHTTPError(429, "stand-in", {"error": {"code": "rate_limit_exceeded"}})
+
+    def refuse(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        tiers.append("refused")
+        raise limited
+
+    monkeypatch.setattr(llm, "model_for", lambda name: FunctionModel(refuse))
+    with pytest.raises(ModelHTTPError):
+        await llm.run(waits, PROMPT, deps=None, limits=limits, language=None)
+    assert tiers.pop() == "refused" and tiers.count("refused") == 0
+    monkeypatch.setattr(llm, "model_for", lambda name: FunctionModel(respond))
+    # An agent the owner waits for is not named, and runs as it always did.
+    await llm.run(Agent(name="assistant"), PROMPT, deps=None, limits=limits, language=None)
+    assert tiers[2:] == ["flex", None]
+
+
+async def test_a_hard_case_runs_on_the_agents_second_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(llm, "_model", lambda name: TestModel(custom_output_text=name))
+    settings = get_settings()
+    monkeypatch.setitem(settings.agent_models, "linker", "openai:small")
+    monkeypatch.setitem(settings.agent_second_models, "linker", "openai:large")
+    limits = UsageLimits(request_limit=1)
+    linker: Agent[None, str] = Agent(name="linker")
+
+    first = await llm.run(linker, PROMPT, deps=None, limits=limits, language=None)
+    second = await llm.run(linker, PROMPT, deps=None, limits=limits, language=None, second=True)
+
+    assert (first.output, second.output) == ("openai:small", "openai:large")
+    assert llm.second_model_name("intake") is None
+    with pytest.raises(llm.ModelUnavailable):
+        await llm.run(
+            Agent(name="intake"), PROMPT, deps=None, limits=limits, language=None, second=True
+        )
 
 
 async def test_a_run_is_told_the_language_its_own_words_are_written_in(

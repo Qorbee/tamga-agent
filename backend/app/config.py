@@ -36,6 +36,7 @@ VISION_PAGES_PER_FILE = 20
 # The model providers an agent's model may name, and the setting holding each one's key (ADR-0005).
 MODEL_PROVIDER_KEYS = {"openai": "openai_api_key", "anthropic": "anthropic_api_key"}
 Effort = Literal["low", "medium", "high", "xhigh"]
+Tier = Literal["default", "flex"]
 
 
 class Mailbox(BaseModel):
@@ -121,6 +122,14 @@ class Settings(BaseSettings):
     # mistakes; a model that does not reason ignores it.
     default_effort: Effort = "medium"
     agent_efforts: dict[str, Effort] = {}
+    # The provider's tier an agent's calls are made on. "flex" is its cheaper, slower one (half
+    # the price at OpenAI, an answer that can take minutes): for the agents that work in the
+    # background. An agent named here with a provider that has no such tier runs as before.
+    agent_tiers: dict[str, Tier] = {}
+    # The model an agent's hard cases are given to again: a conversation that could go to more
+    # than one project, a picture the first model could not read with certainty. An agent not
+    # named here keeps its first model's answer.
+    agent_second_models: dict[str, str] = {}
     # Only a provider some model names needs its key.
     openai_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
@@ -228,7 +237,11 @@ class Settings(BaseSettings):
 
     def models(self) -> set[str]:
         """Every model some agent may use."""
-        return {self.default_model, *self.agent_models.values()}
+        return {
+            self.default_model,
+            *self.agent_models.values(),
+            *self.agent_second_models.values(),
+        }
 
     @model_validator(mode="after")
     def _deployed_settings_are_complete(self) -> Self:

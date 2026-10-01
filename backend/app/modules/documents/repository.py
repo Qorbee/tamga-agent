@@ -134,6 +134,21 @@ async def request_reading(
     )
 
 
+async def for_the_vision_model(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    if not ids:
+        return set()
+    rows = await db.scalars(
+        select(Document.id).where(
+            Document.company_id == company_id,
+            Document.id.in_(ids),
+            Document.needs_vision.is_(True),
+        )
+    )
+    return set(rows)
+
+
 def _waiting(tries: int, retry_before: datetime, *, vision: bool) -> ColumnElement[bool]:
     """Waiting to be read, by code or (``vision``) by the vision model code left it for, and not
     failed too often lately (one that failed ``tries`` times waits until its last failure is older

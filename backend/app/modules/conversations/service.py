@@ -78,6 +78,12 @@ _SORT_MAILS: Final = 3
 _SORT_TEXT: Final = 1500
 # One answer, and one more request when it fails the output's checks.
 _SORT_LIMITS: Final = UsageLimits(request_limit=2)
+# A picture this many of a company's conversations show in their text is a sender's furniture (a
+# signature's banner), not part of any one of them.
+_FURNITURE_CONVERSATIONS: Final = 3
+# A file more conversations carry than this says nothing new of any one of them when it is read:
+# the terms sent with every offer, a logo attached to every mail.
+_COMMON_CONVERSATIONS: Final = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,7 +407,8 @@ async def reread_stored_mail(
 ) -> uuid.UUID | None:
     """Reads one batch of stored originals again, to fill what the parser learned to keep after
     they were stored: the sender's name, which files the body shows inline, the text a search
-    looks in, and whether it is bulk mail. Returns the last
+    looks in, and whether it is bulk mail; and asks for the files of a mail already read that
+    an earlier rule left unread (the pictures its body shows). Returns the last
     message read, to pass as ``after`` for the next batch; None when every mail has been read. The
     caller commits."""
     batch = await repository.mail_after(db, company_id, after=after, limit=limit)
@@ -417,6 +424,8 @@ async def reread_stored_mail(
         message.search_text = _search_text(parsed)
         message.bulk = parsed.bulk
         await _mark_inline(db, company_id, message.id, parsed)
+        if message.processed_at is not None:
+            await documents.request_reading(db, company_id, await _files_to_read(db, message))
     return batch[-1].id if batch else None
 
 
@@ -475,11 +484,13 @@ async def process_pending() -> int:
 
 async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> None:
     """Reads one stored message once: its own text, without the history it quotes, and the facts
-    code finds in that text and its subject; and asks for its attachments to be read, all but the
-    pictures its body shows inline. A copy of a mail already read is marked as such and its text
-    read no further; its attachments are still asked for, since a mailbox can keep a file another
-    copy lost (a file both hold is one document, asked for once). Runs in the caller's transaction
-    and does not commit."""
+    code finds in that text and its subject; and asks for its files to be read, the pictures its
+    body shows too: one can be the message itself (a pasted screenshot, a photo of a plate), and
+    one that is only a logo is left by its size or by how many conversations show it. A copy of
+    a mail already read is marked as such and its text read no further; its attachments are
+    still asked for, since a mailbox can keep a file another copy lost (a file both hold is one
+    document, asked for once).
+    Runs in the caller's transaction and does not commit."""
     message = await repository.get_message(db, company_id, message_id)
     if message is None or message.processed_at is not None:
         return
@@ -496,10 +507,7 @@ async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: u
             item_id=message.id,
             facts=extractors.from_text(text),
         )
-    attachments = await repository.attachments_of(db, company_id, message.id)
-    await documents.request_reading(
-        db, company_id, [file.document_id for file in attachments if not file.inline]
-    )
+    await documents.request_reading(db, company_id, await _files_to_read(db, message))
     message.processed_at = utcnow()
     await repository.note_mail(
         db,
@@ -509,6 +517,28 @@ async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: u
         bulk=message.bulk,
         at=message.processed_at,
     )
+
+
+async def _files_to_read(db: AsyncSession, message: Message) -> list[uuid.UUID]:
+    """The files of a mail to ask a reading of: those beside its text, and the pictures its body
+    shows, since one can be the message itself (a pasted screenshot, a photo of a plate). Not
+    the pictures of bulk mail, a newsletter's, nor one that several conversations already show,
+    a sender's furniture; how small a picture holds nothing is the reader's to say (documents)."""
+    attachments = await repository.attachments_of(db, message.company_id, message.id)
+    shown = [file.document_id for file in attachments if file.inline]
+    left = set(shown) if message.bulk else await _furniture(db, message.company_id, shown)
+    return [file.document_id for file in attachments if file.document_id not in left]
+
+
+async def _furniture(
+    db: AsyncSession, company_id: uuid.UUID, shown: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these pictures, shown in a mail's body, so many conversations carry that they
+    belong to none."""
+    carried = await repository.conversations_carrying(db, company_id, shown)
+    return {
+        document_id for document_id, count in carried.items() if count >= _FURNITURE_CONVERSATIONS
+    }
 
 
 async def _processed_copy(db: AsyncSession, message: Message) -> Message | None:
@@ -665,7 +695,8 @@ class MailRead:
     subject: str | None
     # What its writer typed, without the history it quotes.
     text: str
-    # The files beside its text; a picture its body shows inline is not one.
+    # The files beside its text, and the pictures its body shows that are large enough to hold
+    # writing and are this conversation's own; a logo or a signature is not one.
     files: list[FileRead]
 
 
@@ -746,6 +777,9 @@ async def _as_read_threads(
 ) -> list[ThreadRead]:
     mails = await repository.mail_as_read(db, company_id, [thread.thread_key for thread in threads])
     attached = await repository.attachments_of_each(db, company_id, [mail.id for mail in mails])
+    shown = [file.document_id for files in attached.values() for file in files if file.inline]
+    pictures = await documents.for_the_vision_model(db, company_id, shown)
+    pictures -= await _furniture(db, company_id, shown)
     by_key: dict[str, list[MailRead]] = {}
     for mail in mails:
         by_key.setdefault(mail.thread_key, []).append(
@@ -761,7 +795,7 @@ async def _as_read_threads(
                 files=[
                     FileRead(document_id=file.document_id, filename=file.filename)
                     for file in attached.get(mail.id, [])
-                    if not file.inline
+                    if not file.inline or file.document_id in pictures
                 ],
             )
         )
@@ -808,6 +842,9 @@ documents.register_holder(Holder.MAIL, _attaches)
 
 
 async def _file_was_read(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    carried = await repository.conversations_carrying(db, company_id, [document_id])
+    if carried.get(document_id, 0) > _COMMON_CONVERSATIONS:
+        return
     await repository.touch_threads_carrying(db, company_id, document_id, utcnow())
 
 

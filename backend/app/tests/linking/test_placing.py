@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -163,6 +163,8 @@ NEW_PROJECT = answer(
 def model(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Script]:
     """Puts a scripted stand-in in the model's place, with a budget of forty reads a day."""
     monkeypatch.setattr(get_settings(), "mail_model_reads_per_day", 40)
+    # Whatever a developer's own .env names: a test that wants a second model names it.
+    monkeypatch.setattr(get_settings(), "agent_second_models", {})
 
     def install(*steps: Step) -> Script:
         script = Script(*steps)
@@ -749,6 +751,55 @@ async def test_two_projects_that_fit_are_put_to_the_owner(
     assert placed.outcome is Outcome.ASKED and placed.project_id is None
     assert set(placed.alternatives) == {first.id, second.id}
     assert await links(company_id, "<which@x>") == []
+
+
+@pytest.mark.integration
+async def test_a_link_with_another_project_in_sight_is_decided_by_the_second_model(
+    client: httpx.AsyncClient, model: Callable[..., Script], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<a@x>", subject="Munich A"), category=ThreadCategory.WORK)
+    await arrive(company_id, 2, mail("<b@x>", subject="Munich B"), category=ThreadCategory.WORK)
+    first = await owner_project(company_id, "<a@x>", "Munich A")
+    second = await owner_project(company_id, "<b@x>", "Munich B")
+    for uid, key in ((3, "<pod@x>"), (4, "<cmr@x>"), (5, "<late@x>"), (6, "<down@x>")):
+        await arrive(company_id, uid, mail(key, subject="POD"), category=ThreadCategory.WORK)
+    look = tool("search_projects", words="Munich")
+    look_at = tool("open_project", number=second.number)
+    stronger = Script(
+        look,
+        answer("link", project=second.number),
+        UnexpectedModelBehavior("no answer"),
+        ModelHTTPError(503, "the-second-model"),
+    )
+    monkeypatch.setattr(llm, "second_model_for", lambda name: FunctionModel(stronger.respond))
+    monkeypatch.setitem(get_settings().agent_second_models, "linker", "openai:the-second")
+    script = model(
+        # Two projects of the same client were in sight: the same client's other job.
+        look,
+        answer("link", project=first.number),
+        # Only the one it names was: nothing to tell apart.
+        look_at,
+        answer("link", project=second.number),
+        # Two in sight again, and the second model gives no answer, then cannot be reached.
+        look,
+        answer("link", project=first.number),
+        look,
+        answer("link", project=first.number),
+    )
+
+    assert await service.place_pending() == 6
+
+    # The second model read it from the start, without the first answer, and decided.
+    assert (await placement(company_id, "<pod@x>")).project_id == second.id
+    assert "why" not in stronger.prompt() and "POD" in stronger.prompt()
+    assert (await placement(company_id, "<cmr@x>")).project_id == second.id
+    # No answer from it, or none to be had: the first one stands, and is not held back.
+    assert (await placement(company_id, "<late@x>")).project_id == first.id
+    assert (await placement(company_id, "<down@x>")).project_id == first.id
+    assert script.steps == [] and stronger.steps == []
+    # Every request either model answered was sent the mail, and counts.
+    assert await reads(company_id) == 10
 
 
 @pytest.mark.integration

@@ -18,6 +18,7 @@ from typing import Final
 
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import UsageLimits
+from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -78,6 +79,10 @@ _SHOWN_AS_IT_IS: Final = frozenset(filetypes.IMAGES - {filetypes.BMP})
 _MODEL_CONFIDENCE: Final = 0.8
 # One answer, and two more requests when it fails the output's checks.
 _VISION_LIMITS: Final = UsageLimits(request_limit=3)
+# A picture shorter than this on a side, or of fewer pixels in all, holds no page, screenshot or
+# photo: an icon, a logo, a line of a signature. It is not shown to a model.
+_PICTURE_SIDE: Final = 80
+_PICTURE_PIXELS: Final = 40_000
 
 # The runs that take files out of an archive read up to 200 MB of it, so each gets two minutes.
 _UNPACK_LIMITS: Final = isolated.Limits(deadline_seconds=120.0)
@@ -595,7 +600,11 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
     if real == filetypes.PDF:
         read = await _read_pdf(data)
     elif real in filetypes.IMAGES:
-        document.needs_vision = True
+        if _holds_writing(data):
+            document.needs_vision = True
+        else:
+            # Nothing was learned of it, so what rests on a file's reading is not told.
+            document.read_state, document.read_at = ReadState.READ, utcnow()
         return
     elif media in filetypes.SHEETS:
         read = await _read_sheet(data, media)
@@ -713,7 +722,11 @@ async def read_with_vision(
     shown = scanned[: reading.MAX_PICTURED]
     if (len(shown) if is_pdf else 1) > left:
         return None
-    pictures = await _drawn(data, shown) if is_pdf else _photo(data)
+    pictures: list[tuple[bytes, str]] | isolated.Reason
+    if is_pdf:
+        pictures = await _drawn(data, shown)
+    else:
+        pictures = _photo(data) if _holds_writing(data) else []
     seen: agents.Reading | isolated.Reason
     spent = 0
     if isinstance(pictures, isolated.Reason):
@@ -721,21 +734,48 @@ async def read_with_vision(
     elif not pictures:
         seen = agents.Reading(shows="", pages=[])
     else:
-        try:
+        shown_to = agents.pictures(filename, pictures)
+        usage = RunUsage()
+
+        async def ask(*, second: bool = False) -> agents.Reading:
             run = await llm.run(
                 agents.reader,
-                agents.pictures(filename, pictures),
+                shown_to,
                 deps=len(pictures),
                 limits=_VISION_LIMITS,
                 language=language,
                 trace_content=trace_content,
+                usage=usage,
+                second=second,
             )
-            seen, requests = run.output, run.usage.requests
+            return run.output
+
+        try:
+            seen = await ask()
         except llm.NoAnswer as error:
             logger.warning("the vision model gave no reading of %s: %s", document_id, error)
-            seen, requests = isolated.Reason.UNSUPPORTED, error.requests
+            seen = isolated.Reason.UNSUPPORTED
         # Every request shows the pictures again and is paid for, whatever came of its answer.
-        spent = len(pictures) * max(requests, 1)
+        spent = len(pictures) * max(usage.requests, 1)
+        if (
+            isinstance(seen, agents.Reading)
+            and seen.hard()
+            and llm.second_model_name(agents.READER) is not None
+            and spent + len(pictures) <= left
+        ):
+            # What the first model could not read with certainty, the stronger one reads again;
+            # when that fails, for any reason, the first reading stands.
+            asked = usage.requests
+            sent = 1
+            try:
+                seen = await ask(second=True)
+            except Exception as error:
+                logger.warning(
+                    "the second reading of %s failed: %s", document_id, type(error).__name__
+                )
+                # A model that settings cannot reach was never sent the pictures.
+                sent = 0 if isinstance(error, llm.ModelUnavailable) else 1
+            spent += len(pictures) * max(usage.requests - asked, sent)
     async with open_session() as db:
         if spent:
             await repository.add_vision_read(db, company_id, spent, utcnow())
@@ -794,6 +834,16 @@ async def _keep_reading(
         ],
     )
     await _was_read(db, document)
+
+
+def _holds_writing(data: bytes) -> bool:
+    """Whether a picture is large enough to be worth a model's reading. One whose header gives
+    no size is taken as large: the model, not a guess, says what is on it."""
+    size = filetypes.picture_size(data)
+    if size is None:
+        return True
+    width, height = size
+    return min(width, height) >= _PICTURE_SIDE and width * height >= _PICTURE_PIXELS
 
 
 def _awaits_vision(document: Document) -> bool:
@@ -1064,6 +1114,14 @@ async def document_exists(db: AsyncSession, company_id: uuid.UUID, document_id: 
     """Whether it exists, held so until the caller's transaction ends: a link made to it cannot
     name a file a concurrent delete removes."""
     return await repository.lock_document(db, company_id, document_id, share=True) is not None
+
+
+async def for_the_vision_model(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these files the vision model reads or has read: a photo large enough to hold
+    writing, a PDF with a scanned page."""
+    return await repository.for_the_vision_model(db, company_id, ids)
 
 
 async def get_documents(

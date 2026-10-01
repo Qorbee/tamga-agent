@@ -10,7 +10,7 @@ named ``invoice.pdf`` is only ever a download.
 import re
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Final
+from typing import Final, Literal
 
 
 class Preview(StrEnum):
@@ -236,6 +236,63 @@ def sniff(data: bytes) -> str | None:
     # Readers accept a header anywhere in the first kilobyte, and some scanners write one late.
     if b"%PDF-" in data[:1024]:
         return PDF
+    return None
+
+
+def picture_size(data: bytes) -> tuple[int, int] | None:
+    """A picture's width and height in pixels, read from its header alone (no decoder runs on
+    outside bytes). None when the bytes are no picture ``sniff`` knows, or the header is cut."""
+    kind = sniff(data)
+    if kind == PNG and data[12:16] == b"IHDR" and len(data) >= 24:
+        return _number(data, 16, 4, "big"), _number(data, 20, 4, "big")
+    if kind == GIF and len(data) >= 10:
+        return _number(data, 6, 2), _number(data, 8, 2)
+    if kind == BMP and len(data) >= 26:
+        # A height below zero says its rows run top to bottom.
+        width = int.from_bytes(data[18:22], "little", signed=True)
+        return abs(width), abs(int.from_bytes(data[22:26], "little", signed=True))
+    if kind == WEBP and len(data) >= 30:
+        return _webp_size(data)
+    if kind == JPEG:
+        return _jpeg_size(data)
+    return None
+
+
+def _number(data: bytes, at: int, length: int, order: Literal["little", "big"] = "little") -> int:
+    return int.from_bytes(data[at : at + length], order)
+
+
+def _webp_size(data: bytes) -> tuple[int, int] | None:
+    form = data[12:16]
+    if form == b"VP8X":
+        return _number(data, 24, 3) + 1, _number(data, 27, 3) + 1
+    if form == b"VP8L":
+        bits = _number(data, 21, 4)
+        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    if form == b"VP8 ":
+        return _number(data, 26, 2) & 0x3FFF, _number(data, 28, 2) & 0x3FFF
+    return None
+
+
+# A JPEG's frame headers, which carry its size: baseline, progressive and the rarer ones, without
+# the three markers in their range that are tables.
+_JPEG_FRAMES: Final = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
+
+
+def _jpeg_size(data: bytes) -> tuple[int, int] | None:
+    at = 2
+    while at + 9 <= len(data):
+        if data[at] != 0xFF:
+            return None
+        marker = data[at + 1]
+        if marker == 0xFF:  # padding before a marker
+            at += 1
+            continue
+        if marker in _JPEG_FRAMES:
+            return _number(data, at + 7, 2, "big"), _number(data, at + 5, 2, "big")
+        if marker == 0xDA:  # the picture's data starts: no frame header came before it
+            return None
+        at += 2 + _number(data, at + 2, 2, "big")
     return None
 
 

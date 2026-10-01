@@ -11,13 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.conversations import service
 from app.modules.conversations.adapters.imap import FetchedMail
-from app.modules.conversations.models import Message, MessageAttachment
+from app.modules.conversations.models import Message, MessageAttachment, Thread
+from app.modules.documents import service as documents
 from app.modules.documents.models import Document
 from app.modules.facts import service as facts
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.items import ItemKind
 from app.tests.conftest import guest_client
+from app.tests.documents.test_vision import sized_png
 
 pytestmark = pytest.mark.integration
 
@@ -177,7 +179,7 @@ async def test_a_mail_that_fails_leaves_the_rest_processed_and_waits_an_hour_aft
     assert await service.process_pending() == 1
 
 
-async def test_a_mail_asks_for_its_attachments_to_be_read_but_not_its_inline_pictures(
+async def test_a_mail_asks_for_its_files_and_the_pictures_its_body_shows_to_be_read(
     client: httpx.AsyncClient, storage_bucket: None
 ) -> None:
     company_id = await guest_client(client)
@@ -204,10 +206,118 @@ async def test_a_mail_asks_for_its_attachments_to_be_read_but_not_its_inline_pic
                 .where(MessageAttachment.company_id == company_id)
             )
         ).all()
+    # A picture in the body can be the message itself: the reader, not the mail, says which
+    # ones hold nothing.
+    assert sorted((inline, state or "") for inline, state in files) == [
+        (False, "pending"),
+        (True, "pending"),
+    ]
+
+
+async def test_a_picture_in_the_body_is_one_of_its_conversations_files_when_it_can_hold_writing(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    message = email.message.EmailMessage()
+    message["From"] = "ayse@kaya.example"
+    message["Subject"] = "The truck"
+    message["Date"] = "Mon, 28 Sep 2026 09:00:00 +0300"
+    message["Message-ID"] = "<plate@k>"
+    message.set_content("The plate is below.")
+    message.add_alternative(
+        '<p>The plate is below.</p><img src="cid:plate"><img src="cid:logo">', subtype="html"
+    )
+    html = message.get_body(preferencelist=("html",))
+    assert isinstance(html, email.message.EmailMessage)
+    html.add_related(sized_png(900, 600), "image", "png", cid="<plate>", filename="image001.png")
+    html.add_related(sized_png(240, 60), "image", "png", cid="<logo>", filename="image002.png")
+    await store(company_id, "ops@acme.example", 1, message.as_bytes())
+
+    await service.process_pending()
+    await documents.read_pending()
+
+    async with open_session() as db:
+        thread_id = await db.scalar(select(Thread.id).where(Thread.company_id == company_id))
+        assert thread_id is not None
+        thread = await service.read_thread(db, company_id, thread_id)
+    # The photo waits for the vision model and is read with the mail; the logo is furniture.
+    assert thread is not None
+    assert [file.filename for file in thread.mails[0].files] == ["image001.png"]
+
+
+def shows(
+    message_id: str, picture: bytes, *, beside: bytes | None = None, bulk: bool = False
+) -> bytes:
+    """A mail whose body shows this picture, with a file beside it when given."""
+    message = email.message.EmailMessage()
+    if bulk:
+        message["List-Unsubscribe"] = "<mailto:leave@news.example>"
+    message["From"] = "ayse@kaya.example"
+    message["Subject"] = f"Offer {message_id}"
+    message["Date"] = "Mon, 28 Sep 2026 09:00:00 +0300"
+    message["Message-ID"] = message_id
+    message.set_content("Our offer.")
+    message.add_alternative('<p>Our offer.</p><img src="cid:banner">', subtype="html")
+    html = message.get_body(preferencelist=("html",))
+    assert isinstance(html, email.message.EmailMessage)
+    html.add_related(picture, "image", "png", cid="<banner>", filename="image001.png")
+    if beside is not None:
+        message.add_attachment(beside, "text", "plain", filename="terms.txt")
+    return message.as_bytes()
+
+
+async def test_a_newsletters_pictures_are_not_asked_for(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    raw = shows("<news@k>", sized_png(1200, 800), beside=b"Our autumn prices.", bulk=True)
+    await store(company_id, "ops@acme.example", 1, raw)
+
+    await service.process_pending()
+
+    async with open_session() as db:
+        files = (
+            await db.execute(
+                select(MessageAttachment.inline, Document.read_state)
+                .join(Document, Document.id == MessageAttachment.document_id)
+                .where(MessageAttachment.company_id == company_id)
+            )
+        ).all()
     assert sorted((inline, state or "") for inline, state in files) == [
         (False, "pending"),
         (True, ""),
     ]
+
+
+async def test_what_many_conversations_carry_belongs_to_none_of_them(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    banner = sized_png(900, 300)
+    for uid in range(1, 13):
+        raw = shows(f"<offer-{uid}@k>", banner, beside=b"Payment within thirty days.")
+        await store(company_id, "ops@acme.example", uid, raw)
+    await service.process_pending()
+
+    async def threads() -> list[Thread]:
+        async with open_session() as db:
+            rows = await db.scalars(select(Thread).where(Thread.company_id == company_id))
+            return list(rows.all())
+
+    before = {thread.id: thread.changed_at for thread in await threads()}
+    # A banner in every mail's body is a signature, however large: it is not asked for.
+    assert await documents.read_pending() == 1
+
+    # The terms sent with every offer were read, and no conversation is looked at again for it.
+    assert {thread.id: thread.changed_at for thread in await threads()} == before
+    async with open_session() as db:
+        states = await db.scalars(
+            select(Document.read_state).where(Document.company_id == company_id)
+        )
+        read = await service.read_thread(db, company_id, next(iter(before)))
+    assert sorted(state or "" for state in states) == ["", "read"]
+    # Only the file is the mail's.
+    assert read is not None and [file.filename for file in read.mails[0].files] == ["terms.txt"]
 
 
 async def test_a_copy_asks_for_a_file_the_mail_read_before_did_not_have(

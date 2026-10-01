@@ -134,6 +134,26 @@ async def set_inline(
     )
 
 
+async def conversations_carrying(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    """For each of these files, how many of the company's conversations have a mail that
+    carries it."""
+    if not document_ids:
+        return {}
+    rows = await db.execute(
+        select(MessageAttachment.document_id, func.count(Message.thread_key.distinct()))
+        .join(Message, Message.id == MessageAttachment.message_id)
+        .where(
+            MessageAttachment.company_id == company_id,
+            Message.company_id == company_id,
+            MessageAttachment.document_id.in_(document_ids),
+        )
+        .group_by(MessageAttachment.document_id)
+    )
+    return {document_id: count for document_id, count in rows}
+
+
 def _file_count() -> ScalarSelect[int]:
     """How many files a mail carried beside its text: the images its body shows are not counted."""
     return (

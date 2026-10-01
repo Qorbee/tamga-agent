@@ -1,3 +1,5 @@
+import struct
+
 from app.platform import filetypes
 from app.platform.filetypes import Preview
 
@@ -77,3 +79,25 @@ def test_a_text_file_is_decoded_by_what_it_says_of_itself() -> None:
     declared = filetypes.charset("text/plain; charset=windows-1254")
     assert declared == "windows-1254"
     assert filetypes.decode_text("Şoför".encode("cp1254"), declared) == "Şoför"
+
+
+def test_a_pictures_size_is_read_from_its_header() -> None:
+    png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I4sII", 13, b"IHDR", 640, 480) + b"\x08\x02"
+    gif = b"GIF89a" + struct.pack("<HH", 32, 16)
+    bmp = b"BM" + bytes(16) + struct.pack("<ii", 300, -200)
+    # A JPEG's size is in its frame header, after the tables a camera writes before it.
+    table = b"\xff\xe0" + struct.pack(">H", 16) + bytes(14)
+    frame = b"\xff\xc2" + struct.pack(">HBHH", 17, 8, 1080, 1920)
+    jpeg = b"\xff\xd8" + table + frame + bytes(12)
+    webp = b"RIFF" + bytes(4) + b"WEBPVP8X" + bytes(8) + (799).to_bytes(3, "little")
+    webp += (599).to_bytes(3, "little")
+
+    assert filetypes.picture_size(png) == (640, 480)
+    assert filetypes.picture_size(gif) == (32, 16)
+    assert filetypes.picture_size(bmp) == (300, 200)
+    assert filetypes.picture_size(jpeg) == (1920, 1080)
+    assert filetypes.picture_size(webp) == (800, 600)
+    # A header cut short, a JPEG with no frame, and what is no picture give no size.
+    assert filetypes.picture_size(png[:20]) is None
+    assert filetypes.picture_size(b"\xff\xd8" + table + b"\xff\xda" + bytes(12)) is None
+    assert filetypes.picture_size(b"%PDF-1.7") is None

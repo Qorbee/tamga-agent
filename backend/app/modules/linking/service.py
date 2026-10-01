@@ -20,6 +20,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 
 from pydantic_ai import UsageLimits
+from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,6 +74,8 @@ FOLLOW_WITHIN: Final = timedelta(days=14)
 # The answer, the searches before it, and a retry when it fails the output's checks. A run that
 # starts within the day's budget finishes, so a day can end this many reads past it.
 _LIMITS: Final = UsageLimits(request_limit=12)
+# A first answer less sure of itself than this is given to the linker's second model.
+_SURE: Final = 0.6
 
 # What a placement's ``placed_by`` holds when code placed it, and when the model gave no answer.
 BY_KEYS: Final = "keys"
@@ -241,13 +244,7 @@ async def place_thread(
                 [found.named[project_id] for project_id in found.keys],
                 [found.named[project_id] for project_id in sorted(ties.refused)],
             )
-            desk = agents.Desk(
-                company_id=company_id,
-                thread_id=thread_id,
-                refused={agents.bare(found.numbers[project_id]) for project_id in ties.refused},
-            )
-            for project_id in (*ties.held, *found.keys):
-                desk.show(found.numbers[project_id], project_id)
+            desk = _desk(company_id, thread_id, found)
             # Counted before it is made: a call that fails once the provider has the mail counts.
             await conversations.count_model_reads(db, company_id, agents.LINKER)
             await db.commit()
@@ -263,18 +260,88 @@ async def place_thread(
                 trace_content=trace_content,
                 usage=usage,
             )
-            decision, further = _from_model(run.output, desk, thread, found), usage.requests - 1
-        except llm.NoAnswer as error:
-            decision, further = _Decision(Outcome.UNPLACED, UNANSWERED), error.requests - 1
+            decision = _from_model(run.output, desk, thread, found)
+            if _contested(run.output, desk) and llm.second_model_name(agents.LINKER) is not None:
+                decision = await _second_opinion(
+                    decision,
+                    prompt,
+                    _desk(company_id, thread_id, found),
+                    thread,
+                    found,
+                    usage=usage,
+                    language=language,
+                    trace_content=trace_content,
+                )
+        except llm.NoAnswer:
+            decision = _Decision(Outcome.UNPLACED, UNANSWERED)
         except Exception:
             # The request that failed was sent the conversation too, after those that answered.
             await _count(company_id, usage.requests)
             raise
-        await _count(company_id, further)
+        await _count(company_id, usage.requests - 1)
     async with open_session() as db:
         applied = await _apply(db, company_id, thread, found, decision, seen_at=seen_at)
         await db.commit()
     return applied
+
+
+def _desk(company_id: uuid.UUID, thread_id: uuid.UUID, found: _Found) -> agents.Desk:
+    """What a run of the linker starts from: the projects code already ties the conversation to,
+    and those the owner refused for it."""
+    ties = found.ties
+    desk = agents.Desk(
+        company_id=company_id,
+        thread_id=thread_id,
+        refused={agents.bare(found.numbers[project_id]) for project_id in ties.refused},
+    )
+    for project_id in (*ties.held, *found.keys):
+        desk.show(found.numbers[project_id], project_id)
+    return desk
+
+
+def _contested(placing: agents.Placing, desk: agents.Desk) -> bool:
+    """Whether a first answer is one for the agent's second model: it places the conversation
+    though another answer was open. A link while the run saw another project too (the same
+    client's other job), a new project while it saw any (the same job, proposed twice), two that
+    fit equally, or an answer its own writer was not sure of."""
+    if placing.decision == "unplaced":
+        return False
+    others = len(desk.projects) - (1 if placing.decision == "link" else 0)
+    return others > 0 or placing.confidence < _SURE
+
+
+async def _second_opinion(
+    first: _Decision,
+    prompt: Sequence[UserContent],
+    desk: agents.Desk,
+    thread: ThreadRead,
+    found: _Found,
+    *,
+    usage: RunUsage,
+    language: Language,
+    trace_content: bool,
+) -> _Decision:
+    """The linker's second model on the same conversation, from the start and without the first
+    answer: what it decides is the decision. When it gives none, or cannot be reached, the first
+    stands: a second look that fails never holds back an answer already there."""
+    try:
+        run = await llm.run(
+            agents.linker,
+            prompt,
+            deps=desk,
+            limits=_LIMITS,
+            language=language,
+            trace_content=trace_content,
+            usage=usage,
+            second=True,
+        )
+    except Exception as error:
+        # The error's type only: a provider's error can quote the mail it was sent.
+        logger.warning(
+            "the second opinion on conversation %s failed: %s", thread.id, type(error).__name__
+        )
+        return first
+    return _from_model(run.output, desk, thread, found)
 
 
 async def _count(company_id: uuid.UUID, requests: int) -> None:

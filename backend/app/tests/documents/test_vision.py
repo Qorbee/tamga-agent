@@ -22,6 +22,7 @@ from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.isolated import Reason, Refused
 from app.platform.items import ItemKind
+from app.platform.language import Language
 from app.tests.conftest import guest_client
 from app.tests.documents.pdfs import form, pdf, text
 from app.tests.documents.test_file_content import PNG, upload
@@ -66,6 +67,8 @@ def model(monkeypatch: pytest.MonkeyPatch) -> Callable[[Answer], Seen]:
     """Puts a stand-in in the vision model's place, with a budget of forty pictures a day. The
     stand-in answers what ``answer`` returns for the number of pictures shown, or raises it."""
     monkeypatch.setattr(get_settings(), "vision_pages_per_day", 40)
+    # Whatever a developer's own .env names: a test that wants a second model names it.
+    monkeypatch.setattr(get_settings(), "agent_second_models", {})
 
     def install(answer: Answer) -> Seen:
         seen = Seen()
@@ -187,6 +190,97 @@ async def test_a_photo_is_read_by_the_vision_model_and_its_facts_say_so(
     # A model read them: none is surer than that allows, the IBAN's check digits or not.
     assert {fact.extractor for fact in found} == {agents.MODEL_READ}
     assert max(fact.confidence for fact in found) <= 0.8
+
+
+def sized_png(width: int, height: int) -> bytes:
+    """The start of a PNG of this size: what says how large the picture is."""
+    return b"\x89PNG\r\n\x1a\n" + struct.pack(">I4sII", 13, b"IHDR", width, height) + b" pixels"
+
+
+@pytest.mark.integration
+async def test_a_picture_too_small_to_hold_writing_is_never_shown_to_a_model(
+    client: httpx.AsyncClient, storage_bucket: None, model: Callable[[Answer], Seen]
+) -> None:
+    company_id = await guest_client(client)
+    logo = await upload(client, "image001.png", sized_png(300, 60), "image/png")
+    icon = await upload(client, "image002.png", sized_png(150, 150), "image/png")
+    plate = await upload(client, "plate.png", sized_png(640, 360), "image/png")
+    seen = model(reads())
+
+    await service.read_pending()
+    assert await service.read_pending_with_vision() == 1
+
+    for small in (logo, icon):
+        document = await stored(company_id, small)
+        assert (document.read_state, document.text) == ("read", "")
+        assert (document.needs_vision, document.vision_pages) == (False, 0)
+    assert (await stored(company_id, plate)).vision_pages == 1
+    assert len(seen.pictures()) == 1 and await counted(company_id) == 1
+
+
+@pytest.mark.integration
+async def test_a_reading_its_reader_was_unsure_of_is_made_again_by_the_second_model(
+    client: httpx.AsyncClient,
+    storage_bucket: None,
+    model: Callable[[Answer], Seen],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = await guest_client(client)
+    guessed = "CMR: 0048218"
+    unsure = {"shows": SHOWS, "pages": [{"text": guessed}], "unsure": True}
+    photos = [
+        await upload(client, f"note-{n}.png", PNG + bytes([n]), "image/png") for n in range(5)
+    ]
+    await service.read_pending()
+    first = model(lambda count: unsure)
+    answers: list[dict[str, object] | Exception] = [
+        reads()(1),
+        ModelHTTPError(503, "the-second-model"),
+    ]
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        answered = answers.pop(0)
+        if isinstance(answered, Exception):
+            raise answered
+        return ModelResponse(
+            parts=[ToolCallPart(tool_name=info.output_tools[0].name, args=answered)]
+        )
+
+    monkeypatch.setattr(llm, "second_model_for", lambda name: FunctionModel(respond))
+
+    # No second model is named: the first reading is the file's.
+    async def read(photo: str) -> Document:
+        await service.read_with_vision(
+            company_id, uuid.UUID(photo), left=2, language=Language.EN, trace_content=False
+        )
+        return await stored(company_id, photo)
+
+    assert (await read(photos[0])).text == guessed
+    assert await counted(company_id) == 1
+
+    # Named, it reads the file again, and its picture is counted again.
+    monkeypatch.setitem(get_settings().agent_second_models, agents.READER, "openai:the-second")
+    assert (await read(photos[1])).text == SCAN_TEXT
+    assert await counted(company_id) == 3
+    # When it fails, the first reading stands.
+    assert (await read(photos[2])).text == guessed
+    assert await counted(company_id) == 5
+    # A second model settings cannot reach was sent nothing, and nothing is counted for it.
+    monkeypatch.undo()
+    monkeypatch.setattr(get_settings(), "vision_pages_per_day", 40)
+    monkeypatch.setitem(get_settings().agent_second_models, agents.READER, "nowhere:model")
+    first = model(lambda count: unsure)
+    assert (await read(photos[3])).text == guessed
+    assert await counted(company_id) == 6
+    # A place left unread says as much as the reader's own word, and a budget with no room for
+    # a second look is not passed.
+    first = model(lambda count: {"shows": SHOWS, "pages": [{"text": "CMR: [illegible]"}]})
+    monkeypatch.setattr(llm, "second_model_for", lambda name: FunctionModel(respond))
+    await service.read_with_vision(
+        company_id, uuid.UUID(photos[4]), left=1, language=Language.EN, trace_content=False
+    )
+    assert (await stored(company_id, photos[4])).text == "CMR: [illegible]"
+    assert answers == [] and len(first.requests) == 1
 
 
 @pytest.mark.integration

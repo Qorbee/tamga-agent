@@ -20,6 +20,8 @@ from app.platform import llm
 READER: Final = "reader"
 # The extractor a fact carries when it was found in text the reader wrote.
 MODEL_READ: Final = f"model:{READER}"
+# What the reader writes in place of what it cannot read.
+ILLEGIBLE: Final = "[illegible]"
 
 
 class PageReading(BaseModel):
@@ -32,6 +34,13 @@ class Reading(BaseModel):
     shows: str
     # One reading per picture, in the order they were sent.
     pages: list[PageReading] = Field(max_length=reading.MAX_PICTURED)
+    # Some of it could not be read with certainty.
+    unsure: bool = False
+
+    def hard(self) -> bool:
+        """Whether a stronger model should read the file again: its reader said so, or left a
+        place unread."""
+        return self.unsure or any(ILLEGIBLE in page.text for page in self.pages)
 
 
 _INSTRUCTIONS: Final = """\
@@ -49,6 +58,10 @@ For each picture, in the order given, write what a person reading it would read:
 
 `shows` is one plain line on what the file is, such as "A signed consignment note" or \
 "A photo of a loaded truck at a dock".
+
+`unsure` is true when you could not read some of it with certainty: handwriting, a blurred, \
+dark, skewed or cut-off picture, a faint stamp, print too small to make out. A clean print or \
+scan is false.
 
 """
 
