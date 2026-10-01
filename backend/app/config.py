@@ -9,9 +9,16 @@ A new variable goes here, in ``.env.example`` with a comment, and nowhere else.
 import uuid
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, Field, PostgresDsn, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PostgresDsn,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolved from this file rather than the working directory, so `uv run` from anywhere, Alembic and
@@ -20,6 +27,7 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 LOCAL_WEB_URL = "http://localhost:3000"
+EvmAddress = Annotated[str, StringConstraints(pattern=r"^0x[0-9a-fA-F]{40}$")]
 # The model providers an agent's model may name, and the setting holding each one's key (ADR-0005).
 MODEL_PROVIDER_KEYS = {"openai": "openai_api_key", "anthropic": "anthropic_api_key"}
 
@@ -122,6 +130,12 @@ class Settings(BaseSettings):
     # company treasury in it.
     circle_wallet_set_id: str | None = None
     circle_treasury_wallet_id: str | None = None
+    # The chain's own constants (root AGENTS.md, invariant 4). The defaults are Arc testnet's, the
+    # one chain CIRCLE_BLOCKCHAIN accepts. USDC's ERC-20 interface there has 6 decimals.
+    usdc_address: EvmAddress = "0x3600000000000000000000000000000000000000"
+    arc_explorer_url: str = "https://testnet.arcscan.app"
+    # Printed by scripts/deploy_policy_vault.py, which deploys the vault once (ADR-0015).
+    policy_vault_address: EvmAddress | None = None
 
     # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
     guest_hours: int = 24

@@ -23,3 +23,8 @@ remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "forge-std/=lib/forge-std/src/",
 ]
+
+[lint]
+# A timelock and a daily cap are made of block.timestamp. The shortest wait is a minute and a cap's
+# day is a whole day, so the second or two a validator can move a timestamp changes neither.
+exclude_lints = ["block-timestamp"]

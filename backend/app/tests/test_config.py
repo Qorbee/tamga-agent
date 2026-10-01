@@ -118,6 +118,18 @@ def test_a_live_circle_key_is_refused() -> None:
         )
 
 
+def test_a_chain_address_that_is_not_one_is_refused() -> None:
+    # A typo here would send a deploy, or later a payment, to the wrong contract.
+    with pytest.raises(ValidationError, match="policy_vault_address"):
+        load_settings(policy_vault_address="0x1234")
+    with pytest.raises(ValidationError, match="usdc_address"):
+        load_settings(usdc_address="3600000000000000000000000000000000000000")
+
+    settings = load_settings(policy_vault_address="0x" + "aB" * 20)
+    assert settings.policy_vault_address == "0x" + "aB" * 20
+    assert settings.usdc_address == "0x3600000000000000000000000000000000000000"
+
+
 def test_a_blank_key_counts_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "")
     monkeypatch.setenv("BOOKS_API_KEY", "")

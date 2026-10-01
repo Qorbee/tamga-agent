@@ -1,8 +1,9 @@
 # Contracts
 
-The Solidity package, built and tested with Foundry. It will hold PolicyVault: the contract that holds
-each company's test USDC and pays only through the executor, within the company's caps and payee
-allowlist. PolicyVault has its own plan; this package is the scaffold it builds on.
+The Solidity package, built and tested with Foundry. It holds PolicyVault: one contract that holds
+every company's test USDC, each company's apart, and pays only through the executor, within that
+company's caps and payee list, once per payment key. A company's limits change only on its owner
+key's signature; a change that loosens one waits out the company's timelock.
 
 ## Map
 
@@ -10,9 +11,9 @@ allowlist. PolicyVault has its own plan; this package is the scaffold it builds 
 |---|---|
 | `foundry.toml` | Compiler (solc) and EVM target, remappings, warnings as errors |
 | `.foundry-version` | The Foundry release this package is built with; CI reads it |
-| `src/` | Contracts, one per file, named after it |
-| `test/` | Forge tests (`*.t.sol`) |
-| `script/` | Deploy scripts (`*.s.sol`) |
+| `src/PolicyVault.sol` | The contract. Contracts are one per file, named after it |
+| `test/PolicyVault.t.sol` | Its tests: every refusal, one company against another, the timelock's edges, signatures replayed; `test/mocks/` holds the tokens and the smart account they use |
+| `script/smoke.sh` | A throwaway vault run through a payment on Arc testnet, each step executed by Arc's node |
 | `lib/` | forge-std and OpenZeppelin Contracts, as git submodules pinned to release tags |
 
 Generated from here: `backend/app/platform/abi/<Name>.json`, the ABI the backend reads the chain with
@@ -50,5 +51,16 @@ forge fmt --check && forge build --sizes && forge test
 
 Arc runs the Osaka hard fork, so `evm_version` is `osaka`. USDC is the gas token: its ERC-20 interface
 has 6 decimals, and the native balance, the same funds, has 18. Forge tests run on Foundry's own EVM,
-not Arc's rules. Circle's fork, [`arc-foundry`](https://github.com/circlefin/arc-foundry), runs them
-under Arc's rules if a test ever depends on them.
+not Arc's rules. PolicyVault moves USDC only through the ERC-20 interface, has no payable function
+and sends no native value, so its logic does not depend on them; what does (real USDC, the chain's
+id in a signature) is covered by the smoke run:
+
+```bash
+ETH_RPC_URL=… USDC_ADDRESS=… SMOKE_PRIVATE_KEY=… contracts/script/smoke.sh   # about 0.2 test USDC
+```
+
+Circle's fork, [`arc-foundry`](https://github.com/circlefin/arc-foundry), runs forge tests under
+Arc's rules if one ever depends on them.
+
+The vault Tamga pays from is deployed by `backend/scripts/deploy_policy_vault.py`, from Tamga's
+treasury wallet through Circle's contracts API.

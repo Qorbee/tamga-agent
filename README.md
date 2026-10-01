@@ -65,10 +65,14 @@ Arc testnet; nothing touches a company's bank or real money.
 - **Projects and shipments:** the data model and the projects board.
 - **The books:** a read-only accounting sync, through a country pack.
 - **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled.
+- **PolicyVault:** the contract that caps the executor, written, tested, and run through a payment
+  on Arc testnet. One vault holds every company, each with its own balance, caps, payees and paid
+  keys. A change needs the company's owner key to sign it, and one that loosens a limit waits out
+  a timelock.
 
 Next, in this order: linking mail and documents to projects, and rebuilding the past three months
-from them (the replay); the policy engine, its decisions and their log; PolicyVault on Arc testnet
-and the executor through Circle; the assistant, the driver and dispatcher links, and the
+from them (the replay); the policy engine, its decisions and their log; the vault Tamga pays from,
+deployed through Circle, and the executor; the assistant, the driver and dispatcher links, and the
 playground's scenarios.
 
 ## This repository
