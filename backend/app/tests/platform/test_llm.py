@@ -31,6 +31,7 @@ ANSWER = "the answer a pilot's mail produced"
 def spans(monkeypatch: pytest.MonkeyPatch) -> Iterator[InMemorySpanExporter]:
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
+    provider.add_span_processor(tracing.AgentName())
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(tracing, "_provider", provider)
     yield exporter
@@ -65,6 +66,48 @@ async def test_a_pilot_run_is_traced_without_its_content(spans: InMemorySpanExpo
     traced = traced_text(spans)
     assert spans.get_finished_spans()  # timing, tokens and the model are still traced
     assert "34 ABC 12" not in traced and ANSWER not in traced
+
+
+async def test_every_span_of_a_run_names_its_agent(spans: InMemorySpanExporter) -> None:
+    await run_probe(trace_content=False)
+
+    # Langfuse keeps spans, not traces: a model call is found by its agent only if it says so.
+    finished = spans.get_finished_spans()
+    assert len(finished) > 1
+    assert {(span.attributes or {}).get("langfuse.trace.name") for span in finished} == {"probe"}
+
+
+def test_spans_go_to_langfuse_on_its_current_ingestion(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(get_settings(), "langfuse_public_key", "pk-lf-x")
+    monkeypatch.setattr(get_settings(), "langfuse_secret_key", SecretStr("sk-lf-x"))
+    made: list[dict[str, object]] = []
+
+    class Exporter:
+        def __init__(self, **arguments: object) -> None:
+            made.append(arguments)
+
+        def export(self, spans: object) -> None:  # never reached: nothing is traced here
+            raise AssertionError
+
+        def shutdown(self) -> None:
+            pass
+
+        def force_flush(self, timeout_millis: int = 0) -> bool:
+            return True
+
+    monkeypatch.setattr(tracing, "OTLPSpanExporter", Exporter)
+    try:
+        tracing.init_tracing("api")
+    finally:
+        tracing.shutdown_tracing()
+
+    [arguments] = made
+    assert str(arguments["endpoint"]).endswith("/api/public/otel/v1/traces")
+    headers = arguments["headers"]
+    assert isinstance(headers, dict)
+    # Without it the spans take Langfuse's older path, which ends on 2026-11-16.
+    assert headers["x-langfuse-ingestion-version"] == "4"
+    assert headers["Authorization"].startswith("Basic ")
 
 
 async def test_a_sandbox_run_is_traced_with_its_content(spans: InMemorySpanExporter) -> None:
