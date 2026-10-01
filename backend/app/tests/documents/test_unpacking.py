@@ -1,4 +1,5 @@
 import base64
+import hashlib
 
 import pytest
 
@@ -43,6 +44,61 @@ def test_a_winmail_dat_gives_the_files_outlook_wrapped() -> None:
         "CMR 1.pdf": b"%PDF-1.7 one",
         "Teslim.jpg": b"\xff\xd8\xff",
     }
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+WRAPPED_HTML = (
+    b"{\\rtf1\\ansi\\ansicpg1254\\fromhtml1 \\deff0{\\fonttbl{\\f0\\fswiss Arial;}}"
+    b"{\\*\\htmltag64 <p>}Y\\'fckleme tamam"
+    b'{\\*\\htmltag84 <img src="cid:logo@kaya">}{\\*\\htmltag72 </p>}}'
+)
+
+
+def test_a_winmail_dat_gives_the_body_its_sender_laid_out_and_the_pictures_it_draws() -> None:
+    data = archives.winmail_of(
+        {"logo.png": PNG, "CMR 1.pdf": b"%PDF-1.7 one", "not-a-picture.png": b"MZ program"},
+        rtf_body=archives.stored_rtf(WRAPPED_HTML),
+        content_ids={"logo.png": "<Logo@Kaya>", "not-a-picture.png": "<trap@kaya>"},
+    )
+
+    body = unpacking.MailBody.model_validate(unpacking.tnef_body(data, ""))
+
+    assert body.html == '<p>Yükleme tamam<img src="cid:logo@kaya"></p>'
+    # By what its bytes are, never by its name; and a Content-ID as a `cid:` names it.
+    assert body.images == {"logo@kaya": hashlib.sha256(PNG).hexdigest()}
+    # The files still come out as files.
+    assert set(taken(unpack(data, Kind.TNEF))) == {"logo.png", "CMR 1.pdf", "not-a-picture.png"}
+
+
+def test_a_body_kept_as_html_is_read_in_the_code_page_the_file_names() -> None:
+    turkish = archives.winmail_of({}, html_body="<p>Yükleme şimdi</p>".encode("cp1254"))
+    assert unpacking.MailBody.model_validate(unpacking.tnef_body(turkish, "")).html == (
+        "<p>Yükleme şimdi</p>"
+    )
+
+    utf8 = archives.winmail_of({}, html_body="<p>Yükleme şimdi</p>".encode())
+    assert unpacking.MailBody.model_validate(unpacking.tnef_body(utf8, "")).html == (
+        "<p>Yükleme şimdi</p>"
+    )
+
+
+def test_a_winmail_dat_whose_body_is_rich_text_or_missing_has_no_html() -> None:
+    rich = archives.winmail_of({}, rtf_body=archives.stored_rtf(b"{\\rtf1\\ansi Merhaba\\par}"))
+    assert unpacking.MailBody.model_validate(unpacking.tnef_body(rich, "")).html is None
+
+    plain = archives.winmail_of({"CMR 1.pdf": b"%PDF-1.7 one"})
+    assert unpacking.MailBody.model_validate(unpacking.tnef_body(plain, "")).html is None
+
+
+def test_a_winmail_dat_whose_body_is_not_rich_text_is_damaged() -> None:
+    data = archives.winmail_of({}, rtf_body=b"not compressed rich text at all")
+
+    with pytest.raises(Refused) as refused:
+        unpacking.tnef_body(data, "")
+    assert refused.value.reason == Reason.DAMAGED
+
+    with pytest.raises(Refused):
+        unpacking.tnef_body(b"not a winmail.dat", "")
 
 
 def test_what_systems_leave_behind_is_skipped_and_a_name_is_only_text() -> None:

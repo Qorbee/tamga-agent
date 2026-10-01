@@ -44,7 +44,7 @@ from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import NotFound
-from app.platform.html import SafeHtml
+from app.platform.html import SafeHtml, sanitize
 from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
@@ -532,6 +532,22 @@ async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> 
     )
     shown = await _html_of(message)
     stored = {file.sha256: document_id for document_id, file in files.items()}
+    if shown is None:
+        winmail = next(
+            (
+                attachment.document_id
+                for attachment in attachments
+                if documents.is_outlook_wrapping(
+                    files[attachment.document_id].content_type, attachment.filename
+                )
+            ),
+            None,
+        )
+        if winmail is not None:
+            wrapped = await _outlook_html(db, actor.company_id, message.id, winmail)
+            if wrapped is not None:
+                shown = wrapped.shown
+                stored |= wrapped.stored
     images = shown.images.items() if shown else []
     return MessageOut(
         **_summary(message, sum(not attachment.inline for attachment in attachments)).model_dump(),
@@ -565,6 +581,29 @@ async def _html_of(message: Message) -> SafeHtml | None:
     except Exception:  # an unreachable original or a broken body; the stored text is still shown
         logger.exception("the HTML of mail %s could not be read", message.id)
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class _Wrapped:
+    shown: SafeHtml
+    # The stored files that hold the pictures it draws, by the SHA-256 of their bytes.
+    stored: dict[bytes, uuid.UUID]
+
+
+async def _outlook_html(
+    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID, winmail: uuid.UUID
+) -> _Wrapped | None:
+    """The body of a mail Outlook sent as "rich text": its own parts hold only bare text, and what
+    the sender laid out is inside its ``winmail.dat``. Sanitized like any mail's HTML."""
+    try:
+        body = await documents.outlook_body(db, company_id, winmail)
+    except Exception:  # an unreachable file; the stored text is still shown
+        logger.exception("the winmail.dat of mail %s could not be read", message_id)
+        return None
+    if body is None:
+        return None
+    shown = await asyncio.to_thread(sanitize, body.html, body.carried)
+    return _Wrapped(shown=shown, stored=body.stored)
 
 
 def _summary(message: Message, attachment_count: int) -> MessageSummary:

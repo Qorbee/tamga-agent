@@ -162,6 +162,28 @@ async def test_a_winmail_dat_opens_as_the_files_outlook_wrapped(
     assert [p["name"] for p in await parts(client, winmail)] == ["CMR 34 ABC 12.pdf", "foto.png"]
 
 
+async def test_a_picture_wrapped_under_a_name_that_says_nothing_is_still_drawn(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    await guest_client(client)
+    winmail = await upload(
+        client,
+        "winmail.dat",
+        archives.winmail_of({"image001": PNG, "notes": b"plain words"}),
+        "application/ms-tnef",
+    )
+
+    await service.read_pending()
+
+    picture, notes = (p["document"] for p in await parts(client, winmail))
+    assert isinstance(picture, dict) and isinstance(notes, dict)
+    assert (picture["content_type"], picture["preview"]) == ("image/png", "image")
+    shown = await client.get(f"/documents/{picture['id']}/content")
+    assert shown.headers["content-type"] == "image/png"
+    # Bytes that prove nothing stay a download.
+    assert (notes["content_type"], notes["preview"]) == ("application/octet-stream", None)
+
+
 def replying(*replies: Json) -> Callable[..., Awaitable[Outcome]]:
     """A child that sends these replies, one per run, as a child a crafted file took over could."""
     queue = list(replies)

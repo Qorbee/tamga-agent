@@ -3,7 +3,8 @@
 
 libarchive reads zip, rar (RAR5 too), 7z and tar; it is C, so it runs only through
 ``isolated.run``. tnefparse reads Outlook's TNEF wrapping. Each member comes back as its bytes and
-the name it had in the archive, which is text to show, never a path to write to.
+the name it had in the archive, which is text to show, never a path to write to. A ``winmail.dat``
+also holds the body its sender laid out (``tnef_body``).
 
 A reply may hold at most ``BATCH_BYTES`` of members, so a large archive is read in several runs:
 each starts where the last one stopped, and carries the bytes taken out so far, so the limits hold
@@ -16,8 +17,10 @@ over the whole archive, not one run:
 """
 
 import base64
+import codecs
 import contextlib
 import ctypes
+import hashlib
 import locale
 from enum import StrEnum
 from pathlib import PurePosixPath
@@ -25,6 +28,7 @@ from typing import Final
 
 import tnefparse
 from pydantic import BaseModel, Field
+from tnefparse.properties import MAPI_ATTACH_CONTENT_ID
 
 try:
     import libarchive
@@ -35,6 +39,8 @@ except (AttributeError, OSError) as error:  # what libarchive-c raises without t
         "`brew install libarchive` and LIBARCHIVE set to its libarchive.dylib (README)"
     ) from error
 
+from app.modules.documents import richtext
+from app.platform import filetypes
 from app.platform.isolated import Json, Reason, Refused, register
 
 MAX_MEMBERS: Final = 200
@@ -258,3 +264,52 @@ def _tnef_name(attachment: tnefparse.TNEFAttachment, codepage: str) -> str:
     if isinstance(name, bytes):
         name = _decode(name, codepage)
     return name.replace("\x00", "").replace("\\", "/").strip().strip("/")[:1000]
+
+
+class MailBody(BaseModel):
+    """What ``tnef_body`` sends back, as the parent checks it."""
+
+    # The HTML the sender wrote; null when the body is rich text that wraps none.
+    html: str | None = Field(max_length=richtext.MAX_RTF)
+    # The pictures the file carries under a Content-ID, each by the SHA-256 of its bytes, in hex.
+    images: dict[str, str]
+
+
+@register("documents.tnef_body")
+def tnef_body(data: bytes, hint: str) -> Json:
+    """The body inside a ``winmail.dat``. Outlook sends a "rich text" mail as a bare text part
+    beside this file, and keeps what the sender laid out in it: as HTML, or as compressed rich
+    text that wraps the HTML."""
+    try:
+        tnef = tnefparse.TNEF(data)
+    except Exception as error:  # tnefparse raises its own and plain errors alike
+        raise Refused(Reason.DAMAGED) from error
+    html: str | bytes | None = tnef.htmlbody
+    if isinstance(html, bytes):
+        # tnefparse leaves bytes when the file names no code page for the body: the file's own
+        # is then the one its sender's Windows wrote in.
+        html = _decode(html, _known(tnef.codepage))
+    if not html and tnef._rtfbody:
+        try:
+            html = richtext.html_inside(richtext.decompress(bytes(tnef._rtfbody)))
+        except ValueError as error:
+            raise Refused(Reason.DAMAGED) from error
+    images: dict[str, Json] = {}
+    for attachment in tnef.attachments:
+        cid = next(
+            (p.data for p in attachment.mapi_attrs if p.name == MAPI_ATTACH_CONTENT_ID), None
+        )
+        content = bytes(attachment.data or b"")
+        if isinstance(cid, str) and filetypes.sniff(content) in filetypes.IMAGES:
+            images[cid.replace("\x00", "").strip("<> ").lower()] = hashlib.sha256(
+                content
+            ).hexdigest()
+    return {"html": html or None, "images": images}
+
+
+def _known(codepage: str | None) -> str:
+    """The code page a ``winmail.dat`` names, when Python has it; else Western Europe's."""
+    try:
+        return codecs.lookup(codepage or "").name
+    except LookupError:
+        return "cp1252"

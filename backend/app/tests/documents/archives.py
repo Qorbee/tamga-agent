@@ -111,13 +111,43 @@ def _tnef_attribute(level: int, attribute: int, data: bytes) -> bytes:
     return struct.pack("<BII", level, attribute, len(data)) + data + struct.pack("<H", checksum)
 
 
-def winmail_of(attachments: dict[str, bytes]) -> bytes:
-    """A winmail.dat: TNEF's signature and key, its version, then per attachment its rendering
-    record (which starts it), title and data."""
+def _mapi_property(kind: int, name: int, value: bytes) -> bytes:
+    """One MAPI property holding one value of a counted type (a string or bytes), as TNEF packs
+    them: the value's length, then the value padded to four bytes."""
+    padded = value + b"\x00" * (-len(value) % 4)
+    return struct.pack("<I", 1) + struct.pack("<HHII", kind, name, 1, len(value)) + padded
+
+
+def stored_rtf(rtf: bytes) -> bytes:
+    """Rich text as a mail's compressed-RTF property holds it when it is not compressed: its
+    sizes, the mark "MELA" and no checksum."""
+    return struct.pack("<IIII", len(rtf) + 12, len(rtf), 0x414C454D, 0) + rtf
+
+
+def winmail_of(
+    attachments: dict[str, bytes],
+    *,
+    rtf_body: bytes | None = None,
+    html_body: bytes | None = None,
+    content_ids: dict[str, str] | None = None,
+) -> bytes:
+    """A winmail.dat: TNEF's signature and key, its version, the body as compressed rich text or
+    as HTML when it has one, then per attachment its rendering record (which starts it), title,
+    data and, for a picture the body draws, its Content-ID. Text is in the file's code page."""
     out = struct.pack("<IH", 0x223E9F78, 0x0001)
     out += _tnef_attribute(1, 0x00089006, struct.pack("<I", 0x00010000))
+    if content_ids or html_body is not None:
+        # The code page text properties are written in, as Outlook names it: a Turkish Windows.
+        out += _tnef_attribute(1, 0x00069007, struct.pack("<II", 1254, 0))
+    if rtf_body is not None:
+        out += _tnef_attribute(1, 0x00069003, _mapi_property(0x0102, 0x1009, rtf_body))
+    if html_body is not None:
+        out += _tnef_attribute(1, 0x00069003, _mapi_property(0x0102, 0x1013, html_body))
     for name, data in attachments.items():
         out += _tnef_attribute(2, 0x00069002, b"\x00" * 14)
         out += _tnef_attribute(2, 0x00018010, name.encode("cp1252") + b"\x00")
         out += _tnef_attribute(2, 0x0006800F, data)
+        if content_ids and name in content_ids:
+            cid = content_ids[name].encode() + b"\x00"
+            out += _tnef_attribute(2, 0x00069005, _mapi_property(0x001E, 0x3712, cid))
     return out

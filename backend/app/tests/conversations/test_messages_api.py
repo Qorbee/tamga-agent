@@ -6,9 +6,11 @@ import pytest
 
 from app.modules.conversations import repository, service
 from app.modules.conversations.adapters.imap import FetchedMail
+from app.modules.documents import service as documents
 from app.platform import storage
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
+from app.tests.documents import archives
 
 pytestmark = pytest.mark.integration
 
@@ -179,3 +181,79 @@ async def test_a_mail_whose_original_cannot_be_read_still_shows_its_text(
 
     assert detail.status_code == 200
     assert detail.json()["body_html"] is None and detail.json()["body_text"] == "Yükleme tamam."
+
+
+async def rich_text_mail(company_id: uuid.UUID, uid: int, winmail: bytes) -> None:
+    """A mail as Outlook sends "rich text": a bare text part, and a winmail.dat beside it."""
+    mail = email.message.EmailMessage()
+    mail["From"] = "ops@kaya.example"
+    mail["Subject"] = f"Yükleme {uid}"
+    mail["Message-ID"] = f"<yukleme-{uid}@kaya>"
+    mail.set_content("Yükleme tamam.")
+    mail.add_attachment(winmail, maintype="application", subtype="ms-tnef", filename="winmail.dat")
+    async with open_session() as db:
+        await service.ingest_mail(
+            db,
+            company_id=company_id,
+            place=service.FolderPlace(
+                mailbox="ops@acme.example", folder="INBOX", uidvalidity=1, sent=False
+            ),
+            fetched=FetchedMail(uid=uid, raw=mail.as_bytes(), internaldate=None),
+            own_addresses={"ops@acme.example"},
+        )
+        await db.commit()
+
+
+async def test_a_mail_outlook_sent_as_rich_text_shows_the_body_inside_its_winmail_dat(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    wrapped = (
+        b"{\\rtf1\\ansi\\ansicpg1254\\fromhtml1 \\deff0{\\fonttbl{\\f0\\fswiss Arial;}}"
+        b"{\\*\\htmltag64 <p>}Y\\'fckleme tamam."
+        b'{\\*\\htmltag84 <img src="cid:logo@kaya">}{\\*\\htmltag72 </p>}'
+        b"{\\*\\htmltag84 <script>steal()</script>}}"
+    )
+    await rich_text_mail(
+        company_id,
+        1,
+        archives.winmail_of(
+            {"logo.png": PNG, "CMR 1.pdf": b"%PDF-1.7 one"},
+            rtf_body=archives.stored_rtf(wrapped),
+            content_ids={"logo.png": "<logo@kaya>"},
+        ),
+    )
+    [row] = (await client.get("/messages")).json()["items"]
+
+    # Before its files are taken out, the body is shown with no address for the picture it cannot
+    # yet draw, as for any `cid:` that names nothing Tamga holds.
+    detail = (await client.get(f"/messages/{row['id']}")).json()
+    assert detail["body_html"] == "<p>Yükleme tamam.<img></p>"
+    assert detail["inline_images"] == {} and detail["body_text"] == "Yükleme tamam."
+    [winmail] = detail["attachments"]
+    assert (winmail["filename"], winmail["preview"]) == ("winmail.dat", "archive")
+
+    await service.process_pending()
+    while await documents.read_pending():
+        pass
+
+    parts = (await client.get(f"/documents/{winmail['document_id']}/parts")).json()
+    logo = next(part["document"]["id"] for part in parts if part["name"] == "logo.png")
+    detail = (await client.get(f"/messages/{row['id']}")).json()
+    assert detail["body_html"] == '<p>Yükleme tamam.<img src="cid:logo@kaya"></p>'
+    assert detail["inline_images"] == {"logo@kaya": logo}
+    # What it holds is sanitized like any mail's HTML.
+    assert "script" not in detail["body_html"] and "steal" not in detail["body_html"]
+
+
+async def test_a_rich_text_mail_with_no_html_inside_shows_its_text(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    rich = archives.stored_rtf(b"{\\rtf1\\ansi\\ansicpg1254 Y\\'fckleme tamam.\\par}")
+    await rich_text_mail(company_id, 1, archives.winmail_of({}, rtf_body=rich))
+    await rich_text_mail(company_id, 2, b"not a winmail.dat at all")
+
+    for row in (await client.get("/messages")).json()["items"]:
+        detail = (await client.get(f"/messages/{row['id']}")).json()
+        assert detail["body_html"] is None and detail["body_text"] == "Yükleme tamam."

@@ -331,6 +331,58 @@ def preview_of(content_type: str, filename: str) -> filetypes.Preview | None:
     return filetypes.preview(content_type, filename)
 
 
+@dataclass(frozen=True, slots=True)
+class OutlookBody:
+    """The body Outlook wrapped inside a mail's ``winmail.dat``, for the module that shows mail."""
+
+    # HTML from outside: not yet sanitized.
+    html: str
+    # The pictures it carries under a Content-ID that Tamga has taken out and stored: each by the
+    # SHA-256 of its bytes, and the stored file that holds those bytes.
+    carried: dict[str, bytes]
+    stored: dict[bytes, uuid.UUID]
+
+
+def is_outlook_wrapping(content_type: str, filename: str) -> bool:
+    return filetypes.archive_type(content_type, filename) == filetypes.TNEF
+
+
+async def outlook_body(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID
+) -> OutlookBody | None:
+    """The HTML a mail's ``winmail.dat`` holds, read in a child; None when it holds none (its
+    sender wrote rich text) or cannot be read. The mail's own text part is then what is shown."""
+    document = await _document(db, company_id, document_id)
+    data = await storage.get(document.storage_key)
+    body = _checked(unpacking.MailBody, await isolated.run("documents.tnef_body", data, ""))
+    if isinstance(body, isolated.Reason) or not body.html:
+        return None
+    parts = await repository.parts_of(db, company_id, document_id)
+    members = await repository.get_many(
+        db, company_id, [part.document_id for part in parts if part.document_id is not None]
+    )
+    by_digest = {member.sha256: member.id for member in members}
+    # A picture counts only once it is a stored file of this winmail.dat: the child's word alone
+    # names nothing the web app would load.
+    carried = {
+        cid: digest
+        for cid, claimed in body.images.items()
+        if (digest := _digest(claimed)) in by_digest
+    }
+    return OutlookBody(
+        html=body.html,
+        carried=carried,
+        stored={digest: by_digest[digest] for digest in carried.values()},
+    )
+
+
+def _digest(hex_text: str) -> bytes:
+    try:
+        return bytes.fromhex(hex_text)
+    except ValueError:
+        return b""
+
+
 async def update_document(
     db: AsyncSession, actor: Actor, document_id: uuid.UUID, body: DocumentUpdate
 ) -> DocumentOut:
@@ -714,7 +766,7 @@ async def _take_out(
                 company_id=company_id,
                 data=content,
                 filename=name,
-                content_type=_guessed_type(name),
+                content_type=_guessed_type(name, content),
             )
             part.document_id, part.size = file.id, len(content)
             stored.append((file.sha256, file.storage_key))
@@ -731,12 +783,14 @@ async def _take_out(
         request = request.model_copy(update={"start": batch.next, "spent": spent})
 
 
-def _guessed_type(name: str) -> str:
+def _guessed_type(name: str, content: bytes) -> str:
     """A member has no declared type, so its name says what to expect, as it does for a file a
-    mail client labels ``application/octet-stream``."""
+    mail client labels ``application/octet-stream``. A name that says nothing (a picture Outlook
+    put in a ``winmail.dat`` with no extension) leaves it to the image or PDF its bytes prove."""
     return (
         filetypes.archive_type("", name)
         or filetypes.media_type("", name)
+        or filetypes.sniff(content)
         or "application/octet-stream"
     )
 
