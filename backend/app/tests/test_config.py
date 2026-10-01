@@ -82,6 +82,13 @@ def test_a_vision_budget_is_none_or_enough_for_the_largest_file() -> None:
     assert load_settings(vision_pages_per_day=20).vision_pages_per_day == 20
 
 
+def test_an_effort_is_one_the_models_take() -> None:
+    with pytest.raises(ValidationError, match="agent_efforts"):
+        load_settings(agent_efforts={"linker": "maximum"})
+
+    assert load_settings(agent_efforts={"linker": "high"}).agent_efforts == {"linker": "high"}
+
+
 def test_a_model_must_name_a_known_provider() -> None:
     with pytest.raises(ValidationError, match="provider:name"):
         load_settings(agent_models={"linker": "claude-sonnet-5"})

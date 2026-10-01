@@ -1,9 +1,10 @@
 """The model layer (ADR-0005): which model each agent runs on, and how every agent run is made.
 
 An agent is defined once, in its module's ``agents.py``, with a name and no model. ``run`` gives it
-the model settings name for it (``AGENT_MODELS``, else ``DEFAULT_MODEL``), the usage limits its
-caller sets, and tracing (ADR-0007). Only this file imports a provider's SDK, so moving an agent
-to another provider is configuration.
+the model settings name for it (``AGENT_MODELS``, else ``DEFAULT_MODEL``), the reasoning effort
+they name (``AGENT_EFFORTS``, else ``DEFAULT_EFFORT``), the usage limits its caller sets, and
+tracing (ADR-0007). Only this file imports a provider's SDK, so moving an agent to another
+provider is configuration.
 
 Tracing content is off unless the caller turns it on for a company whose data is synthetic: a
 forgotten flag hides a demo's prompts, never exposes a pilot's.
@@ -25,9 +26,10 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
-from app.config import get_settings
+from app.config import Effort, get_settings
 from app.platform import tracing
 
 # What an agent that reads outside content is told about it. Structural limits (no tools, a typed
@@ -81,8 +83,20 @@ def model_name(agent_name: str) -> str:
     return settings.agent_models.get(agent_name, settings.default_model)
 
 
+def effort(agent_name: str) -> Effort:
+    settings = get_settings()
+    return settings.agent_efforts.get(agent_name, settings.default_effort)
+
+
 def model_for(agent_name: str) -> Model:
     return _model(model_name(agent_name))
+
+
+# Pydantic AI learns what a model can do from its name, and the release installed (the newest
+# that is seven days old) predates these models: it takes each for a model that does not reason,
+# and drops the effort without a word. Each is given the abilities of the model it succeeds. An
+# entry goes once the installed release knows the name; a test fails on that day.
+SUCCEEDS: Final = {"gpt-6.1-sol": "gpt-6-sol"}
 
 
 @cache
@@ -93,9 +107,13 @@ def _model(model: str) -> Model:
     if provider == "openai":
         if settings.openai_api_key is None:
             raise ModelUnavailable(f"set OPENAI_API_KEY: the model {model} needs it")
+        openai = OpenAIProvider(api_key=settings.openai_api_key.get_secret_value())
+        known_as = SUCCEEDS.get(name)
         # The Responses API, which streams reasoning summaries to the assistant (ADR-0005).
         return OpenAIResponsesModel(
-            name, provider=OpenAIProvider(api_key=settings.openai_api_key.get_secret_value())
+            name,
+            provider=openai,
+            profile=None if known_as is None else openai.model_profile(known_as),
         )
     raise ModelUnavailable(f"no client for {provider!r} is installed; add its pydantic-ai extra")
 
@@ -128,6 +146,8 @@ async def run[DepsT, OutputT](
             prompt,
             deps=deps,
             model=model_for(agent.name),
+            # Over the agent's own settings (its timeout), which stay.
+            model_settings=ModelSettings(thinking=effort(agent.name)),
             usage_limits=limits,
             usage=usage,
             capabilities=capabilities,

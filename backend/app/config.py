@@ -35,6 +35,7 @@ VISION_PAGES_PER_FILE = 20
 
 # The model providers an agent's model may name, and the setting holding each one's key (ADR-0005).
 MODEL_PROVIDER_KEYS = {"openai": "openai_api_key", "anthropic": "anthropic_api_key"}
+Effort = Literal["low", "medium", "high", "xhigh"]
 
 
 class Mailbox(BaseModel):
@@ -113,8 +114,13 @@ class Settings(BaseSettings):
 
     # Language models (ADR-0005). A model is "provider:name". Every agent uses DEFAULT_MODEL unless
     # AGENT_MODELS names another for it, so moving one agent to another provider is configuration.
-    default_model: str = "openai:gpt-6-sol"
+    default_model: str = "openai:gpt-6.1-sol"
     agent_models: dict[str, str] = {}
+    # How long a model reasons before it answers: DEFAULT_EFFORT for every agent unless
+    # AGENT_EFFORTS names another for it. More effort is more output tokens a call, and fewer
+    # mistakes; a model that does not reason ignores it.
+    default_effort: Effort = "medium"
+    agent_efforts: dict[str, Effort] = {}
     # Only a provider some model names needs its key.
     openai_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
