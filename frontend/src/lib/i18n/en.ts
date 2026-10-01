@@ -95,8 +95,23 @@ export const en = {
   assistant: {
     greeting: "What should we look at?",
     placeholder: "Ask anything, or tell Tamga what to do…",
-    notConnected:
-      "I'm not connected yet. Once the chat service is live I'll answer from your projects, payments and conversations.",
+    /** Why a question got no answer. */
+    errors: {
+      failed: "Tamga could not finish this answer. Ask again.",
+      offline: "Tamga could not be reached. Check the connection and ask again.",
+      limit: "Tamga has given all of today's answers. It answers again within a day.",
+      busy: "Tamga is still answering in this chat.",
+      role: "Your role reads chats and cannot ask.",
+    },
+    /** What Tamga looked at for an answer, by the name of its tool. */
+    tools: {
+      waiting: "Looked at what waits for you",
+      search_projects: "Searched the projects",
+      open_project: "Opened a project",
+      search_mail: "Searched the mail",
+      open_conversation: "Read a conversation",
+      search_invoices: "Searched the invoices",
+    } as Record<string, string>,
   },
   /** The chat's own controls — composer, message actions, attachments, tools, thread list. */
   chat: {
@@ -161,6 +176,8 @@ export const en = {
     downloadImage: "Download image",
     copyImage: "Copy image",
     searchThreads: "Search chats",
+    threadsUnread: "New",
+    unread: "Not read yet",
     threadsToday: "Today",
     threadsYesterday: "Yesterday",
     threadsEarlier: "Earlier",
@@ -171,6 +188,8 @@ export const en = {
     rename: "Rename",
     renameThread: "Rename thread",
     archive: "Archive",
+    unarchive: "Bring back",
+    archived: "Archived",
     delete: "Delete",
     chatOptions: "Chat options",
     deleteChatTitle: "Delete this chat?",

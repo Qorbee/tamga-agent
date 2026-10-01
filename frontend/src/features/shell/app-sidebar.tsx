@@ -7,7 +7,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 
-import { ThreadListItems, ThreadListRoot } from "@/components/assistant-ui/elements/thread-list.aui";
+import {
+  ThreadListArchived,
+  ThreadListItems,
+  ThreadListRoot,
+} from "@/components/assistant-ui/elements/thread-list.aui";
 import { BrandMark } from "@/components/brand-mark";
 import { ResizeHandle } from "@/components/resize-handle";
 import {
@@ -135,13 +139,13 @@ export function AppSidebar({
           className="group-data-[collapsible=icon]:hidden"
         >
           <SidebarGroupLabel>{t.shell.recents}</SidebarGroupLabel>
-          {hasThreads ? (
-            <ThreadListRoot onClick={onThreadClick}>
-              <ThreadListItems />
-            </ThreadListRoot>
-          ) : (
+          {!hasThreads && (
             <p className="text-muted-foreground px-3 py-1.5 text-sm">{t.shell.recentsEmpty}</p>
           )}
+          <ThreadListRoot onClick={onThreadClick}>
+            {hasThreads && <ThreadListItems />}
+            <ThreadListArchived />
+          </ThreadListRoot>
         </SidebarGroup>
       </SidebarContent>
 

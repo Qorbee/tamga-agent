@@ -172,7 +172,13 @@ function ToolFallbackTrigger({
           isRunning && "shimmer motion-reduce:animate-none",
         )}
       >
-        {label}: <b>{toolName}</b>
+        {isCancelled ? `${label}: ` : null}
+        {t.assistant.tools[toolName] ?? (
+          <>
+            {isCancelled ? null : `${label}: `}
+            <b>{toolName}</b>
+          </>
+        )}
       </span>
       <ToolFallbackDuration />
       <ChevronDownIcon

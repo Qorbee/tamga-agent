@@ -11,7 +11,9 @@
     "generate:api": "openapi-typescript ../backend/openapi.json -o src/lib/api-schema.d.ts"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.15.21",
+    "@ag-ui/client": "0.0.59",
+    "@assistant-ui/react": "^0.15.22",
+    "@assistant-ui/react-ag-ui": "0.0.62",
     "@assistant-ui/react-markdown": "^0.14.16",
     "@hugeicons/core-free-icons": "4.3.3",
     "@hugeicons/react": "^1.1.10",

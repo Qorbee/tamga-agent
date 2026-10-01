@@ -14,7 +14,15 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 import { DeleteChatDialog } from "@/components/delete-chat-dialog";
+import { useChats } from "@/lib/use-chats";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  ArchiveIcon,
+  ChevronDownIcon,
   Loader2Icon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -123,15 +131,26 @@ const dateGroupLabel = (
 
 export type ThreadListGroup = { label: string; indices: number[] };
 
+/** The chats this user has not read, by id. */
+const useUnreadChats = (): ReadonlySet<string> => {
+  const chats = useChats().data;
+  return useMemo(
+    () => new Set(chats?.items.filter((chat) => chat.unread).map((chat) => chat.id)),
+    [chats],
+  );
+};
+
 /**
- * Filters the thread list by title and buckets the matches by last activity
- * (Today, Yesterday, Earlier). `groups` is null when no thread carries a
- * date, in which case `filteredIndices` keeps the runtime order.
+ * Filters the thread list by title and buckets the matches: those this user
+ * has not read first, then by last activity (Today, Yesterday, Earlier).
+ * `groups` is null when no thread carries a date, in which case
+ * `filteredIndices` keeps the runtime order.
  */
 export const useThreadListGroups = (searchQuery = "") => {
   const { t } = useI18n();
   const threadIds = useAuiState((s) => s.threads.threadIds);
   const threadItems = useAuiState((s) => s.threads.threadItems);
+  const unread = useUnreadChats();
 
   const query = searchQuery.trim().toLowerCase();
 
@@ -162,22 +181,26 @@ export const useThreadListGroups = (searchQuery = "") => {
       dates[index]?.getTime() ?? Number.MAX_SAFE_INTEGER;
     const sorted = [...filteredIndices].sort((a, b) => time(b) - time(a));
 
-    const result: ThreadListGroup[] = [];
+    const waiting = sorted.filter((index) => unread.has(threadIds[index]!));
+    const result: ThreadListGroup[] = waiting.length
+      ? [{ label: t.chat.threadsUnread, indices: waiting }]
+      : [];
     for (const index of sorted) {
+      if (unread.has(threadIds[index]!)) continue;
       const label = dateGroupLabel(dates[index], startOfToday, {
         today: t.chat.threadsToday,
         yesterday: t.chat.threadsYesterday,
         earlier: t.chat.threadsEarlier,
       });
       const lastGroup = result[result.length - 1];
-      if (lastGroup?.label === label) {
+      if (lastGroup?.label === label && lastGroup.indices !== waiting) {
         lastGroup.indices.push(index);
       } else {
         result.push({ label, indices: [index] });
       }
     }
     return { threadIds, filteredIndices, groups: result };
-  }, [threadIds, threadItems, query, t]);
+  }, [threadIds, threadItems, unread, query, t]);
 };
 
 const ThreadListItemGroups: FC<{ searchQuery?: string }> = ({
@@ -226,6 +249,34 @@ const ThreadListItemGroups: FC<{ searchQuery?: string }> = ({
       ))}
     </Fragment>
   ));
+};
+
+/**
+ * The chats put away, under a row that opens them: a chat is archived to take it off the list,
+ * not to lose it, and it is brought back from its menu here.
+ */
+export const ThreadListArchived: FC = () => {
+  const { t } = useI18n();
+  const archivedIds = useAuiState((s) => s.threads.archivedThreadIds);
+  if (archivedIds.length === 0) return null;
+  return (
+    <Collapsible data-slot="aui_thread-list-archived" className="group/archived mt-2">
+      <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex w-full items-center gap-1 rounded-lg px-3 pt-3 pb-1 text-xs font-medium outline-none focus-visible:ring-1">
+        {t.chat.archived}
+        <ChevronDownIcon className="size-3.5 -rotate-90 transition-transform group-data-[state=open]/archived:rotate-0" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-0.5">
+        {archivedIds.map((id, index) => (
+          <ThreadListPrimitive.ItemByIndex
+            key={id}
+            index={index}
+            archived
+            components={{ ThreadListItem }}
+          />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
 };
 
 export const ThreadListNew = forwardRef<
@@ -290,7 +341,13 @@ const ThreadListSkeleton: FC = () => {
 
 export const ThreadListItem: FC = () => {
   const { t } = useI18n();
-  const isRunning = useAuiState((s) => s.threadListItem.isRunning);
+  const aui = useAui();
+  const id = useAuiState((s) => s.threadListItem.id);
+  // Tamga answers in it: on this page, or on the server after this page stopped listening.
+  const answeredElsewhere = useChats().data?.items.some((chat) => chat.id === id && chat.running);
+  const isRunning = useAuiState((s) => s.threadListItem.isRunning) || answeredElsewhere === true;
+  const isUnread = useUnreadChats().has(id);
+  const isArchived = useAuiState((s) => s.threadListItem.status === "archived");
   const [isRenaming, setIsRenaming] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -327,17 +384,29 @@ export const ThreadListItem: FC = () => {
               className="text-muted-foreground me-1.5 size-3.5 shrink-0 animate-spin"
             />
           )}
+          {isUnread && !isRunning && (
+            <span
+              aria-hidden
+              data-slot="aui_thread-list-item-unread"
+              className="bg-primary me-2 size-2 shrink-0 rounded-full"
+            />
+          )}
           <span
             data-slot="aui_thread-list-item-title"
-            className="truncate-fade min-w-0 flex-1"
+            className={cn("truncate-fade min-w-0 flex-1", isUnread && "font-medium")}
           >
             <ThreadListItemPrimitive.Title fallback={t.chat.newChat} />
           </span>
           {isRunning && <span className="sr-only">{t.chat.running}</span>}
+          {isUnread && <span className="sr-only">{t.chat.unread}</span>}
         </ThreadListItemPrimitive.Trigger>
       )}
       <ThreadListItemMore
         onRename={() => setIsRenaming(true)}
+        archived={isArchived}
+        onArchive={() =>
+          void (isArchived ? aui.threadListItem.unarchive() : aui.threadListItem.archive())
+        }
         onDelete={() => setIsDeleting(true)}
       />
       <DeleteChatDialog open={isDeleting} onOpenChange={setIsDeleting} />
@@ -410,10 +479,13 @@ const ThreadListItemRename: FC<{
   );
 };
 
-const ThreadListItemMore: FC<{ onRename: () => void; onDelete: () => void }> = ({
-  onRename,
-  onDelete,
-}) => {
+const ThreadListItemMore: FC<{
+  /** The chat is put away: its menu brings it back in place of putting it away. */
+  archived: boolean;
+  onRename: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}> = ({ archived, onRename, onArchive, onDelete }) => {
   const { t } = useI18n();
   return (
     <ThreadListItemMorePrimitive.Root sharedFocusGroup>
@@ -442,6 +514,14 @@ const ThreadListItemMore: FC<{ onRename: () => void; onDelete: () => void }> = (
         >
           <PencilIcon className="size-4" />
           {t.chat.rename}
+        </ThreadListItemMorePrimitive.Item>
+        <ThreadListItemMorePrimitive.Item
+          data-slot="aui_thread-list-item-more-item"
+          className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+          onSelect={onArchive}
+        >
+          <ArchiveIcon className="size-4" />
+          {archived ? t.chat.unarchive : t.chat.archive}
         </ThreadListItemMorePrimitive.Item>
         <ThreadListItemMorePrimitive.Item
           data-slot="aui_thread-list-item-more-item"

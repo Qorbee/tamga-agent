@@ -1,7 +1,7 @@
 "use client";
 
 import { useAui, useAuiState } from "@assistant-ui/react";
-import { ArrowDown01Icon, Delete02Icon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
+import { Archive02Icon, ArrowDown01Icon, Delete02Icon, PencilEdit02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useRef, useState } from "react";
 
@@ -20,6 +20,7 @@ import { useI18n } from "@/lib/i18n/client";
 /** The open chat's name in the page bar, with a menu to rename it in place or delete it. */
 export function ChatTitle() {
   const { t } = useI18n();
+  const aui = useAui();
   const title = useAuiState((s) => s.threadListItem.title) ?? t.chat.newChat;
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -59,6 +60,10 @@ export function ChatTitle() {
             <HugeiconsIcon icon={PencilEdit02Icon} strokeWidth={1.75} />
             {t.chat.rename}
           </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void aui.threadListItem.archive()}>
+            <HugeiconsIcon icon={Archive02Icon} strokeWidth={1.75} />
+            {t.chat.archive}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
@@ -84,16 +89,29 @@ function RenameField({ title, onDone }: { title: string; onDone: () => void }) {
   const [value, setValue] = useState(title);
   const settled = useRef(false);
 
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const finish = (save: boolean) => {
     if (settled.current) return;
     settled.current = true;
     const next = value.trim();
-    if (save && next && next !== title) aui.threadListItem.rename(next);
-    onDone();
+    if (!save || !next || next === title) {
+      onDone();
+      return;
+    }
+    // The field stays, with what was typed, until the server has the name: a rename that
+    // failed is there to try again.
+    Promise.resolve()
+      .then(() => aui.threadListItem.rename(next))
+      .then(onDone, () => {
+        settled.current = false;
+        inputRef.current?.focus();
+      });
   };
 
   return (
     <Input
+      ref={inputRef}
       autoFocus
       aria-label={t.chat.renameThread}
       value={value}

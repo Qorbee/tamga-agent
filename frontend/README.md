@@ -21,8 +21,9 @@ everything it shows comes from the FastAPI backend through the generated API con
 
 ## Start reading at
 
-`src/app/(app)/app/layout.tsx` for the shell, then `src/features/assistant/assistant-home.tsx` — the
-chat runs on a placeholder runtime until the AG-UI chat service lands (ADR-0006).
+`src/app/(app)/app/layout.tsx` for the shell, then `src/features/assistant/chat-runtime.tsx`: the
+chats and what was said in them are the server's, and the answer is the chat protocol's stream
+(AG-UI, ADR-0006), read by assistant-ui's runtime for it.
 
 ## Running it
 
@@ -55,8 +56,10 @@ re-apply them:
 - `thread.aui.tsx`: a `placeholder` prop, defaulting to the assistant's placeholder; the viewport
   scrolls only when it overflows (`overflow-y-auto`, a stable gutter) and starts below the page bar.
 - `thread-list.aui.tsx`: rows styled for the sidebar (`sidebar-accent`), and the open chat is
-  highlighted only inside `[data-chat-open]`, so it does not compete with the open page. No Archive
-  (there is no archive to find a chat in again); Delete opens `DeleteChatDialog` first; a long title
+  highlighted only inside `[data-chat-open]`, so it does not compete with the open page. Chats
+  this user has not read come first, under their own label, with a dot (`lib/use-chats.ts`); a
+  chat the server still answers in shows as running. Archived chats sit under their own row
+  (`ThreadListArchived`), where the menu brings one back. Delete opens `DeleteChatDialog` first; a long title
   fades out (`truncate-fade`, in `globals.css`) instead of ending in "…". A row is its own named group
   (`group/thread`): the sidebar's wrapper is an unnamed `group`, so a plain `group-hover` showed every
   row's "…" whenever the pointer was anywhere in the sidebar.
@@ -69,7 +72,13 @@ re-apply them:
   (no `no-scrollbar`) with a stable gutter.
 - `hooks/use-mobile.ts`: reads the media query through `useSyncExternalStore` instead of setting state
   in an effect, which the React Compiler lint rejects.
-- `thread.aui.tsx`, `attachment.aui.tsx`, `tool-fallback.aui.tsx`: adapted to `@assistant-ui/react`
-  0.15.21, which lacks `submission` and `dismissible`. Upgrading to 0.15.22+ (Oct 1): bump the
-  package and put those two back by hand from the registry's version — re-adding the files would
-  drop every edit above.
+- `thread.aui.tsx`: no Edit on a question and no Refresh on an answer. The server keeps one
+  history a chat and takes only a new message, so either would ask the same thing again.
+- `thread.aui.tsx`, `tool-group.aui.tsx`, `tool-fallback.aui.tsx`: a group of tool calls is named
+  by what they did, from `t.assistant.tools` ("Opened a project ×3"), and a message that only
+  looked things up sits close to the next one with no action bar. An answer that failed on the
+  server (`run_failed`) is said in the reader's words.
+- `thread.aui.tsx`, `attachment.aui.tsx`, `tool-fallback.aui.tsx`: written against
+  `@assistant-ui/react` 0.15.21, which lacked `submission` and `dismissible`. The package is now
+  0.15.22; the two are not put back, since nothing asks for an approval yet. When approvals come,
+  take them by hand from the registry's version: re-adding the files would drop every edit above.

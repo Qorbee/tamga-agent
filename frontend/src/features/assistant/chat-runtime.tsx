@@ -1,51 +1,373 @@
 "use client";
 
-import { AssistantRuntimeProvider, useAui, useAuiState } from "@assistant-ui/react";
-import { useEffect, type ReactNode } from "react";
+import { HttpAgent } from "@ag-ui/client";
+import {
+  AssistantRuntimeProvider,
+  fromThreadMessageLike,
+  generateId,
+  useAui,
+  useAuiState,
+  type AssistantRuntime,
+  type ThreadMessage,
+  type ThreadMessageLike,
+} from "@assistant-ui/react";
+import {
+  fromAgUiMessages,
+  useAgUiRuntime,
+  type UseAgUiThreadListAdapter,
+} from "@assistant-ui/react-ag-ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
+import {
+  ApiError,
+  createChat,
+  deleteChat,
+  getChatMessages,
+  markChatRead,
+  runChat,
+  stopChatRun,
+  updateChat,
+} from "@/lib/api";
+import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import {
+  CHATS_KEY,
+  chatMessagesKey,
+  useArchivedChats,
+  useChats,
+  useInvalidateChats,
+} from "@/lib/use-chats";
 
-import { usePlaceholderRuntime } from "./placeholder-runtime";
+/** How often a chat's messages are read again while Tamga answers in it for someone else. */
+const WHILE_ANSWERING = 3_000;
 
-/** Titles longer than this are cut; the full first message is still in the chat. */
-const TITLE_LENGTH = 60;
+type Failures = Dictionary["assistant"]["errors"];
+
+/**
+ * What a chat session holds outside React's render, for the handlers that run between renders:
+ * the protocol's request and the runtime's callbacks.
+ */
+class Session {
+  /** The open chat. */
+  chatId: string;
+  /** Since when the messages on screen are known to be the server's: only a newer copy replaces them. */
+  currentSince = 0;
+  /** Whether the chat page is showing: an answer that ends on a page nobody looks at stays unread. */
+  watched = false;
+  /** Asks in the open chat: the chat protocol's client, sending through the API client. */
+  readonly agent: HttpAgent;
+  /** The chats the server is known to hold; any other is opened there with its first message. */
+  private readonly stored = new Set<string>();
+  private failures: Failures;
+  private readonly asked: () => void;
+
+  constructor(chatId: string, failures: Failures, asked: () => void) {
+    this.chatId = chatId;
+    this.failures = failures;
+    this.asked = asked;
+    // The url is not used: `ask` sends to the open chat.
+    this.agent = new HttpAgent({ url: "/chats", fetch: (_url, init) => this.ask(init) });
+  }
+
+  private async ask(init: RequestInit): Promise<Response> {
+    const chatId = this.chatId;
+    try {
+      if (!this.stored.has(chatId)) {
+        await createChat({ id: chatId, title: "" });
+        this.stored.add(chatId);
+      }
+      const response = await runChat(chatId, init);
+      // The question is stored and names a new chat: the list shows it while Tamga answers.
+      this.asked();
+      return response;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      throw new Error(failure(error, this.failures), { cause: error });
+    }
+  }
+
+  speak(failures: Failures) {
+    this.failures = failures;
+  }
+
+  /** Another chat is on screen, and its messages are on their way. */
+  open(chatId: string, stored: boolean) {
+    this.chatId = chatId;
+    if (stored) this.stored.add(chatId);
+    this.currentSince = Number.POSITIVE_INFINITY;
+  }
+
+  /** What is on screen now is what the server holds. */
+  settle() {
+    this.currentSince = Date.now();
+  }
+
+  watch(shown: boolean) {
+    this.watched = shown;
+  }
+}
+
+const SessionContext = createContext<Session | null>(null);
+
+/**
+ * Says, for as long as the caller is mounted, that the chat is on screen. The server never takes
+ * an answer as read because its stream was still open; the page says when it was shown.
+ */
+export function useChatShown() {
+  const session = useContext(SessionContext);
+  useEffect(() => {
+    session?.watch(true);
+    return () => session?.watch(false);
+  }, [session]);
+}
 
 /**
  * One chat runtime for the whole owner app: the sidebar's chat list and the chat page read the same
- * threads, and a chat keeps its place while the owner looks at another page.
+ * chats, and a chat keeps its place while the owner looks at another page.
+ *
+ * The chats and what was said in them are the server's (ADR-0006). The list is a query; a chat's
+ * messages are loaded when it is opened; a question is sent with nothing but itself, and the answer
+ * is the chat protocol's event stream (AG-UI). A new chat has its id from the start, and the server
+ * opens it with its first message.
  */
 export function ChatRuntime({ children }: { children: ReactNode }) {
   const { t } = useI18n();
-  const runtime = usePlaceholderRuntime(t.assistant.notConnected);
+  const queryClient = useQueryClient();
+  const invalidateChats = useInvalidateChats();
+  const chats = useChats();
+  const archived = useArchivedChats();
+  const [session] = useState(
+    () =>
+      new Session(newChatId(), t.assistant.errors, () =>
+        void queryClient.invalidateQueries({ queryKey: CHATS_KEY }),
+      ),
+  );
+  const [chatId, setChatId] = useState(() => session.chatId);
+  const runtimeRef = useRef<AssistantRuntime | null>(null);
+
+  useEffect(() => {
+    session.speak(t.assistant.errors);
+  }, [session, t]);
+
+  const threads = useMemo(
+    () =>
+      (chats.data?.items ?? []).map((chat) => ({
+        id: chat.id,
+        status: "regular" as const,
+        title: chat.title || undefined,
+        lastMessageAt: new Date(chat.last_message_at ?? chat.created_at),
+      })),
+    [chats.data],
+  );
+  const archivedThreads = useMemo(
+    () =>
+      (archived.data?.items ?? []).map((chat) => ({
+        id: chat.id,
+        status: "archived" as const,
+        title: chat.title || undefined,
+      })),
+    [archived.data],
+  );
+
+  const threadList = useMemo<UseAgUiThreadListAdapter>(() => {
+    // The chat on screen is gone from the list: a new one takes its place.
+    const leave = (id: string) => {
+      if (session.chatId === id) void runtimeRef.current?.threads.switchToNewThread();
+    };
+    return {
+      threadId: chatId,
+      isLoading: chats.isPending,
+      threads,
+      archivedThreads,
+      onSwitchToNewThread: () => {
+        const id = newChatId();
+        session.open(id, false);
+        session.settle();
+        setChatId(id);
+      },
+      onSwitchToThread: async (id) => {
+        session.open(id, true);
+        setChatId(id);
+        try {
+          const kept = await queryClient.fetchQuery({
+            queryKey: chatMessagesKey(id),
+            queryFn: () => getChatMessages(id),
+            staleTime: 0,
+          });
+          return { messages: shown(kept.messages).map(asThreadMessage) };
+        } finally {
+          // Also when the messages could not be loaded: the next copy that arrives is shown.
+          session.settle();
+        }
+      },
+      onRename: async (id, title) => {
+        await updateChat(id, { title });
+        invalidateChats();
+      },
+      onArchive: async (id) => {
+        await updateChat(id, { archived: true });
+        leave(id);
+        invalidateChats();
+      },
+      onUnarchive: async (id) => {
+        await updateChat(id, { archived: false });
+        invalidateChats();
+      },
+      onDelete: async (id) => {
+        // An answer still being written for it would be kept for nobody.
+        await stopChatRun(id).catch(() => undefined);
+        await deleteChat(id);
+        leave(id);
+        invalidateChats();
+      },
+    };
+  }, [session, chatId, chats.isPending, threads, archivedThreads, queryClient, invalidateChats]);
+
+  const runtime = useAgUiRuntime({
+    agent: session.agent,
+    // The model's reasoning stays on the server.
+    showThinking: false,
+    onCancel: () => {
+      // The runtime also ends its stream when another chat is opened, and then the answer goes
+      // on being written on the server. Only Stop, which leaves the same chat open, stops it.
+      const stopped = session.chatId;
+      setTimeout(() => {
+        if (session.chatId !== stopped) return;
+        void stopChatRun(stopped).then(invalidateChats, () => undefined);
+      }, 0);
+    },
+    adapters: { threadList },
+  });
+
+  useEffect(() => {
+    runtimeRef.current = runtime;
+  }, [runtime]);
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      <NameAfterFirstMessage />
-      {children}
-    </AssistantRuntimeProvider>
+    <SessionContext.Provider value={session}>
+      <AssistantRuntimeProvider runtime={runtime}>
+        <ServerCopy chatId={chatId} session={session} />
+        {children}
+      </AssistantRuntimeProvider>
+    </SessionContext.Provider>
   );
 }
 
 /**
- * PLACEHOLDER, with the runtime — the chat service titles its threads. Until then a chat takes its
- * first message as its name, so the sidebar lists something better than "New chat" several times.
+ * Keeps the open chat's messages the server's own. What was said can change without this page
+ * having streamed it: an answer finished after the phone slept, a colleague asked in the same
+ * chat, Tamga wrote in it. The stored copy is read again when the window is looked at again, and
+ * every few seconds while Tamga answers there for someone else; it replaces what is on screen only
+ * when it says something else.
  */
-function NameAfterFirstMessage() {
+function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
   const aui = useAui();
-  const status = useAuiState((s) => s.threadListItem.status);
-  const title = useAuiState((s) => s.threadListItem.title);
-  const firstText = useAuiState((s) => {
-    const first = s.thread.messages.find((message) => message.role === "user");
-    const part = first?.content.find((content) => content.type === "text");
-    return part?.type === "text" ? part.text.trim() : "";
+  const queryClient = useQueryClient();
+  const invalidateChats = useInvalidateChats();
+  const answering = useAuiState((s) => s.thread.isRunning);
+  const chat = useChats().data?.items.find((item) => item.id === chatId);
+  const stored = useQuery({
+    queryKey: chatMessagesKey(chatId),
+    queryFn: () => getChatMessages(chatId),
+    enabled: chat !== undefined && !answering,
+    refetchInterval: chat?.running ? WHILE_ANSWERING : false,
   });
 
+  // This page's own answer ended: the list has a new time, and the stored copy now holds it.
+  // An answer that ended on screen is read, and is marked so before the list is read again, so
+  // it never shows as new for the moment in between.
+  const wasAnswering = useRef(false);
   useEffect(() => {
-    // A thread becomes "regular" once its first message is sent; a new one cannot be renamed.
-    if (status !== "regular" || title || !firstText) return;
-    const name = firstText.length > TITLE_LENGTH ? `${firstText.slice(0, TITLE_LENGTH - 1)}…` : firstText;
-    aui.threadListItem.rename(name);
-  }, [aui, status, title, firstText]);
+    if (wasAnswering.current && !answering) {
+      session.settle();
+      const seen = session.watched && document.visibilityState === "visible";
+      void (seen ? markChatRead(chatId) : Promise.resolve())
+        .catch(() => undefined)
+        .then(() => {
+          invalidateChats();
+          void queryClient.invalidateQueries({ queryKey: chatMessagesKey(chatId) });
+        });
+    }
+    wasAnswering.current = answering;
+  }, [answering, chatId, session, invalidateChats, queryClient]);
+
+  // The list says the chat changed on the server (a message was written, a run there ended):
+  // the stored copy is read again. Without this a run that ends between two polls of the
+  // messages would leave its answer unfetched.
+  const changed = `${chat?.last_message_at ?? ""}|${chat?.running ?? ""}`;
+  const lastChanged = useRef(changed);
+  useEffect(() => {
+    if (lastChanged.current === changed) return;
+    lastChanged.current = changed;
+    if (!answering) void queryClient.invalidateQueries({ queryKey: chatMessagesKey(chatId) });
+  }, [changed, answering, chatId, queryClient]);
+
+  const kept = stored.data;
+  const keptAt = stored.dataUpdatedAt;
+  useEffect(() => {
+    if (answering || !kept || keptAt < session.currentSince) return;
+    const theirs = shown(kept.messages);
+    if (said(theirs) === said(aui.thread().getState().messages)) return;
+    aui.thread().reset(theirs);
+  }, [answering, kept, keptAt, aui, session]);
 
   return null;
+}
+
+/** A chat's stored messages as the thread shows them. */
+function shown(messages: readonly unknown[]): ThreadMessageLike[] {
+  return fromAgUiMessages(messages, { showThinking: false });
+}
+
+function asThreadMessage(message: ThreadMessageLike): ThreadMessage {
+  return fromThreadMessageLike(message, generateId(), { type: "complete", reason: "unknown" });
+}
+
+/**
+ * What a list of messages says, to tell whether two say the same: who wrote, and the words, with
+ * one writer's messages in a row read as one (a stream and the stored copy split an answer with
+ * tool calls differently).
+ */
+function said(messages: readonly Pick<ThreadMessageLike, "role" | "content">[]): string {
+  const turns: string[] = [];
+  let writer = "";
+  for (const message of messages) {
+    const words =
+      typeof message.content === "string"
+        ? message.content
+        : message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    if (!words) continue;
+    if (message.role === writer) turns[turns.length - 1] += words;
+    else turns.push(`${message.role}\u0000${words}`);
+    writer = message.role;
+  }
+  return turns.join("\u0001");
+}
+
+/** Why a question could not be asked, in the reader's words. */
+function failure(error: unknown, failures: Failures): string {
+  if (!(error instanceof ApiError)) return failures.offline;
+  if (error.code === "rate_limited") return failures.limit;
+  if (error.code === "conflict") return failures.busy;
+  if (error.code === "permission_denied") return failures.role;
+  return failures.failed;
+}
+
+/** A UUID for a new chat. `crypto.randomUUID` is missing on a page served without TLS. */
+function newChatId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

@@ -97,8 +97,21 @@ export const tr: Dictionary = {
   assistant: {
     greeting: "Neye bakalım?",
     placeholder: "Bir şey sorun ya da Tamga'ya ne yapacağını söyleyin…",
-    notConnected:
-      "Henüz bağlı değilim. Sohbet servisi açıldığında projelerinizden, ödemelerinizden ve yazışmalarınızdan yanıt vereceğim.",
+    errors: {
+      failed: "Tamga bu yanıtı tamamlayamadı. Yeniden sorun.",
+      offline: "Tamga'ya ulaşılamadı. Bağlantıyı kontrol edip yeniden sorun.",
+      limit: "Tamga bugünkü yanıtlarının hepsini verdi. Bir gün içinde yeniden yanıtlar.",
+      busy: "Tamga bu sohbette hâlâ yanıt yazıyor.",
+      role: "Rolünüz sohbetleri okuyabilir, soru soramaz.",
+    },
+    tools: {
+      waiting: "Sizi bekleyenlere baktı",
+      search_projects: "Projelerde aradı",
+      open_project: "Bir projeyi açtı",
+      search_mail: "E-postalarda aradı",
+      open_conversation: "Bir yazışmayı okudu",
+      search_invoices: "Faturalarda aradı",
+    },
   },
   chat: {
     messageInput: "Mesaj alanı",
@@ -162,6 +175,8 @@ export const tr: Dictionary = {
     downloadImage: "Görseli indir",
     copyImage: "Görseli kopyala",
     searchThreads: "Sohbetlerde ara",
+    threadsUnread: "Yeni",
+    unread: "Henüz okunmadı",
     threadsToday: "Bugün",
     threadsYesterday: "Dün",
     threadsEarlier: "Daha önce",
@@ -172,6 +187,8 @@ export const tr: Dictionary = {
     rename: "Yeniden adlandır",
     renameThread: "Sohbeti yeniden adlandır",
     archive: "Arşivle",
+    unarchive: "Geri getir",
+    archived: "Arşivlenenler",
     delete: "Sil",
     chatOptions: "Sohbet seçenekleri",
     deleteChatTitle: "Bu sohbet silinsin mi?",

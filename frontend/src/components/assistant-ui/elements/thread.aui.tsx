@@ -56,9 +56,7 @@ import {
   DownloadIcon,
   MicIcon,
   MoreHorizontalIcon,
-  PencilIcon,
   PhoneIcon,
-  RefreshCwIcon,
   SquareIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
@@ -539,11 +537,23 @@ const ComposerAction: FC = () => {
   );
 };
 
+/** What the server sends for an answer that failed, in place of what went wrong there. */
+const RUN_FAILED = "run_failed";
+
 const MessageError: FC = () => {
+  const { t } = useI18n();
+  const failed = useAuiState(
+    (s) =>
+      s.message.status?.type === "incomplete" &&
+      s.message.status.reason === "error" &&
+      s.message.status.error === RUN_FAILED,
+  );
   return (
     <MessagePrimitive.Error>
       <ErrorPrimitive.Root className="aui-message-error-root border-destructive bg-destructive/10 text-destructive dark:bg-destructive/5 mt-2 rounded-md border p-3 text-sm">
-        <ErrorPrimitive.Message className="aui-message-error-message line-clamp-2" />
+        <ErrorPrimitive.Message className="aui-message-error-message line-clamp-2">
+          {failed ? t.assistant.errors.failed : undefined}
+        </ErrorPrimitive.Message>
       </ErrorPrimitive.Root>
     </MessagePrimitive.Error>
   );
@@ -558,6 +568,21 @@ const AssistantMessage: FC = () => {
     TaskGroup: TaskGroupComponent,
   } = useContext(ThreadComponentsContext);
   const groupBy = TaskGroupComponent ? taskAwareGroupBy : messageGroupBy;
+  // The names of the tools the message called, by the place of each part; "" for any other part.
+  const called = useAuiState((s) =>
+    s.message.content.map((part) => (part.type === "tool-call" ? part.toolName : "")).join("\n"),
+  ).split("\n");
+  // A message that only looked things up is a step on the way to the answer: it sits close to
+  // the next one and has nothing to copy.
+  const stepsOnly = called.length > 0 && called.every(Boolean);
+  const steps = (indices: readonly number[]) => {
+    const counts = new Map<string, number>();
+    for (const index of indices) {
+      const label = t.assistant.tools[called[index] ?? ""];
+      if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return [...counts].map(([label, count]) => (count > 1 ? `${label} ×${count}` : label)).join(" · ");
+  };
 
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
@@ -567,7 +592,10 @@ const AssistantMessage: FC = () => {
     <MessagePrimitive.Root
       data-slot="aui_assistant-message-root"
       data-role="assistant"
-      className="fade-in slide-in-from-bottom-1 animate-in relative -mb-7.5 pb-7.5 duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto]"
+      className={cn(
+        "fade-in slide-in-from-bottom-1 animate-in relative duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto]",
+        stepsOnly ? "-mb-4" : "-mb-7.5 pb-7.5",
+      )}
     >
       <div
         data-slot="aui_assistant-message-content"
@@ -590,6 +618,7 @@ const AssistantMessage: FC = () => {
                   <ToolGroupRoot variant="ghost">
                     <ToolGroupTrigger
                       count={part.indices.length}
+                      label={steps(part.indices)}
                       active={part.status.type === "running"}
                     />
                     <ToolGroupContent>{children}</ToolGroupContent>
@@ -649,13 +678,15 @@ const AssistantMessage: FC = () => {
         <MessageError />
       </div>
 
-      <div
-        data-slot="aui_assistant-message-footer"
-        className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
-      >
-        <BranchPicker />
-        <AssistantActionBar />
-      </div>
+      {!stepsOnly && (
+        <div
+          data-slot="aui_assistant-message-footer"
+          className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
+        >
+          <BranchPicker />
+          <AssistantActionBar />
+        </div>
+      )}
     </MessagePrimitive.Root>
   );
 };
@@ -696,11 +727,6 @@ const AssistantActionBar: FC = () => {
           </TooltipIconButton>
         </ActionBarPrimitive.FeedbackNegative>
       </AuiIf>
-      <ActionBarPrimitive.Reload asChild>
-        <TooltipIconButton tooltip={t.chat.refresh}>
-          <RefreshCwIcon />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Reload>
       <ActionBarMorePrimitive.Root>
         <ActionBarMorePrimitive.Trigger asChild>
           <TooltipIconButton
@@ -755,9 +781,6 @@ const UserMessage: FC = () => {
             components={{ File: UserFilePart, Image: UserImagePart }}
           />
         </div>
-        <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
-          <UserActionBar />
-        </div>
       </div>
 
       <BranchPicker
@@ -765,23 +788,6 @@ const UserMessage: FC = () => {
         className="col-span-full col-start-1 -me-1 justify-end"
       />
     </MessagePrimitive.Root>
-  );
-};
-
-const UserActionBar: FC = () => {
-  const { t } = useI18n();
-  return (
-    <ActionBarPrimitive.Root
-      hideWhenRunning
-      autohide="not-last"
-      className="aui-user-action-bar-root flex flex-col items-end"
-    >
-      <ActionBarPrimitive.Edit asChild>
-        <TooltipIconButton tooltip={t.chat.edit} className="aui-user-action-edit">
-          <PencilIcon />
-        </TooltipIconButton>
-      </ActionBarPrimitive.Edit>
-    </ActionBarPrimitive.Root>
   );
 };
 

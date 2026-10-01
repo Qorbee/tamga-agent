@@ -95,15 +95,18 @@ function ToolGroupRoot({
 
 function ToolGroupTrigger({
   count,
+  label: named,
   active = false,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   count: number;
+  /** What the calls did, in words; without it, how many there were. */
+  label?: string;
   active?: boolean;
 }) {
   const { t } = useI18n();
-  const label = t.chat.toolCalls(count);
+  const label = named || t.chat.toolCalls(count);
 
   return (
     <CollapsibleTrigger
