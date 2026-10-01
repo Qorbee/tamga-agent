@@ -23,6 +23,9 @@ from app.platform.db import open_session
 from app.platform.pagination import PageParams
 
 ASSISTANT: Final = "assistant"
+# The kinds of record a chat holds, as the reading tools name what a run opened.
+PROJECT: Final = linking.PROJECT
+CONVERSATION: Final = linking.CONVERSATION
 # What `waiting` lists of each kind: enough to say what is there, few enough to read.
 _LISTED: Final = 20
 

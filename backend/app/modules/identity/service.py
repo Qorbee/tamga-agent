@@ -110,6 +110,7 @@ async def resolve_actor(db: AsyncSession, token: str) -> Actor:
 
 async def switch_company(db: AsyncSession, actor: Actor, company_id: uuid.UUID) -> Me:
     """Makes this session act for another company the user belongs to."""
+    actor.require_person()
     memberships = await repository.get_memberships(db, actor.user_id)
     if company_id not in {m.company_id for m in memberships}:
         raise NotFound("You are not a member of that company")
@@ -122,6 +123,7 @@ async def switch_company(db: AsyncSession, actor: Actor, company_id: uuid.UUID) 
 
 
 async def sign_out(db: AsyncSession, actor: Actor) -> None:
+    actor.require_person()
     await repository.delete_session(db, actor.session_id)
     await db.commit()
 

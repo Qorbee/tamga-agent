@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.modules.assistant.models import Origin
+from app.modules.assistant.models import CardKind, Origin
 
 
 class ChatOut(BaseModel):
@@ -44,9 +44,25 @@ class ChatUpdate(BaseModel):
     archived: bool | None = None
 
 
+class CardContent(BaseModel):
+    # The record the card shows; its kind says which (``CardKind``).
+    id: uuid.UUID
+
+
+class CardMessage(BaseModel):
+    """A card code put in a chat, carried as the chat protocol's activity message. A client
+    draws it from the record it names, which it reads like any other."""
+
+    id: str
+    role: Literal["activity"] = "activity"
+    activity_type: CardKind = Field(serialization_alias="activityType")
+    content: CardContent
+
+
 class ChatMessages(BaseModel):
     """A chat's messages as the chat protocol (AG-UI) carries them, oldest first: what a client
     hands its runtime to show the chat. The server keeps its own copy and never reads a client's
     back (ADR-0006)."""
 
-    messages: list[dict[str, Any]]
+    # The protocol's own messages, as its client library types them, and Tamga's cards.
+    messages: list[CardMessage | dict[str, Any]]

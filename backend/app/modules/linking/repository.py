@@ -76,6 +76,17 @@ async def naming(
     return rows.all()
 
 
+async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone: those holding a placement that waits
+    for the owner's answer."""
+    rows = await db.scalars(
+        select(Placement.company_id)
+        .where(Placement.outcome.in_([Outcome.PROPOSED, Outcome.ASKED]))
+        .distinct()
+    )
+    return list(rows)
+
+
 async def waiting(
     db: AsyncSession, company_id: uuid.UUID, *, tries: int, retry_before: datetime, limit: int
 ) -> Sequence[uuid.UUID]:

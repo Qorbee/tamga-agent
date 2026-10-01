@@ -53,6 +53,9 @@ logger = logging.getLogger(__name__)
 # what a run was shown on.
 Desk = agents.Desk
 reading_tools = agents.reading_tools
+# The kinds of record such a run opens (``Desk.opened``).
+PROJECT = agents.PROJECT
+CONVERSATION = agents.CONVERSATION
 
 # Conversations one company has read by the model per run: each takes up to a minute, and they
 # are read one after another, so that a project proposed for one is there for the next.
@@ -776,6 +779,12 @@ async def _tell_project(
 # What the owner sees and answers
 
 
+async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
+    """The companies with a proposed project or a conversation the linker could not choose a
+    project for."""
+    return await repository.companies_awaiting_owner(db)
+
+
 async def list_placements(
     db: AsyncSession,
     actor: Actor,
@@ -793,6 +802,13 @@ async def list_placements(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+async def get_placement(db: AsyncSession, actor: Actor, placement_id: uuid.UUID) -> PlacementOut:
+    placement = await repository.get_by_id(db, actor.company_id, placement_id)
+    if placement is None:
+        raise NotFound("No such placement")
+    return (await _describe(db, actor.company_id, [placement]))[0]
 
 
 async def decide_placement(

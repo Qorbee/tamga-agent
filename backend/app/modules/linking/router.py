@@ -26,6 +26,11 @@ async def list_placements(
     )
 
 
+@placements.get("/placements/{placement_id}")
+async def get_placement(placement_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> PlacementOut:
+    return await service.get_placement(db, actor, placement_id)
+
+
 @placements.patch("/placements/{placement_id}")
 async def decide_placement(
     placement_id: uuid.UUID, body: PlacementDecision, actor: ActorDep, db: SessionDep

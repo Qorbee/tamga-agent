@@ -9,6 +9,9 @@ import pytest
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -20,7 +23,7 @@ from pydantic_ai.models.function import (
     DeltaToolCalls,
     FunctionModel,
 )
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -67,6 +70,18 @@ class Script:
         name, args = step
         yield {0: DeltaToolCall(name=name, json_args=json.dumps(args))}
 
+    def answer(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        """The same steps for a run that is not streamed: a turn Tamga takes on its own."""
+        self.requests.append(list(messages))
+        self.infos.append(info)
+        step = self.steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        if isinstance(step, str):
+            return ModelResponse(parts=[TextPart(step)])
+        name, args = step
+        return ModelResponse(parts=[ToolCallPart(tool_name=name, args=args)])
+
     def said(self, request: int) -> list[str]:
         """What the users wrote, in order, in what the model was sent for ``request``."""
         return [
@@ -91,7 +106,7 @@ def model(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Script]:
 
     def install(*steps: Step) -> Script:
         script = Script(*steps)
-        stand_in = FunctionModel(stream_function=script.respond)
+        stand_in = FunctionModel(script.answer, stream_function=script.respond)
         monkeypatch.setattr(llm, "model_for", lambda name: stand_in)
         return script
 
@@ -172,7 +187,11 @@ async def test_a_run_answers_and_its_messages_are_kept_and_name_the_chat(
 
     chat = (await client.get(f"/chats/{chat_id}")).json()
     assert chat["title"] == "What waits for me today?"
-    assert chat["unread"] is False and chat["last_message_at"] is not None
+    # The answer is unread until its reader says they read it: the stream being open says
+    # nothing of who looked.
+    assert chat["unread"] is True and chat["last_message_at"] is not None
+    assert (await client.put(f"/chats/{chat_id}/read")).status_code == 204
+    assert (await client.get(f"/chats/{chat_id}")).json()["unread"] is False
     assert chat["context_tokens"] > 0 and chat["context_window"] == 120_000
     kept = (await client.get(f"/chats/{chat_id}/messages")).json()["messages"]
     assert [(message["role"], message["content"]) for message in kept] == [
@@ -362,6 +381,40 @@ async def test_an_answer_is_finished_and_kept_though_its_reader_left(
     assert await requests_counted(company_id) == 1
 
 
+async def test_a_run_given_up_for_dead_keeps_nothing_when_it_ends_late(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    await guest_client(client)
+    chat_id = await new_chat(client)
+    slow = model("It is at the border.")
+    slow.gate = asyncio.Event()
+    reading = asyncio.create_task(ask(client, chat_id, user("Where is the truck?")))
+    await until(lambda: slow.requests)
+    late = service._runs[uuid.UUID(chat_id)]
+    # It began long ago and never ended, so the chat takes its next run.
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE chats SET running_since = now() - interval '11 minutes' WHERE id = :id"),
+            {"id": chat_id},
+        )
+        await db.commit()
+    model("Still at the border.")
+    assert words(await ask(client, chat_id, user("And now?", "m2"))) == "Still at the border."
+
+    # The first run answers at last, a history that is no longer the chat's.
+    slow.gate.set()
+    await late
+    await reading
+
+    kept = (await client.get(f"/chats/{chat_id}/messages")).json()["messages"]
+    assert [message["content"] for message in kept] == [
+        "Where is the truck?",
+        "And now?",
+        "Still at the border.",
+    ]
+    assert (await client.get(f"/chats/{chat_id}")).json()["running"] is False
+
+
 async def test_an_answer_is_stopped_and_its_question_stays(
     client: httpx.AsyncClient, model: Callable[..., Script]
 ) -> None:
@@ -439,6 +492,7 @@ async def test_unread_is_each_users_own(
     quiet, spoken = await new_chat(client), await new_chat(client)
     model("Here.")
     events(await ask(client, spoken, user("Where is the truck?")))
+    assert (await client.put(f"/chats/{spoken}/read")).status_code == 204
 
     mine = (await client.get("/chats")).json()
 

@@ -29,7 +29,8 @@ from app.tests.linking.test_placing import (
     placement as placement_of,
 )
 
-pytestmark = pytest.mark.integration
+# The mail these tests store goes to the storage service, in the bucket the tests make.
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("storage_bucket")]
 
 ORDER = "<order@x>"
 
@@ -70,6 +71,11 @@ async def test_a_placement_says_what_the_conversation_is_where_it_went_and_why(
     by_project = await client.get("/placements", params={"project_id": project["id"]})
     assert by_project.json()["total"] == 1
     assert (await client.get("/placements", params={"outcome": "asked"})).json()["total"] == 0
+    # It is read by its id too, and only by its own company.
+    one = await client.get(f"/placements/{placement['id']}")
+    assert one.status_code == 200 and one.json()["reason"] == "why"
+    await guest_client(client)
+    assert (await client.get(f"/placements/{placement['id']}")).status_code == 404
 
 
 async def test_confirming_a_placement_confirms_every_link_that_waits(

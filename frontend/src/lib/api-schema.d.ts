@@ -559,7 +559,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Placement */
+        get: operations["placements.get_placement"];
         put?: never;
         post?: never;
         delete?: never;
@@ -896,6 +897,38 @@ export interface components {
             /** Size */
             size: number;
         };
+        /** CardContent */
+        CardContent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * CardKind
+         * @description The cards code puts under a message of Tamga's, as a client knows them: what the card
+         *     is about says which record its id names.
+         * @enum {string}
+         */
+        CardKind: "project_proposal" | "conversation_question";
+        /**
+         * CardMessage
+         * @description A card code put in a chat, carried as the chat protocol's activity message. A client
+         *     draws it from the record it names, which it reads like any other.
+         */
+        CardMessage: {
+            activityType: components["schemas"]["CardKind"];
+            content: components["schemas"]["CardContent"];
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @default activity
+             * @constant
+             */
+            role: "activity";
+        };
         /** CellOut */
         CellOut: {
             /** Format */
@@ -969,9 +1002,9 @@ export interface components {
          */
         ChatMessages: {
             /** Messages */
-            messages: {
+            messages: (components["schemas"]["CardMessage"] | {
                 [key: string]: unknown;
-            }[];
+            })[];
         };
         /** ChatOut */
         ChatOut: {
@@ -3326,6 +3359,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "placements.get_placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                placement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementOut"];
                 };
             };
             /** @description Validation Error */

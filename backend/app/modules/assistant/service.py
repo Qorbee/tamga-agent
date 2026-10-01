@@ -12,8 +12,8 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from datetime import timedelta
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 from typing import Any, Final
 
 from ag_ui.core import BaseEvent, RunAgentInput, RunErrorEvent, UserMessage
@@ -36,9 +36,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.assistant import agents, repository
-from app.modules.assistant.models import Chat, Origin
-from app.modules.assistant.schemas import ChatMessages, ChatOut, ChatPage
+from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
+from app.modules.assistant.schemas import (
+    CardContent,
+    CardMessage,
+    ChatMessages,
+    ChatOut,
+    ChatPage,
+)
 from app.modules.companies import service as companies
+from app.modules.projects import service as projects
 from app.platform import llm
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
@@ -65,9 +72,12 @@ _TITLE_LENGTH: Final = 60
 # hands this server anything back.
 _REASONING: Final = "reasoning"
 _REASONING_EVENTS: Final = "REASONING_"
-# The run each chat has in flight, in this process: None from the moment a run is admitted
-# until its task starts. The API is one process; a second one would need this in Postgres.
-_runs: Final[dict[uuid.UUID, asyncio.Task[None] | None]] = {}
+# A run that began this long ago and never ended is given up for dead (its process stopped):
+# the chat takes its next one.
+RUN_STALE: Final = timedelta(minutes=10)
+# The tasks of the runs this process has in flight, by chat: what Stop cancels. Whether a chat
+# has a run at all is its row's ``running_since``, which every process reads.
+_runs: Final[dict[uuid.UUID, asyncio.Task[None]]] = {}
 # The constraint a chat's id breaks when a chat already has it.
 _ID_TAKEN: Final = "chats_pkey"
 # Who may ask: a run costs money and reads everything the company holds.
@@ -147,21 +157,48 @@ async def delete_chat(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> Non
 
 async def mark_read(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> None:
     """This user has read the chat up to now; nobody else's reading changes."""
+    actor.require_person()
     chat = await _chat(db, actor.company_id, chat_id)
     await repository.mark_read(db, chat, actor.user_id, utcnow())
     await db.commit()
 
 
 async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> ChatMessages:
+    """What a reader is shown of a chat, as the chat protocol carries it: what was written,
+    without the model's reasoning and without the notes code gave a turn Tamga took on its
+    own, and each card where it was put, as an activity message of its kind."""
     chat = await _chat(db, actor.company_id, chat_id)
-    history = _loaded(await repository.messages(db, actor.company_id, chat.id))
-    return ChatMessages(
-        messages=[
+    shown: list[CardMessage | dict[str, Any]] = []
+    written: list[ModelMessage] = []
+
+    def flush() -> None:
+        shown.extend(
             message.model_dump(mode="json", by_alias=True, exclude_none=True)
-            for message in AGUIAdapter.dump_messages(history)
+            for message in AGUIAdapter.dump_messages(written)
             if message.role != _REASONING
-        ]
-    )
+        )
+        written.clear()
+
+    for row in await repository.rows(db, actor.company_id, chat.id):
+        if row.kind is MessageKind.CARD:
+            flush()
+            shown.append(
+                CardMessage(
+                    id=str(row.id),
+                    activity_type=CardKind(row.message["kind"]),
+                    content=CardContent(id=row.message["id"]),
+                )
+            )
+            continue
+        message = loaded([row.message])[0]
+        if row.began_by is Origin.TAMGA and isinstance(message, ModelRequest):
+            said = [part for part in message.parts if not isinstance(part, UserPromptPart)]
+            if not said:
+                continue
+            message = replace(message, parts=said)
+        written.append(message)
+    flush()
+    return ChatMessages(messages=shown)
 
 
 # A run
@@ -173,8 +210,6 @@ class _Reader:
     kept whether or not anybody is still there."""
 
     events: asyncio.Queue[BaseEvent | None] = field(default_factory=asyncio.Queue)
-    # False once the stream was closed before the run ended: a phone that slept, a closed tab.
-    present: bool = True
 
 
 async def run_chat(
@@ -202,82 +237,77 @@ async def run_chat(
     question = ModelRequest(parts=[UserPromptPart(content=said.content)])
     run_id = uuid.uuid7()
     now = utcnow()
+    # The row stays locked until the claim below commits, so two requests cannot both pass,
+    # in this process or another.
     chat = await _chat(db, actor.company_id, chat_id, for_update=True)
-    # No await between the look and the claim, so two requests cannot both pass.
-    if chat_id in _runs:
+    if is_running(chat, now):
         raise Conflict("Tamga is still answering in this chat")
-    _runs[chat_id] = None
-    try:
-        history = _loaded(await repository.messages(db, actor.company_id, chat.id))
-        company = (await companies.get_companies(db, [actor.company_id])).get(actor.company_id)
-        adapter = AGUIAdapter(
-            agent=agents.assistant,
-            # Of what the client sent, only the run's id: its messages, and any tool, state or
-            # context it names, never reach the model. The question reaches it as the end of
-            # the history, from the server's own copy.
-            run_input=RunAgentInput(
-                thread_id=str(chat_id),
-                run_id=asked.run_id,
-                messages=[],
-                tools=[],
-                context=[],
-                forwarded_props=None,
-            ),
-            accept=request.headers.get("accept"),
-        )
-        seat = agents.Seat(
-            company_id=actor.company_id, thread_id=None, actor=actor, chat_id=chat_id
-        )
-        usage = RunUsage()
-        reader = _Reader()
+    history = loaded(await repository.messages(db, actor.company_id, chat.id))
+    company = (await companies.get_companies(db, [actor.company_id])).get(actor.company_id)
+    adapter = AGUIAdapter(
+        agent=agents.assistant,
+        # Of what the client sent, only the run's id: its messages, and any tool, state or
+        # context it names, never reach the model. The question reaches it as the end of
+        # the history, from the server's own copy.
+        run_input=RunAgentInput(
+            thread_id=str(chat_id),
+            run_id=asked.run_id,
+            messages=[],
+            tools=[],
+            context=[],
+            forwarded_props=None,
+        ),
+        accept=request.headers.get("accept"),
+    )
+    seat = agents.Seat(company_id=actor.company_id, thread_id=None, actor=actor, chat_id=chat_id)
+    usage = RunUsage()
+    reader = _Reader()
 
-        async def keep(result: AgentRunResult[Any]) -> None:
-            await _keep(actor, chat_id, seat, result.new_messages(), run_id, read=reader.present)
+    async def keep(result: AgentRunResult[Any]) -> None:
+        await _keep(actor, chat_id, seat, result.new_messages(), run_id, now)
 
-        # Built before anything is written: a model that cannot be reached by its settings
-        # fails here, with nothing reserved and no question left without its run.
-        events = adapter.run_stream(
-            message_history=[*history, question],
-            conversation_id=str(chat_id),
-            run_id=str(run_id),
-            deps=seat,
-            usage_limits=UsageLimits(request_limit=RUN_REQUESTS),
-            usage=usage,
-            on_complete=keep,
-            **llm.stream_arguments(
-                agents.ASSISTANT,
-                # The assistant answers in the language it is written to.
-                language=None,
-                trace_content=company is not None and companies.traces_content(company.kind),
-            ),
-        )
-        await repository.lock_budget(db, actor.company_id)
-        spent = await repository.requests_since(db, actor.company_id, now - RUN_WINDOW)
-        if spent >= get_settings().chat_requests_per_day:
-            raise TooManyRequests("The chat has no requests left today")
-        await repository.add_run(
-            db, actor.company_id, run_id, began_by=Origin.OWNER, requests=RUN_REQUESTS, at=now
-        )
-        await repository.add_messages(
-            db,
-            chat,
-            _dumped([question]),
-            run_id=run_id,
-            began_by=Origin.OWNER,
-            user_id=actor.user_id,
-        )
-        if not chat.title:
-            chat.title = _title(said.content)
-        chat.last_message_at = now
-        await repository.mark_read(db, chat, actor.user_id, now)
-        await db.commit()
-        await db.close()
-        _runs[chat_id] = asyncio.create_task(
-            _run(events, reader, chat_id, actor.company_id, run_id, usage)
-        )
-    except BaseException:
-        del _runs[chat_id]
-        raise
+    # Built before anything is written: a model that cannot be reached by its settings
+    # fails here, with nothing reserved and no question left without its run.
+    events = adapter.run_stream(
+        message_history=[*history, question],
+        conversation_id=str(chat_id),
+        run_id=str(run_id),
+        deps=seat,
+        usage_limits=UsageLimits(request_limit=RUN_REQUESTS),
+        usage=usage,
+        on_complete=keep,
+        **llm.stream_arguments(
+            agents.ASSISTANT,
+            # The assistant answers in the language it is written to.
+            language=None,
+            trace_content=company is not None and companies.traces_content(company.kind),
+        ),
+    )
+    await repository.lock_budget(db, actor.company_id)
+    spent = await repository.requests_since(db, actor.company_id, Origin.OWNER, now - RUN_WINDOW)
+    if spent >= get_settings().chat_requests_per_day:
+        raise TooManyRequests("The chat has no requests left today")
+    await repository.add_run(
+        db, actor.company_id, run_id, began_by=Origin.OWNER, requests=RUN_REQUESTS, at=now
+    )
+    await repository.add_messages(
+        db,
+        chat,
+        dumped([question]),
+        run_id=run_id,
+        began_by=Origin.OWNER,
+        user_id=actor.user_id,
+    )
+    if not chat.title:
+        chat.title = _title(said.content)
+    chat.last_message_at = now
+    chat.running_since = now
+    await repository.mark_read(db, chat, actor.user_id, now)
+    await db.commit()
+    await db.close()
+    _runs[chat_id] = asyncio.create_task(
+        _run(events, reader, chat_id, actor.company_id, run_id, now, usage)
+    )
     response = adapter.streaming_response(_read(reader))
     # A reverse proxy must pass each event on as it comes (ADR-0006).
     response.headers["X-Accel-Buffering"] = "no"
@@ -300,6 +330,7 @@ async def _run(
     chat_id: uuid.UUID,
     company_id: uuid.UUID,
     run_id: uuid.UUID,
+    began: datetime,
     usage: RunUsage,
 ) -> None:
     """Drives a run to its end and hands its events, without the model's reasoning, to whoever
@@ -318,23 +349,35 @@ async def _run(
                 reader.events.put_nowait(event)
     finally:
         try:
-            async with open_session() as db:
-                await repository.settle_run(db, company_id, run_id, usage.requests)
-                await db.commit()
+            await end_run(company_id, chat_id, run_id, began, usage.requests)
         finally:
-            _runs.pop(chat_id, None)
+            # A run given up for dead may end after the chat took its next one, whose task
+            # this is then not.
+            if _runs.get(chat_id) is asyncio.current_task():
+                del _runs[chat_id]
             reader.events.put_nowait(None)
+
+
+def is_running(chat: Chat, now: datetime) -> bool:
+    """Whether a run is being made in the chat: one began and has not ended, nor been given up."""
+    return chat.running_since is not None and now - chat.running_since < RUN_STALE
+
+
+async def end_run(
+    company_id: uuid.UUID, chat_id: uuid.UUID, run_id: uuid.UUID, began: datetime, requests: int
+) -> None:
+    """A run is over, however it ended: its chat is free, and the day's budget is charged what
+    it asked in place of the most it could have."""
+    async with open_session() as db:
+        await repository.settle_run(db, company_id, run_id, requests)
+        await repository.end_run(db, company_id, chat_id, began)
+        await db.commit()
 
 
 async def _read(reader: _Reader) -> AsyncIterator[BaseEvent]:
     """A run's events for its reader, until the run ends or the reader goes."""
-    ended = False
-    try:
-        while (event := await reader.events.get()) is not None:
-            yield event
-        ended = True
-    finally:
-        reader.present = ended
+    while (event := await reader.events.get()) is not None:
+        yield event
 
 
 async def _keep(
@@ -343,19 +386,20 @@ async def _keep(
     seat: agents.Seat,
     written: list[ModelMessage],
     run_id: uuid.UUID,
-    *,
-    read: bool,
+    began: datetime,
 ) -> None:
     """Keeps what a finished run wrote: its messages after the chat's own, what the next run
-    would be sent, and the records it opened. The user who asked has read it when they were
-    still there to read it."""
+    would be sent, and the records it opened. Nobody has read the answer until a reader says
+    so (``mark_read``): a stream still open is a page left open, not a page looked at."""
     now = utcnow()
     async with open_session() as db:
         chat = await repository.get_chat(db, actor.company_id, chat_id, for_update=True)
-        if chat is None:  # deleted while the model answered
+        # Deleted while the model answered; or the run was given up for dead and the chat has
+        # moved on: an answer to a history that is no longer the chat's is not put after it.
+        if chat is None or chat.running_since != began:
             return
         await repository.add_messages(
-            db, chat, _dumped(written), run_id=run_id, began_by=Origin.OWNER, user_id=actor.user_id
+            db, chat, dumped(written), run_id=run_id, began_by=Origin.OWNER, user_id=actor.user_id
         )
         answers = [message for message in written if isinstance(message, ModelResponse)]
         if answers:
@@ -364,9 +408,24 @@ async def _keep(
         chat.last_message_at = now
         for record_kind, record_id in dict.fromkeys(seat.opened):
             await repository.touch_record(db, chat, record_kind, record_id, now)
-        if read:
-            await repository.mark_read(db, chat, actor.user_id, now)
         await db.commit()
+
+
+async def _merged(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """A project merged into another is deleted. The chats that held it hold the one that
+    stays, so what is found about that one is written where the owner already read of the
+    job, and a card that showed the project that went shows the one that stays."""
+    await repository.move_record(db, company_id, agents.PROJECT, source_id, target_id)
+    for card in await repository.cards_showing(
+        db, company_id, CardKind.PROJECT_PROPOSAL, source_id
+    ):
+        card.message = {**card.message, "id": str(target_id)}
+    await db.flush()
+
+
+projects.on_merge(_merged)
 
 
 def _title(said: str) -> str:
@@ -375,12 +434,12 @@ def _title(said: str) -> str:
     return text if len(text) <= _TITLE_LENGTH else text[: _TITLE_LENGTH - 1] + "…"
 
 
-def _dumped(messages: list[ModelMessage]) -> list[dict[str, Any]]:
+def dumped(messages: list[ModelMessage]) -> list[dict[str, Any]]:
     stored: list[dict[str, Any]] = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
     return stored
 
 
-def _loaded(stored: list[dict[str, Any]]) -> list[ModelMessage]:
+def loaded(stored: list[dict[str, Any]]) -> list[ModelMessage]:
     return ModelMessagesTypeAdapter.validate_python(stored)
 
 
@@ -403,6 +462,6 @@ def _describe(chat: Chat, *, unread: bool) -> ChatOut:
         last_message_at=chat.last_message_at,
         context_tokens=chat.context_tokens,
         context_window=get_settings().chat_context_tokens,
-        running=chat.id in _runs,
+        running=is_running(chat, utcnow()),
         created_at=chat.created_at,
     )

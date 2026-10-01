@@ -46,6 +46,57 @@
         "title": "AttachmentOut",
         "type": "object"
       },
+      "CardContent": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CardContent",
+        "type": "object"
+      },
+      "CardKind": {
+        "description": "The cards code puts under a message of Tamga's, as a client knows them: what the card\nis about says which record its id names.",
+        "enum": [
+          "project_proposal",
+          "conversation_question"
+        ],
+        "title": "CardKind",
+        "type": "string"
+      },
+      "CardMessage": {
+        "description": "A card code put in a chat, carried as the chat protocol's activity message. A client\ndraws it from the record it names, which it reads like any other.",
+        "properties": {
+          "activityType": {
+            "$ref": "#/components/schemas/CardKind"
+          },
+          "content": {
+            "$ref": "#/components/schemas/CardContent"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "activity",
+            "default": "activity",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "activityType",
+          "content"
+        ],
+        "title": "CardMessage",
+        "type": "object"
+      },
       "CellOut": {
         "properties": {
           "format": {
@@ -332,8 +383,15 @@
         "properties": {
           "messages": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CardMessage"
+                },
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              ]
             },
             "title": "Messages",
             "type": "array"
@@ -6062,6 +6120,52 @@
       }
     },
     "/placements/{placement_id}": {
+      "get": {
+        "operationId": "placements.get_placement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "placement_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Placement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Placement",
+        "tags": [
+          "placements"
+        ]
+      },
       "patch": {
         "operationId": "placements.decide_placement",
         "parameters": [

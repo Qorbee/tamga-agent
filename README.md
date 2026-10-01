@@ -61,8 +61,28 @@ Arc testnet; nothing touches a company's bank or real money.
   and text as text. Each is read once, in a locked child process: a PDF's text layer and a
   spreadsheet's visible cells, with hidden text left out and counted, and the facts code finds in
   them.
+- **Scans and photos:** a vision model reads the pages and pictures that have no text layer, the
+  pictures a mail's body shows included, in a call with no tools, and marks what it cannot read.
+- **Sorting:** code and a small model sort each conversation into work, automated mail and noise,
+  so only work is read further.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
 - **Projects and shipments:** the data model and the projects board.
+- **Linking:** each work conversation is placed among the projects, by code where a shared number
+  or its thread decides, else by an agent with read-only search tools, a small model first and a
+  larger one for the hard cases. It links, proposes a new project, asks between two, or leaves the
+  conversation unplaced, and writes its reason. Everything it writes waits for the owner, who
+  confirms, rejects, moves a conversation or merges two projects in the Inbox, and reads the
+  reason in either language.
+- **The chat:** chats are kept on the server, and the assistant answers in them from the
+  company's own mail, projects and invoices with read-only tools, streamed over AG-UI. The
+  history a run reads is the server's, never the browser's; an answer is finished and kept when
+  the page that asked is closed; unread is per person.
+- **Tamga writes first:** when it proposes a project or cannot choose one for a conversation, it
+  writes to the owner in the chat that already holds that record, or opens a new one, and code
+  puts a card under its message. Such a turn acts for the company as an actor with no user,
+  which every service that writes refuses.
+- **Budgets:** each use of a model has a daily budget per company that is zero until the owner
+  sets it, so nothing a company holds is read by a model before that.
 - **The books:** a read-only accounting sync, through a country pack.
 - **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled.
 - **PolicyVault:** the contract that caps the executor, written, tested, and deployed on Arc
@@ -72,9 +92,10 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, in this order: linking mail and documents to projects, and rebuilding the past three months
-from them (the replay); the policy engine, its decisions and their log; the executor that pays
-from the vault; the assistant, the driver and dispatcher links, and the playground's scenarios.
+Next, in this order: the cards in the chat, the assistant's draft tools and approvals, and a
+chat's context shown and compacted; the policy engine, its decisions and their log; the executor
+that pays from the vault; the replay of past projects with its score, and the playground's
+scenarios.
 
 ## This repository
 

@@ -44,6 +44,9 @@ from app.platform.items import ItemKind
 from app.tests.conftest import guest_client
 from app.tests.documents import pdfs
 
+# The mail these tests store goes to the storage service, in the bucket the tests make.
+pytestmark = pytest.mark.usefixtures("storage_bucket")
+
 OWN = "ops@acme.example"
 QUOTE_ONLY = "On Mon, 3 Aug 2026 at 09:00, Ada Stone wrote:\n> the quoted history"
 CUSTOMER = "Ada Stone <ada@stone.example>"

@@ -24,7 +24,7 @@ from typing import Any, Final
 from pydantic_ai import Agent, AgentRunResult, UsageLimits
 from pydantic_ai.capabilities import Instrumentation
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior, UsageLimitExceeded
-from pydantic_ai.messages import UserContent
+from pydantic_ai.messages import ModelMessage, UserContent
 from pydantic_ai.models import Model
 from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIResponsesModel
@@ -203,9 +203,11 @@ async def run[DepsT, OutputT](
     trace_content: bool = False,
     usage: RunUsage | None = None,
     second: bool = False,
+    history: Sequence[ModelMessage] | None = None,
 ) -> AgentRunResult[OutputT]:
     """Runs ``agent`` once on its configured model, or (``second``) on the one its hard cases
-    go to. ``language`` is the one its answer's own
+    go to; ``history`` is what was said before, for a run that continues a conversation.
+    ``language`` is the one its answer's own
     words are written in (the company's), or None for an agent that answers in the language it is
     written to. ``trace_content`` sends prompts and answers to
     tracing: only for a company whose data is synthetic (companies ``traces_content``). Raises
@@ -228,6 +230,7 @@ async def run[DepsT, OutputT](
             settings["service_tier"] = tier
         return await agent.run(
             prompt,
+            message_history=history,
             deps=deps,
             model=second_model_for(name) if second else model_for(name),
             instructions=None if language is None else _written_in(language),

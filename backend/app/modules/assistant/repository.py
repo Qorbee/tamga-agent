@@ -3,11 +3,19 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, delete, func, select, text, update
+from sqlalchemy import ColumnElement, and_, delete, func, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.assistant.models import Chat, ChatMessage, ChatRead, ChatRecord, ChatRun, Origin
+from app.modules.assistant.models import (
+    Chat,
+    ChatMessage,
+    ChatRead,
+    ChatRecord,
+    ChatRun,
+    MessageKind,
+    Origin,
+)
 from app.platform.pagination import PageParams
 
 
@@ -88,13 +96,30 @@ async def delete_chat(db: AsyncSession, chat: Chat) -> None:
 async def messages(
     db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID
 ) -> list[dict[str, Any]]:
-    """A chat's messages as they were stored, in the order they were written."""
+    """A chat's messages of the model layer as they were stored, in the order they were
+    written: what a run is sent."""
     rows = await db.scalars(
         select(ChatMessage.message)
-        .where(ChatMessage.company_id == company_id, ChatMessage.chat_id == chat_id)
+        .where(
+            ChatMessage.company_id == company_id,
+            ChatMessage.chat_id == chat_id,
+            ChatMessage.kind == MessageKind.MODEL,
+        )
         .order_by(ChatMessage.position)
     )
     return list(rows)
+
+
+async def rows(
+    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID
+) -> Sequence[ChatMessage]:
+    """Everything a chat holds, messages and cards, in order: what a reader is shown."""
+    found = await db.scalars(
+        select(ChatMessage)
+        .where(ChatMessage.company_id == company_id, ChatMessage.chat_id == chat_id)
+        .order_by(ChatMessage.position)
+    )
+    return found.all()
 
 
 async def add_messages(
@@ -105,9 +130,10 @@ async def add_messages(
     run_id: uuid.UUID,
     began_by: Origin,
     user_id: uuid.UUID | None,
+    kind: MessageKind = MessageKind.MODEL,
 ) -> None:
-    """Appends a run's messages after those the chat holds. The caller holds the chat's row
-    locked, so two runs of one chat never take the same place."""
+    """Appends a run's messages, or the cards shown with them, after what the chat holds. The
+    caller holds the chat's row locked, so two runs of one chat never take the same place."""
     last = await db.scalar(
         select(func.max(ChatMessage.position)).where(
             ChatMessage.company_id == chat.company_id, ChatMessage.chat_id == chat.id
@@ -119,6 +145,7 @@ async def add_messages(
             company_id=chat.company_id,
             chat_id=chat.id,
             position=start + offset,
+            kind=kind,
             run_id=run_id,
             began_by=began_by,
             user_id=user_id,
@@ -130,9 +157,16 @@ async def add_messages(
 
 
 async def touch_record(
-    db: AsyncSession, chat: Chat, record_kind: str, record_id: uuid.UUID, at: datetime
+    db: AsyncSession,
+    chat: Chat,
+    record_kind: str,
+    record_id: uuid.UUID,
+    at: datetime,
+    *,
+    raised: bool = False,
 ) -> None:
-    """Notes that the chat holds this record, as of now."""
+    """Notes that the chat holds this record, as of now; ``raised``, that Tamga wrote about it
+    here on its own."""
     row = insert(ChatRecord).values(
         id=uuid.uuid7(),
         company_id=chat.company_id,
@@ -140,12 +174,141 @@ async def touch_record(
         record_kind=record_kind,
         record_id=record_id,
         touched_at=at,
+        raised_at=at if raised else None,
     )
+    changed: dict[str, Any] = {"touched_at": at}
+    if raised:
+        changed["raised_at"] = at
     await db.execute(
         row.on_conflict_do_update(
             index_elements=[ChatRecord.chat_id, ChatRecord.record_kind, ChatRecord.record_id],
-            set_={"touched_at": at},
+            set_=changed,
         )
+    )
+
+
+async def move_record(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    record_kind: str,
+    source_id: uuid.UUID,
+    target_id: uuid.UUID,
+) -> None:
+    """Every chat that held the one record holds the other in its place. A chat that held both
+    holds it once, as lately touched and as lately raised as either was."""
+    rows = (
+        await db.scalars(
+            select(ChatRecord).where(
+                ChatRecord.company_id == company_id,
+                ChatRecord.record_kind == record_kind,
+                ChatRecord.record_id.in_([source_id, target_id]),
+            )
+        )
+    ).all()
+    there = {row.chat_id: row for row in rows if row.record_id == target_id}
+    for row in rows:
+        if row.record_id != source_id:
+            continue
+        other = there.get(row.chat_id)
+        if other is None:
+            row.record_id = target_id
+            continue
+        other.touched_at = max(other.touched_at, row.touched_at)
+        other.raised_at = max(
+            (at for at in (other.raised_at, row.raised_at) if at is not None), default=None
+        )
+        await db.delete(row)
+    await db.flush()
+
+
+async def cards_showing(
+    db: AsyncSession, company_id: uuid.UUID, card_kind: str, record_id: uuid.UUID
+) -> Sequence[ChatMessage]:
+    """The cards of one kind, in any chat, that show this record."""
+    found = await db.scalars(
+        select(ChatMessage).where(
+            ChatMessage.company_id == company_id,
+            ChatMessage.kind == MessageKind.CARD,
+            ChatMessage.message.contains({"kind": card_kind, "id": str(record_id)}),
+        )
+    )
+    return found.all()
+
+
+async def raised(
+    db: AsyncSession, company_id: uuid.UUID, record_kind: str, record_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Those of the records that Tamga already wrote about, in any chat."""
+    found = await db.scalars(
+        select(ChatRecord.record_id).where(
+            ChatRecord.company_id == company_id,
+            ChatRecord.record_kind == record_kind,
+            ChatRecord.record_id.in_(record_ids),
+            ChatRecord.raised_at.is_not(None),
+        )
+    )
+    return set(found)
+
+
+async def holding(
+    db: AsyncSession, company_id: uuid.UUID, records: Sequence[tuple[str, uuid.UUID]]
+) -> Chat | None:
+    """The chat that most recently held one of the records and is not archived (ADR-0018,
+    point 4): where a finding about them has its context. Locked for the caller."""
+    chat: Chat | None = await db.scalar(
+        select(Chat)
+        .join(
+            ChatRecord,
+            and_(ChatRecord.company_id == Chat.company_id, ChatRecord.chat_id == Chat.id),
+        )
+        .where(
+            Chat.company_id == company_id,
+            Chat.archived_at.is_(None),
+            tuple_(ChatRecord.record_kind, ChatRecord.record_id).in_(records),
+        )
+        .order_by(ChatRecord.touched_at.desc(), Chat.id.desc())
+        .limit(1)
+        .with_for_update(of=Chat)
+    )
+    return chat
+
+
+async def opened_since(
+    db: AsyncSession, company_id: uuid.UUID, origin: Origin, since: datetime
+) -> int:
+    """Chats of this origin opened for the company since then."""
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Chat)
+        .where(Chat.company_id == company_id, Chat.origin == origin, Chat.created_at > since)
+    )
+    return count or 0
+
+
+async def drop_abandoned(
+    db: AsyncSession, company_id: uuid.UUID, origin: Origin, before: datetime
+) -> None:
+    """Removes the chats of this origin that hold no message and have no run since ``before``:
+    opened for a run whose process then stopped, they would stay empty for ever."""
+    await db.execute(
+        delete(Chat).where(
+            Chat.company_id == company_id,
+            Chat.origin == origin,
+            Chat.last_message_at.is_(None),
+            Chat.running_since.is_(None) | (Chat.running_since < before),
+        )
+    )
+
+
+async def end_run(
+    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID, began: datetime
+) -> None:
+    """The chat's run that began then is over: the chat is free for its next. A run that began
+    later (this one was given up for dead) keeps the chat."""
+    await db.execute(
+        update(Chat)
+        .where(Chat.company_id == company_id, Chat.id == chat_id, Chat.running_since == began)
+        .values(running_since=None)
     )
 
 
@@ -195,12 +358,17 @@ async def settle_run(
     )
 
 
-async def requests_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
-    """Requests the assistant made for this company since then, and those its runs in flight
-    may still make: what the day's budget counts."""
+async def requests_since(
+    db: AsyncSession, company_id: uuid.UUID, began_by: Origin, since: datetime
+) -> int:
+    """Requests the assistant made for this company since then in the runs the owner began, or
+    in those Tamga began, and those such runs in flight may still make: what each day's budget
+    counts."""
     spent = await db.scalar(
         select(func.coalesce(func.sum(ChatRun.requests), 0)).where(
-            ChatRun.company_id == company_id, ChatRun.ran_at > since
+            ChatRun.company_id == company_id,
+            ChatRun.began_by == began_by,
+            ChatRun.ran_at > since,
         )
     )
     return int(spent or 0)

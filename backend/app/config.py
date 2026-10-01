@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     # being several (one per round of tool calls). Zero: the chat answers nothing, and nothing
     # goes to the model's provider.
     chat_requests_per_day: int = Field(default=0, ge=0)
+    # Requests the assistant may make for one company in 24 hours in the turns Tamga takes on
+    # its own, when it writes first about what it found. Zero: Tamga never writes first.
+    tamga_requests_per_day: int = Field(default=0, ge=0)
+    # Chats Tamga may open for one company in 24 hours. What it finds past that waits; writing
+    # in a chat that already holds the finding's record is not counted.
+    tamga_chats_per_day: int = Field(default=5, ge=0)
     # The tokens a chat may hold before it is compacted: well under the model's own window, past
     # which the provider charges a long prompt at a higher rate.
     chat_context_tokens: int = Field(default=120_000, ge=10_000)

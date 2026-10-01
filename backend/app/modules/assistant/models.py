@@ -26,6 +26,23 @@ class Origin(StrEnum):
     TAMGA = "tamga"
 
 
+class MessageKind(StrEnum):
+    """What a row of a chat is: a message of the model layer, or a card code put there."""
+
+    MODEL = "model"
+    CARD = "card"
+
+
+class CardKind(StrEnum):
+    """The cards code puts under a message of Tamga's, as a client knows them: what the card
+    is about says which record its id names."""
+
+    # A project the linker proposes: the project's id.
+    PROJECT_PROPOSAL = "project_proposal"
+    # A conversation the linker could not choose a project for: its placement's id.
+    CONVERSATION_QUESTION = "conversation_question"
+
+
 class Chat(CompanyScoped, Base):
     """One conversation between a company's people and Tamga. It is bound to no subject: code
     only keeps which records it holds (``chat_records``), to find where a finding belongs."""
@@ -47,6 +64,9 @@ class Chat(CompanyScoped, Base):
     context_tokens: Mapped[int] = mapped_column(default=0, server_default="0")
     # When its last message was written; null while it holds none.
     last_message_at: Mapped[datetime | None]
+    # When the run it has in flight began; null when it has none. A chat takes one run at a
+    # time, whichever process makes it.
+    running_since: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -70,7 +90,9 @@ class ChatRead(CompanyScoped, Base):
 
 class ChatMessage(CompanyScoped, Base):
     """One message of a run, as Pydantic AI holds it (a request with what the user wrote and
-    what tools returned, or the model's response), in the order they were written."""
+    what tools returned, or the model's response), in the order they were written. Or a card:
+    a record code shows in the chat (a proposed project, a conversation to place), by its kind
+    and id, which no model writes and no model is sent."""
 
     __tablename__ = "chat_messages"
     __table_args__ = (
@@ -83,6 +105,11 @@ class ChatMessage(CompanyScoped, Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     chat_id: Mapped[uuid.UUID]
     position: Mapped[int]
+    kind: Mapped[MessageKind] = mapped_column(
+        text_enum(MessageKind, "chat_messages_kind_check"),
+        default=MessageKind.MODEL,
+        server_default=MessageKind.MODEL,
+    )
     # The run that wrote it, and who began that run.
     run_id: Mapped[uuid.UUID]
     began_by: Mapped[Origin] = mapped_column(text_enum(Origin, "chat_messages_began_by_check"))
@@ -112,6 +139,8 @@ class ChatRecord(CompanyScoped, Base):
     record_kind: Mapped[str] = mapped_column(String(40))
     record_id: Mapped[uuid.UUID]
     touched_at: Mapped[datetime]
+    # When Tamga wrote about the record here on its own; null when only a run opened it.
+    raised_at: Mapped[datetime | None]
 
 
 class ChatRun(CompanyScoped, Base):
