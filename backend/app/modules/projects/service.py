@@ -144,6 +144,7 @@ async def list_projects(
     *,
     statuses: Sequence[ProjectStatus],
     q: str | None,
+    suggested: bool | None,
     sort: ProjectSort,
     page: PageParams,
 ) -> ProjectPage:
@@ -152,6 +153,7 @@ async def list_projects(
         actor.company_id,
         statuses=statuses,
         q=q.strip() if q else None,
+        suggested=suggested,
         order_by=[_SORTS[sort]],
         page=page,
     )
@@ -647,6 +649,30 @@ async def update_link(
     return LinkOut.model_validate(link)
 
 
+async def decide_links(
+    db: AsyncSession, actor: Actor, link_ids: Sequence[uuid.UUID], *, confirm: bool
+) -> int:
+    """The owner confirming or rejecting several suggested links in one step. A link already
+    decided keeps its answer. Returns how many were decided. Does not commit."""
+    actor.require(Role.OWNER)
+    company = await _company(db, actor.company_id)
+    decided = []
+    for link in await repository.get_links(db, actor.company_id, link_ids, for_update=True):
+        if link.status is not LinkStatus.SUGGESTED:
+            continue
+        link.status = LinkStatus.CONFIRMED if confirm else LinkStatus.REJECTED
+        link.decided_by = actor.user_id
+        link.decided_at = clock.now(company)
+        decided.append(link)
+    if decided:
+        # One write for them all, with the refusals a single link's write maps.
+        await _flush_link(db, decided[-1])
+    if confirm:
+        for project_id in {link.project_id for link in decided}:
+            await repository.activate_if_draft(db, actor.company_id, project_id)
+    return len(decided)
+
+
 async def list_links(
     db: AsyncSession,
     actor: Actor,
@@ -737,6 +763,7 @@ async def _describe(
     db: AsyncSession, company_id: uuid.UUID, projects: Sequence[Project]
 ) -> list[ProjectOut]:
     numbers = await repository.numbers_of(db, company_id, [p.id for p in projects])
+    links = await repository.count_links(db, company_id, [p.id for p in projects])
     aliases: dict[uuid.UUID, list[str]] = {}
     for number in numbers:
         aliases.setdefault(number.project_id, []).append(number.number)
@@ -749,6 +776,8 @@ async def _describe(
             status=project.status,
             stage=project.stage,
             field_sources={k: FieldSource(v) for k, v in project.field_sources.items()},
+            confirmed_links=links.get((project.id, LinkStatus.CONFIRMED), 0),
+            suggested_links=links.get((project.id, LinkStatus.SUGGESTED), 0),
             created_at=project.created_at,
             updated_at=project.updated_at,
         )

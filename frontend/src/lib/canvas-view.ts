@@ -12,7 +12,7 @@ export const FROM_PARAM = "from";
 // The deepest a trail goes: a mail, an archive in it, a folder in that, the file.
 const MAX_TRAIL = 3;
 
-const KINDS = ["mail", "document"] as const;
+const KINDS = ["mail", "document", "project"] as const;
 
 export type CanvasView = { kind: (typeof KINDS)[number]; id: string };
 

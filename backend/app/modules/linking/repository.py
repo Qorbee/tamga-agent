@@ -6,7 +6,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.linking.models import Placement
+from app.modules.linking.models import Outcome, Placement
+from app.platform.pagination import PageParams
 
 
 async def latest_seen(db: AsyncSession, company_id: uuid.UUID) -> datetime | None:
@@ -66,6 +67,43 @@ async def get(
         statement = statement.with_for_update()
     placement: Placement | None = await db.scalar(statement)
     return placement
+
+
+async def get_by_id(
+    db: AsyncSession, company_id: uuid.UUID, placement_id: uuid.UUID, *, for_update: bool = False
+) -> Placement | None:
+    statement = select(Placement).where(
+        Placement.company_id == company_id, Placement.id == placement_id
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    placement: Placement | None = await db.scalar(statement)
+    return placement
+
+
+async def list_placements(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    outcomes: Sequence[Outcome],
+    project_ids: Sequence[uuid.UUID],
+    page: PageParams,
+) -> tuple[Sequence[Placement], int]:
+    """Placements, the most recently placed first, those never read last."""
+    filters = [Placement.company_id == company_id]
+    if outcomes:
+        filters.append(Placement.outcome.in_(outcomes))
+    if project_ids:
+        filters.append(Placement.project_id.in_(project_ids))
+    total = await db.scalar(select(func.count()).select_from(Placement).where(*filters))
+    rows = await db.scalars(
+        select(Placement)
+        .where(*filters)
+        .order_by(Placement.placed_at.desc().nulls_last(), Placement.id.desc())
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return rows.all(), total or 0
 
 
 async def add_failure(

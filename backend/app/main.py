@@ -19,6 +19,7 @@ from app.modules.books import router as books
 from app.modules.conversations import router as conversations
 from app.modules.documents import router as documents
 from app.modules.identity import router as identity
+from app.modules.linking import router as linking
 from app.modules.projects import router as projects
 from app.packs.logistics import router as logistics
 from app.platform import isolated, tracing
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.projects)
     app.include_router(projects.links)
     app.include_router(projects.proposals)
+    app.include_router(linking.placements)
     app.include_router(conversations.messages)
     app.include_router(conversations.threads)
     app.include_router(documents.documents)

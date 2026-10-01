@@ -33,6 +33,9 @@ class ProjectOut(BaseModel):
     status: ProjectStatus
     stage: ProjectStage
     field_sources: dict[str, FieldSource]
+    # Links to it the owner confirmed, and those that still wait for the owner.
+    confirmed_links: int
+    suggested_links: int
     created_at: datetime
     updated_at: datetime
 

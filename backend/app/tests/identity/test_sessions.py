@@ -108,6 +108,26 @@ async def test_only_an_owner_invites(db: AsyncSession, client: httpx.AsyncClient
     assert refused.status_code == 403
 
 
+async def test_the_owner_sets_the_language_tamga_writes_in(
+    db: AsyncSession, client: httpx.AsyncClient
+) -> None:
+    token = await invite_token(db, company="Acme Lojistik", email="owner@example.com")
+    joined = await client.post("/invites/accept", json={"token": token, "password": PASSWORD})
+    assert joined.json()["company"]["language"] == "en"
+
+    changed = await client.patch("/me/company", json={"language": "tr"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["company"]["language"] == "tr"
+    assert (await client.get("/me")).json()["company"]["language"] == "tr"
+    assert (await client.patch("/me/company", json={"language": "xx"})).status_code == 422
+
+    invited = await client.post("/invites", json={"email": "ops@example.com", "role": "ops"})
+    client.cookies.clear()
+    ops_token = invited.json()["url"].split("#", 1)[1]
+    await client.post("/invites/accept", json={"token": ops_token, "password": PASSWORD})
+    assert (await client.patch("/me/company", json={"language": "en"})).status_code == 403
+
+
 async def test_an_existing_account_joins_with_its_own_password(
     db: AsyncSession, client: httpx.AsyncClient
 ) -> None:

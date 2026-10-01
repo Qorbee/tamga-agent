@@ -346,6 +346,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Company */
+        patch: operations["me.update_company"];
+        trace?: never;
+    };
     "/messages": {
         parameters: {
             query?: never;
@@ -398,6 +415,40 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/placements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Placements */
+        get: operations["placements.list_placements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/placements/{placement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Decide Placement */
+        patch: operations["placements.decide_placement"];
         trace?: never;
     };
     "/project-links": {
@@ -769,6 +820,7 @@ export interface components {
              */
             id: string;
             kind: components["schemas"]["CompanyKind"];
+            language: components["schemas"]["Language"];
             mode: components["schemas"]["CompanyMode"];
             /** Name */
             name: string;
@@ -780,6 +832,10 @@ export interface components {
              * Format: uuid
              */
             company_id: string;
+        };
+        /** CompanyUpdate */
+        CompanyUpdate: {
+            language: components["schemas"]["Language"];
         };
         /**
          * Direction
@@ -1058,6 +1114,11 @@ export interface components {
          * @enum {string}
          */
         ItemKind: "message" | "document" | "invoice" | "location";
+        /**
+         * Language
+         * @enum {string}
+         */
+        Language: "en" | "tr";
         /**
          * LinkCreate
          * @description The owner attaching an item to a project by hand: confirmed at once.
@@ -1356,6 +1417,75 @@ export interface components {
             next_seq?: number | null;
         };
         /**
+         * Outcome
+         * @description What the linker made of a conversation (docs/architecture/09).
+         * @enum {string}
+         */
+        Outcome: "linked" | "proposed" | "asked" | "unplaced";
+        /**
+         * PlacementDecision
+         * @description The owner's answer, one of two. ``links``: every link that waits between the conversation's
+         *     mails and its project is confirmed or rejected. ``project_id``: the conversation belongs to
+         *     this project, whatever was suggested.
+         */
+        PlacementDecision: {
+            /** Links */
+            links?: ("confirmed" | "rejected") | null;
+            /** Project Id */
+            project_id?: string | null;
+        };
+        /**
+         * PlacementOut
+         * @description Where the linker placed a conversation, and why.
+         */
+        PlacementOut: {
+            /** Alternatives */
+            alternatives: string[];
+            /** Cited */
+            cited: string[];
+            /** Confidence */
+            confidence: number | null;
+            conversation: components["schemas"]["ThreadSummary"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            outcome: components["schemas"]["Outcome"] | null;
+            /** Placed At */
+            placed_at: string | null;
+            /** Placed By */
+            placed_by: string | null;
+            /** Project Id */
+            project_id: string | null;
+            /** Reading */
+            reading: {
+                [key: string]: string;
+            } | null;
+            /** Reason */
+            reason: string;
+            /** Suggested Links */
+            suggested_links: number;
+            /**
+             * Thread Id
+             * Format: uuid
+             */
+            thread_id: string;
+            /** Waiting */
+            waiting: boolean;
+        };
+        /** PlacementPage */
+        PlacementPage: {
+            /** Items */
+            items: components["schemas"]["PlacementOut"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /**
          * Preview
          * @description How the web app shows a file; a file with none is only downloaded.
          * @enum {string}
@@ -1372,6 +1502,8 @@ export interface components {
         ProjectOut: {
             /** Aliases */
             aliases: string[];
+            /** Confirmed Links */
+            confirmed_links: number;
             /**
              * Created At
              * Format: date-time
@@ -1392,6 +1524,8 @@ export interface components {
             number: string;
             stage: components["schemas"]["ProjectStage"];
             status: components["schemas"]["ProjectStatus"];
+            /** Suggested Links */
+            suggested_links: number;
             /**
              * Updated At
              * Format: date-time
@@ -2464,6 +2598,39 @@ export interface operations {
             };
         };
     };
+    "me.update_company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "messages.list_messages": {
         parameters: {
             query?: {
@@ -2549,6 +2716,75 @@ export interface operations {
                 };
                 content: {
                     "message/rfc822": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "placements.list_placements": {
+        parameters: {
+            query?: {
+                outcome?: components["schemas"]["Outcome"][];
+                project_id?: string[];
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "placements.decide_placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                placement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacementDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementOut"];
                 };
             };
             /** @description Validation Error */
@@ -2818,6 +3054,7 @@ export interface operations {
             query?: {
                 status?: components["schemas"]["ProjectStatus"][];
                 q?: string | null;
+                suggested?: boolean | null;
                 sort?: "number" | "-number" | "name" | "-name" | "created_at" | "-created_at" | "updated_at" | "-updated_at";
                 limit?: number;
                 offset?: number;

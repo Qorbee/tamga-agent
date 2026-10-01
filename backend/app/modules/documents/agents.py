@@ -47,7 +47,7 @@ For each picture, in the order given, write what a person reading it would read:
 - what is written on things in a photo: number plates, container and trailer numbers, signs, labels;
 - nothing that is not in the picture. A picture with nothing written on it has empty text.
 
-`shows` is one plain English line on what the file is, such as "A signed consignment note" or \
+`shows` is one plain line on what the file is, such as "A signed consignment note" or \
 "A photo of a loaded truck at a dock".
 
 """

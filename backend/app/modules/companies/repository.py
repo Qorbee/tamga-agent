@@ -2,10 +2,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies.models import Company, CompanyKind
+from app.platform.language import Language
 
 
 async def add(db: AsyncSession, company: Company) -> Company:
@@ -17,6 +18,10 @@ async def add(db: AsyncSession, company: Company) -> Company:
 async def get_many(db: AsyncSession, ids: Sequence[uuid.UUID]) -> list[Company]:
     rows = await db.scalars(select(Company).where(Company.id.in_(ids)))
     return list(rows)
+
+
+async def set_language(db: AsyncSession, company_id: uuid.UUID, language: Language) -> None:
+    await db.execute(update(Company).where(Company.id == company_id).values(language=language))
 
 
 async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:

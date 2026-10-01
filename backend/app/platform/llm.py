@@ -31,6 +31,7 @@ from pydantic_ai.usage import RunUsage
 
 from app.config import Effort, get_settings
 from app.platform import tracing
+from app.platform.language import ENGLISH_NAMES, Language
 
 # What an agent that reads outside content is told about it. Structural limits (no tools, a typed
 # answer, a reading that only proposes) are what hold; this says how to read the block.
@@ -125,16 +126,27 @@ def _model(model: str) -> Model:
     raise ModelUnavailable(f"no client for {provider!r} is installed; add its pydantic-ai extra")
 
 
+def _written_in(language: Language) -> str:
+    return (
+        f"Write in {ENGLISH_NAMES[language]} whatever in your answer is your own words for the "
+        "owner to read: a reason, a description, a name you give. A name, a number or a word "
+        "taken from the content stays as it is written there."
+    )
+
+
 async def run[DepsT, OutputT](
     agent: Agent[DepsT, OutputT],
     prompt: str | Sequence[UserContent],
     *,
     deps: DepsT,
     limits: UsageLimits,
+    language: Language | None,
     trace_content: bool = False,
     usage: RunUsage | None = None,
 ) -> AgentRunResult[OutputT]:
-    """Runs ``agent`` once on its configured model. ``trace_content`` sends prompts and answers to
+    """Runs ``agent`` once on its configured model. ``language`` is the one its answer's own
+    words are written in (the company's), or None for an agent that answers in the language it is
+    written to. ``trace_content`` sends prompts and answers to
     tracing: only for a company whose data is synthetic (companies ``traces_content``). Raises
     ``NoAnswer`` when the model answered and the answer cannot be used. A caller that counts
     requests passes its own ``usage``: it holds the requests answered so far when the run ends
@@ -156,6 +168,7 @@ async def run[DepsT, OutputT](
             prompt,
             deps=deps,
             model=model_for(agent.name),
+            instructions=None if language is None else _written_in(language),
             # Over the agent's own settings (its timeout), which stay.
             model_settings=ModelSettings(thinking=effort(agent.name)),
             usage_limits=limits,

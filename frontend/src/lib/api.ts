@@ -60,6 +60,8 @@ export type Me = Schemas["Me"];
 /** The signed-in user and their company; a 401 `ApiError` when no one is signed in. */
 export const getMe = () => request<Me>("/me");
 export const signOut = () => request<void>("/sessions/current", { method: "DELETE" });
+/** The language Tamga writes in for the company: the names it gives projects, its reasons. */
+export type WritingLanguage = Me["company"]["language"];
 
 /** A query string from defined values; arrays repeat the key (`status=a&status=b`). */
 function query(params: Record<string, string | number | boolean | readonly string[] | undefined | null>): string {
@@ -75,6 +77,9 @@ function query(params: Record<string, string | number | boolean | readonly strin
 
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
+/** The most a list endpoint gives at once. */
+const PAGE = 200;
+
 // Sign-in (ADR-0004): each answers with the session cookie and who is now signed in.
 export type SignIn = Schemas["SignIn"];
 export const signIn = (body: SignIn) => request<Me>("/sessions", json("POST", body));
@@ -86,14 +91,23 @@ export type InviteAccept = Schemas["InviteAccept"];
 export const acceptInvite = (body: InviteAccept) =>
   request<Me>("/invites/accept", json("POST", body));
 
+export const updateCompany = (body: Schemas["CompanyUpdate"]) =>
+  request<Me>("/me/company", json("PATCH", body));
+
 // Projects
 export type Project = Schemas["ProjectOut"];
 export type ProjectPage = Schemas["ProjectPage"];
 export type ProjectStatus = Project["status"];
 export type ProjectCreate = Schemas["ProjectCreate"];
 export type ProjectUpdate = Schemas["ProjectUpdate"];
-export const listProjects = (params: { status?: ProjectStatus[]; q?: string; limit?: number }) =>
-  request<ProjectPage>(`/projects${query({ ...params, limit: params.limit ?? 200, sort: "-updated_at" })}`);
+export const listProjects = (params: {
+  status?: ProjectStatus[];
+  q?: string;
+  /** Only projects holding a link that waits for the owner. */
+  suggested?: boolean;
+  limit?: number;
+}) => request<ProjectPage>(`/projects${query({ ...params, limit: params.limit ?? PAGE, sort: "-updated_at" })}`);
+export const getProject = (id: string) => request<Project>(`/projects/${id}`);
 export const createProject = (body: ProjectCreate) =>
   request<Project>("/projects", json("POST", body));
 export const updateProject = (id: string, body: ProjectUpdate) =>
@@ -105,14 +119,28 @@ export const listShipments = (projectIds: readonly string[]) =>
 
 // Links and proposals: what waits on the owner.
 export type ProjectLink = Schemas["LinkOut"];
-export type LinkPage = Schemas["LinkPage"];
 export type LinkCreate = Schemas["LinkCreate"];
-export const listLinks = (params: { status?: ProjectLink["status"][]; limit?: number }) =>
-  request<LinkPage>(`/project-links${query({ ...params, limit: params.limit ?? 50 })}`);
 export const createLink = (body: LinkCreate) =>
   request<ProjectLink>("/project-links", json("POST", body));
-export const updateLink = (id: string, body: Schemas["LinkUpdate"]) =>
-  request<ProjectLink>(`/project-links/${id}`, json("PATCH", body));
+
+// Placements: where the linker put each conversation, and why.
+export type Placement = Schemas["PlacementOut"];
+export type PlacementPage = Schemas["PlacementPage"];
+type PlacementFilter = { outcome?: NonNullable<Placement["outcome"]>[]; project_id?: readonly string[] };
+export const listPlacements = (params: PlacementFilter & { limit?: number; offset?: number }) =>
+  request<PlacementPage>(`/placements${query({ ...params, limit: params.limit ?? PAGE })}`);
+/** Every page of them: what answers for "all of these" must hold all of them. */
+export async function listAllPlacements(params: PlacementFilter): Promise<Placement[]> {
+  const items: Placement[] = [];
+  for (;;) {
+    const page = await listPlacements({ ...params, offset: items.length });
+    items.push(...page.items);
+    if (page.items.length === 0 || items.length >= page.total) return items;
+  }
+}
+/** The owner's answer for a whole conversation: its waiting links, or the project it belongs to. */
+export const decidePlacement = (id: string, body: Schemas["PlacementDecision"]) =>
+  request<Placement>(`/placements/${id}`, json("PATCH", body));
 
 export type FieldProposal = Schemas["ProposalOut"];
 export type ProposalPage = Schemas["ProposalPage"];

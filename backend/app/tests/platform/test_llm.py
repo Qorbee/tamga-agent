@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
 from app.platform import llm, tracing
+from app.platform.language import Language
 
 APP = Path(__file__).resolve().parents[2]
 PROMPT = "Plate 34 ABC 12, IBAN TR33 0006 1005 1978 6457 8413 26"
@@ -51,6 +52,7 @@ async def run_probe(trace_content: bool) -> None:
             PROMPT,
             deps=None,
             limits=UsageLimits(request_limit=2),
+            language=None,
             trace_content=trace_content,
         )
     assert result.output == ANSWER
@@ -114,10 +116,32 @@ async def test_a_run_is_sent_its_effort_beside_the_agents_own_settings(
     monkeypatch.setitem(get_settings().agent_efforts, "probe", "high")
     agent: Agent[None, str] = Agent(name="probe", model_settings=ModelSettings(timeout=60))
 
-    await llm.run(agent, PROMPT, deps=None, limits=UsageLimits(request_limit=1))
+    await llm.run(agent, PROMPT, deps=None, limits=UsageLimits(request_limit=1), language=None)
 
     assert sent[0].model_request_parameters.thinking == "high"
     assert sent[0].model_settings == {"timeout": 60}
+
+
+async def test_a_run_is_told_the_language_its_own_words_are_written_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[str | None] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        sent.append(info.instructions)
+        return ModelResponse(parts=[TextPart(ANSWER)])
+
+    monkeypatch.setattr(llm, "model_for", lambda name: FunctionModel(respond))
+    agent: Agent[None, str] = Agent(name="probe", instructions="Sort the mail.")
+    limits = UsageLimits(request_limit=1)
+
+    await llm.run(agent, PROMPT, deps=None, limits=limits, language=Language.TR)
+    await llm.run(agent, PROMPT, deps=None, limits=limits, language=None)
+
+    assert sent[0] is not None and sent[0].startswith("Sort the mail.")
+    assert "Write in Turkish" in sent[0]
+    # An agent that answers in the language it is written to is told none.
+    assert sent[1] == "Sort the mail."
 
 
 def test_a_model_newer_than_the_library_reasons_as_the_one_it_succeeds(

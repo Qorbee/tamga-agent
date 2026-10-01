@@ -94,7 +94,7 @@ class Placing(BaseModel):
     # ask: the numbers of the projects that fit equally.
     alternatives: list[str] = []
     new_project: NewProject | None = None
-    # One or two plain English sentences for the owner.
+    # One or two plain sentences for the owner.
     reason: str
     # The mails of this conversation the decision rests on, by their number in it.
     cited_mails: list[int] = []
@@ -128,7 +128,7 @@ the project by the client and the job, and fill what the mail says of it.
 asked for and not agreed), or you cannot tell. Between a guess and unplaced, answer unplaced: a \
 wrong link is worse than a missing one.
 
-`reason` is one or two plain English sentences for the owner: what the conversation is, and what \
+`reason` is one or two plain sentences for the owner: what the conversation is, and what \
 ties it to the project. `cited_mails` are the numbers of the mails of this conversation you \
 relied on. `confidence` is how sure you are, from 0 to 1.
 

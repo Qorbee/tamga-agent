@@ -40,10 +40,12 @@ async def list_projects(
     page: PageDep,
     project_status: Annotated[list[ProjectStatus], Query(alias="status")] = [],  # noqa: B006
     q: Annotated[str | None, Query(max_length=100)] = None,
+    # True: only projects holding a link that waits for the owner; false: only those holding none.
+    suggested: bool | None = None,
     sort: ProjectSort = "-created_at",
 ) -> ProjectPage:
     return await service.list_projects(
-        db, actor, statuses=project_status, q=q, sort=sort, page=page
+        db, actor, statuses=project_status, q=q, suggested=suggested, sort=sort, page=page
     )
 
 

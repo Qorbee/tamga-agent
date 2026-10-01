@@ -358,6 +358,9 @@
           "kind": {
             "$ref": "#/components/schemas/CompanyKind"
           },
+          "language": {
+            "$ref": "#/components/schemas/Language"
+          },
           "mode": {
             "$ref": "#/components/schemas/CompanyMode"
           },
@@ -370,7 +373,8 @@
           "id",
           "name",
           "kind",
-          "mode"
+          "mode",
+          "language"
         ],
         "title": "CompanySummary",
         "type": "object"
@@ -387,6 +391,18 @@
           "company_id"
         ],
         "title": "CompanySwitch",
+        "type": "object"
+      },
+      "CompanyUpdate": {
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/Language"
+          }
+        },
+        "required": [
+          "language"
+        ],
+        "title": "CompanyUpdate",
         "type": "object"
       },
       "Direction": {
@@ -1198,6 +1214,14 @@
           "location"
         ],
         "title": "ItemKind",
+        "type": "string"
+      },
+      "Language": {
+        "enum": [
+          "en",
+          "tr"
+        ],
+        "title": "Language",
         "type": "string"
       },
       "LinkCreate": {
@@ -2053,6 +2077,223 @@
         "title": "NumberingUpdate",
         "type": "object"
       },
+      "Outcome": {
+        "description": "What the linker made of a conversation (docs/architecture/09).",
+        "enum": [
+          "linked",
+          "proposed",
+          "asked",
+          "unplaced"
+        ],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "PlacementDecision": {
+        "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested.",
+        "properties": {
+          "links": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Links"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "title": "PlacementDecision",
+        "type": "object"
+      },
+      "PlacementOut": {
+        "description": "Where the linker placed a conversation, and why.",
+        "properties": {
+          "alternatives": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "cited": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Cited",
+            "type": "array"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Outcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "placed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placed At"
+          },
+          "placed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placed By"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "reading": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reading"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "suggested_links": {
+            "title": "Suggested Links",
+            "type": "integer"
+          },
+          "thread_id": {
+            "format": "uuid",
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "waiting": {
+            "title": "Waiting",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "thread_id",
+          "waiting",
+          "outcome",
+          "placed_by",
+          "project_id",
+          "alternatives",
+          "reason",
+          "confidence",
+          "cited",
+          "reading",
+          "placed_at",
+          "suggested_links",
+          "conversation"
+        ],
+        "title": "PlacementOut",
+        "type": "object"
+      },
+      "PlacementPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PlacementPage",
+        "type": "object"
+      },
       "Preview": {
         "description": "How the web app shows a file; a file with none is only downloaded.",
         "enum": [
@@ -2104,6 +2345,10 @@
             "title": "Aliases",
             "type": "array"
           },
+          "confirmed_links": {
+            "title": "Confirmed Links",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2135,6 +2380,10 @@
           "status": {
             "$ref": "#/components/schemas/ProjectStatus"
           },
+          "suggested_links": {
+            "title": "Suggested Links",
+            "type": "integer"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -2149,6 +2398,8 @@
           "status",
           "stage",
           "field_sources",
+          "confirmed_links",
+          "suggested_links",
           "created_at",
           "updated_at"
         ],
@@ -4571,6 +4822,52 @@
         ]
       }
     },
+    "/me/company": {
+      "patch": {
+        "operationId": "me.update_company",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Company",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/messages": {
       "get": {
         "operationId": "messages.list_messages",
@@ -4788,6 +5085,153 @@
         "summary": "Get Message Raw",
         "tags": [
           "messages"
+        ]
+      }
+    },
+    "/placements": {
+      "get": {
+        "operationId": "placements.list_placements",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/Outcome"
+              },
+              "title": "Outcome",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "title": "Project Id",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Placements",
+        "tags": [
+          "placements"
+        ]
+      }
+    },
+    "/placements/{placement_id}": {
+      "patch": {
+        "operationId": "placements.decide_placement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "placement_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Placement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlacementDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Decide Placement",
+        "tags": [
+          "placements"
         ]
       }
     },
@@ -5278,6 +5722,22 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "suggested",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Suggested"
             }
           },
           {

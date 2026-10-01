@@ -34,12 +34,17 @@ from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.modules.linking import agents, repository
 from app.modules.linking.models import Outcome, Placement
+from app.modules.linking.schemas import PlacementOut, PlacementPage
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProjectStatus
 from app.platform import llm
+from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
+from app.platform.errors import BadRequest, Conflict, NotFound
 from app.platform.items import ItemKind
+from app.platform.language import Language
+from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +77,7 @@ _LIMITS: Final = UsageLimits(request_limit=12)
 # What a placement's ``placed_by`` holds when code placed it, and when the model gave no answer.
 BY_KEYS: Final = "keys"
 BY_THREAD: Final = "thread"
+BY_OWNER: Final = "owner"
 UNANSWERED: Final = "unanswered"
 _KEY_CONFIDENCE: Final = 0.9
 _THREAD_CONFIDENCE: Final = 0.6
@@ -146,10 +152,15 @@ async def place_pending() -> int:
             )
             company = (await companies.get_companies(db, [company_id])).get(company_id)
         trace_content = company is not None and companies.traces_content(company.kind)
+        language = company.language if company is not None else Language.EN
         for thread_id in waiting:
             try:
                 done = await place_thread(
-                    company_id, thread_id, model_allowed=left > 0, trace_content=trace_content
+                    company_id,
+                    thread_id,
+                    model_allowed=left > 0,
+                    language=language,
+                    trace_content=trace_content,
                 )
             except Exception as error:  # one conversation that fails never stops the others
                 # The error's type only: a provider's error can quote the mail it was sent.
@@ -185,7 +196,12 @@ async def note_changes(company_id: uuid.UUID) -> None:
 
 
 async def place_thread(
-    company_id: uuid.UUID, thread_id: uuid.UUID, *, model_allowed: bool, trace_content: bool
+    company_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    *,
+    model_allowed: bool,
+    language: Language,
+    trace_content: bool,
 ) -> bool:
     """Places one conversation: by code when a rule decides, else by the ``linker`` agent when
     ``model_allowed``. Returns whether it was placed; one that needs the model and may not have
@@ -194,6 +210,7 @@ async def place_thread(
         placement = await repository.get(db, company_id, thread_id)
         if placement is None:
             return False
+        seen_at = placement.placed_at
         thread = await conversations.read_thread(db, company_id, thread_id)
         if thread is None or thread.category not in _READ or not thread.mails:
             # Sent back to be sorted, or sorted as noise since: nothing reads it until it changes.
@@ -240,6 +257,7 @@ async def place_thread(
                 prompt,
                 deps=desk,
                 limits=_LIMITS,
+                language=language,
                 trace_content=trace_content,
                 usage=usage,
             )
@@ -252,9 +270,9 @@ async def place_thread(
             raise
         await _count(company_id, further)
     async with open_session() as db:
-        await _apply(db, company_id, thread, found, decision)
+        applied = await _apply(db, company_id, thread, found, decision, seen_at=seen_at)
         await db.commit()
-    return True
+    return applied
 
 
 async def _count(company_id: uuid.UUID, requests: int) -> None:
@@ -507,14 +525,18 @@ async def _apply(
     thread: ThreadRead,
     found: _Found,
     decision: _Decision,
-) -> None:
+    *,
+    seen_at: datetime | None,
+) -> bool:
     """Writes a decision: the proposed project when one is new, a suggested link for each mail
     that nothing tied yet, and the placement. A mail already tied to a project stays where it
-    is: an old thread answered with a new order sends only the new mail to the new project. Does
-    not commit."""
+    is: an old thread answered with a new order sends only the new mail to the new project.
+    ``seen_at`` is when the placement was last placed as the run saw it: placed again since (the
+    owner answered while a model read), the decision is stale and nothing is written; it keeps
+    waiting and is looked at afresh. Returns whether it wrote. Does not commit."""
     placement = await repository.get(db, company_id, thread.id, for_update=True)
-    if placement is None:
-        return
+    if placement is None or placement.placed_at != seen_at:
+        return False
     # The owner may have tied or refused a mail while a model read: what is written goes by the
     # links as they are now, not as they were when the conversation was looked at.
     ties = await _ties(db, company_id, thread)
@@ -564,3 +586,150 @@ async def _apply(
     placement.failed_at = None
     # Mail that came while it was read is a newer change than the one read: it waits again.
     placement.waiting = placement.thread_changed_at > thread.changed_at
+    return True
+
+
+# What the owner sees and answers
+
+
+async def list_placements(
+    db: AsyncSession,
+    actor: Actor,
+    *,
+    outcomes: Sequence[Outcome],
+    project_ids: Sequence[uuid.UUID],
+    page: PageParams,
+) -> PlacementPage:
+    rows, total = await repository.list_placements(
+        db, actor.company_id, outcomes=outcomes, project_ids=project_ids, page=page
+    )
+    return PlacementPage(
+        items=await _describe(db, actor.company_id, rows),
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+async def decide_placement(
+    db: AsyncSession,
+    actor: Actor,
+    placement_id: uuid.UUID,
+    *,
+    confirm: bool | None,
+    project_id: uuid.UUID | None,
+) -> PlacementOut:
+    """The owner's answer for a whole conversation. ``confirm``: its links that wait, to the
+    project it was placed in, are confirmed or rejected; rejected, it is unplaced until new mail
+    has it read again. ``project_id``: the owner names its project: every mail of it that no
+    confirmed link holds is tied there, and what was suggested elsewhere is rejected."""
+    actor.require(Role.OWNER)
+    placement = await repository.get_by_id(db, actor.company_id, placement_id, for_update=True)
+    if placement is None:
+        raise NotFound("No such placement")
+    thread = await conversations.read_thread(db, actor.company_id, placement.thread_id)
+    mail_ids = [mail.id for mail in thread.mails] if thread is not None else []
+    links = await projects.links_of_items(db, actor.company_id, ItemKind.MESSAGE, mail_ids)
+    waiting = [link for link in links if link.status is LinkStatus.SUGGESTED]
+    if project_id is not None:
+        chosen = (await projects.get_projects(db, actor.company_id, [project_id])).get(project_id)
+        if chosen is None or chosen.status is ProjectStatus.REJECTED:
+            raise NotFound("No such project", field="project_id")
+        confirmed = [link for link in links if link.status is LinkStatus.CONFIRMED]
+        held = {link.item_id for link in confirmed}
+        free = [mail_id for mail_id in mail_ids if mail_id not in held]
+        if not free and all(link.project_id != project_id for link in confirmed):
+            # Answered before, in another tab perhaps: every mail is confirmed elsewhere, and
+            # saying it is here would leave the placement and its links apart.
+            raise Conflict("This conversation is already confirmed in another project")
+        await projects.decide_links(
+            db,
+            actor,
+            [link.id for link in waiting if link.project_id != project_id],
+            confirm=False,
+        )
+        for mail_id in free:
+            await projects.link_item(
+                db,
+                company_id=actor.company_id,
+                item_kind=ItemKind.MESSAGE,
+                item_id=mail_id,
+                project_id=project_id,
+                method=LinkMethod.OWNER,
+                confidence=1.0,
+                confirmed_by=actor.user_id,
+                confirm=True,
+            )
+        _answered(placement, Outcome.LINKED, project_id)
+    else:
+        if placement.project_id is None:
+            raise BadRequest("This conversation was not placed in a project", field="links")
+        to_decide = [link.id for link in waiting if link.project_id == placement.project_id]
+        if not confirm and not to_decide:
+            # Nothing waits: its links were answered already, and a rejection now would only
+            # take the placement away from the project that holds them.
+            raise Conflict("Nothing of this conversation waits for an answer")
+        await projects.decide_links(db, actor, to_decide, confirm=bool(confirm))
+        if not confirm:
+            _answered(placement, Outcome.UNPLACED, None)
+    await db.commit()
+    return (await _describe(db, actor.company_id, [placement]))[0]
+
+
+def _answered(placement: Placement, outcome: Outcome, project_id: uuid.UUID | None) -> None:
+    """The owner's answer replaces the reading: what the linker said of it no longer holds."""
+    placement.outcome = outcome
+    placement.placed_by = BY_OWNER
+    placement.project_id = project_id
+    placement.alternatives = []
+    placement.reason = ""
+    placement.confidence = None
+    placement.cited = []
+    placement.reading = None
+    placement.placed_at = utcnow()
+
+
+async def _describe(
+    db: AsyncSession, company_id: uuid.UUID, placements: Sequence[Placement]
+) -> list[PlacementOut]:
+    briefs = await conversations.thread_briefs(
+        db, company_id, [placement.thread_id for placement in placements]
+    )
+    links = await projects.links_of_items(
+        db,
+        company_id,
+        ItemKind.MESSAGE,
+        [mail_id for brief in briefs.values() for mail_id in brief.mail_ids],
+    )
+    suggested = {
+        (link.item_id, link.project_id) for link in links if link.status is LinkStatus.SUGGESTED
+    }
+    described = []
+    for placement in placements:
+        brief = briefs.get(placement.thread_id)
+        described.append(
+            PlacementOut(
+                id=placement.id,
+                thread_id=placement.thread_id,
+                waiting=placement.waiting,
+                outcome=placement.outcome,
+                placed_by=placement.placed_by,
+                project_id=placement.project_id,
+                alternatives=list(placement.alternatives),
+                reason=placement.reason,
+                confidence=placement.confidence,
+                cited=list(placement.cited),
+                reading=(
+                    {key: str(value) for key, value in placement.reading.items()}
+                    if placement.reading
+                    else None
+                ),
+                placed_at=placement.placed_at,
+                suggested_links=sum(
+                    (mail_id, placement.project_id) in suggested
+                    for mail_id in (brief.mail_ids if brief is not None else [])
+                ),
+                conversation=brief.summary if brief is not None else None,
+            )
+        )
+    return described

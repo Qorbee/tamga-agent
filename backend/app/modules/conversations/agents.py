@@ -24,7 +24,7 @@ MODEL_SORTED: Final = f"model:{INTAKE}"
 
 class Sorting(BaseModel):
     category: ThreadCategory
-    # One short English line on why, for the owner.
+    # One short line on why, for the owner.
     reason: str
 
 
@@ -44,7 +44,7 @@ status from a carrier's, a customs or a booking system, a delivery receipt.
 network digests, event invitations sent to many, surveys, account and security notices, \
 out-of-office replies, spam.
 
-`reason` is one short plain English line saying what the conversation is.
+`reason` is one short plain line saying what the conversation is.
 
 """
 

@@ -6,6 +6,7 @@ from sqlalchemy import CheckConstraint, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base, text_enum
+from app.platform.language import Language
 
 
 class CompanyKind(StrEnum):
@@ -43,6 +44,11 @@ class Company(Base):
     mode: Mapped[CompanyMode] = mapped_column(text_enum(CompanyMode, "companies_mode_check"))
     # The country pack whose documents, identifiers and rules apply (app/packs/<country>).
     country: Mapped[str] = mapped_column(String(2), default="tr")
+    # The language Tamga writes in for the company: the names it gives, its reasons, what it says
+    # a file is. The chat answers in the language it is written to.
+    language: Mapped[Language] = mapped_column(
+        text_enum(Language, "companies_language_check"), default=Language.EN, server_default="en"
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     # Sandboxes only: when the cleanup deletes the company and everything it owns.
     expires_at: Mapped[datetime | None]

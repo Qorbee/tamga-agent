@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { Page } from "@/components/page";
-import { ProjectBoard } from "@/features/projects/project-board";
+import { ProjectList } from "@/features/projects/project-list";
 import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/i18n/server";
 
@@ -12,8 +12,8 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function ProjectsPage() {
   const t = getDictionary(await getLocale());
   return (
-    <Page wide title={t.nav.projects}>
-      <ProjectBoard />
+    <Page title={t.nav.projects}>
+      <ProjectList />
     </Page>
   );
 }

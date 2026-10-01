@@ -51,6 +51,7 @@ from app.platform.db import open_session
 from app.platform.errors import NotFound
 from app.platform.html import SafeHtml, sanitize
 from app.platform.items import ItemKind
+from app.platform.language import Language
 from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
@@ -561,9 +562,12 @@ async def sort_pending() -> int:
             )
             company = (await companies.get_companies(db, [company_id])).get(company_id)
         trace_content = company is not None and companies.traces_content(company.kind)
+        language = company.language if company is not None else Language.EN
         for thread_key in waiting:
             try:
-                await sort_with_model(company_id, thread_key, trace_content=trace_content)
+                await sort_with_model(
+                    company_id, thread_key, language=language, trace_content=trace_content
+                )
             except Exception as error:  # one conversation that fails never stops the others
                 # The error's type only: its text can carry what the mail holds.
                 logger.warning("sorting a conversation failed: %s", type(error).__name__)
@@ -575,7 +579,9 @@ async def sort_pending() -> int:
     return sorted_count
 
 
-async def sort_with_model(company_id: uuid.UUID, thread_key: str, *, trace_content: bool) -> None:
+async def sort_with_model(
+    company_id: uuid.UUID, thread_key: str, *, language: Language, trace_content: bool
+) -> None:
     """Has the ``intake`` agent sort one conversation from its first mails, in a call with no
     tools (ADR-0013). An answer that cannot be used leaves the conversation as work, marked as
     unanswered: reading one conversation too many costs less than dropping a customer's mail. No
@@ -591,6 +597,7 @@ async def sort_with_model(company_id: uuid.UUID, thread_key: str, *, trace_conte
             agents.conversation(excerpt),
             deps=None,
             limits=_SORT_LIMITS,
+            language=language,
             trace_content=trace_content,
         )
         category, reason, sorted_by = run.output.category, run.output.reason, agents.MODEL_SORTED
@@ -847,26 +854,55 @@ async def list_threads(
         db, actor.company_id, [row.thread_key for row in rows]
     ):
         by_thread.setdefault(message.thread_key, []).append((message, count))
-    items = []
-    for row in rows:
-        mails = by_thread[row.thread_key]
-        participants = dict.fromkeys(
-            message.sender_name or message.sender for message, _ in mails if message.sender
-        )
-        latest, latest_count = mails[-1]
-        items.append(
-            ThreadSummary(
-                thread_key=row.thread_key,
-                subject=mails[0][0].subject,
-                message_count=row.message_count,
-                attachment_count=sum(count for _, count in _once(mails)),
-                participants=[name for name in participants if name],
-                first_sent_at=row.first_sent_at,
-                last_sent_at=row.last_sent_at,
-                latest=_summary(latest, latest_count),
-            )
-        )
+    items = [_thread_summary(row.thread_key, by_thread[row.thread_key]) for row in rows]
     return ThreadPage(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
+def _thread_summary(thread_key: str, mails: list[tuple[Message, int]]) -> ThreadSummary:
+    """A conversation from its mails, oldest first, each with how many files it carried."""
+    once = _once(mails)
+    participants = dict.fromkeys(
+        message.sender_name or message.sender for message, _ in mails if message.sender
+    )
+    latest, latest_count = mails[-1]
+    return ThreadSummary(
+        thread_key=thread_key,
+        subject=mails[0][0].subject,
+        message_count=len(once),
+        attachment_count=sum(count for _, count in once),
+        participants=[name for name in participants if name],
+        first_sent_at=mails[0][0].sent_at,
+        last_sent_at=latest.sent_at,
+        latest=_summary(latest, latest_count),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadBrief:
+    """A conversation as a list shows it, and the mails it holds."""
+
+    summary: ThreadSummary
+    mail_ids: list[uuid.UUID]
+
+
+async def thread_briefs(
+    db: AsyncSession, company_id: uuid.UUID, thread_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, ThreadBrief]:
+    """These conversations by id; one whose mail is gone is left out."""
+    threads = await repository.threads_by_ids(db, company_id, thread_ids)
+    by_key: dict[str, list[tuple[Message, int]]] = {}
+    for message, count in await repository.thread_messages(
+        db, company_id, [thread.thread_key for thread in threads]
+    ):
+        by_key.setdefault(message.thread_key, []).append((message, count))
+    return {
+        thread.id: ThreadBrief(
+            summary=_thread_summary(thread.thread_key, by_key[thread.thread_key]),
+            mail_ids=[message.id for message, _ in by_key[thread.thread_key]],
+        )
+        for thread in threads
+        if thread.thread_key in by_key
+    }
 
 
 def _once(mails: list[tuple[Message, int]]) -> list[tuple[Message, int]]:

@@ -45,6 +45,7 @@ from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import BadRequest, Conflict, NotFound, PayloadTooLarge
 from app.platform.items import ItemKind
+from app.platform.language import Language
 from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
@@ -657,10 +658,15 @@ async def read_pending_with_vision() -> int:
             company = (await companies.get_companies(db, [company_id])).get(company_id)
         left = budget - spent
         trace_content = company is not None and companies.traces_content(company.kind)
+        language = company.language if company is not None else Language.EN
         for document_id in pending:
             try:
                 pictures = await read_with_vision(
-                    company_id, document_id, left=left, trace_content=trace_content
+                    company_id,
+                    document_id,
+                    left=left,
+                    language=language,
+                    trace_content=trace_content,
                 )
             except Exception as error:  # one file that fails never stops the others
                 # The error's type only: its text can carry what the file holds.
@@ -681,7 +687,12 @@ async def read_pending_with_vision() -> int:
 
 
 async def read_with_vision(
-    company_id: uuid.UUID, document_id: uuid.UUID, *, left: int, trace_content: bool
+    company_id: uuid.UUID,
+    document_id: uuid.UUID,
+    *,
+    left: int,
+    language: Language,
+    trace_content: bool,
 ) -> int | None:
     """Has the vision model read one file: a photo as it is, a PDF's scanned pages as pictures
     drawn in the locked child, in a call with no tools (ADR-0013). Returns the pictures the model
@@ -716,6 +727,7 @@ async def read_with_vision(
                 agents.pictures(filename, pictures),
                 deps=len(pictures),
                 limits=_VISION_LIMITS,
+                language=language,
                 trace_content=trace_content,
             )
             seen, requests = run.output, run.usage.requests

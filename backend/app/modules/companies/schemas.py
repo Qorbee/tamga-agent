@@ -3,6 +3,7 @@ import uuid
 from pydantic import BaseModel, ConfigDict
 
 from app.modules.companies.models import CompanyKind, CompanyMode
+from app.platform.language import Language
 
 
 class CompanySummary(BaseModel):
@@ -12,3 +13,8 @@ class CompanySummary(BaseModel):
     name: str
     kind: CompanyKind
     mode: CompanyMode
+    language: Language
+
+
+class CompanyUpdate(BaseModel):
+    language: Language

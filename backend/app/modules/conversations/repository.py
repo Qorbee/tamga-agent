@@ -754,6 +754,15 @@ async def find_threads(
     return rows.all()
 
 
+async def threads_by_ids(
+    db: AsyncSession, company_id: uuid.UUID, thread_ids: Sequence[uuid.UUID]
+) -> Sequence[Thread]:
+    rows = await db.scalars(
+        select(Thread).where(Thread.company_id == company_id, Thread.id.in_(thread_ids))
+    )
+    return rows.all()
+
+
 async def mail_as_read(
     db: AsyncSession, company_id: uuid.UUID, thread_keys: Sequence[str]
 ) -> Sequence[Message]:

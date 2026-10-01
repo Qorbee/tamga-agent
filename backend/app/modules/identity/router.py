@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, Response, status
 
 from app.config import get_settings
+from app.modules.companies.schemas import CompanyUpdate
 from app.modules.identity import service
 from app.modules.identity.deps import ActorDep
 from app.modules.identity.schemas import (
@@ -82,6 +83,11 @@ async def sign_out(actor: ActorDep, db: SessionDep, response: Response) -> None:
 @me.get("/me")
 async def get_me(actor: ActorDep, db: SessionDep) -> Me:
     return await service.get_me(db, actor)
+
+
+@me.patch("/me/company")
+async def update_company(body: CompanyUpdate, actor: ActorDep, db: SessionDep) -> Me:
+    return await service.update_company(db, actor, language=body.language)
 
 
 @invites.post("/invites", status_code=status.HTTP_201_CREATED)

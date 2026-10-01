@@ -2,6 +2,7 @@
 
 import { ComputerIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
@@ -13,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { getMe, updateCompany, type WritingLanguage } from "@/lib/api";
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
@@ -28,7 +30,10 @@ const themeIcons: Record<Theme, IconSvgElement> = {
   dark: Moon02Icon,
 };
 
-/** The owner's own settings: the theme and the language. Opened from the account menu. */
+/**
+ * Settings, opened from the account menu: how the app looks and reads on this device, and the
+ * language Tamga writes in for the whole company.
+ */
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -54,15 +59,24 @@ export function SettingsDialog({
             <LanguagePicker />
           </Row>
         </section>
+        <section className="flex flex-col">
+          <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.company}</h3>
+          <Row label={t.settings.writesIn} hint={t.settings.writesInHint}>
+            <WritingLanguagePicker />
+          </Row>
+        </section>
       </DialogContent>
     </Dialog>
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="border-border flex items-center justify-between gap-4 border-t py-3 first-of-type:border-t-0">
-      <span className="text-sm">{label}</span>
+    <div className="border-border flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t py-3 first-of-type:border-t-0">
+      <span className="min-w-0 flex-1 basis-48 text-sm">
+        {label}
+        {hint ? <span className="text-muted-foreground block text-xs text-pretty">{hint}</span> : null}
+      </span>
       {children}
     </div>
   );
@@ -123,5 +137,45 @@ function LanguagePicker() {
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
+  );
+}
+
+/** The company's, not the device's: what Tamga writes from now on is in it, for every member. */
+function WritingLanguagePicker() {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const change = useMutation({
+    mutationFn: (language: WritingLanguage) => updateCompany({ language }),
+    onSuccess: (updated) => queryClient.setQueryData(["me"], updated),
+  });
+  const owner = me.data?.role === "owner";
+
+  return (
+    <div className="grid justify-items-end gap-1">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        spacing={0}
+        value={me.data?.company.language ?? ""}
+        aria-label={t.settings.writesIn}
+        disabled={!owner || change.isPending}
+        onValueChange={(value) => {
+          if (isLocale(value) && value !== me.data?.company.language) change.mutate(value);
+        }}
+      >
+        {locales.map((value) => (
+          <ToggleGroupItem key={value} value={value} lang={value} className={SEGMENT}>
+            {localeNames[value]}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      {me.data && !owner ? <span className="text-muted-foreground text-xs">{t.settings.ownerOnly}</span> : null}
+      {change.isError ? (
+        <span className="text-danger-foreground text-xs" role="alert">
+          {t.errors.generic}
+        </span>
+      ) : null}
+    </div>
   );
 }

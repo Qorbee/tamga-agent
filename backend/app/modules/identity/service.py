@@ -40,6 +40,7 @@ from app.platform.errors import (
     PermissionDenied,
     TooManyRequests,
 )
+from app.platform.language import Language
 from app.platform.ratelimit import RateLimiter
 from app.platform.tokens import hash_token, new_token
 
@@ -130,6 +131,14 @@ async def get_me(db: AsyncSession, actor: Actor) -> Me:
     if user is None:  # deleted between resolving the session and now
         raise NotAuthenticated("Sign in again")
     return await _describe(db, user, actor.company_id)
+
+
+async def update_company(db: AsyncSession, actor: Actor, *, language: Language) -> Me:
+    """The owner's settings for the company this session acts for."""
+    actor.require(Role.OWNER)
+    await companies.set_language(db, actor.company_id, language)
+    await db.commit()
+    return await get_me(db, actor)
 
 
 async def create_guest_session(db: AsyncSession, *, client: str) -> OpenedSession:

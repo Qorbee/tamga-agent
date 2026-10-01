@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import repository
 from app.modules.companies.models import Company, CompanyKind, CompanyMode
+from app.platform.language import Language
 
 # A pilot starts in shadow: beside real work, sending nothing (ADR-0009). Demo companies and
 # sandboxes are live only inside simulated channels that reach no real person.
@@ -38,6 +39,11 @@ async def create_company(
 
 async def get_companies(db: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, Company]:
     return {company.id: company for company in await repository.get_many(db, ids)}
+
+
+async def set_language(db: AsyncSession, company_id: uuid.UUID, language: Language) -> None:
+    """What Tamga writes from now on is in ``language``; what it wrote before stays as it is."""
+    await repository.set_language(db, company_id, language)
 
 
 async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:

@@ -49,11 +49,20 @@ async def get_projects(
 
 
 def _project_filters(
-    company_id: uuid.UUID, statuses: Sequence[ProjectStatus], q: str | None
+    company_id: uuid.UUID, statuses: Sequence[ProjectStatus], q: str | None, suggested: bool | None
 ) -> list[ColumnElement[bool]]:
     filters: list[ColumnElement[bool]] = [Project.company_id == company_id]
     if statuses:
         filters.append(Project.status.in_(statuses))
+    if suggested is not None:
+        waits = exists(
+            select(ProjectLink.id).where(
+                ProjectLink.company_id == company_id,
+                ProjectLink.project_id == Project.id,
+                ProjectLink.status == LinkStatus.SUGGESTED,
+            )
+        )
+        filters.append(waits if suggested else ~waits)
     if q:
         pattern = f"%{escape_like(q)}%"
         number_pattern = f"%{escape_like(q.replace(' ', '').upper())}%"
@@ -78,10 +87,11 @@ async def list_projects(
     *,
     statuses: Sequence[ProjectStatus],
     q: str | None,
+    suggested: bool | None = None,
     order_by: Sequence[ColumnElement[Any] | InstrumentedAttribute[Any]],
     page: PageParams,
 ) -> tuple[Sequence[Project], int]:
-    filters = _project_filters(company_id, statuses, q)
+    filters = _project_filters(company_id, statuses, q, suggested)
     total = await db.scalar(select(func.count()).select_from(Project).where(*filters))
     rows = await db.scalars(
         select(Project)
@@ -186,6 +196,32 @@ async def get_link(
         statement = statement.with_for_update()
     link: ProjectLink | None = await db.scalar(statement)
     return link
+
+
+async def get_links(
+    db: AsyncSession, company_id: uuid.UUID, link_ids: Sequence[uuid.UUID], *, for_update: bool
+) -> Sequence[ProjectLink]:
+    statement = (
+        select(ProjectLink)
+        .where(ProjectLink.company_id == company_id, ProjectLink.id.in_(link_ids))
+        .order_by(ProjectLink.id)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    rows = await db.scalars(statement)
+    return rows.all()
+
+
+async def count_links(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[tuple[uuid.UUID, LinkStatus], int]:
+    """How many links each of these projects holds, by status."""
+    rows = await db.execute(
+        select(ProjectLink.project_id, ProjectLink.status, func.count())
+        .where(ProjectLink.company_id == company_id, ProjectLink.project_id.in_(project_ids))
+        .group_by(ProjectLink.project_id, ProjectLink.status)
+    )
+    return {(project_id, status): count for project_id, status, count in rows.tuples()}
 
 
 async def get_link_for_item(
