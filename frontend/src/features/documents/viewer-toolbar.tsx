@@ -4,6 +4,7 @@ import { FitToScreenIcon, RotateClockwiseIcon, SearchAddIcon, SearchMinusIcon } 
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -86,15 +87,17 @@ export function ViewerToolbar({
         <HugeiconsIcon icon={SearchMinusIcon} strokeWidth={1.75} />
         <span className="sr-only">{t.files.viewer.zoomOut}</span>
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 min-w-14 rounded-full px-2 text-xs tabular-nums"
-        onClick={onFit}
-        title={t.files.viewer.fit}
-      >
-        {formatNumber(Math.round(zoom * 100), locale)}%
-      </Button>
+      <Hint label={t.files.viewer.fit} side="top">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 min-w-14 rounded-full px-2 text-xs tabular-nums"
+          onClick={onFit}
+          aria-label={t.files.viewer.fit}
+        >
+          {formatNumber(Math.round(zoom * 100), locale)}%
+        </Button>
+      </Hint>
       <Button variant="ghost" size="icon-sm" className="rounded-full" disabled={!canZoomIn} onClick={onZoomIn}>
         <HugeiconsIcon icon={SearchAddIcon} strokeWidth={1.75} />
         <span className="sr-only">{t.files.viewer.zoomIn}</span>

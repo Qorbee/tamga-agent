@@ -13,6 +13,8 @@ import { useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { IconButton } from "@/components/icon-button";
+import { EditProjectDialog, useCanEditProjects } from "@/components/edit-project-dialog";
+import { Hint } from "@/components/hint";
 import { JobFacts, PlacementRows, useInvalidatePlacements } from "@/components/placement-rows";
 import { T } from "@/components/translated";
 import { Button } from "@/components/ui/button";
@@ -124,6 +126,8 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
   const { t } = useI18n();
   const invalidate = useInvalidatePlacements();
   const [all, setAll] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const canEdit = useCanEditProjects();
   const proposed = project.status === "proposed";
   const answer = useMutation({
     mutationFn: async (confirm: boolean) => {
@@ -163,24 +167,27 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
           />
           {/* Rejecting a whole card is not undone, so it sits a tap further away than the tick. */}
           <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-muted-foreground"
-                aria-label={t.board.actions}
-                title={t.board.actions}
-                disabled={answer.isPending}
-              >
-                <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
-              </Button>
-            </DropdownMenuTrigger>
+            <Hint label={t.board.actions}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground"
+                  aria-label={t.board.actions}
+                  disabled={answer.isPending}
+                >
+                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
+                </Button>
+              </DropdownMenuTrigger>
+            </Hint>
             <DropdownMenuContent align="end">
+              {canEdit ? <DropdownMenuItem onSelect={() => setEditing(true)}>{t.project.edit}</DropdownMenuItem> : null}
               <DropdownMenuItem onSelect={() => answer.mutate(false)}>
                 {proposed ? t.inbox.rejectProject : t.inbox.rejectAll}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {canEdit ? <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} /> : null}
         </div>
         <div className="col-span-3 min-w-0 sm:col-span-2 sm:col-start-2 sm:-mt-3">
           <CanvasLink
@@ -189,7 +196,7 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
           >
             <T>{project.name}</T>
           </CanvasLink>
-          <JobFacts placements={waiting} className="mt-1.5" />
+          <JobFacts placements={waiting} project={project} className="mt-1.5" />
         </div>
       </header>
       {answer.isError ? (

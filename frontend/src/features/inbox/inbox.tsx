@@ -12,8 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { decideProposal, listProposals, listThreads, type FieldProposal } from "@/lib/api";
-import { formatListDate } from "@/lib/format";
+import { formatDays, formatListDate } from "@/lib/format";
 import { conversationName, ownSnippet } from "@/lib/mail-text";
+import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
 import { Waiting } from "./waiting";
@@ -43,7 +44,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function OpenProposals() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const proposals = useQuery({
     queryKey: ["field-proposals", { status: "open" }],
@@ -70,9 +71,9 @@ function OpenProposals() {
             <li key={proposal.id} className="flex items-center gap-1 py-3 ps-4 pe-3">
               <div className="min-w-0 flex-1">
                 <p className="text-muted-foreground text-xs">
-                  {t.inbox.field(t.inbox.targets[proposal.target], proposal.field)}
+                  {t.inbox.field(t.inbox.targets[proposal.target], t.inbox.fields[proposal.field] ?? proposal.field)}
                 </p>
-                <p className="text-sm break-words">{display(proposal.value)}</p>
+                <p className="text-sm break-words">{display(proposal.field, proposal.value, locale)}</p>
               </div>
               <IconButton
                 icon={Tick02Icon}
@@ -95,8 +96,12 @@ function OpenProposals() {
   );
 }
 
-function display(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
+const DAYS = new Set(["starts_on", "ends_on"]);
+
+/** A proposed value as the owner reads it: a day in their own format, text as it is. */
+function display(field: string, value: unknown, locale: Locale): string {
+  if (typeof value !== "string") return JSON.stringify(value);
+  return DAYS.has(field) ? formatDays(value, null, locale) : value;
 }
 
 function Mail() {

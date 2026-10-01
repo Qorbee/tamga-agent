@@ -808,3 +808,147 @@ async def test_a_change_noted_twice_is_read_once(
     assert len(script.requests) == 1
     async with open_session() as db:
         assert await repository.latest_seen(db, company_id) is not None
+
+
+@pytest.mark.integration
+async def test_a_project_is_named_by_its_job_and_follows_what_later_mail_says(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(
+        answer(
+            "new_project",
+            new_project={
+                "name": "a load of coils",
+                "client": "Stone  GmbH",
+                "origin": "Istanbul, Türkiye",
+                "destination": "Munich, Germany",
+                "trucks": 3,
+                "starts_on": "2026-08-10",
+            },
+            party="Stone GmbH",
+            party_role="client",
+        )
+    )
+    assert await service.place_pending() == 1
+
+    [project] = await the_projects(company_id)
+    # Named the same way every time, by code: the client, the towns, the first day.
+    assert project.name == "Stone GmbH · Istanbul → Munich · 10.08.2026"
+    assert (project.starts_on, project.ends_on) == (date(2026, 8, 10), None)
+    assert project.field_sources["starts_on"] == FieldSource.SUGGESTION
+    placed = await placement(company_id, "<order@x>")
+    assert placed.reading is not None and placed.reading["trucks"] == "3"
+
+    # The carrier's own conversation adds who carries it, an earlier first day and the last one.
+    await arrive(
+        company_id,
+        2,
+        mail("<truck@x>", subject="Truck for Munich", body="Our truck loads on the 8th."),
+        category=ThreadCategory.WORK,
+    )
+    model(
+        tool("open_project", number=project.number),
+        answer(
+            "link",
+            project=project.number,
+            job={"subcontractor": "Hauler Ltd", "starts_on": "2026-08-08", "ends_on": "2026-08-14"},
+            party="Hauler Ltd",
+            party_role="subcontractor",
+        ),
+    )
+    assert await service.place_pending() == 1
+
+    [project] = await the_projects(company_id)
+    assert project.name == "Stone GmbH · Istanbul → Munich · 08.08.2026"
+    assert (project.starts_on, project.ends_on) == (date(2026, 8, 8), date(2026, 8, 14))
+
+    # The owner's own name and first day stand: later mail proposes a day, and renames nothing.
+    assert (
+        await client.patch(
+            f"/projects/{project.id}", json={"name": "Stone, August", "starts_on": "2026-08-09"}
+        )
+    ).status_code == 200
+    await arrive(
+        company_id,
+        3,
+        mail("<later@x>", subject="Loading moved", body="Loading is now on the 7th."),
+        category=ThreadCategory.WORK,
+    )
+    model(
+        tool("open_project", number=project.number),
+        answer("link", project=project.number, job={"starts_on": "2026-08-07"}),
+    )
+    assert await service.place_pending() == 1
+
+    [project] = await the_projects(company_id)
+    assert (project.name, project.starts_on) == ("Stone, August", date(2026, 8, 9))
+    proposals = (await client.get("/field-proposals", params={"status": "open"})).json()["items"]
+    assert [(p["field"], p["value"]) for p in proposals] == [("starts_on", "2026-08-07")]
+
+
+@pytest.mark.integration
+async def test_a_job_with_neither_client_nor_route_keeps_the_few_words_it_was_given(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(
+        answer("new_project", new_project={"name": "Truck position reports", "destination": "Iraq"})
+    )
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+    assert project.name == "Truck position reports"
+
+    # Once a conversation names the client, the project is named by it and where it goes.
+    await arrive(
+        company_id,
+        2,
+        mail("<client@x>", subject="Our load to Iraq", body="Please confirm our load."),
+        category=ThreadCategory.WORK,
+    )
+    model(
+        tool("open_project", number=project.number),
+        answer("link", project=project.number, job={"client": "Stone GmbH"}),
+    )
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+    assert project.name == "Stone GmbH · → Iraq"
+
+
+@pytest.mark.integration
+async def test_a_conversation_the_owner_rejects_no_longer_names_or_dates_the_project(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    job = {"name": "coils", "client": "Stone GmbH", "origin": "Istanbul", "destination": "Munich"}
+    model(answer("new_project", new_project=job | {"starts_on": "2026-08-10"}))
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+    await arrive(
+        company_id,
+        2,
+        mail("<truck@x>", subject="Truck for Munich", body="Our truck loads on the 8th."),
+        category=ThreadCategory.WORK,
+    )
+    model(
+        tool("open_project", number=project.number),
+        answer(
+            "link",
+            project=project.number,
+            job={"starts_on": "2026-08-08", "ends_on": "2026-08-14"},
+        ),
+    )
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+    assert project.name == "Stone GmbH · Istanbul → Munich · 08.08.2026"
+
+    # The owner says that conversation is not of this job: what it said leaves the project.
+    wrong = await placement(company_id, "<truck@x>")
+    answered = await client.patch(f"/placements/{wrong.id}", json={"links": "rejected"})
+    assert answered.status_code == 200
+    [project] = await the_projects(company_id)
+    assert project.name == "Stone GmbH · Istanbul → Munich · 10.08.2026"
+    assert (project.starts_on, project.ends_on) == (date(2026, 8, 10), None)

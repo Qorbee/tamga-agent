@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -18,7 +18,16 @@ from app.modules.projects.models import (
 from app.platform.items import ItemKind
 
 ProjectSort = Literal[
-    "number", "-number", "name", "-name", "created_at", "-created_at", "updated_at", "-updated_at"
+    "number",
+    "-number",
+    "name",
+    "-name",
+    "starts_on",
+    "-starts_on",
+    "created_at",
+    "-created_at",
+    "updated_at",
+    "-updated_at",
 ]
 
 
@@ -30,6 +39,9 @@ class ProjectOut(BaseModel):
     # Earlier numbers the project had: mail quoting one still finds it.
     aliases: list[str]
     name: str
+    # The job's span as far as it is known; null until someone or something says.
+    starts_on: date | None
+    ends_on: date | None
     status: ProjectStatus
     stage: ProjectStage
     field_sources: dict[str, FieldSource]
@@ -56,6 +68,9 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=300)
     number: str | None = Field(default=None, min_length=1, max_length=60)
+    # Sent as null, a date is cleared; left out, it stays.
+    starts_on: date | None = None
+    ends_on: date | None = None
     # The owner's moves: confirm a draft or a proposal, reject a proposal, close a project.
     status: Literal["active", "rejected", "closed"] | None = None
 

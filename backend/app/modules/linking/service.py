@@ -14,9 +14,9 @@ again.
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 
 from pydantic_ai import UsageLimits
@@ -83,6 +83,8 @@ _KEY_CONFIDENCE: Final = 0.9
 _THREAD_CONFIDENCE: Final = 0.6
 _READ: Final = (ThreadCategory.WORK, ThreadCategory.AUTOMATED)
 _INVOICE_NUMBER: Final = "invoice_number"
+# A job's first and last day, in a reading and on a project.
+_DAYS: Final = ("starts_on", "ends_on")
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,6 +488,7 @@ def _from_model(
         project_id = desk.projects.get(agents.bare(placing.project or ""))
         if project_id is None or project_id in found.ties.refused:
             return unplaced
+        said = placing.job.model_dump(exclude_none=True) if placing.job else {}
         return _Decision(
             Outcome.LINKED,
             agents.MODEL_PLACED,
@@ -494,7 +497,7 @@ def _from_model(
             evidence=found.keys.get(project_id, frozenset()),
             reason=reason,
             cited=cited,
-            reading=_as_read(party),
+            reading=_as_read(said | party),
         )
     if placing.decision == "ask":
         shown = [desk.projects.get(agents.bare(number)) for number in placing.alternatives]
@@ -517,13 +520,56 @@ def _from_model(
         return _Decision(
             Outcome.PROPOSED,
             agents.MODEL_PLACED,
-            new_name=name,
+            new_name=_title(_as_read(job) or {}) or name,
             confidence=placing.confidence,
             reason=reason,
             cited=cited,
             reading=_as_read(job | party),
         )
     return unplaced
+
+
+def _town(place: str | None) -> str:
+    """A place as a name holds it: "Bukovik, Serbia" is Bukovik."""
+    return (place or "").split(",")[0].strip()[:60]
+
+
+def _day(read: Mapping[str, Any], field: str) -> date | None:
+    try:
+        return date.fromisoformat(str(read[field])) if read.get(field) else None
+    except ValueError:
+        return None
+
+
+def _title(job: Mapping[str, Any]) -> str | None:
+    """A project's name from what is known of its job: the client, the route and the first day,
+    the same way for every project ("Stone GmbH · Izmir → Hamburg · 05.10.2026"). None when
+    neither the client nor both ends of the route are known: the model's few words name it."""
+    client = " ".join(str(job.get("client") or "").split())[:120]
+    origin, destination = _town(job.get("origin")), _town(job.get("destination"))
+    if not client and not (origin and destination):
+        return None
+    route = f"{origin} → {destination}".strip() if origin or destination else ""
+    first = _day(job, "starts_on")
+    parts = [client, route, f"{first:%d.%m.%Y}" if first else ""]
+    return " · ".join(part for part in parts if part)[:300]
+
+
+def _known(readings: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """What a project's conversations say of its job, together: for each field the first
+    conversation that names it, and for the days the earliest start and the latest end."""
+    known: dict[str, Any] = {}
+    for reading in readings:
+        for field, value in reading.items():
+            if field not in ("party", "party_role", "starts_on", "ends_on"):
+                known.setdefault(field, value)
+    starts = [day for reading in readings if (day := _day(reading, "starts_on"))]
+    ends = [day for reading in readings if (day := _day(reading, "ends_on"))]
+    if starts:
+        known["starts_on"] = min(starts).isoformat()
+    if ends and (not starts or max(ends) >= min(starts)):
+        known["ends_on"] = max(ends).isoformat()
+    return known
 
 
 def _as_read(read: dict[str, Any]) -> dict[str, str] | None:
@@ -564,13 +610,17 @@ async def _apply(
         decision = replace(decision, outcome=Outcome.UNPLACED)
         alternatives = []
     project_id = decision.project_id
+    said = decision.reading or {}
     if decision.new_name:
+        first, last = _day(said, "starts_on"), _day(said, "ends_on")
         project = await projects.new_project(
             db,
             company_id=company_id,
             name=decision.new_name,
             status=ProjectStatus.PROPOSED,
             source=FieldSource.SUGGESTION,
+            starts_on=first,
+            ends_on=last if last and (not first or last >= first) else None,
         )
         project_id = project.id
     if project_id is not None and decision.outcome in (Outcome.LINKED, Outcome.PROPOSED):
@@ -606,7 +656,49 @@ async def _apply(
     placement.failed_at = None
     # Mail that came while it was read is a newer change than the one read: it waits again.
     placement.waiting = placement.thread_changed_at > thread.changed_at
+    if placement.placed_by == agents.MODEL_PLACED and project_id is not None and reading:
+        await db.flush()
+        await _tell_project(db, company_id, project_id, said=said, evidence=decision.cited)
     return True
+
+
+async def _tell_project(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    project_id: uuid.UUID,
+    *,
+    said: Mapping[str, Any] | None,
+    evidence: Sequence[uuid.UUID],
+) -> None:
+    """Brings a project up to what its conversations say of the job together: its days, and its
+    name while nobody but Tamga named it. ``said`` is what the conversation just placed says: a
+    day it states is written, or proposed when the owner set that day, with ``evidence`` as its
+    proof. With ``said`` None a conversation has left the project (the owner's answer): what
+    Tamga derived is worked out again from those that remain, and nothing the owner set is
+    touched or proposed over."""
+    readings = [
+        reading for _, reading in await repository.readings_of_project(db, company_id, project_id)
+    ]
+    known = _known(readings)
+    values: dict[str, Any] = {}
+    name = _title(known)
+    if name:
+        values["name"] = name
+    for field in _DAYS:
+        if said is None:
+            values[field] = known.get(field)
+        elif field in said and field in known:
+            values[field] = known[field]
+    if values:
+        await projects.propose_project_fields(
+            db,
+            company_id=company_id,
+            project_id=project_id,
+            values=values,
+            source=FieldSource.SUGGESTION,
+            evidence=evidence,
+            leave_owner=("name",) if said is not None else ("name", *_DAYS),
+        )
 
 
 # What the owner sees and answers
@@ -647,6 +739,7 @@ async def decide_placement(
     placement = await repository.get_by_id(db, actor.company_id, placement_id, for_update=True)
     if placement is None:
         raise NotFound("No such placement")
+    was = placement.project_id
     thread = await conversations.read_thread(db, actor.company_id, placement.thread_id)
     mail_ids = [mail.id for mail in thread.mails] if thread is not None else []
     links = await projects.links_of_items(db, actor.company_id, ItemKind.MESSAGE, mail_ids)
@@ -692,6 +785,10 @@ async def decide_placement(
         await projects.decide_links(db, actor, to_decide, confirm=bool(confirm))
         if not confirm:
             _answered(placement, Outcome.UNPLACED, None)
+    if was is not None and was != placement.project_id:
+        # It left that project: what was read in it no longer names or dates the project.
+        await db.flush()
+        await _tell_project(db, actor.company_id, was, said=None, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [placement]))[0]
 

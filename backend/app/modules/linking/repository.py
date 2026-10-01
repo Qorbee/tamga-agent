@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -37,6 +38,24 @@ async def note_changed(
             where=Placement.thread_changed_at < row.excluded.thread_changed_at,
         )
     )
+
+
+async def readings_of_project(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
+) -> list[tuple[uuid.UUID, dict[str, Any]]]:
+    """What was read in each conversation placed in the project, by placement, in the order the
+    conversations were first noted: the one a project was proposed for comes first."""
+    rows = await db.execute(
+        select(Placement.id, Placement.reading)
+        .where(
+            Placement.company_id == company_id,
+            Placement.project_id == project_id,
+            Placement.outcome.in_((Outcome.LINKED, Outcome.PROPOSED)),
+            Placement.reading.is_not(None),
+        )
+        .order_by(Placement.created_at, Placement.id)
+    )
+    return [(placement_id, reading) for placement_id, reading in rows.all()]
 
 
 async def waiting(

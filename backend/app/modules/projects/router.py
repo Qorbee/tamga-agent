@@ -69,6 +69,11 @@ async def update_project(
         project_id,
         name=body.name,
         number=body.number,
+        dates={
+            field: getattr(body, field)
+            for field in ("starts_on", "ends_on")
+            if field in body.model_fields_set
+        },
         status=ProjectStatus(body.status) if body.status else None,
     )
 

@@ -10,7 +10,10 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
+import { EditProjectDialog, useCanEditProjects } from "@/components/edit-project-dialog";
+import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,9 +39,16 @@ type Move = NonNullable<ProjectUpdate["status"]>;
 const FORWARD: Partial<Record<ProjectStatus, Move>> = { draft: "active", proposed: "active" };
 const ENDING: Partial<Record<ProjectStatus, Move>> = { proposed: "rejected", active: "closed" };
 
-export function ProjectActions({ project }: { project: Project }) {
+/**
+ * A project's moves and its edit, wherever a project is shown: the tick that carries it forward,
+ * and a menu with Edit and the move that ends it. `pencil` puts Edit beside them as an icon too,
+ * for the project's own panel.
+ */
+export function ProjectActions({ project, pencil = false }: { project: Project; pencil?: boolean }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const canEdit = useCanEditProjects();
+  const [editing, setEditing] = useState(false);
   const move = useMutation({
     mutationFn: (status: Move) => updateProject(project.id, { status }),
     onSuccess: () => {
@@ -53,7 +63,7 @@ export function ProjectActions({ project }: { project: Project }) {
     rejected: t.board.reject,
     closed: t.board.close,
   };
-  if (!forward && !ending) return null;
+  if (!forward && !ending && !canEdit) return null;
 
   return (
     <span className="flex shrink-0 items-center gap-0.5">
@@ -70,25 +80,36 @@ export function ProjectActions({ project }: { project: Project }) {
           onClick={() => move.mutate(forward)}
         />
       ) : null}
-      {ending ? (
+      {pencil && canEdit ? (
+        <IconButton
+          icon={PencilEdit02Icon}
+          label={t.project.editTitle}
+          className="text-muted-foreground"
+          onClick={() => setEditing(true)}
+        />
+      ) : null}
+      {ending || canEdit ? (
         <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground"
-              aria-label={t.board.actions}
-              title={t.board.actions}
-              disabled={move.isPending}
-            >
-              <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
-            </Button>
-          </DropdownMenuTrigger>
+          <Hint label={t.board.actions}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label={t.board.actions}
+                disabled={move.isPending}
+              >
+                <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
+              </Button>
+            </DropdownMenuTrigger>
+          </Hint>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => move.mutate(ending)}>{labels[ending]}</DropdownMenuItem>
+            {canEdit ? <DropdownMenuItem onSelect={() => setEditing(true)}>{t.project.edit}</DropdownMenuItem> : null}
+            {ending ? <DropdownMenuItem onSelect={() => move.mutate(ending)}>{labels[ending]}</DropdownMenuItem> : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
+      {canEdit ? <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} /> : null}
     </span>
   );
 }

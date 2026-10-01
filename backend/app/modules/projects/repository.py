@@ -34,7 +34,9 @@ async def get_project(
 ) -> Project | None:
     statement = select(Project).where(Project.company_id == company_id, Project.id == project_id)
     if for_update:
-        statement = statement.with_for_update()
+        # Read again under the lock: a copy the session already held may be older than what
+        # another request committed since.
+        statement = statement.with_for_update().execution_options(populate_existing=True)
     project: Project | None = await db.scalar(statement)
     return project
 

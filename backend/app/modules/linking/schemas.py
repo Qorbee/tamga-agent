@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Self
 
 from pydantic import BaseModel, model_validator
@@ -14,12 +14,17 @@ class JobReading(BaseModel):
     # Who the company deals with in the conversation, and what that firm is to it in this job.
     party: str | None = None
     party_role: Literal["client", "subcontractor", "other"] | None = None
-    # Of a job a project was proposed for: who gave it, who it was given on to, the route, the load.
+    # Of the job: who gave it, who it was given on to, who receives the goods, the route, the
+    # load, how many trucks, the first day of loading and the last day of delivery.
     client: str | None = None
     subcontractor: str | None = None
+    consignee: str | None = None
     origin: str | None = None
     destination: str | None = None
     cargo: str | None = None
+    trucks: int | None = None
+    starts_on: date | None = None
+    ends_on: date | None = None
 
 
 class PlacementOut(BaseModel):

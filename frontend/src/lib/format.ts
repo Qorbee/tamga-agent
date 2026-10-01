@@ -42,6 +42,20 @@ export function formatDate(
   }).format(date);
 }
 
+/** A calendar day the API gives as `2026-08-10`, at local midnight: never shifted by a time zone. */
+function localDay(day: string): Date {
+  const [year = 1970, month = 1, date = 1] = day.split("-").map(Number);
+  return new Date(year, month - 1, date);
+}
+
+/** A job's days: one day, or the span from the first to the last ("10 – 14 Aug 2026"). */
+export function formatDays(start: string | null, end: string | null, locale: Locale): string {
+  const format = new Intl.DateTimeFormat(intlLocale[locale], { day: "numeric", month: "short", year: "numeric" });
+  if (start && end && start !== end) return format.formatRange(localDay(start), localDay(end));
+  const only = start ?? end;
+  return only ? format.format(localDay(only)) : "";
+}
+
 /** A list row's time: the hour today, the day this year, the full date before. */
 export function formatListDate(date: Date, locale: Locale, now: Date = new Date()): string {
   const sameYear = date.getFullYear() === now.getFullYear();

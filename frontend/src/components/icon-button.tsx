@@ -2,6 +2,7 @@ import type { IconSvgElement } from "@hugeicons/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
 
+import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -19,8 +20,10 @@ export function IconButton({
   label: string;
 }) {
   return (
-    <Button {...props} size={size} variant={variant} aria-label={label} title={label}>
-      <HugeiconsIcon icon={icon} strokeWidth={1.75} />
-    </Button>
+    <Hint label={label}>
+      <Button {...props} size={size} variant={variant} aria-label={label}>
+        <HugeiconsIcon icon={icon} strokeWidth={1.75} />
+      </Button>
+    </Hint>
   );
 }

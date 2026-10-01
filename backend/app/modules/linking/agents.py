@@ -78,15 +78,30 @@ def bare(number: str) -> str:
     return "".join(number.split()).upper()
 
 
-class NewProject(BaseModel):
-    # The client and the job, short: "Stone GmbH, Istanbul to Munich, steel coils".
-    name: str
+class Job(BaseModel):
+    """What the mail says of the job. A field the mail does not show is left empty."""
+
+    # The firm that gives the company the job and is invoiced for it.
     client: str | None = None
-    # The carrier the company gave the job to, when the mail shows one.
+    # The carrier the company gave the job on to.
     subcontractor: str | None = None
+    # The firm that receives the goods: often not the client.
+    consignee: str | None = None
+    # Where it is loaded and where it is delivered: the town and the country, no street address.
     origin: str | None = None
     destination: str | None = None
+    # The load, in a few words.
     cargo: str | None = None
+    trucks: int | None = Field(default=None, ge=1, le=500)
+    # The first day of loading and the last day of delivery, as the mail states them.
+    starts_on: date | None = None
+    ends_on: date | None = None
+
+
+class NewProject(Job):
+    # A few words on the job. Code names the project by its client, route and first day when
+    # the mail shows them; this is the name only when it shows neither client nor route.
+    name: str
 
 
 class Placing(BaseModel):
@@ -96,6 +111,8 @@ class Placing(BaseModel):
     # ask: the numbers of the projects that fit equally.
     alternatives: list[str] = []
     new_project: NewProject | None = None
+    # link: what this conversation adds to what is known of the job.
+    job: Job | None = None
     # link, new_project: the other side of this conversation, and what it is to the company in
     # this job.
     party: str | None = None
@@ -127,8 +144,8 @@ or the route together with the dates and the cargo.
 Answer with one decision:
 - link: it belongs to one project you were shown. Give that project's number.
 - new_project: it shows a job that no project holds: an order placed or confirmed, a truck or a \
-load being arranged, a loading or a delivery under way, documents or an invoice for a job. Name \
-the project by the client and the job, and fill what the mail says of it.
+load being arranged, a loading or a delivery under way, documents or an invoice for a job. Fill \
+`new_project` with what the mail says of the job.
 - ask: two or more projects fit and nothing in the mail tells them apart. Give their numbers.
 - unplaced: it is not about one job (a price list, an introduction, a general question, a quote \
 asked for and not agreed), or you cannot tell. Between a guess and unplaced, answer unplaced: a \
@@ -143,8 +160,21 @@ truck is, and is the one the company invoices.
 reports to the company, and invoices the company.
 - other: anyone else, such as a customs agent, a warehouse or the consignee.
 A freight company can be either: go by who orders and who carries in this conversation, never \
-by the firm's name. Leave both empty when the mail does not show it. In a new project, \
-`subcontractor` is the carrier the company gave the job to, when the mail shows one.
+by the firm's name. Leave both empty when the mail does not show it.
+
+What is known of a job is kept as fields, in `new_project` for a new one and in `job` for a \
+link (there, only what this conversation adds). Fill a field only with what the mail states; \
+leave it empty otherwise, never a guess:
+- client: the firm that gives the company the job and is invoiced for it.
+- subcontractor: the carrier the company gave the job on to.
+- consignee: the firm that receives the goods, which is often not the client.
+- origin, destination: where it is loaded and where it is delivered, as the town and the \
+country ("Bukovik, Serbia"), never a street address.
+- cargo: the load in a few words. trucks: how many trucks the job is.
+- starts_on: the first day of loading. ends_on: the last day of delivery. A day the mail gives \
+without a year is in the year of that mail.
+- name (a new project only): a few words on the job. The project is named by its client, \
+route and first day when you fill them, so this is used only when the mail shows neither.
 
 `reason` is one or two plain sentences for the owner: what the conversation is, and what \
 ties it to the project. `cited_mails` are the numbers of the mails of this conversation you \

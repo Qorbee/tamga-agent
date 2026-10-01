@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -109,6 +109,10 @@ class Project(CompanyScoped, Base):
     stage: Mapped[ProjectStage] = mapped_column(
         text_enum(ProjectStage, "projects_stage_check", length=24), default=ProjectStage.ORDERED
     )
+    # The job's span as far as it is known: for a freight job, the first day of loading and the
+    # last day of delivery. Editable like the name, each with its source below.
+    starts_on: Mapped[date | None]
+    ends_on: Mapped[date | None]
     # Field name → FieldSource: who set each editable field, so an extraction never overwrites the
     # owner's value (it becomes a field_proposals row instead).
     field_sources: Mapped[dict[str, str]] = mapped_column(

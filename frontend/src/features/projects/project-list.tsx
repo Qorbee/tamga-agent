@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";
 
+import { Hint } from "@/components/hint";
 import { CanvasLink } from "@/components/canvas-link";
 import { Count } from "@/components/placement-rows";
 import { Input } from "@/components/ui/input";
@@ -83,18 +84,18 @@ export function ProjectList() {
         }}
       >
         {STATUSES.map((value) => (
-          <ToggleGroupItem
-            key={value}
-            value={value}
-            aria-label={t.board.columns[value]}
-            title={t.board.columns[value]}
-            className="group/status text-muted-foreground data-[state=on]:bg-secondary data-[state=on]:text-foreground min-w-0 gap-1.5 px-2 max-sm:data-[state=on]:flex-1 sm:flex-1"
-          >
-            <HugeiconsIcon icon={STATUS_ICONS[value]} strokeWidth={1.75} className="shrink-0" />
-            {/* On a phone only the chosen status is spelled out; the others are an icon and a count. */}
-            <span className="truncate max-sm:group-data-[state=off]/status:sr-only">{t.board.columns[value]}</span>
-            <span className="tabular-nums">{projects.data ? count(value) : ""}</span>
-          </ToggleGroupItem>
+          <Hint key={value} label={t.board.columns[value]}>
+            <ToggleGroupItem
+              value={value}
+              aria-label={t.board.columns[value]}
+              className="group/status text-muted-foreground data-[state=on]:bg-secondary data-[state=on]:text-foreground min-w-0 gap-1.5 px-2 max-sm:data-[state=on]:flex-1 sm:flex-1"
+            >
+              <HugeiconsIcon icon={STATUS_ICONS[value]} strokeWidth={1.75} className="shrink-0" />
+              {/* On a phone only the chosen status is spelled out; the others are an icon and a count. */}
+              <span className="truncate max-sm:group-data-[state=off]/status:sr-only">{t.board.columns[value]}</span>
+              <span className="tabular-nums">{projects.data ? count(value) : ""}</span>
+            </ToggleGroupItem>
+          </Hint>
         ))}
       </ToggleGroup>
 

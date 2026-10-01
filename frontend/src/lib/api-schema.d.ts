@@ -1143,16 +1143,24 @@ export interface components {
             cargo?: string | null;
             /** Client */
             client?: string | null;
+            /** Consignee */
+            consignee?: string | null;
             /** Destination */
             destination?: string | null;
+            /** Ends On */
+            ends_on?: string | null;
             /** Origin */
             origin?: string | null;
             /** Party */
             party?: string | null;
             /** Party Role */
             party_role?: ("client" | "subcontractor" | "other") | null;
+            /** Starts On */
+            starts_on?: string | null;
             /** Subcontractor */
             subcontractor?: string | null;
+            /** Trucks */
+            trucks?: number | null;
         };
         /**
          * Language
@@ -1546,6 +1554,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Ends On */
+            ends_on: string | null;
             /** Field Sources */
             field_sources: {
                 [key: string]: components["schemas"]["FieldSource"];
@@ -1560,6 +1570,8 @@ export interface components {
             /** Number */
             number: string;
             stage: components["schemas"]["ProjectStage"];
+            /** Starts On */
+            starts_on: string | null;
             status: components["schemas"]["ProjectStatus"];
             /** Suggested Links */
             suggested_links: number;
@@ -1648,10 +1660,14 @@ export interface components {
         ProjectStatus: "draft" | "proposed" | "active" | "closed" | "rejected";
         /** ProjectUpdate */
         ProjectUpdate: {
+            /** Ends On */
+            ends_on?: string | null;
             /** Name */
             name?: string | null;
             /** Number */
             number?: string | null;
+            /** Starts On */
+            starts_on?: string | null;
             /** Status */
             status?: ("active" | "rejected" | "closed") | null;
         };
@@ -3103,7 +3119,7 @@ export interface operations {
                 status?: components["schemas"]["ProjectStatus"][];
                 q?: string | null;
                 suggested?: boolean | null;
-                sort?: "number" | "-number" | "name" | "-name" | "created_at" | "-created_at" | "updated_at" | "-updated_at";
+                sort?: "number" | "-number" | "name" | "-name" | "starts_on" | "-starts_on" | "created_at" | "-created_at" | "updated_at" | "-updated_at";
                 limit?: number;
                 offset?: number;
             };

@@ -278,3 +278,68 @@ async def test_a_rejected_link_stays_rejected_when_suggested_again(db: AsyncSess
         confirm=True,
     )
     assert again.id == link.id and again.status is LinkStatus.REJECTED
+
+
+@pytest.mark.integration
+async def test_the_owner_sets_and_clears_a_project_s_days(client: httpx.AsyncClient) -> None:
+    await guest_client(client)
+    project = (await client.post("/projects", json={"name": "Munich"})).json()
+    assert (project["starts_on"], project["ends_on"]) == (None, None)
+
+    days = {"starts_on": "2026-08-10", "ends_on": "2026-08-14"}
+    set_ = (await client.patch(f"/projects/{project['id']}", json=days)).json()
+    assert (set_["starts_on"], set_["ends_on"]) == ("2026-08-10", "2026-08-14")
+    assert set_["field_sources"]["starts_on"] == "owner"
+
+    # A day sent as null is cleared; one left out stays.
+    cleared = (await client.patch(f"/projects/{project['id']}", json={"ends_on": None})).json()
+    assert (cleared["starts_on"], cleared["ends_on"]) == ("2026-08-10", None)
+
+    backwards = await client.patch(f"/projects/{project['id']}", json={"ends_on": "2026-08-01"})
+    assert backwards.status_code == 400 and backwards.json()["error"]["field"] == "ends_on"
+    # Projects with a first day come first when sorted by it; those without follow.
+    await client.post("/projects", json={"name": "No day yet"})
+    listed = (await client.get("/projects", params={"sort": "starts_on"})).json()["items"]
+    assert [item["name"] for item in listed] == ["Munich", "No day yet"]
+
+
+@pytest.mark.integration
+async def test_no_writer_leaves_a_project_ending_before_it_starts(
+    client: httpx.AsyncClient,
+) -> None:
+    await guest_client(client)
+    days = {"name": "Munich", "starts_on": "2026-08-10", "ends_on": "2026-08-14"}
+    project = (await client.post("/projects", json={"name": "Munich"})).json()
+    await client.patch(f"/projects/{project['id']}", json=days)
+    from app.platform.db import open_session
+
+    company_id = uuid.UUID((await client.get("/me")).json()["company"]["id"])
+    async with open_session() as db:
+        # The owner set the last day, so mail that says otherwise can only propose.
+        await service.propose_project_fields(
+            db,
+            company_id=company_id,
+            project_id=uuid.UUID(project["id"]),
+            values={"ends_on": "2026-08-01"},
+            source=FieldSource.EXTRACTION,
+            evidence=[],
+        )
+        await db.commit()
+    [proposal] = (await client.get("/field-proposals", params={"status": "open"})).json()["items"]
+    accepted = await client.patch(f"/field-proposals/{proposal['id']}", json={"status": "accepted"})
+    assert accepted.status_code == 400 and accepted.json()["error"]["field"] == "ends_on"
+
+    # With no last day set, a backwards one read from mail is not written at all.
+    await client.patch(f"/projects/{project['id']}", json={"ends_on": None})
+    async with open_session() as db:
+        await service.propose_project_fields(
+            db,
+            company_id=company_id,
+            project_id=uuid.UUID(project["id"]),
+            values={"ends_on": "2026-08-01"},
+            source=FieldSource.SUGGESTION,
+            evidence=[],
+        )
+        await db.commit()
+    after = (await client.get(f"/projects/{project['id']}")).json()
+    assert (after["starts_on"], after["ends_on"]) == ("2026-08-10", None)

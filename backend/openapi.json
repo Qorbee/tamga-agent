@@ -1241,6 +1241,17 @@
             ],
             "title": "Client"
           },
+          "consignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consignee"
+          },
           "destination": {
             "anyOf": [
               {
@@ -1251,6 +1262,18 @@
               }
             ],
             "title": "Destination"
+          },
+          "ends_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends On"
           },
           "origin": {
             "anyOf": [
@@ -1290,6 +1313,18 @@
             ],
             "title": "Party Role"
           },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
+          },
           "subcontractor": {
             "anyOf": [
               {
@@ -1300,6 +1335,17 @@
               }
             ],
             "title": "Subcontractor"
+          },
+          "trucks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trucks"
           }
         },
         "title": "JobReading",
@@ -2439,6 +2485,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "ends_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends On"
+          },
           "field_sources": {
             "additionalProperties": {
               "$ref": "#/components/schemas/FieldSource"
@@ -2462,6 +2520,18 @@
           "stage": {
             "$ref": "#/components/schemas/ProjectStage"
           },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
+          },
           "status": {
             "$ref": "#/components/schemas/ProjectStatus"
           },
@@ -2480,6 +2550,8 @@
           "number",
           "aliases",
           "name",
+          "starts_on",
+          "ends_on",
           "status",
           "stage",
           "field_sources",
@@ -2684,6 +2756,18 @@
       },
       "ProjectUpdate": {
         "properties": {
+          "ends_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends On"
+          },
           "name": {
             "anyOf": [
               {
@@ -2709,6 +2793,18 @@
               }
             ],
             "title": "Number"
+          },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
           },
           "status": {
             "anyOf": [
@@ -5881,6 +5977,8 @@
                 "-number",
                 "name",
                 "-name",
+                "starts_on",
+                "-starts_on",
                 "created_at",
                 "-created_at",
                 "updated_at",

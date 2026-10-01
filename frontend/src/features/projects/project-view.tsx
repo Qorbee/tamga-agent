@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getProject, listAllPlacements } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 
-import { EditProjectDialog } from "./edit-project-dialog";
 import { ProjectActions, STATUS_ICONS } from "./project-actions";
 
 function useProject(id: string) {
@@ -74,11 +73,10 @@ export function ProjectView({ id }: { id: string }) {
               {t.board.columns[status]}
             </span>
           ) : null}
-          <ProjectActions project={project.data} />
-          <EditProjectDialog project={project.data} />
+          <ProjectActions project={project.data} pencil />
           <TranslateToggle className="text-muted-foreground" />
         </div>
-        <JobFacts placements={held} className="mt-1" />
+        <JobFacts placements={held} project={project.data} className="mt-1" />
       </header>
 
       <section className="grid grid-cols-1 gap-2">

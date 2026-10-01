@@ -4,9 +4,11 @@ import {
   ArrowRight01Icon,
   Attachment01Icon,
   Building03Icon,
+  Calendar03Icon,
   Cancel01Icon,
   Mail01Icon,
   PackageIcon,
+  PackageReceiveIcon,
   Route01Icon,
   Tick02Icon,
   TruckIcon,
@@ -16,11 +18,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
+import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { PersonAvatar } from "@/components/person-avatar";
 import { T } from "@/components/translated";
-import { decidePlacement, type Placement } from "@/lib/api";
-import { formatListDate } from "@/lib/format";
+import { decidePlacement, type Placement, type Project } from "@/lib/api";
+import { formatDays, formatListDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { conversationName } from "@/lib/mail-text";
 import { cn } from "@/lib/utils";
@@ -39,10 +42,12 @@ export function useInvalidatePlacements(): () => void {
 /** A number beside its icon, named in full for a screen reader. */
 export function Count({ icon, count, label }: { icon: IconSvgElement; count: number; label: string }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 tabular-nums" aria-label={label} title={label}>
-      <HugeiconsIcon icon={icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
-      {count}
-    </span>
+    <Hint label={label}>
+      <span className="inline-flex shrink-0 items-center gap-1 tabular-nums" aria-label={label}>
+        <HugeiconsIcon icon={icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+        {count}
+      </span>
+    </Hint>
   );
 }
 
@@ -62,35 +67,51 @@ function distinct(names: (string | null | undefined)[]): string[] {
 
 function Fact({ icon, label, children }: { icon: IconSvgElement; label: string; children: ReactNode }) {
   return (
-    <span className="flex max-w-full min-w-0 items-start gap-1.5" title={label}>
-      <HugeiconsIcon icon={icon} strokeWidth={1.75} className="mt-0.5 size-4 shrink-0" aria-label={label} />
+    <span className="flex max-w-full min-w-0 items-start gap-1.5">
+      <Hint label={label}>
+        <span className="mt-0.5 shrink-0">
+          <HugeiconsIcon icon={icon} strokeWidth={1.75} className="size-4" aria-label={label} />
+        </span>
+      </Hint>
       <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
     </span>
   );
 }
 
 /**
- * What was read of a project's job across its conversations: who gave it and who it was given on
- * to, the route, the load. A long value wraps; nothing is cut at the edge.
+ * What is known of a project's job: who gave it and who it was given on to, where it goes and to
+ * whom, the load, and its days. The firms, the route and the load are read across the project's
+ * conversations; the days are the project's own. A long value wraps; nothing is cut at the edge.
  */
-export function JobFacts({ placements, className }: { placements: Placement[]; className?: string }) {
-  const { t } = useI18n();
+export function JobFacts({
+  placements,
+  project,
+  className,
+}: {
+  placements: Placement[];
+  project?: Pick<Project, "starts_on" | "ends_on">;
+  className?: string;
+}) {
+  const { t, locale } = useI18n();
   const readings = placements.flatMap((placement) => (placement.reading ? [placement.reading] : []));
-  const first = (key: "client" | "origin" | "destination" | "cargo") =>
+  const first = <K extends "client" | "consignee" | "origin" | "destination" | "cargo" | "trucks">(key: K) =>
     readings.find((reading) => reading[key])?.[key] ?? undefined;
   const dealtWith = (role: Reading["party_role"]) =>
     readings.filter((reading) => reading.party_role === role).map((reading) => reading.party);
   const client = first("client") ?? distinct(dealtWith("client"))[0];
   const subcontractors = distinct([...readings.map((reading) => reading.subcontractor), ...dealtWith("subcontractor")]);
+  const consignee = first("consignee");
   const route = [first("origin"), first("destination")].filter(Boolean).join(" → ");
   const cargo = first("cargo");
-  if (!client && subcontractors.length === 0 && !route && !cargo) return null;
+  const trucks = first("trucks");
+  const days = project ? formatDays(project.starts_on, project.ends_on, locale) : "";
+  if (!client && subcontractors.length === 0 && !consignee && !route && !cargo && !trucks && !days) return null;
   return (
     <ul className={cn("text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm", className)}>
       {client || subcontractors.length > 0 ? (
         <li className="flex max-w-full min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
           {client ? (
-            <Fact icon={Building03Icon} label={t.project.client}>
+            <Fact icon={Building03Icon} label={t.project.roles.client}>
               {client}
             </Fact>
           ) : null}
@@ -98,7 +119,7 @@ export function JobFacts({ placements, className }: { placements: Placement[]; c
             <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.75} className="mt-1 size-3.5 shrink-0" aria-hidden />
           ) : null}
           {subcontractors.length > 0 ? (
-            <Fact icon={TruckIcon} label={t.project.subcontractor}>
+            <Fact icon={TruckIcon} label={t.project.roles.subcontractor}>
               {subcontractors.join(", ")}
             </Fact>
           ) : null}
@@ -111,10 +132,26 @@ export function JobFacts({ placements, className }: { placements: Placement[]; c
           </Fact>
         </li>
       ) : null}
-      {cargo ? (
+      {consignee ? (
+        <li className="flex max-w-full min-w-0">
+          <Fact icon={PackageReceiveIcon} label={t.project.roles.consignee}>
+            {consignee}
+          </Fact>
+        </li>
+      ) : null}
+      {cargo || trucks ? (
         <li className="flex max-w-full min-w-0">
           <Fact icon={PackageIcon} label={t.project.cargo}>
-            <T>{cargo}</T>
+            {cargo ? <T>{cargo}</T> : null}
+            {cargo && trucks ? " · " : null}
+            {trucks ? t.board.trucks(trucks) : null}
+          </Fact>
+        </li>
+      ) : null}
+      {days ? (
+        <li className="flex max-w-full min-w-0">
+          <Fact icon={Calendar03Icon} label={t.project.days}>
+            <span className="tabular-nums">{days}</span>
           </Fact>
         </li>
       ) : null}
@@ -155,8 +192,7 @@ function PlacementRow({ placement }: { placement: Placement }) {
   const who = conversation.participants.slice(0, 2).join(", ") || conversation.latest.sender || "—";
   const role = placement.reading?.party_role;
   const roleIcon = role ? ROLE_ICONS[role] : undefined;
-  const roleLabel =
-    role === "client" ? t.project.client : role === "subcontractor" ? t.project.subcontractor : "";
+  const roleLabel = role === "client" ? t.project.client : role === "subcontractor" ? t.project.subcontractor : "";
   // Why code placed it is the app's own wording, in the reader's language already.
   const byCode = placement.placed_by === "keys" ? t.inbox.byNumbers : placement.placed_by === "thread" ? t.inbox.byThread : "";
 
@@ -174,9 +210,11 @@ function PlacementRow({ placement }: { placement: Placement }) {
           <span className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
             <span className="inline-flex max-w-full min-w-0 items-center gap-1">
               {roleIcon ? (
-                <span className="text-foreground/80 shrink-0" title={`${roleLabel}: ${placement.reading?.party ?? ""}`}>
-                  <HugeiconsIcon icon={roleIcon} strokeWidth={1.75} className="size-3.5" aria-label={roleLabel} />
-                </span>
+                <Hint label={`${roleLabel}: ${placement.reading?.party ?? ""}`}>
+                  <span className="text-foreground/80 shrink-0">
+                    <HugeiconsIcon icon={roleIcon} strokeWidth={1.75} className="size-3.5" aria-label={roleLabel} />
+                  </span>
+                </Hint>
               ) : null}
               <span className="truncate">{who}</span>
             </span>
@@ -236,21 +274,21 @@ function RowAnswer({
   const { t } = useI18n();
   if (!waiting)
     return (
-      <span className="text-success-foreground mt-3 shrink-0 px-2" title={t.inbox.confirmed}>
-        <HugeiconsIcon icon={Tick02Icon} strokeWidth={1.75} className="size-4" aria-label={t.inbox.confirmed} />
-      </span>
+      <Hint label={t.inbox.confirmed}>
+        <span className="text-success-foreground mt-3 shrink-0 px-2">
+          <HugeiconsIcon icon={Tick02Icon} strokeWidth={1.75} className="size-4" aria-label={t.inbox.confirmed} />
+        </span>
+      </Hint>
     );
   const percent = confidence === null ? null : Math.round(confidence * 100);
   return (
     <span className="mt-1 flex shrink-0 items-center gap-0.5">
       {percent !== null ? (
-        <span
-          className="text-muted-foreground me-1 text-xs tabular-nums max-sm:hidden"
-          title={t.inbox.confidence(percent)}
-          aria-label={t.inbox.confidence(percent)}
-        >
-          {percent}%
-        </span>
+        <Hint label={t.inbox.confidence(percent)}>
+          <span className="text-muted-foreground me-1 text-xs tabular-nums max-sm:hidden" aria-label={t.inbox.confidence(percent)}>
+            {percent}%
+          </span>
+        </Hint>
       ) : null}
       {children}
     </span>

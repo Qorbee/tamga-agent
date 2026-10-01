@@ -13,8 +13,8 @@ transaction and never commit; those behind the API commit.
 """
 
 import uuid
-from collections.abc import Mapping, Sequence
-from datetime import datetime
+from collections.abc import Collection, Mapping, Sequence
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Final
 
@@ -76,13 +76,16 @@ _SORTS: Final[dict[str, ColumnElement[Any]]] = {
     "-number": Project.number.desc(),
     "name": Project.name.asc(),
     "-name": Project.name.desc(),
+    "starts_on": Project.starts_on.asc().nulls_last(),
+    "-starts_on": Project.starts_on.desc().nulls_last(),
     "created_at": Project.created_at.asc(),
     "-created_at": Project.created_at.desc(),
     "updated_at": Project.updated_at.asc(),
     "-updated_at": Project.updated_at.desc(),
 }
 # Editable project fields; stage is computed, status moves only through _TRANSITIONS.
-_PROJECT_FIELDS: Final = frozenset({"name", "number"})
+_DATES: Final = ("starts_on", "ends_on")
+_PROJECT_FIELDS: Final = frozenset({"name", "number", *_DATES})
 
 
 class NumberTaken(Conflict):
@@ -117,6 +120,8 @@ async def new_project(
     status: ProjectStatus,
     source: FieldSource,
     number: str | None = None,
+    starts_on: date | None = None,
+    ends_on: date | None = None,
 ) -> Project:
     """A project with its number drawn or checked. For the board, the assistant's tools and the
     linker's proposals; does not commit."""
@@ -131,7 +136,17 @@ async def new_project(
         number=chosen,
         name=name,
         status=status,
-        field_sources={"name": source, "number": source if number else FieldSource.SUGGESTION},
+        starts_on=starts_on,
+        ends_on=ends_on,
+        field_sources={
+            "name": source,
+            "number": source if number else FieldSource.SUGGESTION,
+            **{
+                field: source
+                for field, day in zip(_DATES, (starts_on, ends_on), strict=True)
+                if day
+            },
+        },
     )
     await repository.add(db, project)
     await _claim_number(db, company_id, project.id, chosen)
@@ -177,8 +192,10 @@ async def update_project(
     *,
     name: str | None,
     number: str | None,
+    dates: Mapping[str, date | None],
     status: ProjectStatus | None,
 ) -> ProjectOut:
+    """``dates`` holds only the dates the request named: null clears one."""
     actor.require(*_EDITORS)
     project = await _project(db, actor.company_id, project_id, for_update=True)
     if status is not None and status is not project.status:
@@ -191,6 +208,7 @@ async def update_project(
         values["name"] = name
     if number is not None:
         values["number"] = number
+    values.update(dates)
     await _write_project_fields(db, project, values, FieldSource.OWNER, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [project]))[0]
@@ -383,6 +401,20 @@ async def _write_project_fields(
         number = str(writes["number"]).strip()
         await _claim_number(db, project.company_id, project.id, number)
         project.number = number
+    days = {
+        field: date.fromisoformat(day) if isinstance(day, str) else day
+        for field in _DATES
+        if field in writes
+        for day in [writes[field]]
+    }
+    first, last = (days.get(field, getattr(project, field)) for field in _DATES)
+    if first and last and last < first:
+        if source is FieldSource.OWNER:
+            raise BadRequest("The end is before the start", field="ends_on")
+        # Read from mail, a span that runs backwards is a misreading: the days stay as they were.
+        days = {}
+    for field, day in days.items():
+        setattr(project, field, day)
     await db.flush()
     return proposals
 
@@ -395,13 +427,24 @@ async def propose_project_fields(
     values: Mapping[str, Any],
     source: FieldSource,
     evidence: Sequence[uuid.UUID],
+    leave_owner: Collection[str] = (),
 ) -> list[FieldProposal]:
     """An extraction or a suggestion for a project's fields: written where nothing better holds
-    the field, proposed where the owner (or a stronger source) already chose. Does not commit."""
+    the field, proposed where the owner (or a stronger source) already chose. A field named in
+    ``leave_owner`` is not even proposed once the owner set it, which is checked under the
+    project's lock. Does not commit."""
     if source is FieldSource.OWNER or not set(values) <= _PROJECT_FIELDS:
         raise ValueError(f"propose only {sorted(_PROJECT_FIELDS)}, never as the owner")
     project = await _project(db, company_id, project_id, for_update=True)
-    return await _write_project_fields(db, project, values, source, evidence)
+    kept = {
+        field: value
+        for field, value in values.items()
+        if not (
+            field in leave_owner
+            and fields.source_of(project.field_sources, field) is FieldSource.OWNER
+        )
+    }
+    return await _write_project_fields(db, project, kept, source, evidence)
 
 
 async def _accept_project_field(
@@ -773,6 +816,8 @@ async def _describe(
             number=project.number,
             aliases=[n for n in aliases.get(project.id, []) if n != project.number],
             name=project.name,
+            starts_on=project.starts_on,
+            ends_on=project.ends_on,
             status=project.status,
             stage=project.stage,
             field_sources={k: FieldSource(v) for k, v in project.field_sources.items()},
