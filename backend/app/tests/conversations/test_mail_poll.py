@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from email.message import EmailMessage
 
 import pytest
@@ -20,6 +21,7 @@ from app.modules.conversations.models import (
 )
 from app.modules.documents.models import Document
 from app.platform import storage
+from app.platform.clock import utcnow
 from app.tests.conversations.fake_imap import FakeImap, Folder
 
 pytestmark = pytest.mark.integration
@@ -193,3 +195,115 @@ async def test_a_failing_mailbox_is_logged_without_its_full_address(
     assert await service.poll_pilot_mailboxes() == 0
     assert "mail poll of op***@broker.example on 127.0.0.1 failed" in caplog.text
     assert OWN not in caplog.text
+
+
+async def test_a_longer_window_reads_the_older_mail_newest_first_and_then_stops_asking(
+    db: AsyncSession, storage_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company = await companies.create_company(db, name="Acme Lojistik", kind=CompanyKind.PILOT)
+    await db.commit()
+    monkeypatch.setattr(get_settings(), "mail_batch", 2)
+    today = utcnow().date()
+    inbox = Folder(
+        uidvalidity=7,
+        messages={n: raw_mail(f"c{n}@x.example", f"Mail {n}") for n in range(1, 7)},
+        # Four from last year, two from this week.
+        received={
+            1: today - timedelta(days=400),
+            2: today - timedelta(days=300),
+            3: today - timedelta(days=200),
+            4: today - timedelta(days=150),
+            5: today - timedelta(days=2),
+            6: today - timedelta(days=1),
+        },
+    )
+
+    async def poll(fake: FakeImap) -> int:
+        return await service.poll_mailbox(
+            mailbox(fake.port), company_id=company.id, own_addresses={OWN}
+        )
+
+    async def stored() -> list[int]:
+        return sorted(await db.scalars(select(MessageLocation.uid)))
+
+    with FakeImap({"INBOX": inbox}) as fake:
+        # The folder's first window, ninety days: this week's two, and nothing older.
+        assert [await poll(fake), await poll(fake)] == [2, 0]
+        assert await stored() == [5, 6]
+        asked = len(fake.commands)
+        assert await poll(fake) == 0
+        # Read that far back once, it is not searched for older mail again.
+        assert not any("SINCE" in command for command in fake.commands[asked:])
+
+        # The owner asks for a year: the two newest of the older mail first, then the next. The
+        # folder is asked about one month at a time, never about the whole year at once.
+        monkeypatch.setattr(get_settings(), "mail_backfill_days", 365)
+        asked = len(fake.commands)
+        assert await poll(fake) == 2
+        assert await stored() == [3, 4, 5, 6]
+        searches = [c for c in fake.commands[asked:] if "BEFORE" in c]
+        assert len(searches) >= 3 and all("SINCE" in c for c in searches)
+        inbox.messages[7] = raw_mail("c7@x.example", "Mail 7")
+        # New mail goes first, and the older mail takes what is left of the batch.
+        assert await poll(fake) == 2
+        assert await stored() == [2, 3, 4, 5, 6, 7]
+        assert await poll(fake) == 0
+
+        # The one mail older than the year stays unread, and only reading commands were sent.
+        assert await count(db, Message) == 6
+        assert fake.verbs() == {
+            "CAPABILITY",
+            "LOGIN",
+            "LIST",
+            "EXAMINE",
+            "UID SEARCH",
+            "UID FETCH",
+            "LOGOUT",
+        }
+
+
+async def test_years_of_history_are_walked_a_year_of_months_a_poll(
+    db: AsyncSession, storage_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company = await companies.create_company(db, name="Acme Lojistik", kind=CompanyKind.PILOT)
+    await db.commit()
+    monkeypatch.setattr(get_settings(), "mail_backfill_days", 3650)
+    today = utcnow().date()
+    inbox = Folder(
+        uidvalidity=7,
+        messages={
+            1: raw_mail("old@x.example", "An old order"),
+            2: raw_mail("new@x.example", "New"),
+        },
+        received={1: today - timedelta(days=5000), 2: today - timedelta(days=1)},
+    )
+    # A mail from last year reaches the folder after its first poll, numbered after the rest.
+    late = raw_mail("late@x.example", "Filed late")
+
+    with FakeImap({"INBOX": inbox}) as fake:
+        polls = []
+        for number in range(4):
+            if number == 1:
+                inbox.messages[3], inbox.received[3] = late, today - timedelta(days=500)
+            polls.append(
+                await service.poll_mailbox(
+                    mailbox(fake.port), company_id=company.id, own_addresses={OWN}
+                )
+            )
+
+    # The first poll reads the ten-year window forward and finds the recent mail; the mail filed
+    # late is new to the folder, so the next poll reads it whatever its date. The mail older than
+    # ten years is never read, and each poll asks about at most twelve months of history.
+    assert polls == [1, 1, 0, 0]
+    assert sorted(await db.scalars(select(MessageLocation.uid))) == [2, 3]
+    assert max(sum("BEFORE" in c for c in poll) for poll in _by_poll(fake.commands)) <= 12
+
+
+def _by_poll(commands: list[str]) -> list[list[str]]:
+    """The commands of each connection, which is one poll of the mailbox."""
+    polls: list[list[str]] = []
+    for command in commands:
+        if command.upper().startswith("CAPABILITY") or not polls:
+            polls.append([])
+        polls[-1].append(command)
+    return polls

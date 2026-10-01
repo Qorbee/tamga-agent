@@ -18,7 +18,7 @@ import imaplib
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Final
 
 from pydantic_ai import UsageLimits
@@ -61,6 +61,10 @@ PROCESS_BATCH: Final = 100
 # outage, or a mail nobody can read).
 PROCESS_TRIES: Final = 3
 PROCESS_RETRY_AFTER: Final = timedelta(hours=1)
+# Older mail is read a month at a time, newest month first, and a poll looks at no more than a
+# year of months in one folder, so a folder with years of nothing to read costs a few polls.
+HISTORY_STEP: Final = timedelta(days=30)
+HISTORY_MONTHS_A_POLL: Final = 12
 # Conversations one company has sorted by the model per run, a call each.
 SORT_BATCH: Final = 30
 SORT_TRIES: Final = 3
@@ -129,41 +133,43 @@ async def poll_mailbox(mailbox: Mailbox, *, company_id: uuid.UUID, own_addresses
 async def _poll_folder(
     reader: MailboxReader, listed: ListedFolder, company_id: uuid.UUID, own_addresses: set[str]
 ) -> int:
+    """Reads a folder's new mail, oldest first, then, with what is left of the poll's batch, mail
+    older than it has read (``_read_history``)."""
     settings = get_settings()
     username = reader.mailbox.username
     folder = listed.name
     uidvalidity, uidnext = await asyncio.to_thread(reader.examine, folder)
     async with open_session() as db:
         cursor = await repository.get_folder(db, company_id, username, folder)
+    since = (utcnow() - timedelta(days=settings.mail_backfill_days)).date()
+    known = cursor is not None and cursor.uidvalidity == uidvalidity
 
-    if cursor is not None and cursor.uidvalidity == uidvalidity:
+    if cursor is not None and known:
         last_uid = cursor.last_uid
         uids = await asyncio.to_thread(reader.uids_after, last_uid)
     else:
         # A new folder, or one whose UIDs were renumbered: read the backfill window again. Mail
         # already stored only gains its new place.
         last_uid = 0
-        since = (utcnow() - timedelta(days=settings.mail_backfill_days)).date()
         uids = await asyncio.to_thread(reader.uids_since, since)
 
     batch = [uid for uid in uids if uid > last_uid][: settings.mail_batch]
-    if not batch:
+    place = FolderPlace(mailbox=username, folder=folder, uidvalidity=uidvalidity, sent=listed.sent)
+    if not batch and not known:
         # Nothing to read: remember the folder as it is now, so the next poll asks only for newer
         # mail instead of the window again.
-        if cursor is None or cursor.uidvalidity != uidvalidity:
-            async with open_session() as db:
-                await repository.save_folder(
-                    db,
-                    company_id=company_id,
-                    mailbox=username,
-                    folder=folder,
-                    uidvalidity=uidvalidity,
-                    last_uid=max(uidnext - 1, 0),
-                )
-                await db.commit()
+        async with open_session() as db:
+            await repository.save_folder(
+                db,
+                company_id=company_id,
+                mailbox=username,
+                folder=folder,
+                uidvalidity=uidvalidity,
+                last_uid=max(uidnext - 1, 0),
+            )
+            await db.commit()
         return 0
 
-    place = FolderPlace(mailbox=username, folder=folder, uidvalidity=uidvalidity, sent=listed.sent)
     stored = 0
     for uid in batch:
         fetched = await asyncio.to_thread(reader.fetch, uid)
@@ -183,6 +189,71 @@ async def _poll_folder(
             )
             await db.commit()
         stored += int(new)
+
+    room = settings.mail_batch - len(batch)
+    if cursor is not None and known and room > 0:
+        stored += await _read_history(
+            reader,
+            place,
+            company_id,
+            own_addresses,
+            through=cursor.last_uid,
+            since=since,
+            read_since=cursor.history_since,
+            limit=room,
+        )
+    return stored
+
+
+async def _read_history(
+    reader: MailboxReader,
+    place: FolderPlace,
+    company_id: uuid.UUID,
+    own_addresses: set[str],
+    *,
+    through: int,
+    since: date,
+    read_since: date | None,
+    limit: int,
+) -> int:
+    """Reads mail the poll has passed and not stored: what is older than the window the folder
+    started with, once MAIL_BACKFILL_DAYS is raised. It walks back from the day the folder is read
+    to (``history_since``), a month at a time, so the recent past arrives before the old whatever
+    order the server numbered it in, and a poll asks only about the month it is reading. In each
+    month it reads the mail that has no stored place; when none is left, the folder is read to
+    that month's first day. So a crash loses nothing, and a folder read as far back as is wanted
+    is not asked again until an earlier day is."""
+    read_to = read_since or utcnow().date() + timedelta(days=1)
+    room, stored = limit, 0
+    for _ in range(HISTORY_MONTHS_A_POLL):
+        if read_to <= since or room <= 0:
+            break
+        month = max(since, read_to - HISTORY_STEP)
+        there = await asyncio.to_thread(reader.uids_between, through, month, read_to)
+        async with open_session() as db:
+            have = await repository.stored_uids(
+                db, company_id, place.mailbox, place.folder, place.uidvalidity, there
+            )
+        missing = sorted(set(there) - have, reverse=True)
+        for uid in missing[:room]:
+            fetched = await asyncio.to_thread(reader.fetch, uid)
+            async with open_session() as db:
+                new = await ingest_mail(
+                    db,
+                    company_id=company_id,
+                    place=place,
+                    fetched=fetched,
+                    own_addresses=own_addresses,
+                )
+                await db.commit()
+            stored += int(new)
+        if len(missing) > room:
+            break  # the batch ran out inside this month: the next poll goes on with it
+        room -= len(missing)
+        async with open_session() as db:
+            await repository.save_history(db, company_id, place.mailbox, place.folder, month)
+            await db.commit()
+        read_to = month
     return stored
 
 

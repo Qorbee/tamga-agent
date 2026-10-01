@@ -1,13 +1,14 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     ColumnElement,
     ScalarSelect,
     Text,
     and_,
+    case,
     cast,
     delete,
     exists,
@@ -183,8 +184,53 @@ async def save_folder(
                 "uidvalidity": statement.excluded.uidvalidity,
                 "last_uid": statement.excluded.last_uid,
                 "polled_at": statement.excluded.polled_at,
+                # A renumbered folder is read from the start again, its older mail too.
+                "history_since": case(
+                    (
+                        MailFolder.uidvalidity == statement.excluded.uidvalidity,
+                        MailFolder.history_since,
+                    ),
+                    else_=None,
+                ),
             },
         )
+    )
+
+
+async def stored_uids(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    mailbox: str,
+    folder: str,
+    uidvalidity: int,
+    uids: Sequence[int],
+) -> set[int]:
+    """Which of these UIDs of the folder are stored."""
+    if not uids:
+        return set()
+    rows = await db.scalars(
+        select(MessageLocation.uid).where(
+            MessageLocation.company_id == company_id,
+            MessageLocation.mailbox == mailbox,
+            MessageLocation.folder == folder,
+            MessageLocation.uidvalidity == uidvalidity,
+            MessageLocation.uid.in_(uids),
+        )
+    )
+    return set(rows)
+
+
+async def save_history(
+    db: AsyncSession, company_id: uuid.UUID, mailbox: str, folder: str, since: date
+) -> None:
+    await db.execute(
+        update(MailFolder)
+        .where(
+            MailFolder.company_id == company_id,
+            MailFolder.mailbox == mailbox,
+            MailFolder.folder == folder,
+        )
+        .values(history_since=since)
     )
 
 

@@ -92,7 +92,8 @@ class Settings(BaseSettings):
     # table exists, they are settings: a JSON list in MAILBOXES.
     pilot_company_id: uuid.UUID | None = None
     mailboxes: list[Mailbox] = []
-    # How far back the first poll of a folder reads, and how many messages a poll takes per folder.
+    # How far back a folder's mail is read, and how many messages a poll takes per folder. Raised
+    # later, the older mail is read too, the newest of it first.
     mail_backfill_days: int = Field(default=90, gt=0)
     # Zero would read nothing, yet move a new folder's cursor past all of its mail.
     mail_batch: int = Field(default=200, gt=0)

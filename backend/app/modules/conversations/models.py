@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -209,6 +209,9 @@ class MailFolder(CompanyScoped, Base):
     folder: Mapped[str] = mapped_column(String(500))
     uidvalidity: Mapped[int] = mapped_column(BigInteger)
     last_uid: Mapped[int] = mapped_column(BigInteger)
+    # The day back to which every mail the poll has passed is stored. Null until the folder was
+    # read that far once; a longer MAIL_BACKFILL_DAYS asks for an earlier day, and is read then.
+    history_since: Mapped[date | None]
     polled_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

@@ -131,6 +131,14 @@ class MailboxReader:
     def uids_since(self, day: date) -> list[int]:
         return self._search(f"SINCE {day.strftime('%d-%b-%Y')}")
 
+    def uids_between(self, last_uid: int, since: date, before: date) -> list[int]:
+        """The folder's mail that arrived on or after ``since`` and before ``before``, among what
+        the poll has already passed."""
+        if last_uid < 1:
+            return []
+        days = f"SINCE {since.strftime('%d-%b-%Y')} BEFORE {before.strftime('%d-%b-%Y')}"
+        return [uid for uid in self._search(f"UID 1:{last_uid} {days}") if uid <= last_uid]
+
     def fetch(self, uid: int) -> FetchedMail:
         status, data = self._connection().uid("FETCH", str(uid), "(BODY.PEEK[] INTERNALDATE)")
         _ok(status, f"FETCH {uid}")

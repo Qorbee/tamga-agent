@@ -9,9 +9,14 @@ import socketserver
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from types import TracebackType
 
 type Send = Callable[[str | bytes], None]
+
+
+# When a message reached its folder, unless the test says otherwise.
+RECEIVED: date = date(2026, 9, 28)
 
 
 @dataclass
@@ -19,6 +24,8 @@ class Folder:
     uidvalidity: int
     messages: dict[int, bytes] = field(default_factory=dict)
     flags: str = "\\HasNoChildren"
+    # The day a message reached the folder, for those that did not on RECEIVED.
+    received: dict[int, date] = field(default_factory=dict)
 
 
 @dataclass
@@ -101,15 +108,24 @@ class FakeImap:
         sub, _, rest = args.partition(" ")
         uids = sorted(folder.messages)
         if sub.upper() == "SEARCH":
-            if match := re.match(r"UID (\d+):\*", rest):
+            found = uids
+            if match := re.search(r"UID (\d+):\*", rest):
                 found = [uid for uid in uids if uid >= int(match.group(1))] or uids[-1:]
-            else:  # SINCE <date>: every message counts as recent in the fake
-                found = uids
+            elif match := re.search(r"UID (\d+):(\d+)", rest):
+                low, high = int(match.group(1)), int(match.group(2))
+                found = [uid for uid in uids if low <= uid <= high]
+            if match := re.search(r"SINCE (\S+)", rest):
+                since = datetime.strptime(match.group(1), "%d-%b-%Y").date()
+                found = [uid for uid in found if folder.received.get(uid, RECEIVED) >= since]
+            if match := re.search(r"BEFORE (\S+)", rest):
+                before = datetime.strptime(match.group(1), "%d-%b-%Y").date()
+                found = [uid for uid in found if folder.received.get(uid, RECEIVED) < before]
             send(f"* SEARCH {' '.join(map(str, found))}\r\n{tag} OK done\r\n")
         elif sub.upper() == "FETCH":
             uid = int(rest.split()[0])
             raw = folder.messages[uid]
-            received = '"28-Sep-2026 09:00:00 +0300"'
+            day = folder.received.get(uid, RECEIVED)
+            received = f'"{day.strftime("%d-%b-%Y")} 09:00:00 +0300"'
             head = (
                 f"* {uids.index(uid) + 1} FETCH (UID {uid} INTERNALDATE {received}"
                 f" BODY[] {{{len(raw)}}}\r\n"
