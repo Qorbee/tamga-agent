@@ -13,9 +13,10 @@ import { useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { IconButton } from "@/components/icon-button";
-import { EditProjectDialog, useCanEditProjects } from "@/components/edit-project-dialog";
+import { EditProjectDialog, useCanEditProjects, useIsOwner } from "@/components/edit-project-dialog";
 import { Hint } from "@/components/hint";
-import { JobFacts, PlacementRows, useInvalidatePlacements } from "@/components/placement-rows";
+import { MergeProjectDialog } from "@/components/merge-project-dialog";
+import { JobFacts, PlacementRows } from "@/components/placement-rows";
 import { T } from "@/components/translated";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,7 @@ import {
   type Project,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
+import { useInvalidatePlacements } from "@/lib/use-invalidate-placements";
 import { conversationName } from "@/lib/mail-text";
 
 /** Projects an item can still be placed in. */
@@ -127,7 +129,9 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
   const invalidate = useInvalidatePlacements();
   const [all, setAll] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [merging, setMerging] = useState(false);
   const canEdit = useCanEditProjects();
+  const isOwner = useIsOwner();
   const proposed = project.status === "proposed";
   const answer = useMutation({
     mutationFn: async (confirm: boolean) => {
@@ -182,12 +186,14 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
             </Hint>
             <DropdownMenuContent align="end">
               {canEdit ? <DropdownMenuItem onSelect={() => setEditing(true)}>{t.project.edit}</DropdownMenuItem> : null}
+              {isOwner ? <DropdownMenuItem onSelect={() => setMerging(true)}>{t.project.merge}</DropdownMenuItem> : null}
               <DropdownMenuItem onSelect={() => answer.mutate(false)}>
                 {proposed ? t.inbox.rejectProject : t.inbox.rejectAll}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {canEdit ? <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} /> : null}
+          {isOwner ? <MergeProjectDialog project={project} open={merging} onOpenChange={setMerging} /> : null}
         </div>
         <div className="col-span-3 min-w-0 sm:col-span-2 sm:col-start-2 sm:-mt-3">
           <CanvasLink

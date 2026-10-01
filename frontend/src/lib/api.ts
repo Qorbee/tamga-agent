@@ -116,6 +116,9 @@ export const createProject = (body: ProjectCreate) =>
   request<Project>("/projects", json("POST", body));
 export const updateProject = (id: string, body: ProjectUpdate) =>
   request<Project>(`/projects/${id}`, json("PATCH", body));
+/** This project goes into another, which is returned: one job that was held as two. */
+export const mergeProject = (id: string, body: Schemas["ProjectMerge"]) =>
+  request<Project>(`/projects/${id}/merge`, json("POST", body));
 
 export type Shipment = Schemas["ShipmentOut"];
 export const listShipments = (projectIds: readonly string[]) =>

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import any_, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,6 +56,24 @@ async def readings_of_project(
         .order_by(Placement.created_at, Placement.id)
     )
     return [(placement_id, reading) for placement_id, reading in rows.all()]
+
+
+async def naming(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
+) -> Sequence[Placement]:
+    """The placements that name a project, as the one a conversation is in or as one it could be
+    in, locked."""
+    rows = await db.scalars(
+        select(Placement)
+        .where(
+            Placement.company_id == company_id,
+            (Placement.project_id == project_id)
+            | (literal(project_id) == any_(Placement.alternatives)),
+        )
+        .order_by(Placement.id)
+        .with_for_update()
+    )
+    return rows.all()
 
 
 async def waiting(

@@ -12,9 +12,10 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { EditProjectDialog, useCanEditProjects } from "@/components/edit-project-dialog";
+import { EditProjectDialog, useCanEditProjects, useIsOwner } from "@/components/edit-project-dialog";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
+import { MergeProjectDialog } from "@/components/merge-project-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -41,14 +42,18 @@ const ENDING: Partial<Record<ProjectStatus, Move>> = { proposed: "rejected", act
 
 /**
  * A project's moves and its edit, wherever a project is shown: the tick that carries it forward,
- * and a menu with Edit and the move that ends it. `pencil` puts Edit beside them as an icon too,
+ * and a menu with Edit, Merge and the move that ends it. `pencil` puts Edit beside them as an icon too,
  * for the project's own panel.
  */
 export function ProjectActions({ project, pencil = false }: { project: Project; pencil?: boolean }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const canEdit = useCanEditProjects();
+  const isOwner = useIsOwner();
   const [editing, setEditing] = useState(false);
+  const [merging, setMerging] = useState(false);
+  // A rejected project is merged into nothing.
+  const canMerge = isOwner && project.status !== "rejected";
   const move = useMutation({
     mutationFn: (status: Move) => updateProject(project.id, { status }),
     onSuccess: () => {
@@ -105,11 +110,13 @@ export function ProjectActions({ project, pencil = false }: { project: Project; 
           </Hint>
           <DropdownMenuContent align="end">
             {canEdit ? <DropdownMenuItem onSelect={() => setEditing(true)}>{t.project.edit}</DropdownMenuItem> : null}
+            {canMerge ? <DropdownMenuItem onSelect={() => setMerging(true)}>{t.project.merge}</DropdownMenuItem> : null}
             {ending ? <DropdownMenuItem onSelect={() => move.mutate(ending)}>{labels[ending]}</DropdownMenuItem> : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
       {canEdit ? <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} /> : null}
+      {canMerge ? <MergeProjectDialog project={project} open={merging} onOpenChange={setMerging} /> : null}
     </span>
   );
 }

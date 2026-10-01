@@ -797,11 +797,15 @@ async def decide_placement(
     *,
     confirm: bool | None,
     project_id: uuid.UUID | None,
+    moving_from: uuid.UUID | None = None,
 ) -> PlacementOut:
     """The owner's answer for a whole conversation. ``confirm``: its links that wait, to the
     project it was placed in, are confirmed or rejected; rejected, it is unplaced until new mail
     has it read again. ``project_id``: the owner names its project: every mail of it that no
-    confirmed link holds is tied there, and what was suggested elsewhere is rejected."""
+    confirmed link holds is tied there, and what was suggested elsewhere is rejected. With
+    ``moving_from``, the project the owner saw it in, the conversation is moved: its mails
+    confirmed there go too. Without it, a conversation confirmed elsewhere is not taken away by
+    an answer given from a page that no longer shows where it is."""
     actor.require(Role.OWNER)
     placement = await repository.get_by_id(db, actor.company_id, placement_id, for_update=True)
     if placement is None:
@@ -815,8 +819,21 @@ async def decide_placement(
         chosen = (await projects.get_projects(db, actor.company_id, [project_id])).get(project_id)
         if chosen is None or chosen.status is ProjectStatus.REJECTED:
             raise NotFound("No such project", field="project_id")
+        if moving_from is not None and moving_from != was:
+            # Moved or answered since the owner looked, in another tab perhaps.
+            raise Conflict("This conversation is no longer in that project")
+        # Moved out of the project it is in, what the owner confirmed there is taken back with
+        # it. A mail confirmed in a third project stays there: an old thread answered with a new
+        # order holds two jobs.
+        leaving = [
+            link
+            for link in links
+            if link.status is LinkStatus.CONFIRMED
+            and link.project_id == moving_from
+            and moving_from != project_id
+        ]
         confirmed = [link for link in links if link.status is LinkStatus.CONFIRMED]
-        held = {link.item_id for link in confirmed}
+        held = {link.item_id for link in confirmed if link not in leaving}
         free = [mail_id for mail_id in mail_ids if mail_id not in held]
         if not free and all(link.project_id != project_id for link in confirmed):
             # Answered before, in another tab perhaps: every mail is confirmed elsewhere, and
@@ -825,8 +842,9 @@ async def decide_placement(
         await projects.decide_links(
             db,
             actor,
-            [link.id for link in waiting if link.project_id != project_id],
+            [link.id for link in (*waiting, *leaving) if link.project_id != project_id],
             confirm=False,
+            withdraw=True,
         )
         for mail_id in free:
             await projects.link_item(
@@ -840,7 +858,10 @@ async def decide_placement(
                 confirmed_by=actor.user_id,
                 confirm=True,
             )
+        # What the mail says of its job holds whichever project it is in.
+        said = placement.reading
         _answered(placement, Outcome.LINKED, project_id)
+        placement.reading = said
     else:
         if placement.project_id is None:
             raise BadRequest("This conversation was not placed in a project", field="links")
@@ -852,12 +873,59 @@ async def decide_placement(
         await projects.decide_links(db, actor, to_decide, confirm=bool(confirm))
         if not confirm:
             _answered(placement, Outcome.UNPLACED, None)
-    if was is not None and was != placement.project_id:
-        # It left that project: what was read in it no longer names or dates the project.
+    if was != placement.project_id:
+        # It left one project, joined another, or both: what was read in it no longer names or
+        # dates the first, and does the second.
         await db.flush()
-        await _tell_project(db, actor.company_id, was, said=None, evidence=())
+        for changed in (was, placement.project_id):
+            if changed is not None:
+                await _tell_project(db, actor.company_id, changed, said=None, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [placement]))[0]
+
+
+async def _merged(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """One project went into another (``projects.merge_project``): the conversations placed in
+    the first are in the second, a question between the two is answered, and the name and days
+    Tamga derived for the one that stays are worked out again from all its conversations. Runs
+    in the merge's transaction and does not commit."""
+    for placement in await repository.naming(db, company_id, source_id):
+        # A run that read the conversation before the merge decided on what is gone: stamped
+        # anew, its decision is dropped and the conversation looked at afresh (``_apply``).
+        placement.placed_at = utcnow()
+        if placement.project_id == source_id:
+            placement.project_id = target_id
+            if placement.outcome is Outcome.PROPOSED:
+                # The project proposed for it is gone: it is one of the other's conversations.
+                placement.outcome = Outcome.LINKED
+        renamed = (target_id if each == source_id else each for each in placement.alternatives)
+        fits = list(dict.fromkeys(renamed))
+        if placement.outcome is Outcome.ASKED and len(fits) < 2:
+            # The two it stood between are one: its mails are suggested there, for the owner.
+            thread = await conversations.read_thread(db, company_id, placement.thread_id)
+            ties = await _ties(db, company_id, thread) if thread is not None else None
+            for mail_id in sorted(ties.untied) if ties is not None else ():
+                await projects.link_item(
+                    db,
+                    company_id=company_id,
+                    item_kind=ItemKind.MESSAGE,
+                    item_id=mail_id,
+                    project_id=target_id,
+                    method=LinkMethod.AGENT,
+                    confidence=placement.confidence or 0.0,
+                )
+            # Tied elsewhere since it was asked about (by hand, mail by mail), it is in neither.
+            there = ties is not None and (ties.untied or target_id in ties.held)
+            placement.outcome = Outcome.LINKED if there else Outcome.UNPLACED
+            placement.project_id, fits = (target_id if there else None), []
+        placement.alternatives = fits
+    await db.flush()
+    await _tell_project(db, company_id, target_id, said=None, evidence=())
+
+
+projects.on_merge(_merged)
 
 
 def _answered(placement: Placement, outcome: Outcome, project_id: uuid.UUID | None) -> None:

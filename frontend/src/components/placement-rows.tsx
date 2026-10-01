@@ -7,6 +7,7 @@ import {
   Calendar03Icon,
   Cancel01Icon,
   Mail01Icon,
+  MoreHorizontalIcon,
   PackageIcon,
   PackageReceiveIcon,
   Route01Icon,
@@ -14,30 +15,29 @@ import {
   TruckIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
+import { useIsOwner } from "@/components/edit-project-dialog";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
+import { MoveConversationDialog } from "@/components/move-conversation-dialog";
 import { PersonAvatar } from "@/components/person-avatar";
 import { T } from "@/components/translated";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { decidePlacement, type Placement, type Project } from "@/lib/api";
 import { formatDays, formatListDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { conversationName } from "@/lib/mail-text";
+import { useInvalidatePlacements } from "@/lib/use-invalidate-placements";
 import { cn } from "@/lib/utils";
-
-/** Everything a decision on a placement changes: the lists it is in and the counts beside them. */
-export function useInvalidatePlacements(): () => void {
-  const queryClient = useQueryClient();
-  return () => {
-    void queryClient.invalidateQueries({ queryKey: ["placements"] });
-    void queryClient.invalidateQueries({ queryKey: ["projects"] });
-    void queryClient.invalidateQueries({ queryKey: ["project"] });
-    void queryClient.invalidateQueries({ queryKey: ["project-links"] });
-  };
-}
 
 /** A number beside its icon, named in full for a screen reader. */
 export function Count({ icon, count, label }: { icon: IconSvgElement; count: number; label: string }) {
@@ -187,6 +187,8 @@ function PlacementRow({ placement }: { placement: Placement }) {
     mutationFn: (links: "confirmed" | "rejected") => decidePlacement(placement.id, { links }),
     onSuccess: invalidate,
   });
+  const isOwner = useIsOwner();
+  const [moving, setMoving] = useState(false);
   const conversation = placement.conversation;
   if (!conversation) return null;
   const who = conversation.participants.slice(0, 2).join(", ") || conversation.latest.sender || "—";
@@ -257,6 +259,28 @@ function PlacementRow({ placement }: { placement: Placement }) {
           onClick={() => decide.mutate("rejected")}
         />
       </RowAnswer>
+      {isOwner && placement.project_id ? (
+        <>
+          <DropdownMenu modal={false}>
+            <Hint label={t.project.conversationActions}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground mt-1 shrink-0"
+                  aria-label={t.project.conversationActions}
+                >
+                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
+                </Button>
+              </DropdownMenuTrigger>
+            </Hint>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setMoving(true)}>{t.project.move}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <MoveConversationDialog placement={placement} open={moving} onOpenChange={setMoving} />
+        </>
+      ) : null}
     </li>
   );
 }

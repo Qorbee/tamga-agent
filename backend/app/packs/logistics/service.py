@@ -34,12 +34,22 @@ from app.packs.logistics.schemas import (
 )
 from app.platform import clock
 from app.platform.auth import Actor, Role
-from app.platform.errors import BadRequest, NotFound
+from app.platform.errors import BadRequest, Conflict, NotFound
 from app.platform.pagination import PageParams
 
 _EDITORS: Final = (Role.OWNER, Role.OPS)
 _FIELDS: Final = frozenset(ShipmentFields.model_fields)
 _PLATES: Final = ("truck_plate", "trailer_plate")
+
+
+async def refuse_merge(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """A project with trucks is not merged into another: its trucks, and the papers confirmed
+    on them, are tied to it in the database, and would go with it. The owner merges the other
+    way, into the one that has the trucks."""
+    if await repository.list_shipments(db, company_id, [source_id]):
+        raise Conflict("This project has trucks: merge the other project into this one")
 
 
 async def create_shipment(

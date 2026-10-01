@@ -75,6 +75,12 @@ class ProjectUpdate(BaseModel):
     status: Literal["active", "rejected", "closed"] | None = None
 
 
+class ProjectMerge(BaseModel):
+    """The owner saying this project and ``into`` are one job: ``into`` stays."""
+
+    into: uuid.UUID
+
+
 class NumberingOut(BaseModel):
     format: str
     # What the next project would be numbered, if nothing else takes it first.

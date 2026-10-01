@@ -16,6 +16,7 @@ from app.tests.conftest import guest_client
 from app.tests.linking.test_placing import (
     NEW_PROJECT,
     Script,
+    answer,
     arrive,
     links,
     mail,
@@ -23,6 +24,9 @@ from app.tests.linking.test_placing import (
     owner_project,
     the_projects,
     tool,
+)
+from app.tests.linking.test_placing import (
+    placement as placement_of,
 )
 
 pytestmark = pytest.mark.integration
@@ -204,3 +208,105 @@ async def test_an_answer_given_while_the_model_read_is_not_overwritten(
     assert [project.name for project in await the_projects(company_id)] == [
         "Stone, Istanbul to Munich"
     ]
+
+
+async def test_a_confirmed_conversation_is_moved_to_another_project_and_back(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model)
+    company_id = uuid.UUID(placement["company_id"])
+    url, was = f"/placements/{placement['id']}", placement["project_id"]
+    await arrive(company_id, 3, mail("<other@x>", subject="Another"), category=None)
+    own = await owner_project(company_id, "<other@x>", name="The owner's own")
+    assert (await client.patch(url, json={"links": "confirmed"})).status_code == 200
+
+    # Seen in a project it has since left, it is not moved.
+    stale = {"project_id": was, "from_project_id": str(own.id)}
+    assert (await client.patch(url, json=stale)).status_code == 409
+    assert (await client.patch(url, json={"from_project_id": was})).status_code == 422
+    moved = await client.patch(url, json={"project_id": str(own.id), "from_project_id": was})
+
+    assert moved.status_code == 200, moved.text
+    answered = moved.json()
+    assert (answered["outcome"], answered["project_id"]) == ("linked", str(own.id))
+    # What the mail says of its job goes with it.
+    read = {key: value for key, value in answered["reading"].items() if value is not None}
+    assert read == {"origin": "Istanbul", "cargo": "steel coils"}
+    held = await links(company_id, ORDER)
+    assert sorted((link.project_id == own.id, link.status) for link in held) == [
+        (False, LinkStatus.REJECTED),
+        (False, LinkStatus.REJECTED),
+        (True, LinkStatus.CONFIRMED),
+        (True, LinkStatus.CONFIRMED),
+    ]
+    # Moved back, the owner's own earlier no gives way to the owner's yes.
+    back = await client.patch(url, json={"project_id": was, "from_project_id": str(own.id)})
+    assert back.status_code == 200, back.text
+    held = await links(company_id, ORDER)
+    assert sorted((link.project_id == own.id, link.status) for link in held) == [
+        (False, LinkStatus.CONFIRMED),
+        (False, LinkStatus.CONFIRMED),
+        (True, LinkStatus.REJECTED),
+        (True, LinkStatus.REJECTED),
+    ]
+
+
+async def test_two_projects_that_are_one_job_are_merged_and_everything_follows(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model)
+    company_id = uuid.UUID(placement["company_id"])
+    gone = (await client.get(f"/projects/{placement['project_id']}")).json()
+    # The same job, proposed a second time from another conversation, and a third conversation
+    # that stands between the two.
+    await arrive(company_id, 3, mail("<again@x>", subject="Munich"), category=ThreadCategory.WORK)
+    model(
+        answer(
+            "new_project",
+            new_project={"name": "Munich again", "client": "Stone GmbH", "destination": "Munich"},
+        )
+    )
+    assert await service.place_pending() == 1
+    stays = next(p for p in await the_projects(company_id) if str(p.id) != gone["id"])
+    await arrive(company_id, 4, mail("<which@x>", subject="POD"), category=ThreadCategory.WORK)
+    model(
+        tool("search_projects", words="Munich"),
+        answer("ask", alternatives=[gone["number"], stays.number]),
+    )
+    assert await service.place_pending() == 1
+    confirmed = await client.patch(f"/placements/{placement['id']}", json={"links": "confirmed"})
+    assert confirmed.status_code == 200
+    assert (await client.patch(f"/projects/{gone['id']}", json={"status": "active"})).is_success
+
+    asked_at = (await placement_of(company_id, "<which@x>")).placed_at
+
+    same = await client.post(f"/projects/{gone['id']}/merge", json={"into": gone["id"]})
+    unknown = await client.post(f"/projects/{gone['id']}/merge", json={"into": str(uuid.uuid7())})
+    merged = await client.post(f"/projects/{gone['id']}/merge", json={"into": str(stays.id)})
+
+    assert (same.status_code, unknown.status_code) == (400, 404)
+    assert merged.status_code == 200, merged.text
+    kept = merged.json()
+    # One project, found by either number, confirmed as the one that went was, and named by
+    # what all its conversations say of the job together.
+    assert (await client.get(f"/projects/{gone['id']}")).status_code == 404
+    assert kept["id"] == str(stays.id) and kept["aliases"] == [gone["number"]]
+    assert (kept["status"], kept["confirmed_links"], kept["suggested_links"]) == ("active", 2, 2)
+    assert kept["name"] == "Stone GmbH · Istanbul → Munich"
+    found = (await client.get("/projects", params={"q": gone["number"]})).json()
+    assert [item["id"] for item in found["items"]] == [kept["id"]]
+    placed = (await client.get("/placements", params={"project_id": kept["id"]})).json()
+    # The conversation that stood between the two is suggested in the one that is left.
+    assert sorted(item["outcome"] for item in placed["items"]) == ["linked", "linked", "proposed"]
+    assert [link.project_id for link in await links(company_id, "<which@x>")] == [stays.id]
+    assert [link.status for link in await links(company_id, "<which@x>")] == [LinkStatus.SUGGESTED]
+    # A run that read it before the merge would decide on a project that is gone: the placement
+    # is stamped anew, so that decision is dropped.
+    stamped = (await placement_of(company_id, "<which@x>")).placed_at
+    assert asked_at is not None and stamped is not None and stamped > asked_at
+    # Another sandbox cannot merge these.
+    await guest_client(client)
+    theirs = await client.post(f"/projects/{kept['id']}/merge", json={"into": gone["id"]})
+    assert theirs.status_code == 404

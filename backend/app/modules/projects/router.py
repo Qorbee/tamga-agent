@@ -14,6 +14,7 @@ from app.modules.projects.schemas import (
     NumberingOut,
     NumberingUpdate,
     ProjectCreate,
+    ProjectMerge,
     ProjectOut,
     ProjectPage,
     ProjectPartyCreate,
@@ -76,6 +77,14 @@ async def update_project(
         },
         status=ProjectStatus(body.status) if body.status else None,
     )
+
+
+@projects.post("/projects/{project_id}/merge")
+async def merge_project(
+    project_id: uuid.UUID, body: ProjectMerge, actor: ActorDep, db: SessionDep
+) -> ProjectOut:
+    """Returns the project that stays."""
+    return await service.merge_project(db, actor, project_id, into=body.into)
 
 
 @projects.get("/project-numbering")

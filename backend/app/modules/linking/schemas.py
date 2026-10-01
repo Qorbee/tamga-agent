@@ -63,13 +63,18 @@ class PlacementPage(BaseModel):
 class PlacementDecision(BaseModel):
     """The owner's answer, one of two. ``links``: every link that waits between the conversation's
     mails and its project is confirmed or rejected. ``project_id``: the conversation belongs to
-    this project, whatever was suggested."""
+    this project, whatever was suggested; with ``from_project_id`` it is moved there."""
 
     links: Literal["confirmed", "rejected"] | None = None
     project_id: uuid.UUID | None = None
+    # With project_id, to move a conversation out of the project it is in: that project, as the
+    # owner saw it. What was confirmed there moves too; placed elsewhere since, it is refused.
+    from_project_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _one_answer(self) -> Self:
         if (self.links is None) == (self.project_id is None):
             raise ValueError("give either links or project_id")
+        if self.from_project_id is not None and self.project_id is None:
+            raise ValueError("from_project_id goes with project_id")
         return self

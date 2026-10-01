@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, exists, func, or_, select, update
+from sqlalchemy import delete as delete_rows
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -288,6 +289,42 @@ async def links_of_project(
         .order_by(ProjectLink.created_at, ProjectLink.id)
     )
     return rows.all()
+
+
+async def all_links_of_project(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
+) -> Sequence[ProjectLink]:
+    """Every link of a project, the rejected ones too, locked: for moving them."""
+    rows = await db.scalars(
+        select(ProjectLink)
+        .where(ProjectLink.company_id == company_id, ProjectLink.project_id == project_id)
+        .order_by(ProjectLink.created_at, ProjectLink.id)
+        .with_for_update()
+    )
+    return rows.all()
+
+
+async def move_numbers(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    await db.execute(
+        update(ProjectNumber)
+        .where(ProjectNumber.company_id == company_id, ProjectNumber.project_id == source_id)
+        .values(project_id=target_id)
+    )
+
+
+async def drop_proposals(
+    db: AsyncSession, company_id: uuid.UUID, target: ProposalTarget, target_id: uuid.UUID
+) -> None:
+    """Removes what was proposed for a row that is going."""
+    await db.execute(
+        delete_rows(FieldProposal).where(
+            FieldProposal.company_id == company_id,
+            FieldProposal.target == target,
+            FieldProposal.target_id == target_id,
+        )
+    )
 
 
 def _link_filters(

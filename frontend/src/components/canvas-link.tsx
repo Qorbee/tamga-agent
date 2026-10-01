@@ -38,8 +38,16 @@ function useCanvasTrail(): CanvasView[] {
 }
 
 function useHrefWith(view: CanvasView | null, trail: readonly CanvasView[] = []): string {
-  const pathname = usePathname();
-  const params = new URLSearchParams(useSearchParams());
+  return hrefWith(usePathname(), useSearchParams(), view, trail);
+}
+
+function hrefWith(
+  pathname: string,
+  search: URLSearchParams,
+  view: CanvasView | null,
+  trail: readonly CanvasView[],
+): string {
+  const params = new URLSearchParams(search);
   params.delete(FROM_PARAM);
   if (view) {
     params.set(VIEW_PARAM, formatView(view));
@@ -105,6 +113,17 @@ export function useCanvasBack(): { view: CanvasView; go: () => void } | null {
   const href = useHrefWith(previous, trail.slice(0, -1));
   const go = useCallback(() => router.replace(href, { scroll: false }), [router, href]);
   return previous ? { view: previous, go } : null;
+}
+
+/** Shows a record in place of the open one, with no way back to it: the open one is gone. */
+export function useShowInCanvas(): (view: CanvasView) => void {
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
+  return useCallback(
+    (view: CanvasView) => router.replace(hrefWith(pathname, search, view, []), { scroll: false }),
+    [router, pathname, search],
+  );
 }
 
 /** Closes the canvas and leaves the page under it as it was. */

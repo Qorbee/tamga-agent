@@ -2224,8 +2224,20 @@
         "type": "string"
       },
       "PlacementDecision": {
-        "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested.",
+        "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested; with ``from_project_id`` it is moved there.",
         "properties": {
+          "from_project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Project Id"
+          },
           "links": {
             "anyOf": [
               {
@@ -2465,6 +2477,21 @@
           "name"
         ],
         "title": "ProjectCreate",
+        "type": "object"
+      },
+      "ProjectMerge": {
+        "description": "The owner saying this project and ``into`` are one job: ``into`` stays.",
+        "properties": {
+          "into": {
+            "format": "uuid",
+            "title": "Into",
+            "type": "string"
+          }
+        },
+        "required": [
+          "into"
+        ],
+        "title": "ProjectMerge",
         "type": "object"
       },
       "ProjectOut": {
@@ -6188,6 +6215,65 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{project_id}/merge": {
+      "post": {
+        "description": "Returns the project that stays.",
+        "operationId": "projects.merge_project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Merge Project",
         "tags": [
           "projects"
         ]

@@ -575,6 +575,26 @@ export interface paths {
         patch: operations["projects.update_project"];
         trace?: never;
     };
+    "/projects/{project_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Project
+         * @description Returns the project that stays.
+         */
+        post: operations["projects.merge_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -1474,9 +1494,11 @@ export interface components {
          * PlacementDecision
          * @description The owner's answer, one of two. ``links``: every link that waits between the conversation's
          *     mails and its project is confirmed or rejected. ``project_id``: the conversation belongs to
-         *     this project, whatever was suggested.
+         *     this project, whatever was suggested; with ``from_project_id`` it is moved there.
          */
         PlacementDecision: {
+            /** From Project Id */
+            from_project_id?: string | null;
             /** Links */
             links?: ("confirmed" | "rejected") | null;
             /** Project Id */
@@ -1542,6 +1564,17 @@ export interface components {
             name: string;
             /** Number */
             number?: string | null;
+        };
+        /**
+         * ProjectMerge
+         * @description The owner saying this project and ``into`` are one job: ``into`` stays.
+         */
+        ProjectMerge: {
+            /**
+             * Into
+             * Format: uuid
+             */
+            into: string;
         };
         /** ProjectOut */
         ProjectOut: {
@@ -3225,6 +3258,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ProjectUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "projects.merge_project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectMerge"];
             };
         };
         responses: {

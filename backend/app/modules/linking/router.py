@@ -36,4 +36,5 @@ async def decide_placement(
         placement_id,
         confirm=None if body.links is None else body.links == "confirmed",
         project_id=body.project_id,
+        moving_from=body.from_project_id,
     )

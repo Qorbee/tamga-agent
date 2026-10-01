@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import packs
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
+from app.modules.parties import service as parties
+from app.modules.parties.models import IdentifierSource, PartyKind
 from app.modules.projects import service
 from app.modules.projects.models import (
     FieldSource,
@@ -16,6 +18,7 @@ from app.modules.projects.models import (
     ProposalStatus,
 )
 from app.packs.logistics import service as shipments
+from app.platform.db import open_session
 from app.platform.errors import Conflict
 from app.platform.items import ItemKind
 from app.tests.conftest import guest_client
@@ -343,3 +346,153 @@ async def test_no_writer_leaves_a_project_ending_before_it_starts(
         await db.commit()
     after = (await client.get(f"/projects/{project['id']}")).json()
     assert (after["starts_on"], after["ends_on"]) == ("2026-08-10", None)
+
+
+async def test_a_merge_keeps_the_link_that_says_more_and_refuses_what_cannot_follow(
+    client: httpx.AsyncClient,
+) -> None:
+    await guest_client(client)
+    one, two, trucks = [
+        (await client.post("/projects", json={"name": name})).json()
+        for name in ("One", "Two", "With trucks")
+    ]
+
+    async def paper(name: str, *projects: dict[str, str]) -> dict[str, str]:
+        """A file, tied by the owner to each of these projects: project id → link id."""
+        upload = await client.post("/documents", params={"filename": name}, content=name.encode())
+        tied = {}
+        for project in projects:
+            link = await client.post(
+                "/project-links",
+                json={
+                    "item_kind": "document",
+                    "item_id": upload.json()["document"]["id"],
+                    "project_id": project["id"],
+                },
+            )
+            tied[project["id"]] = link.json()["id"]
+        return tied
+
+    both = await paper("cmr.pdf", one, two)
+    await paper("order.pdf", one)
+    refused = await paper("other.pdf", one)
+    # Of the paper both hold, the one that stays said no; the other no was said in the one that
+    # goes, of a paper the one that stays never saw.
+    for link_id in (both[two["id"]], refused[one["id"]]):
+        rejected = await client.patch(f"/project-links/{link_id}", json={"status": "rejected"})
+        assert rejected.status_code == 200
+    assert (await client.post("/shipments", json={"project_id": trucks["id"]})).status_code == 201
+
+    held = await client.post(f"/projects/{trucks['id']}/merge", json={"into": two["id"]})
+    merged = await client.post(f"/projects/{one['id']}/merge", json={"into": two["id"]})
+
+    # A project's trucks are tied to it: the owner merges the other way.
+    assert held.status_code == 409
+    assert (await client.get(f"/projects/{trucks['id']}")).status_code == 200
+    assert merged.status_code == 200, merged.text
+    kept = merged.json()
+    assert (kept["name"], kept["number"], kept["aliases"]) == (
+        "Two",
+        two["number"],
+        [one["number"]],
+    )
+    assert kept["confirmed_links"] == 2
+    links = (await client.get("/project-links", params={"project_id": two["id"]})).json()
+    # The yes outlives the no for the paper both held, and the other no came along as it was.
+    assert sorted(link["status"] for link in links["items"]) == [
+        "confirmed",
+        "confirmed",
+        "rejected",
+    ]
+    back = await client.post(f"/projects/{trucks['id']}/merge", json={"into": trucks["id"]})
+    assert back.status_code == 400 and back.json()["error"]["field"] == "into"
+
+
+async def test_a_merge_keeps_a_party_s_price_and_refuses_two_that_differ(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    async with open_session() as db:
+        hauler, client_firm = [
+            await parties.create_party(
+                db,
+                company_id=company_id,
+                name=name,
+                kind=PartyKind.ORGANISATION,
+                source=IdentifierSource.OWNER,
+            )
+            for name in ("Hauler Ltd", "Stone GmbH")
+        ]
+        await db.commit()
+    one, two = [
+        (await client.post("/projects", json={"name": name})).json() for name in ("One", "Two")
+    ]
+
+    async def terms(
+        project: dict[str, str], party_id: uuid.UUID, role: str, amount: str | None
+    ) -> None:
+        body = {"project_id": project["id"], "party_id": str(party_id), "role": role}
+        priced = {"amount": amount, "currency": "EUR"} if amount else {}
+        assert (await client.post("/project-parties", json=body | priced)).status_code == 201
+
+    # The carrier's price is known in the one that goes only; the client's differs in the two.
+    await terms(one, hauler.id, "subcontractor", "1800.00")
+    await terms(two, hauler.id, "subcontractor", None)
+    await terms(one, client_firm.id, "client", "2400.00")
+    await terms(two, client_firm.id, "client", "2500.00")
+
+    refused = await client.post(f"/projects/{one['id']}/merge", json={"into": two["id"]})
+
+    assert refused.status_code == 409 and refused.json()["error"]["field"] == "into"
+    assert (await client.get(f"/projects/{one['id']}")).status_code == 200
+    kept = (await client.get("/project-parties", params={"project_id": two["id"]})).json()
+    assert sorted(row["amount"] or "" for row in kept) == ["", "2500.00"]
+    # The owner settles the price, and the merge keeps the one the other knew.
+    mine = (await client.get("/project-parties", params={"project_id": one["id"]})).json()
+    client_row = next(row for row in mine if row["role"] == "client")
+    assert (await client.delete(f"/project-parties/{client_row['id']}")).status_code == 204
+    assert (
+        await client.post(f"/projects/{one['id']}/merge", json={"into": two["id"]})
+    ).status_code == 200
+    kept = (await client.get("/project-parties", params={"project_id": two["id"]})).json()
+    assert sorted(row["amount"] for row in kept) == ["1800.00", "2500.00"]
+
+
+async def test_a_merge_confirms_no_truck_the_owner_did_not(client: httpx.AsyncClient) -> None:
+    company_id = await guest_client(client)
+    one, two = [
+        (await client.post("/projects", json={"name": name})).json() for name in ("One", "Two")
+    ]
+    truck = (await client.post("/shipments", json={"project_id": two["id"]})).json()
+    upload = await client.post("/documents", params={"filename": "pod.pdf"}, content=b"%PDF pod")
+    document_id = upload.json()["document"]["id"]
+    # In the project that stays, the paper is only suggested as that truck's proof of delivery.
+    async with open_session() as db:
+        await service.link_item(
+            db,
+            company_id=company_id,
+            item_kind=ItemKind.DOCUMENT,
+            item_id=uuid.UUID(document_id),
+            project_id=uuid.UUID(two["id"]),
+            method=LinkMethod.SCORED,
+            confidence=0.5,
+            shipment_id=uuid.UUID(truck["id"]),
+            proof_of_delivery=True,
+        )
+        await db.commit()
+    tied = await client.post(
+        "/project-links",
+        json={"item_kind": "document", "item_id": document_id, "project_id": one["id"]},
+    )
+    assert tied.json()["status"] == "confirmed"
+
+    merged = await client.post(f"/projects/{one['id']}/merge", json={"into": two["id"]})
+
+    assert merged.status_code == 200, merged.text
+    [link] = (await client.get("/project-links", params={"project_id": two["id"]})).json()["items"]
+    # The owner confirmed the paper for the job, never for the truck: it is no truck's proof.
+    assert (link["status"], link["shipment_id"], link["proof_of_delivery"]) == (
+        "confirmed",
+        None,
+        False,
+    )

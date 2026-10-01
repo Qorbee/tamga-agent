@@ -7,13 +7,15 @@
   extraction or a suggestion; that value waits as a field proposal until the owner decides.
 - A link carries its method, confidence, the facts it cites and who decided it. Only a confirmed
   link is proof for money, and a proof of delivery confirms at most one truck.
+- Two projects that turn out to be one job are merged by the owner: one stays, and holds
+  everything the other had.
 
 Operations called by other modules and packs (``link_item``, ``apply_fields``) run in the caller's
 transaction and never commit; those behind the API commit.
 """
 
 import uuid
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Final
@@ -86,6 +88,29 @@ _SORTS: Final[dict[str, ColumnElement[Any]]] = {
 # Editable project fields; stage is computed, status moves only through _TRANSITIONS.
 _DATES: Final = ("starts_on", "ends_on")
 _PROJECT_FIELDS: Final = frozenset({"name", "number", *_DATES})
+
+
+# Asked before a project is merged into another, and told once its links have moved, both in
+# the merge's own transaction: the session, the company, the project that goes and the one that
+# stays. A guard that keeps rows which cannot follow raises ``Conflict``.
+type MergeHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID, uuid.UUID], Awaitable[None]]
+_merge_guards: list[MergeHook] = []
+_merge_listeners: list[MergeHook] = []
+# Which of two links to one item says more: the owner's yes, then a suggestion, then a no.
+_LINK_RANK: Final = {LinkStatus.REJECTED: 0, LinkStatus.SUGGESTED: 1, LinkStatus.CONFIRMED: 2}
+_CONFIRMED_BY_OWNER: Final = (ProjectStatus.ACTIVE, ProjectStatus.CLOSED)
+
+
+def guard_merge(guard: MergeHook) -> None:
+    """A module or pack that keeps rows under a project which cannot follow it into another
+    refuses the merge, before anything is changed."""
+    _merge_guards.append(guard)
+
+
+def on_merge(listener: MergeHook) -> None:
+    """A module that keeps rows naming a project moves them when it is merged into another: the
+    project that goes is deleted next, and what still names it goes with it."""
+    _merge_listeners.append(listener)
 
 
 class NumberTaken(Conflict):
@@ -212,6 +237,100 @@ async def update_project(
     await _write_project_fields(db, project, values, FieldSource.OWNER, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [project]))[0]
+
+
+async def merge_project(
+    db: AsyncSession, actor: Actor, project_id: uuid.UUID, *, into: uuid.UUID
+) -> ProjectOut:
+    """The owner saying two projects are one job: ``project_id`` goes into ``into``, which keeps
+    its own name, number and days. Its links move (where both tie the same item, the one that
+    says more stays: a confirmation, then a suggestion, then a rejection), its numbers become
+    numbers of the project that stays, so a paper that carries one still finds the job, and its
+    parties join the other's; two different prices for one party in one role are refused, for
+    the owner to settle first. A project the owner had confirmed makes the one that stays
+    active. The project that goes is then deleted: this is not undone."""
+    actor.require(Role.OWNER)
+    if project_id == into:
+        raise BadRequest("Choose another project to merge into", field="into")
+    # Locked in one order, so two merges of the same pair cannot wait on each other.
+    locked = {
+        each: await repository.get_project(db, actor.company_id, each, for_update=True)
+        for each in sorted((project_id, into))
+    }
+    source, target = locked[project_id], locked[into]
+    if source is None:
+        raise NotFound("No such project")
+    if target is None:
+        raise NotFound("No such project", field="into")
+    if ProjectStatus.REJECTED in (source.status, target.status):
+        raise BadRequest("A rejected project is not merged", field="into")
+    for guard in _merge_guards:
+        await guard(db, actor.company_id, source.id, target.id)
+    await _move_parties(db, actor.company_id, source.id, target.id)
+    await _move_links(db, actor.company_id, source.id, target.id)
+    await repository.move_numbers(db, actor.company_id, source.id, target.id)
+    await repository.drop_proposals(db, actor.company_id, ProposalTarget.PROJECT, source.id)
+    if source.status in _CONFIRMED_BY_OWNER and target.status not in _CONFIRMED_BY_OWNER:
+        target.status = ProjectStatus.ACTIVE
+    await db.flush()
+    for listener in _merge_listeners:
+        await listener(db, actor.company_id, source.id, target.id)
+    await repository.delete(db, source)
+    await db.commit()
+    return (await _describe(db, actor.company_id, [target]))[0]
+
+
+async def _move_parties(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """A project's parties to the one that stays. A party both hold in the same role stays
+    once, with the price either gave it; two prices that differ are the owner's to choose
+    between, so nothing is merged."""
+    there = {
+        (row.party_id, row.role): row
+        for row in await repository.list_project_parties(db, company_id, [target_id])
+    }
+    for row in await repository.list_project_parties(db, company_id, [source_id]):
+        other = there.get((row.party_id, row.role))
+        if other is None:
+            row.project_id = target_id
+        elif other.amount is None:
+            other.amount, other.currency = row.amount, row.currency
+        elif row.amount is not None and (row.amount, row.currency) != (
+            other.amount,
+            other.currency,
+        ):
+            raise Conflict(
+                "Both projects hold a different price for the same party: change one first",
+                field="into",
+            )
+    await db.flush()
+
+
+async def _move_links(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """A project's links to the one that stays. Where both tie the same item one link stays:
+    the one that says more, whole, with the truck it names and whether it is that truck's proof
+    of delivery. A truck never comes from the project that goes (its guard refuses one with
+    trucks), and what the owner did not confirm of a truck is not confirmed by a merge."""
+    held = {
+        (link.item_kind, link.item_id): link
+        for link in await repository.all_links_of_project(db, company_id, target_id)
+    }
+    for link in await repository.all_links_of_project(db, company_id, source_id):
+        other = held.get((link.item_kind, link.item_id))
+        if other is None:
+            link.project_id = target_id
+            continue
+        if _LINK_RANK[link.status] > _LINK_RANK[other.status]:
+            other.status, other.method = link.status, link.method
+            other.decided_by, other.decided_at = link.decided_by, link.decided_at
+            other.shipment_id, other.proof_of_delivery = None, False
+        other.confidence = max(other.confidence, link.confidence)
+        other.evidence = sorted(set(other.evidence) | set(link.evidence))
+        await db.delete(link)
+    await db.flush()
 
 
 async def project_exists(db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID) -> bool:
@@ -594,7 +713,8 @@ async def link_item(
 ) -> ProjectLink:
     """Links an item to a project, suggested unless ``confirm``. Linking the same item to the same
     project again keeps one link: a stronger method or a confirmation updates it, and a link the
-    owner rejected stays rejected. Does not commit."""
+    owner rejected stays rejected, until the owner's own confirmation takes that back. Does not
+    commit."""
     if not 0 <= confidence <= 1:
         raise ValueError("confidence is between 0 and 1")
     company = await _company(db, company_id)
@@ -613,7 +733,7 @@ async def link_item(
             proof_of_delivery=proof_of_delivery,
         )
         await _flush_link(db, link, add=True)
-    elif link.status is LinkStatus.REJECTED:
+    elif link.status is LinkStatus.REJECTED and not (confirm and method is LinkMethod.OWNER):
         return link
     else:
         link.confidence = max(link.confidence, confidence)
@@ -693,15 +813,23 @@ async def update_link(
 
 
 async def decide_links(
-    db: AsyncSession, actor: Actor, link_ids: Sequence[uuid.UUID], *, confirm: bool
+    db: AsyncSession,
+    actor: Actor,
+    link_ids: Sequence[uuid.UUID],
+    *,
+    confirm: bool,
+    withdraw: bool = False,
 ) -> int:
     """The owner confirming or rejecting several suggested links in one step. A link already
-    decided keeps its answer. Returns how many were decided. Does not commit."""
+    decided keeps its answer, unless the owner takes a confirmation back (``withdraw``, with a
+    rejection): the item is being moved to another project. Returns how many were decided. Does
+    not commit."""
     actor.require(Role.OWNER)
     company = await _company(db, actor.company_id)
     decided = []
+    open_to = {LinkStatus.SUGGESTED, *((LinkStatus.CONFIRMED,) if withdraw and not confirm else ())}
     for link in await repository.get_links(db, actor.company_id, link_ids, for_update=True):
-        if link.status is not LinkStatus.SUGGESTED:
+        if link.status not in open_to:
             continue
         link.status = LinkStatus.CONFIRMED if confirm else LinkStatus.REJECTED
         link.decided_by = actor.user_id
