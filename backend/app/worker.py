@@ -8,11 +8,16 @@ Same image and settings as the api; a job gets its database session from
 
 import asyncio
 import logging
+from typing import Final
 
 from app import packs
 from app.config import get_settings
 from app.platform import isolated, jobs, tracing
 from app.platform.db import dispose_db, init_db
+
+# Jobs run side by side. A scheduled job never overlaps itself (its lock), so these are different
+# jobs: sorting a backlog of mail does not make reading files or polling a mailbox wait.
+CONCURRENCY: Final = 4
 
 
 async def main() -> None:
@@ -26,7 +31,7 @@ async def main() -> None:
     tracing.init_tracing("worker")
     try:
         async with jobs.app.open_async():
-            await jobs.app.run_worker_async()
+            await jobs.app.run_worker_async(concurrency=CONCURRENCY)
     finally:
         # Sending what is batched waits on the network: never on the event loop.
         await asyncio.to_thread(tracing.shutdown_tracing)

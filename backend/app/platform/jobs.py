@@ -7,6 +7,8 @@ job and its decision commit together or not at all. The worker (``python -m app.
 jobs over psycopg, procrastinate's own driver.
 
 A job's lock (``payee:<id>``, ``thread:<id>``) keeps two jobs that share it from running at once.
+A worker that dies mid-job leaves the job ``doing`` and its lock held; ``release_stalled`` queues it
+again within a minute, so every job must be safe to run twice.
 """
 
 import json
@@ -15,6 +17,8 @@ from datetime import datetime
 from typing import Any, Final
 
 import procrastinate
+from procrastinate.exceptions import UniqueViolation
+from procrastinate.jobs import Status
 from procrastinate.tasks import Task
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +28,7 @@ from app.platform.db import import_from_each_module
 
 DEFAULT_QUEUE: Final = "default"
 DEFAULT_PRIORITY: Final = 0
+RELEASE_STALLED: Final = "jobs.release_stalled"
 
 type Job = Task[..., Any, ...]
 
@@ -97,6 +102,29 @@ async def defer(
     if job_id is None:
         raise RuntimeError(f"procrastinate returned no id for {job.name}")
     return int(job_id)
+
+
+async def release_stalled() -> int:
+    """Frees the jobs a dead worker left ``doing``, and returns how many. A job counts as left
+    when its worker has sent no heartbeat for half a minute or is gone.
+
+    Each is queued again. The one that cannot be is a scheduled job whose next run already waits
+    (two queued runs of one job collide): that next run does its work, so it is closed as failed."""
+    stalled = list(await app.job_manager.get_stalled_jobs())
+    for job in stalled:
+        try:
+            await app.job_manager.retry_job(job)
+        except UniqueViolation:
+            await app.job_manager.finish_job(job, Status.FAILED, delete_job=False)
+    return len(stalled)
+
+
+# Without a lock, unlike every other scheduled job: a run of this one that a dead worker left behind
+# must not keep the next from starting, or nothing would ever free it.
+@app.periodic(cron="* * * * *")
+@app.task(name=RELEASE_STALLED, queueing_lock=RELEASE_STALLED)
+async def _release_stalled(timestamp: int) -> None:
+    await release_stalled()
 
 
 def import_all_tasks() -> None:
