@@ -2,12 +2,21 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, func, select, update
+from sqlalchemy import ColumnElement, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.documents.models import Document, ReadState
 from app.platform.pagination import PageParams, escape_like
+
+
+async def lock_content(db: AsyncSession, company_id: uuid.UUID, sha256: bytes) -> None:
+    """Until the transaction ends, no one else stores or forgets these bytes for the company: a
+    deleted file's object is never removed from under an upload of the same file."""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"documents:{company_id}:{sha256.hex()}"},
+    )
 
 
 async def get_by_hash(db: AsyncSession, company_id: uuid.UUID, sha256: bytes) -> Document | None:
@@ -143,4 +152,23 @@ async def add_read_failure(
         update(Document)
         .where(Document.company_id == company_id, Document.id == document_id)
         .values(read_failures=Document.read_failures + 1, read_failed_at=at)
+    )
+
+
+async def lock_document(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, *, share: bool = False
+) -> Document | None:
+    """The document, locked until the transaction ends: for deleting it (exclusive), or, shared,
+    for a link to it that must not name a file deleted meanwhile."""
+    statement = select(Document).where(
+        Document.company_id == company_id, Document.id == document_id
+    )
+    document: Document | None = await db.scalar(statement.with_for_update(key_share=share))
+    return document
+
+
+async def delete_document(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """Deletes the row; its uploads go with it (their foreign key cascades)."""
+    await db.execute(
+        delete(Document).where(Document.company_id == company_id, Document.id == document_id)
     )

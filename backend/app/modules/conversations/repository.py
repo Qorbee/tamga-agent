@@ -212,6 +212,18 @@ async def mail_after(
     return rows.all()
 
 
+async def attaches(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+    found = await db.scalar(
+        select(MessageAttachment.id)
+        .where(
+            MessageAttachment.company_id == company_id,
+            MessageAttachment.document_id == document_id,
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
 async def message_exists(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> bool:
     found = await db.scalar(
         select(Message.id).where(Message.company_id == company_id, Message.id == message_id)

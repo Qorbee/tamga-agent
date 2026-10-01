@@ -26,6 +26,7 @@ from app.modules.books import service as books
 from app.modules.companies import service as companies
 from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
+from app.modules.documents.schemas import Holder
 from app.modules.parties import service as parties
 from app.modules.projects import fields, numbering, repository
 from app.modules.projects.models import (
@@ -661,6 +662,15 @@ async def _flush_link(db: AsyncSession, link: ProjectLink, *, add: bool = False)
         if constraint == _SHIPMENT_KEY:
             raise BadRequest("That truck is not on this project", field="shipment_id") from exc
         raise
+
+
+async def _links_document(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+    return await repository.links_item(db, company_id, ItemKind.DOCUMENT, document_id)
+
+
+# A project's evidence stays with the project: a linked file, even a rejected link's, is kept, so
+# no link ever names a file that is gone.
+documents.register_holder(Holder.PROJECT, _links_document)
 
 
 async def _item_exists(

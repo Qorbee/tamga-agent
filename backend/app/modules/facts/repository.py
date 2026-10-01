@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,3 +86,13 @@ async def get_many(
 ) -> Sequence[Fact]:
     facts = await db.scalars(select(Fact).where(Fact.company_id == company_id, Fact.id.in_(ids)))
     return facts.all()
+
+
+async def forget(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, item_id: uuid.UUID
+) -> None:
+    await db.execute(
+        delete(Fact).where(
+            Fact.company_id == company_id, Fact.item_kind == item_kind, Fact.item_id == item_id
+        )
+    )

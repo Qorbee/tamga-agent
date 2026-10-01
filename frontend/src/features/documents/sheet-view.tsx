@@ -1,15 +1,19 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 
 import type { Sheet, SheetStyle, Workbook } from "@/lib/api";
 import { formatSheetCell } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { clamp, useWheelZoom, ViewerToolbar, ZOOM_STEP } from "./viewer-toolbar";
+
 // The backend's caps (documents/sheets.py), for the note under a cut sheet.
 const MAX_ROWS = 1000;
 const MAX_COLUMNS = 50;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 const BORDERS: Record<NonNullable<SheetStyle["top"]>, string> = {
   thin: "1px solid",
   medium: "2px solid",
@@ -34,6 +38,7 @@ type Edges = { right: SheetStyle["right"] | undefined; bottom: SheetStyle["botto
 export function SheetView({ workbook }: { workbook: Workbook }) {
   const { t } = useI18n();
   const [active, setActive] = useState(0);
+  const [zoom, setZoom] = useState(1);
   const sheets = workbook.sheets;
   const sheet = sheets[active] ?? sheets[0];
   if (!sheet) return <p className="text-muted-foreground p-4 text-sm">{t.files.emptySheet}</p>;
@@ -62,7 +67,25 @@ export function SheetView({ workbook }: { workbook: Workbook }) {
       {sheet.rows.length === 0 ? (
         <p className="text-muted-foreground p-4 text-sm">{t.files.emptySheet}</p>
       ) : (
-        <SheetGrid key={active} sheet={sheet} font={workbook.font} size={workbook.font_size} />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <SheetGrid
+            key={active}
+            sheet={sheet}
+            font={workbook.font}
+            size={workbook.font_size}
+            zoom={zoom}
+            onZoom={(next) => setZoom(clamp(next, MIN_ZOOM, MAX_ZOOM))}
+          />
+          <ViewerToolbar
+            zoom={zoom}
+            canZoomIn={zoom < MAX_ZOOM}
+            canZoomOut={zoom > MIN_ZOOM}
+            onZoomIn={() => setZoom(clamp(zoom * ZOOM_STEP, MIN_ZOOM, MAX_ZOOM))}
+            onZoomOut={() => setZoom(clamp(zoom / ZOOM_STEP, MIN_ZOOM, MAX_ZOOM))}
+            onFit={() => setZoom(1)}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2"
+          />
+        </div>
       )}
       {sheet.truncated || workbook.omitted > 0 ? (
         <div className="text-muted-foreground border-border shrink-0 border-t px-3 py-2 text-xs">
@@ -74,20 +97,36 @@ export function SheetView({ workbook }: { workbook: Workbook }) {
   );
 }
 
-function SheetGrid({ sheet, font, size }: { sheet: Sheet; font: string | null; size: number }) {
+function SheetGrid({
+  sheet,
+  font,
+  size,
+  zoom,
+  onZoom,
+}: {
+  sheet: Sheet;
+  font: string | null;
+  size: number;
+  zoom: number;
+  onZoom: (zoom: number) => void;
+}) {
   const { locale } = useI18n();
   const { spans, covered } = useMemo(() => mergeMap(sheet), [sheet]);
+  const scroller = useRef<HTMLDivElement>(null);
+  useWheelZoom(scroller, (factor) => onZoom(zoom * factor));
   const columns = sheet.columns.length;
   const taken = (key: string) => covered.has(key) || spans.has(key);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-[Canvas] text-[CanvasText] scheme-light">
+    <div ref={scroller} className="min-h-0 flex-1 overflow-auto bg-[Canvas] pb-14 text-[CanvasText] scheme-light">
       <table
         className="table-fixed border-collapse leading-tight"
         style={{
           width: sheet.columns.reduce((total, column) => total + pixels(column, sheet), 40),
           fontFamily: family(font),
           fontSize: `${size}pt`,
+          // Scales the widths, heights and fonts Excel set together, as its own zoom does.
+          zoom,
         }}
       >
         <colgroup>

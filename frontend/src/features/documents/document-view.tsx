@@ -15,6 +15,8 @@ import { formatBytes } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { DocumentMenu } from "./document-menu";
+import { ImageView } from "./image-view";
 import { PdfView } from "./pdf-view";
 import { SheetView } from "./sheet-view";
 
@@ -22,18 +24,11 @@ function useDocument(id: string) {
   return useQuery({ queryKey: ["document", id], queryFn: () => getDocument(id) });
 }
 
-/** The canvas's title for a file: its name, then what kind of file it is. */
+/** The canvas's title for a file: its name and kind, opening its menu. */
 export function DocumentTitle({ id }: { id: string }) {
-  const { t } = useI18n();
   const document = useDocument(id);
   if (!document.data) return <Skeleton className="h-4 w-40" />;
-  const { filename, preview } = document.data;
-  return (
-    <>
-      <span className="truncate">{filename}</span>
-      {preview ? <span className="text-muted-foreground shrink-0 font-normal">· {t.files.kinds[preview]}</span> : null}
-    </>
-  );
+  return <DocumentMenu document={document.data} />;
 }
 
 export function DocumentDownload({ id }: { id: string }) {
@@ -89,27 +84,16 @@ function DrawnPreview({ id, preview, name }: { id: string; preview: "image" | "p
 
   if (file.isError || failed || (file.data && !drawable)) return <NoPreview id={id} failed />;
   if (!file.data) return <Skeleton className="m-4 h-64 rounded-xl" />;
-  return (
-    <div className="bg-muted/50 min-h-full p-3 md:p-5">
-      {preview === "pdf" ? (
-        <PdfView file={file.data} onFailed={fail} />
-      ) : (
-        <ImageView file={file.data} name={name} onFailed={fail} />
-      )}
-    </div>
+  return preview === "pdf" ? (
+    <PdfView file={file.data} onFailed={fail} />
+  ) : (
+    <DrawnImage file={file.data} name={name} onFailed={fail} />
   );
 }
 
-function ImageView({ file, name, onFailed }: { file: Blob; name: string; onFailed: () => void }) {
+function DrawnImage({ file, name, onFailed }: { file: Blob; name: string; onFailed: () => void }) {
   const url = useObjectUrl(file);
-  if (!url) return null;
-  return (
-    <div className="grid min-h-full place-items-center">
-      {/* A blob of a verified image: next/image cannot take one. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={name} onError={onFailed} className="max-w-full rounded-md object-contain shadow-sm" />
-    </div>
-  );
+  return url ? <ImageView url={url} name={name} onFailed={onFailed} /> : null;
 }
 
 function NoPreview({ id, failed = false }: { id: string; failed?: boolean }) {

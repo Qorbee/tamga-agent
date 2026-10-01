@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -28,9 +29,21 @@ class DocumentOut(BaseModel):
     truncated: bool
 
 
+class Holder(StrEnum):
+    """What keeps a file besides the uploads of it: a mail it came in, a project it is evidence
+    on."""
+
+    MAIL = "mail"
+    PROJECT = "project"
+
+
 class DocumentDetail(DocumentOut):
     # A short-lived link that downloads the file under its name.
     download_url: str
+    # What keeps it besides its uploads. Only a file nothing here holds can be deleted: one a mail
+    # brought stays as long as the mail does, under the name it came with, and a project's evidence
+    # stays with the project.
+    held_by: list[Holder]
 
 
 class CellStyleOut(BaseModel):
@@ -124,8 +137,14 @@ class DocumentPage(BaseModel):
 
 
 class DocumentUpdate(BaseModel):
+    """Only the fields sent change."""
+
     # A key from GET /document-types, or null when it is unknown.
-    doc_type: str | None = Field(max_length=40)
+    doc_type: str | None = Field(default=None, max_length=40)
+    # The name Tamga shows it under. It keeps the file's extension, which says what kind of file it
+    # is. A file a mail brought keeps the name it came with: the one name for it everywhere, and the
+    # sender's.
+    filename: str | None = Field(default=None, min_length=1, max_length=300)
 
 
 class UploadOut(BaseModel):

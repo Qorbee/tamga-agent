@@ -128,10 +128,14 @@ export function UploadPanel() {
             {upload.isPending ? t.upload.sending : t.upload.send}
           </Button>
           {upload.isSuccess ? (
-            <p className="text-success-foreground text-sm" role="status">
+            <p
+              className="text-success-foreground flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+              role="status"
+            >
               {upload.data.new_document
-                ? t.upload.stored(upload.data.filename)
-                : t.upload.duplicate(upload.data.filename)}
+                ? t.upload.stored
+                : t.upload.duplicate(upload.data.filename, upload.data.document.filename)}
+              <FileChip document={upload.data.document} />
             </p>
           ) : upload.isError ? (
             <p className="text-danger-foreground text-sm" role="alert">
@@ -143,6 +147,24 @@ export function UploadPanel() {
 
       <RecentDocuments types={types.data ?? []} />
     </div>
+  );
+}
+
+/** A file named as a link: its kind's icon and its name, opening it in the canvas. */
+function FileChip({ document }: { document: Document }) {
+  return (
+    <CanvasLink
+      view={{ kind: "document", id: document.id }}
+      title={document.filename}
+      className="bg-secondary text-foreground hover:bg-accent inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 font-medium"
+    >
+      <HugeiconsIcon
+        icon={fileIcon(document.preview)}
+        strokeWidth={1.75}
+        className="text-muted-foreground size-3.5 shrink-0"
+      />
+      <span className="truncate">{document.filename}</span>
+    </CanvasLink>
   );
 }
 

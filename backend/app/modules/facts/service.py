@@ -71,6 +71,14 @@ async def items_sharing(
     return await repository.matching(db, company_id, kind, normalised)
 
 
+async def forget_item(
+    db: AsyncSession, *, company_id: uuid.UUID, item_kind: ItemKind, item_id: uuid.UUID
+) -> None:
+    """Drops every fact read from an item that is being deleted. Runs in the caller's
+    transaction."""
+    await repository.forget(db, company_id, item_kind, item_id)
+
+
 async def get_facts(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, Fact]:

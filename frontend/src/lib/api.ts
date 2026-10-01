@@ -157,6 +157,12 @@ export const getDocumentSheets = (id: string) => request<Workbook>(`/documents/$
 export const listDocumentTypes = () => request<DocumentType[]>("/document-types");
 export const setDocumentType = (id: string, docType: string | null) =>
   request<Document>(`/documents/${id}`, json("PATCH", { doc_type: docType }));
+/** The name Tamga shows it under; the backend refuses one that changes its extension. */
+export const renameDocument = (id: string, filename: string) =>
+  request<Document>(`/documents/${id}`, json("PATCH", { filename }));
+/** Refused (409) for a file a mail brought or a project keeps: `held_by` says which. */
+export const deleteDocument = (id: string) => request<void>(`/documents/${id}`, { method: "DELETE" });
+export type Holder = DocumentDetail["held_by"][number];
 /** The file itself is the body, typed by its own content type; the rest rides in the query. */
 export const uploadDocument = (file: File, params: { docType?: string; note?: string }) =>
   request<Upload>(

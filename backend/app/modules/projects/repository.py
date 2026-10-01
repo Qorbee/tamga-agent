@@ -206,6 +206,21 @@ async def get_link_for_item(
     return link
 
 
+async def links_item(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, item_id: uuid.UUID
+) -> bool:
+    found = await db.scalar(
+        select(ProjectLink.id)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.item_kind == item_kind,
+            ProjectLink.item_id == item_id,
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
 def _link_filters(
     company_id: uuid.UUID,
     *,

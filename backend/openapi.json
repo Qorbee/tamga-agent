@@ -427,6 +427,13 @@
             "title": "Filename",
             "type": "string"
           },
+          "held_by": {
+            "items": {
+              "$ref": "#/components/schemas/Holder"
+            },
+            "title": "Held By",
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -487,7 +494,8 @@
           "read_state",
           "unreadable_reason",
           "truncated",
-          "download_url"
+          "download_url",
+          "held_by"
         ],
         "title": "DocumentDetail",
         "type": "object"
@@ -648,6 +656,7 @@
         "type": "object"
       },
       "DocumentUpdate": {
+        "description": "Only the fields sent change.",
         "properties": {
           "doc_type": {
             "anyOf": [
@@ -660,11 +669,21 @@
               }
             ],
             "title": "Doc Type"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
           }
         },
-        "required": [
-          "doc_type"
-        ],
         "title": "DocumentUpdate",
         "type": "object"
       },
@@ -704,6 +723,15 @@
         ],
         "title": "Health",
         "type": "object"
+      },
+      "Holder": {
+        "description": "What keeps a file besides the uploads of it: a mail it came in, a project it is evidence\non.",
+        "enum": [
+          "mail",
+          "project"
+        ],
+        "title": "Holder",
+        "type": "string"
       },
       "InviteAccept": {
         "properties": {
@@ -3518,6 +3546,46 @@
       }
     },
     "/documents/{document_id}": {
+      "delete": {
+        "description": "An uploaded file, with what was read from it. 409 when a mail brought it or a project holds\nit as evidence (`held_by`).",
+        "operationId": "documents.delete_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Document",
+        "tags": [
+          "documents"
+        ]
+      },
       "get": {
         "operationId": "documents.get_document",
         "parameters": [
@@ -3565,6 +3633,7 @@
         ]
       },
       "patch": {
+        "description": "Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the\nextension (400), and a file a mail brought keeps the name it came with (409, `held_by`).",
         "operationId": "documents.update_document",
         "parameters": [
           {

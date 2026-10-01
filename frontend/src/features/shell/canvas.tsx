@@ -1,10 +1,10 @@
 "use client";
 
-import { Cancel01Icon } from "@hugeicons/core-free-icons";
+import { ArrowLeft01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { useCloseCanvas } from "@/components/canvas-link";
+import { CanvasScope, useCanvasBack, useCloseCanvas } from "@/components/canvas-link";
 import { ResizeHandle } from "@/components/resize-handle";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n/client";
@@ -95,8 +95,9 @@ export function CanvasFrame({ initialWidth, content }: { initialWidth: number; c
 
 /**
  * A record open in the canvas: its title, its actions (a download), a close button and the record,
- * which scrolls on its own. Closing leaves the page under it as it was. `title` can load with the
- * record, so the panel is named by `label` until it has.
+ * which scrolls on its own. Closing leaves the page under it as it was; a record opened from another
+ * in the canvas (a mail's attachment) has a back button to it. `title` can load with the record, so
+ * the panel is named by `label` until it has.
  */
 export function CanvasPanel({
   label,
@@ -111,6 +112,7 @@ export function CanvasPanel({
 }) {
   const { t } = useI18n();
   const close = useCloseCanvas();
+  const back = useCanvasBack();
 
   return (
     <section
@@ -118,7 +120,13 @@ export function CanvasPanel({
       aria-label={label}
       className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]"
     >
-      <header className="border-border flex h-12 shrink-0 items-center gap-1 border-b ps-4 pe-2">
+      <header className={cn("border-border flex h-12 shrink-0 items-center gap-1 border-b pe-2", back ? "ps-2" : "ps-4")}>
+        {back ? (
+          <Button variant="ghost" size="icon-sm" onClick={back.go}>
+            <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.75} />
+            <span className="sr-only">{t.shell.backTo[back.view.kind]}</span>
+          </Button>
+        ) : null}
         <h2 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-medium">{title ?? label}</h2>
         {actions}
         <Button variant="ghost" size="icon-sm" onClick={close}>
@@ -126,7 +134,9 @@ export function CanvasPanel({
           <span className="sr-only">{t.shell.closeCanvas}</span>
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <CanvasScope>{children}</CanvasScope>
+      </div>
     </section>
   );
 }

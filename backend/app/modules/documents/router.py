@@ -107,7 +107,16 @@ async def get_document_sheets(
 async def update_document(
     document_id: uuid.UUID, body: DocumentUpdate, actor: ActorDep, db: SessionDep
 ) -> DocumentOut:
-    return await service.set_type(db, actor, document_id, body.doc_type)
+    """Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the
+    extension (400), and a file a mail brought keeps the name it came with (409, `held_by`)."""
+    return await service.update_document(db, actor, document_id, body)
+
+
+@documents.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> None:
+    """An uploaded file, with what was read from it. 409 when a mail brought it or a project holds
+    it as evidence (`held_by`)."""
+    await service.delete_document(db, actor, document_id)
 
 
 @documents.get("/document-types")

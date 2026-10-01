@@ -23,6 +23,7 @@ export const en = {
     recentsEmpty: "No chats yet",
     resizeCanvas: "Resize panel",
     closeCanvas: "Close panel",
+    backTo: { mail: "Back to the mail", document: "Back to the file" },
   },
   search: {
     title: "Search",
@@ -203,8 +204,10 @@ export const en = {
     notePlaceholder: "Which job or truck it belongs to, if you know",
     send: "Upload",
     sending: "Uploading…",
-    stored: (name: string) => `${name} is stored.`,
-    duplicate: (name: string) => `${name} was already stored; this upload points at it.`,
+    stored: "Uploaded",
+    // The stored file follows, as a link.
+    duplicate: (name: string, stored: string) =>
+      name === stored ? "Already stored, so not stored twice" : `${name} was already stored as`,
     tooLarge: "That file is too large.",
     recent: "Recent files",
     none: "No files yet.",
@@ -263,6 +266,29 @@ export const en = {
     noPreviewBody: "Download it to open it on your device.",
     failed: "This file could not be shown. Download it to open it on your device.",
     pageFailed: "This page could not be drawn. Download the file to see it.",
+    viewer: {
+      controls: "Zoom and turn",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      fit: "Fit to the panel",
+      rotate: "Turn a quarter to the right",
+      image: "Zoomable image",
+      page: (current: string, total: string) => `${current} / ${total}`,
+    },
+    menu: {
+      options: "File options",
+      added: (date: string) => `Arrived ${date}`,
+      rename: "Rename",
+      renameField: "File name",
+      delete: "Delete",
+      kept: {
+        mail: "It came in a mail, so it keeps that name and stays with the mail.",
+        project: "It is evidence on a project, so it stays there.",
+      },
+      deleteTitle: (name: string) => `Delete ${name}?`,
+      deleteBody: "The file and what Tamga read from it are removed for good.",
+      deleteRefused: "It can no longer be deleted: a mail or a project keeps it now.",
+    },
   },
   errors: {
     generic: "Something went wrong. Try again.",

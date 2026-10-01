@@ -50,10 +50,19 @@ export interface paths {
         get: operations["documents.get_document"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Document
+         * @description An uploaded file, with what was read from it. 409 when a mail brought it or a project holds
+         *     it as evidence (`held_by`).
+         */
+        delete: operations["documents.delete_document"];
         options?: never;
         head?: never;
-        /** Update Document */
+        /**
+         * Update Document
+         * @description Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the
+         *     extension (400), and a file a mail brought keeps the name it came with (409, `held_by`).
+         */
         patch: operations["documents.update_document"];
         trace?: never;
     };
@@ -706,6 +715,8 @@ export interface components {
             download_url: string;
             /** Filename */
             filename: string;
+            /** Held By */
+            held_by: components["schemas"]["Holder"][];
             /**
              * Id
              * Format: uuid
@@ -775,10 +786,15 @@ export interface components {
             /** Proof Of Delivery */
             proof_of_delivery: boolean;
         };
-        /** DocumentUpdate */
+        /**
+         * DocumentUpdate
+         * @description Only the fields sent change.
+         */
         DocumentUpdate: {
             /** Doc Type */
-            doc_type: string | null;
+            doc_type?: string | null;
+            /** Filename */
+            filename?: string | null;
         };
         /**
          * FieldSource
@@ -799,6 +815,13 @@ export interface components {
              */
             status: "ok";
         };
+        /**
+         * Holder
+         * @description What keeps a file besides the uploads of it: a mail it came in, a project it is evidence
+         *     on.
+         * @enum {string}
+         */
+        Holder: "mail" | "project";
         /** InviteAccept */
         InviteAccept: {
             /** Name */
@@ -1784,6 +1807,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DocumentDetail"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "documents.delete_document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

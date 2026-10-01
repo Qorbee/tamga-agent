@@ -36,6 +36,7 @@ from app.modules.conversations.schemas import (
     ThreadSummary,
 )
 from app.modules.documents import service as documents
+from app.modules.documents.schemas import Holder
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.platform import search, storage
@@ -430,6 +431,14 @@ def _as_read(message: Message) -> tuple[str, str]:
 
 async def message_exists(db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID) -> bool:
     return await repository.message_exists(db, company_id, message_id)
+
+
+async def _attaches(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+    return await repository.attaches(db, company_id, document_id)
+
+
+# A file a mail brought stays as long as the mail does: it cannot be deleted from the files page.
+documents.register_holder(Holder.MAIL, _attaches)
 
 
 async def list_messages(
