@@ -89,6 +89,8 @@ servers take a flag instead: `uvicorn … --port 8001`, `pnpm dev -p 3001`. Then
 
 ```bash
 docker compose up -d                               # Postgres and file storage
+curl -X PUT http://localhost:8333/tamga            # once, on your port if you moved 8333: the
+                                                   # storage creates no bucket itself
 cd backend && cp .env.example .env && uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload               # http://localhost:8000/docs
@@ -120,10 +122,12 @@ cd backend && uv run python scripts/create_company.py --name "Acme Lojistik" --o
 **What turns on what.** Every setting is in `backend/.env.example`, with a comment. Unset, Tamga
 still runs, and each feature waits for its own:
 - mail: `PILOT_COMPANY_ID` and `MAILBOXES` (read-only IMAP);
-- the language models: the key of the provider `DEFAULT_MODEL` names (`OPENAI_API_KEY` or
-  `ANTHROPIC_API_KEY`);
+- the language models: `OPENAI_API_KEY`, the key of the provider `DEFAULT_MODEL` names (only
+  OpenAI's client is installed; an Anthropic model needs its extra added first);
 - Circle wallets on Arc testnet: `CIRCLE_API_KEY` and `CIRCLE_ENTITY_SECRET`, then
-  `uv run python scripts/create_circle_wallets.py` once, from `backend/`;
+  `uv run python scripts/create_circle_wallets.py` once, from `backend/`, and copy the two lines it
+  prints (`CIRCLE_WALLET_SET_ID`, `CIRCLE_TREASURY_WALLET_ID`) into `backend/.env`: run again
+  without them, it makes another wallet set;
 - traces: `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`.
 
 Contracts need Foundry at the release in `contracts/.foundry-version` and the library submodules
@@ -136,14 +140,15 @@ The ones CI runs, each from its package's directory:
 ```bash
 # backend/, with docker compose up; the tests include the API contract check
 uv run ruff format --check . && uv run ruff check . && uv run mypy && INTEGRATION=1 uv run pytest -q
-# frontend/
-pnpm lint && pnpm typecheck && pnpm build
-# contracts/
-forge fmt --check && forge build && forge test
+uv run alembic upgrade head && uv run alembic check   # the models match the migrations
+# frontend/: the generated API types must match backend/openapi.json (no diff after generating)
+pnpm generate:api && pnpm lint && pnpm typecheck && pnpm build
+# contracts/, then scripts/export-abi.sh from the root: no diff in backend/app/platform/abi/
+forge fmt --check && forge build --sizes && forge test
 ```
 
-If the root `.env` moved the ports, export `DATABASE_URL` and `S3_ENDPOINT_URL` with them before the
-backend tests (`backend/README.md`).
+If the root `.env` moved the ports, export `DATABASE_URL` (to the `app_test` database) and
+`S3_ENDPOINT_URL` with them before the backend tests (`backend/README.md`).
 
 ## Layout
 

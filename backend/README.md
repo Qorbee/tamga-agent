@@ -41,4 +41,6 @@ uv run python scripts/dump_openapi.py     # after an API change
 ```
 
 The integration tests reach Postgres on 5432 and storage on 8333 (`app/tests/conftest.py`). If the
-root `.env` moved those ports, export `DATABASE_URL` and `S3_ENDPOINT_URL` with the new ports first.
+root `.env` moved those ports, export `DATABASE_URL` and `S3_ENDPOINT_URL` with the new ports first,
+the URL naming `app_test`, not the `app` in `backend/.env`: every test empties every table, and the
+suite refuses a database whose name does not end in `_test`.

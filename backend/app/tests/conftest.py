@@ -16,7 +16,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from botocore.exceptions import ClientError
-from sqlalchemy import text
+from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 os.environ.setdefault("APP_ENV", "test")
@@ -50,6 +50,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 @pytest.fixture(scope="session")
 def migrated_database() -> None:
     """The test database at the newest revision, built by the migrations as production is."""
+    # Every test empties every table: a DATABASE_URL copied from backend/.env would empty the one
+    # you develop against.
+    name = make_url(str(get_settings().database_url)).database or ""
+    if not name.endswith("_test"):
+        pytest.exit(f"the tests empty their database; {name!r} does not end in _test", returncode=2)
     # No ini file: alembic.ini's logging setup would disable the app's loggers for the whole run.
     config = Config()
     config.set_main_option("script_location", str(MIGRATIONS))
