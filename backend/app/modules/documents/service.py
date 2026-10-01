@@ -84,6 +84,9 @@ _UNPACK_LIMITS: Final = isolated.Limits(deadline_seconds=120.0)
 # Whether a module that keeps documents holds this one (a mail's attachments, a project's evidence).
 type HoldsCheck = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[bool]]
 _holders: dict[Holder, HoldsCheck] = {}
+# Told when a document was read: the database session, the company and the document.
+type ReadListener = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
+_read_listeners: list[ReadListener] = []
 # The DOS code page a country's Windows writes a zip's names in, when not as UTF-8 (ADR-0012).
 _codepages: dict[str, str] = {}
 
@@ -92,6 +95,18 @@ def register_holder(holder: Holder, holds: HoldsCheck) -> None:
     """A module that keeps documents says, through ``holds``, whether it keeps one. Only a file no
     holder keeps can be deleted."""
     _holders[holder] = holds
+
+
+def on_read(listener: ReadListener) -> None:
+    """A module that keeps documents asks to be told, in the reading's own transaction, when one
+    was read: what rests on a file's facts looks at it again."""
+    _read_listeners.append(listener)
+
+
+async def _was_read(db: AsyncSession, document: Document) -> None:
+    document.read_state, document.read_at = ReadState.READ, utcnow()
+    for listener in _read_listeners:
+        await listener(db, document.company_id, document.id)
 
 
 def register_name_codepage(country: str, codepage: str) -> None:
@@ -596,8 +611,6 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
     document.truncated = read.cut or len(read.text) > MAX_TEXT
     document.parts, document.hidden_parts = read.parts, read.hidden
     document.needs_vision = read.scanned
-    if not read.scanned:
-        document.read_state, document.read_at = ReadState.READ, utcnow()
     await facts.record_facts(
         db,
         company_id=company_id,
@@ -605,6 +618,8 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         item_id=document.id,
         facts=extractors.from_text(document.text),
     )
+    if not read.scanned:
+        await _was_read(db, document)
 
 
 # Reading what only a vision model can
@@ -752,7 +767,6 @@ async def _keep_reading(
     document.text = text[:MAX_TEXT]
     document.truncated = document.truncated or more or len(text) > MAX_TEXT
     document.description = " ".join(reading.plain(seen.shows).split())[:300]
-    document.read_state, document.read_at = ReadState.READ, utcnow()
     await facts.record_facts(
         db,
         company_id=document.company_id,
@@ -767,6 +781,7 @@ async def _keep_reading(
             for fact in extractors.from_text("\n".join(written))
         ],
     )
+    await _was_read(db, document)
 
 
 def _awaits_vision(document: Document) -> bool:

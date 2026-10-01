@@ -50,6 +50,13 @@ def fenced(label: str, content: Sequence[UserContent]) -> list[UserContent]:
     return [f"BEGIN OUTSIDE DATA {marker}\n{label}\n", *content, f"\nEND OUTSIDE DATA {marker}"]
 
 
+def fenced_text(label: str, text: str) -> str:
+    """Outside content as one text, for what a tool returns: fenced as ``fenced`` does it, with a
+    marker of its own."""
+    marker = secrets.token_hex(8)
+    return f"BEGIN OUTSIDE DATA {marker}\n{label}\n{text}\nEND OUTSIDE DATA {marker}"
+
+
 class NoAnswer(Exception):
     """The model was reached and gave nothing to use: its answer failed the output's checks after
     the retries, was filtered, ran past the run's limits, or the provider refused what it was
@@ -125,10 +132,13 @@ async def run[DepsT, OutputT](
     deps: DepsT,
     limits: UsageLimits,
     trace_content: bool = False,
+    usage: RunUsage | None = None,
 ) -> AgentRunResult[OutputT]:
     """Runs ``agent`` once on its configured model. ``trace_content`` sends prompts and answers to
     tracing: only for a company whose data is synthetic (companies ``traces_content``). Raises
-    ``NoAnswer`` when the model answered and the answer cannot be used."""
+    ``NoAnswer`` when the model answered and the answer cannot be used. A caller that counts
+    requests passes its own ``usage``: it holds the requests answered so far when the run ends
+    in any other error."""
     if agent.name is None:
         raise ValueError("an agent needs a name: its model and its traces are keyed on it")
     capabilities = []
@@ -140,7 +150,7 @@ async def run[DepsT, OutputT](
             include_binary_content=trace_content,
         )
         capabilities.append(Instrumentation(settings=settings))
-    usage = RunUsage()
+    usage = usage if usage is not None else RunUsage()
     try:
         return await agent.run(
             prompt,

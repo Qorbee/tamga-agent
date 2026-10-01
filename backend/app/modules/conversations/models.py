@@ -148,6 +148,8 @@ class Thread(CompanyScoped, Base):
             "created_at",
             postgresql_where=text("category IS NULL"),
         ),
+        # What changed since a reader last looked, in the order it changed.
+        Index(None, "company_id", "changed_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -167,6 +169,9 @@ class Thread(CompanyScoped, Base):
     sort_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     sort_failed_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # When a mail of it was last processed or its sorting last changed: what reads conversations
+    # next (the linker) finds by this what it has not read yet.
+    changed_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class MailModelRead(CompanyScoped, Base):
@@ -177,7 +182,7 @@ class MailModelRead(CompanyScoped, Base):
     __tablename__ = "mail_model_reads"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
-    # The agent that read: "intake".
+    # The agent that read: "intake", "linker".
     agent: Mapped[str] = mapped_column(String(40))
     read_at: Mapped[datetime]
 

@@ -63,12 +63,31 @@ async def facts_of(
     return await repository.for_item(db, company_id, item_kind, item_id)
 
 
+async def facts_of_items(
+    db: AsyncSession, *, company_id: uuid.UUID, item_kind: ItemKind, item_ids: Sequence[uuid.UUID]
+) -> Sequence[Fact]:
+    """The facts of several items of one kind, in one query."""
+    return await repository.for_items(db, company_id, item_kind, item_ids)
+
+
 async def items_sharing(
     db: AsyncSession, *, company_id: uuid.UUID, kind: str, normalised: str
 ) -> Sequence[Fact]:
     """Every fact of this kind and value in the company: the strong-key half of the candidate
     search (an order number, an ETTN, a plate)."""
     return await repository.matching(db, company_id, kind, normalised)
+
+
+async def items_sharing_each(
+    db: AsyncSession, *, company_id: uuid.UUID, pairs: Sequence[tuple[str, str]], per_pair: int
+) -> dict[tuple[str, str], list[Fact]]:
+    """``items_sharing`` for several (kind, normalised value) pairs at once: the first
+    ``per_pair`` facts of each."""
+    found: dict[tuple[str, str], list[Fact]] = {pair: [] for pair in pairs}
+    if pairs:
+        for fact in await repository.matching_each(db, company_id, pairs, per_pair=per_pair):
+            found[(fact.kind, fact.normalised)].append(fact)
+    return found
 
 
 async def forget_item(

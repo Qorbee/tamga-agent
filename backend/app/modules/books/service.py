@@ -10,6 +10,7 @@ read and stops, and the next month continues from its cursor.
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Final
@@ -281,3 +282,44 @@ async def list_invoices(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+async def find_invoices(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    q: str | None,
+    since: date | None,
+    until: date | None,
+    limit: int,
+) -> list[InvoiceOut]:
+    """Invoices by a part of their number, their party's name or their e-document id, issued in
+    the span, newest first."""
+    rows = await repository.find_invoices(
+        db, company_id, q=q.strip() if q else None, since=since, until=until, limit=limit
+    )
+    return [InvoiceOut.model_validate(row) for row in rows]
+
+
+async def get_invoices(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> list[InvoiceOut]:
+    rows = await repository.get_invoices(db, company_id, ids)
+    return [InvoiceOut.model_validate(row) for row in rows]
+
+
+async def invoices_named(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    numbers: Sequence[str],
+    e_document_ids: Sequence[str],
+) -> list[InvoiceOut]:
+    """The invoices in the books that a text names: by number as facts compare one (letters and
+    digits, upper case), or by e-document id (lower case)."""
+    if not numbers and not e_document_ids:
+        return []
+    rows = await repository.invoices_named(
+        db, company_id, numbers=numbers, e_document_ids=e_document_ids
+    )
+    return [InvoiceOut.model_validate(row) for row in rows]

@@ -125,3 +125,63 @@ async def list_invoices(
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def find_invoices(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    q: str | None,
+    since: date | None,
+    until: date | None,
+    limit: int,
+) -> Sequence[Invoice]:
+    filters: list[ColumnElement[bool]] = [Invoice.company_id == company_id]
+    if q:
+        pattern = f"%{escape_like(q)}%"
+        filters.append(
+            or_(
+                Invoice.number.ilike(pattern, escape="\\"),
+                Invoice.party_name.ilike(pattern, escape="\\"),
+                Invoice.e_document_id.ilike(pattern, escape="\\"),
+            )
+        )
+    if since is not None:
+        filters.append(Invoice.issue_date >= since)
+    if until is not None:
+        filters.append(Invoice.issue_date <= until)
+    rows = await db.scalars(
+        select(Invoice)
+        .where(*filters)
+        .order_by(Invoice.issue_date.desc().nulls_last(), Invoice.id)
+        .limit(limit)
+    )
+    return rows.all()
+
+
+async def get_invoices(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> Sequence[Invoice]:
+    rows = await db.scalars(
+        select(Invoice).where(Invoice.company_id == company_id, Invoice.id.in_(ids))
+    )
+    return rows.all()
+
+
+async def invoices_named(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    numbers: Sequence[str],
+    e_document_ids: Sequence[str],
+) -> Sequence[Invoice]:
+    """Invoices whose number, letters and digits only and in upper case, is one of ``numbers``,
+    or whose e-document id is one of ``e_document_ids`` whatever its case."""
+    bare = func.upper(func.regexp_replace(Invoice.number, "[^0-9A-Za-z]", "", "g"))
+    rows = await db.scalars(
+        select(Invoice).where(
+            Invoice.company_id == company_id,
+            or_(bare.in_(numbers), func.lower(Invoice.e_document_id).in_(e_document_ids)),
+        )
+    )
+    return rows.all()

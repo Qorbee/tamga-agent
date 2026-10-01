@@ -1,0 +1,798 @@
+import email.message
+import uuid
+from collections.abc import Callable
+from datetime import date, timedelta
+from decimal import Decimal
+from typing import Any
+
+import httpx
+import pytest
+from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    ToolReturnPart,
+)
+from pydantic_ai.messages import UserPromptPart as UserPrompt
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from sqlalchemy import select, update
+
+from app.config import get_settings
+from app.modules.books.models import Invoice, InvoiceDirection, InvoiceKind
+from app.modules.conversations import repository as mail_repository
+from app.modules.conversations import service as conversations
+from app.modules.conversations.adapters.imap import FetchedMail
+from app.modules.conversations.models import MailModelRead, Message, Thread, ThreadCategory
+from app.modules.documents import service as documents
+from app.modules.linking import repository, service
+from app.modules.linking.models import Outcome, Placement
+from app.modules.projects import service as projects
+from app.modules.projects.models import (
+    FieldSource,
+    LinkMethod,
+    LinkStatus,
+    Project,
+    ProjectLink,
+    ProjectStatus,
+)
+from app.platform import llm
+from app.platform.clock import utcnow
+from app.platform.db import open_session
+from app.platform.items import ItemKind
+from app.tests.conftest import guest_client
+from app.tests.documents import pdfs
+
+OWN = "ops@acme.example"
+QUOTE_ONLY = "On Mon, 3 Aug 2026 at 09:00, Ada Stone wrote:\n> the quoted history"
+CUSTOMER = "Ada Stone <ada@stone.example>"
+TOOLS = {"search_mail", "open_conversation", "search_projects", "open_project", "search_invoices"}
+
+type Step = tuple[str, dict[str, Any]] | Exception
+
+
+def mail(
+    message_id: str,
+    *,
+    sender: str = CUSTOMER,
+    subject: str = "Munich load",
+    body: str = "We confirm the load for Monday, steel coils from Istanbul to Munich.",
+    date: str = "Mon, 03 Aug 2026 09:00:00 +0300",
+    references: str | None = None,
+    files: tuple[str, ...] = (),
+    attach: dict[str, bytes] | None = None,
+) -> bytes:
+    message = email.message.EmailMessage()
+    message["From"] = sender
+    message["Subject"] = subject
+    message["Date"] = date
+    message["Message-ID"] = message_id
+    if references:
+        message["References"] = references
+    message.set_content(body)
+    for name, content in ({name: b"%PDF-1.7 a" for name in files} | (attach or {})).items():
+        message.add_attachment(content, maintype="application", subtype="pdf", filename=name)
+    return message.as_bytes()
+
+
+async def arrive(
+    company_id: uuid.UUID, uid: int, raw: bytes, *, category: ThreadCategory | None
+) -> None:
+    """Stores a mail, processes it, and sorts its conversation as ``category`` when it waits."""
+    async with open_session() as db:
+        stored = await conversations.ingest_mail(
+            db,
+            company_id=company_id,
+            place=conversations.FolderPlace(mailbox=OWN, folder="INBOX", uidvalidity=1, sent=False),
+            fetched=FetchedMail(uid=uid, raw=raw, internaldate=None),
+            own_addresses={OWN},
+        )
+        await db.commit()
+    assert stored
+    await conversations.process_pending()
+    if category is None:
+        return
+    async with open_session() as db:
+        keys = await db.scalars(
+            select(Thread.thread_key).where(
+                Thread.company_id == company_id, Thread.category.is_(None)
+            )
+        )
+        for key in keys.all():
+            await mail_repository.set_sorting(
+                db, company_id, key, category=category, sorted_by="test", reason="", at=utcnow()
+            )
+        await db.commit()
+
+
+class Script:
+    """A stand-in for the model that plays its steps, a request each, and keeps what it was
+    sent."""
+
+    def __init__(self, *steps: Step) -> None:
+        self.steps = list(steps)
+        self.requests: list[list[ModelMessage]] = []
+        self.infos: list[AgentInfo] = []
+
+    def respond(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        self.requests.append(list(messages))
+        self.infos.append(info)
+        step = self.steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        name, args = step
+        if name == "answer":
+            name = info.output_tools[0].name
+        return ModelResponse(parts=[ToolCallPart(tool_name=name, args=args)])
+
+    def prompt(self) -> str:
+        first = self.requests[0][0]
+        assert isinstance(first, ModelRequest)
+        return "".join(
+            item
+            for part in first.parts
+            if isinstance(part, UserPrompt)
+            for item in part.content
+            if isinstance(item, str)
+        )
+
+    def returned(self, request: int) -> str:
+        """What the tool called in the request before ``request`` gave back."""
+        last = self.requests[request][-1]
+        assert isinstance(last, ModelRequest)
+        return "".join(str(part.content) for part in last.parts if isinstance(part, ToolReturnPart))
+
+
+def tool(name: str, **args: Any) -> Step:
+    return name, args
+
+
+def answer(decision: str, **fields: Any) -> Step:
+    return "answer", {"decision": decision, "reason": "why", "confidence": 0.8, **fields}
+
+
+NEW_PROJECT = answer(
+    "new_project",
+    new_project={"name": "Stone, Istanbul to Munich", "origin": "Istanbul", "cargo": "steel coils"},
+    cited_mails=[1],
+)
+
+
+@pytest.fixture
+def model(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Script]:
+    """Puts a scripted stand-in in the model's place, with a budget of forty reads a day."""
+    monkeypatch.setattr(get_settings(), "mail_model_reads_per_day", 40)
+
+    def install(*steps: Step) -> Script:
+        script = Script(*steps)
+        stand_in = FunctionModel(script.respond)
+        monkeypatch.setattr(llm, "model_for", lambda name: stand_in)
+        return script
+
+    return install
+
+
+async def placement(company_id: uuid.UUID, thread_key: str) -> Placement:
+    async with open_session() as db:
+        found = await db.scalar(
+            select(Placement)
+            .join(Thread, Thread.id == Placement.thread_id)
+            .where(Placement.company_id == company_id, Thread.thread_key == thread_key)
+        )
+    assert found is not None
+    return found
+
+
+async def links(company_id: uuid.UUID, thread_key: str) -> list[ProjectLink]:
+    """The links of a conversation's mails, in the order the mails were sent."""
+    async with open_session() as db:
+        rows = await db.scalars(
+            select(ProjectLink)
+            .join(Message, Message.id == ProjectLink.item_id)
+            .where(
+                ProjectLink.company_id == company_id,
+                ProjectLink.item_kind == ItemKind.MESSAGE,
+                Message.thread_key == thread_key,
+            )
+            .order_by(Message.sent_at, ProjectLink.created_at)
+        )
+        return list(rows.all())
+
+
+async def the_projects(company_id: uuid.UUID) -> list[Project]:
+    async with open_session() as db:
+        rows = await db.scalars(
+            select(Project).where(Project.company_id == company_id).order_by(Project.created_at)
+        )
+        return list(rows.all())
+
+
+async def reads(company_id: uuid.UUID) -> int:
+    async with open_session() as db:
+        rows = await db.scalars(
+            select(MailModelRead.agent).where(MailModelRead.company_id == company_id)
+        )
+        return len([agent for agent in rows.all() if agent == "linker"])
+
+
+async def owner_project(company_id: uuid.UUID, thread_key: str, name: str = "Munich") -> Project:
+    """A project the owner made, with the conversation's mails tied to it and confirmed."""
+    async with open_session() as db:
+        project = await projects.new_project(
+            db,
+            company_id=company_id,
+            name=name,
+            status=ProjectStatus.DRAFT,
+            source=FieldSource.OWNER,
+        )
+        mails = await db.scalars(
+            select(Message.id).where(
+                Message.company_id == company_id, Message.thread_key == thread_key
+            )
+        )
+        for mail_id in mails.all():
+            await projects.link_item(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.MESSAGE,
+                item_id=mail_id,
+                project_id=project.id,
+                method=LinkMethod.OWNER,
+                confidence=1.0,
+                confirm=True,
+            )
+        await db.commit()
+        return project
+
+
+@pytest.mark.integration
+async def test_the_linker_proposes_a_project_and_ties_the_mails_as_suggestions(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    order = mail("<order@x>", files=("packing list.pdf",))
+    await arrive(company_id, 1, order, category=ThreadCategory.WORK)
+    script = model(tool("search_projects", words="Stone"), NEW_PROJECT)
+
+    assert await service.place_pending() == 1
+    assert await service.place_pending() == 0
+
+    [project] = await the_projects(company_id)
+    assert (project.name, project.status) == ("Stone, Istanbul to Munich", ProjectStatus.PROPOSED)
+    [link] = await links(company_id, "<order@x>")
+    # ADR-0010: a model's reading proposes; only the owner confirms.
+    assert (link.project_id, link.status, link.method) == (
+        project.id,
+        LinkStatus.SUGGESTED,
+        LinkMethod.AGENT,
+    )
+    placed = await placement(company_id, "<order@x>")
+    assert (placed.outcome, placed.placed_by, placed.project_id) == (
+        Outcome.PROPOSED,
+        "model:linker",
+        project.id,
+    )
+    assert placed.reason == "why" and placed.cited == [link.item_id] and not placed.waiting
+    assert placed.reading == {"origin": "Istanbul", "cargo": "steel coils"}
+    # Both requests were sent the mail, and both count against the day's budget.
+    assert await reads(company_id) == 2
+    # The conversation and what a tool returns are fenced as data; the tools only read.
+    prompt = script.prompt()
+    marker = prompt.split()[3]
+    assert prompt.startswith(f"BEGIN OUTSIDE DATA {marker}\n")
+    assert prompt.rstrip().endswith(f"END OUTSIDE DATA {marker}")
+    assert "steel coils from Istanbul to Munich" in prompt and "Ada Stone" in prompt
+    assert "[mail 1] 2026-08-03" in prompt and "File: packing list.pdf" in prompt
+    assert {definition.name for definition in script.infos[0].function_tools} == TOOLS
+    assert script.returned(1).startswith("BEGIN OUTSIDE DATA ")
+
+
+@pytest.mark.integration
+async def test_a_second_conversation_about_the_job_is_found_by_search_and_linked(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    other = await guest_client(client)
+    await arrive(other, 1, mail("<theirs@x>", subject="Munich, another company"), category=None)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+    # Not a reply, and no number in common: only reading it ties it to the job.
+    await arrive(
+        company_id,
+        2,
+        mail("<driver@x>", subject="Truck for Munich", body="The driver is at the Munich dock."),
+        category=ThreadCategory.WORK,
+    )
+    script = model(
+        tool("search_mail", words="Munich"),
+        tool("open_conversation", conversation=1),
+        answer("link", project=project.number, cited_mails=[1, 7]),
+    )
+
+    assert await service.place_pending() == 1
+
+    found = script.returned(1)
+    # The other conversation of this company with the project it is in, and nothing of another's.
+    assert "[c1]" in found and "Munich load" in found and f"in project {project.number}" in found
+    assert "another company" not in found
+    assert "steel coils from Istanbul to Munich" in script.returned(2)
+    [link] = await links(company_id, "<driver@x>")
+    assert (link.project_id, link.status, link.method) == (
+        project.id,
+        LinkStatus.SUGGESTED,
+        LinkMethod.AGENT,
+    )
+    placed = await placement(company_id, "<driver@x>")
+    # A mail number the conversation does not have is dropped, not guessed at.
+    assert placed.outcome is Outcome.LINKED and placed.cited == [link.item_id]
+    assert await the_projects(other) == []
+
+
+@pytest.mark.integration
+async def test_a_project_the_run_was_never_shown_cannot_be_named(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    other = await guest_client(client)
+    await arrive(other, 1, mail("<theirs@x>"), category=ThreadCategory.WORK)
+    theirs = await owner_project(other, "<theirs@x>")
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    script = model(
+        tool("open_project", number=theirs.number),
+        answer("link", project=theirs.number),
+        answer("unplaced"),
+    )
+
+    assert await service.place_pending() == 2  # theirs is whole already, by code
+
+    assert script.returned(1).startswith("No such project")
+    # The answer naming it failed the output's checks, and the model was asked again.
+    assert len(script.requests) == 3
+    assert await links(company_id, "<order@x>") == []
+    assert (await placement(company_id, "<order@x>")).outcome is Outcome.UNPLACED
+    assert [project.id for project in await the_projects(other)] == [theirs.id]
+
+
+@pytest.mark.integration
+async def test_a_shared_order_number_places_a_conversation_without_a_model(
+    client: httpx.AsyncClient, model: Callable[..., Script], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    monkeypatch.setattr(get_settings(), "mail_model_reads_per_day", 0)
+    script = model()
+    body = "Order no 4500123, steel coils."
+    await arrive(company_id, 1, mail("<order@x>", body=body), category=ThreadCategory.WORK)
+    project = await owner_project(company_id, "<order@x>")
+    await arrive(
+        company_id,
+        2,
+        mail("<cmr@x>", subject="CMR", body="Signed CMR attached. Order no 4500123."),
+        category=ThreadCategory.WORK,
+    )
+    await arrive(
+        company_id,
+        3,
+        mail("<bank@x>", subject="Transfer", body="Payment received."),
+        category=ThreadCategory.AUTOMATED,
+    )
+
+    assert await service.place_pending() == 3
+
+    [link] = await links(company_id, "<cmr@x>")
+    assert (link.project_id, link.method, link.status) == (
+        project.id,
+        LinkMethod.KEY,
+        LinkStatus.SUGGESTED,
+    )
+    # The link cites the fact that carries the number.
+    assert len(link.evidence) == 1
+    placed = await placement(company_id, "<cmr@x>")
+    assert (placed.outcome, placed.placed_by) == (Outcome.LINKED, "keys")
+    # The owner's own links stand as they were.
+    [owned] = await links(company_id, "<order@x>")
+    assert (owned.status, owned.method) == (LinkStatus.CONFIRMED, LinkMethod.OWNER)
+    assert (await placement(company_id, "<order@x>")).placed_by == "thread"
+    # A number in more places than one job has mails is no key: it ties nothing.
+    others = service.KEY_MAX_ITEMS + 1
+    for uid in range(10, 10 + others + 1):
+        common = mail(f"<sig{uid}@x>", subject=f"Offer {uid}", body="Our ref: ACME-0001.")
+        await arrive(company_id, uid, common, category=ThreadCategory.AUTOMATED)
+    await owner_project(company_id, "<sig10@x>", "Another job")
+    assert await service.place_pending() == others + 1
+    assert (await placement(company_id, "<sig11@x>")).outcome is Outcome.UNPLACED
+    # A system's notice with no number in common is left unplaced, and no model reads it.
+    bank = await placement(company_id, "<bank@x>")
+    assert (bank.outcome, bank.placed_by) == (Outcome.UNPLACED, "keys")
+    assert script.requests == [] and await reads(company_id) == 0
+
+
+@pytest.mark.integration
+async def test_an_invoice_in_the_books_ties_the_mail_that_names_it(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    project = await owner_project(company_id, "<order@x>")
+    async with open_session() as db:
+        invoice = Invoice(
+            company_id=company_id,
+            source="test",
+            source_id="1",
+            direction=InvoiceDirection.RECEIVABLE,
+            kind=InvoiceKind.SALES,
+            number="FTR2026000000118",
+            party_name="Stone GmbH",
+            issue_date=date(2026, 8, 10),
+            currency="EUR",
+            total_amount=Decimal("1200.00"),
+            raw={},
+        )
+        db.add(invoice)
+        await db.flush()
+        await projects.link_item(
+            db,
+            company_id=company_id,
+            item_kind=ItemKind.INVOICE,
+            item_id=invoice.id,
+            project_id=project.id,
+            method=LinkMethod.OWNER,
+            confidence=1.0,
+            confirm=True,
+        )
+        await db.commit()
+    # A bank's notice names the invoice as people write it; the books hold it without the dashes.
+    paid = mail("<paid@x>", subject="Transfer", body="Invoice no: FTR-2026-000000118 is paid.")
+    await arrive(company_id, 2, paid, category=ThreadCategory.AUTOMATED)
+    await arrive(company_id, 3, mail("<thanks@x>", subject="Thanks"), category=ThreadCategory.WORK)
+    script = model(
+        tool("search_invoices", words="Stone", since="2026-08-01"),
+        tool("open_project", number=project.number),
+        answer("link", project=project.number),
+    )
+
+    assert await service.place_pending() == 3
+
+    [by_number] = await links(company_id, "<paid@x>")
+    assert (by_number.project_id, by_number.method) == (project.id, LinkMethod.KEY)
+    listed, opened = script.returned(1), script.returned(2)
+    assert "sales invoice FTR2026000000118" in listed and "Stone GmbH" in listed
+    assert "1200.00 EUR" in listed and f"in project {project.number}" in listed
+    assert "Munich load" in opened and "FTR2026000000118" in opened
+    [by_model] = await links(company_id, "<thanks@x>")
+    assert (by_model.project_id, by_model.method) == (project.id, LinkMethod.AGENT)
+
+
+@pytest.mark.integration
+async def test_without_a_budget_a_conversation_that_needs_reading_waits(
+    client: httpx.AsyncClient, model: Callable[..., Script], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    monkeypatch.setattr(get_settings(), "mail_model_reads_per_day", 0)
+    script = model(NEW_PROJECT)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    await arrive(company_id, 2, mail("<news@x>", subject="Offers"), category=ThreadCategory.NOISE)
+
+    assert await service.place_pending() == 0
+
+    waits = await placement(company_id, "<order@x>")
+    assert waits.waiting and waits.outcome is None
+    assert script.requests == []
+    # Noise is not even noted.
+    async with open_session() as db:
+        noted = await db.scalars(select(Placement).where(Placement.company_id == company_id))
+        assert len(noted.all()) == 1
+
+    monkeypatch.setattr(get_settings(), "mail_model_reads_per_day", 40)
+    assert await service.place_pending() == 1
+
+
+@pytest.mark.integration
+async def test_new_mail_soon_follows_its_conversation_and_later_mail_is_read_again(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+
+    script = model()
+    soon = mail("<soon@x>", date="Wed, 05 Aug 2026 09:00:00 +0300", references="<order@x>")
+    await arrive(company_id, 2, soon, category=None)
+    assert await service.place_pending() == 1
+
+    first, second = await links(company_id, "<order@x>")
+    assert (second.project_id, second.method, second.status) == (
+        project.id,
+        LinkMethod.SCORED,
+        LinkStatus.SUGGESTED,
+    )
+    placed = await placement(company_id, "<order@x>")
+    # What the model said of the conversation is kept; the new mail followed it.
+    assert (placed.outcome, placed.placed_by, placed.reason) == (
+        Outcome.PROPOSED,
+        "thread",
+        "why",
+    )
+    assert script.requests == []
+
+    # Weeks later the same thread may carry a new order: a model reads it again.
+    script = model(answer("link", project=project.number))
+    late = mail(
+        "<late@x>",
+        date="Sun, 20 Sep 2026 09:00:00 +0300",
+        references="<order@x>",
+        body=QUOTE_ONLY,
+    )
+    await arrive(company_id, 3, late, category=None)
+    assert await service.place_pending() == 1
+
+    assert len(script.requests) == 1 and project.number in script.prompt()
+    # A reply of nothing but quoted history shows the model no text its writer did not type.
+    assert "[mail 3] 2026-09-20" in script.prompt()
+    assert "the quoted history" not in script.prompt()
+    assert len(await links(company_id, "<order@x>")) == 3
+    assert (await placement(company_id, "<order@x>")).placed_by == "model:linker"
+
+
+@pytest.mark.integration
+async def test_an_old_thread_answered_with_a_new_order_sends_only_the_new_mail_to_the_new_project(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    late = mail("<late@x>", date="Sun, 20 Sep 2026 09:00:00 +0300", references="<order@x>")
+    await arrive(company_id, 2, late, category=None)
+    model(answer("new_project", new_project={"name": "Stone, Izmir to Lyon"}))
+
+    assert await service.place_pending() == 1
+
+    first, second = await the_projects(company_id)
+    old, new = await links(company_id, "<order@x>")
+    assert (old.project_id, new.project_id) == (first.id, second.id)
+
+
+@pytest.mark.integration
+async def test_a_copy_of_a_mail_from_a_second_mailbox_is_not_read_again(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    script = model(answer("unplaced"))
+    assert await service.place_pending() == 1
+    # The same mail as another mailbox received it: other delivery headers, the same words.
+    copy = mail("<order@x>").replace(b"From:", b"Delivered-To: other@acme.example\nFrom:", 1)
+    await arrive(company_id, 2, copy, category=None)
+
+    assert await service.place_pending() == 0
+
+    assert len(script.requests) == 1
+    assert not (await placement(company_id, "<order@x>")).waiting
+
+
+@pytest.mark.integration
+async def test_older_mail_that_arrives_late_is_not_swept_into_a_recent_project(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    await arrive(company_id, 2, mail("<bank@x>", subject="Bank"), category=ThreadCategory.AUTOMATED)
+    project = await owner_project(company_id, "<order@x>")
+    await owner_project(company_id, "<bank@x>", "Another job")
+    model()
+    assert await service.place_pending() == 2
+    # The history walk stores a year-old mail of each thread after the recent ones.
+    old = "Mon, 04 Aug 2025 09:00:00 +0300"
+    await arrive(company_id, 3, mail("<old@x>", date=old, references="<order@x>"), category=None)
+    await arrive(company_id, 4, mail("<notice@x>", date=old, references="<bank@x>"), category=None)
+    script = model(answer("unplaced"))
+
+    assert await service.place_pending() == 2
+
+    # The newest mail of the thread did not change, yet the old one is far from every tied mail:
+    # a model reads the work conversation, and the system's notice stays unplaced.
+    assert len(script.requests) == 1 and project.number in script.prompt()
+    assert len(await links(company_id, "<order@x>")) == 1
+    notice = await placement(company_id, "<bank@x>")
+    assert (notice.outcome, notice.placed_by) == (Outcome.UNPLACED, "keys")
+    assert len(await links(company_id, "<bank@x>")) == 1
+
+
+@pytest.mark.integration
+async def test_a_file_read_after_its_mail_was_placed_sends_the_conversation_back(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    model()
+    cmr = pdfs.pdf(pdfs.text("International consignment note, CMR No: 778899"))
+    first = mail("<cmr@x>", subject="CMR", body="The signed note.", attach={"cmr.pdf": cmr})
+    await arrive(company_id, 1, first, category=ThreadCategory.WORK)
+    project = await owner_project(company_id, "<cmr@x>")
+    # The same file forwarded by someone else, and another file naming the same note: neither
+    # mail says the number itself, and neither file has been read yet.
+    await arrive(
+        company_id,
+        2,
+        mail("<forward@x>", subject="Fwd", body="See attached.", attach={"scan.pdf": cmr}),
+        category=ThreadCategory.AUTOMATED,
+    )
+    other = pdfs.pdf(pdfs.text("Delivery for CMR No: 778899"))
+    await arrive(
+        company_id,
+        3,
+        mail("<pod@x>", subject="POD", body="Delivered.", attach={"pod.pdf": other}),
+        category=ThreadCategory.AUTOMATED,
+    )
+    assert await service.place_pending() == 3
+    assert (await placement(company_id, "<pod@x>")).outcome is Outcome.UNPLACED
+
+    assert await documents.read_pending() == 2
+    assert await service.place_pending() == 3
+
+    # One file is stored once: the forward is tied through the mail that first carried it.
+    [forwarded] = await links(company_id, "<forward@x>")
+    [delivered] = await links(company_id, "<pod@x>")
+    assert forwarded.project_id == delivered.project_id == project.id
+    assert forwarded.method is delivered.method is LinkMethod.KEY
+    assert len(delivered.evidence) == 1
+
+
+@pytest.mark.integration
+async def test_a_mail_the_owner_ties_while_the_model_reads_is_left_where_the_owner_put_it(
+    client: httpx.AsyncClient, model: Callable[..., Script], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        await owner_project(company_id, "<order@x>", "The owner's own")
+        proposal = {"decision": "new_project", "reason": "why", "confidence": 0.8}
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name=info.output_tools[0].name,
+                    args=proposal | {"new_project": {"name": "Stone, Istanbul to Munich"}},
+                )
+            ]
+        )
+
+    model()
+    stand_in = FunctionModel(respond)
+    monkeypatch.setattr(llm, "model_for", lambda name: stand_in)
+
+    assert await service.place_pending() == 1
+
+    [link] = await links(company_id, "<order@x>")
+    assert (link.status, link.method) == (LinkStatus.CONFIRMED, LinkMethod.OWNER)
+
+
+@pytest.mark.integration
+async def test_a_run_that_fails_midway_still_counts_every_request_it_made(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    down = ModelHTTPError(503, "the-model", {"error": {"message": "overloaded"}})
+    model(tool("search_projects", words="Stone"), tool("search_mail", words="Munich"), down)
+
+    assert await service.place_pending() == 0
+
+    assert await reads(company_id) == 3
+    assert (await placement(company_id, "<order@x>")).failures == 1
+
+
+@pytest.mark.integration
+async def test_a_link_the_owner_rejected_is_never_made_again(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+    async with open_session() as db:
+        await db.execute(
+            update(ProjectLink)
+            .where(ProjectLink.company_id == company_id)
+            .values(status=LinkStatus.REJECTED, decided_at=utcnow())
+        )
+        await db.commit()
+
+    script = model(answer("link", project=project.number), answer("unplaced"))
+    late = mail("<late@x>", date="Sun, 20 Sep 2026 09:00:00 +0300", references="<order@x>")
+    await arrive(company_id, 2, late, category=None)
+    assert await service.place_pending() == 1
+
+    # The model was told, and its answer naming the project anyway was sent back to it.
+    assert "does not belong to" in script.prompt() and project.number in script.prompt()
+    assert len(script.requests) == 2
+    [rejected] = await links(company_id, "<order@x>")
+    assert rejected.status is LinkStatus.REJECTED
+    assert (await placement(company_id, "<order@x>")).outcome is Outcome.UNPLACED
+
+
+@pytest.mark.integration
+async def test_two_projects_that_fit_are_put_to_the_owner(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<a@x>", subject="Munich A"), category=ThreadCategory.WORK)
+    await arrive(company_id, 2, mail("<b@x>", subject="Munich B"), category=ThreadCategory.WORK)
+    first = await owner_project(company_id, "<a@x>", "Munich A")
+    second = await owner_project(company_id, "<b@x>", "Munich B")
+    await arrive(company_id, 3, mail("<which@x>", subject="POD"), category=ThreadCategory.WORK)
+    model(
+        tool("search_projects", words="Munich"),
+        answer("ask", alternatives=[first.number, second.number]),
+    )
+
+    assert await service.place_pending() == 3
+
+    placed = await placement(company_id, "<which@x>")
+    assert placed.outcome is Outcome.ASKED and placed.project_id is None
+    assert set(placed.alternatives) == {first.id, second.id}
+    assert await links(company_id, "<which@x>") == []
+
+
+@pytest.mark.integration
+async def test_an_answer_that_cannot_be_used_leaves_it_unplaced_and_a_failure_is_tried_again(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    wrong = ("answer", {"decision": "somewhere"})
+    model(wrong, wrong, wrong)
+
+    assert await service.place_pending() == 1
+
+    placed = await placement(company_id, "<order@x>")
+    assert (placed.outcome, placed.placed_by, placed.waiting) == (
+        Outcome.UNPLACED,
+        "unanswered",
+        False,
+    )
+    # Asking again would pay again for the same: every request made is counted, and it rests.
+    assert await reads(company_id) == 3
+
+    late = mail("<late@x>", date="Sun, 20 Sep 2026 09:00:00 +0300", references="<order@x>")
+    await arrive(company_id, 2, late, category=None)
+    down = ModelHTTPError(503, "the-model", {"error": {"message": "overloaded"}})
+    model(down, down, down, down)
+    for _ in range(service.PLACE_TRIES + 1):
+        assert await service.place_pending() == 0
+
+    waits = await placement(company_id, "<order@x>")
+    # After three tries it waits an hour; the provider being down costs a delay, not the mail.
+    assert waits.waiting and waits.failures == service.PLACE_TRIES
+    async with open_session() as db:
+        await db.execute(
+            update(Placement)
+            .where(Placement.company_id == company_id)
+            .values(failed_at=utcnow() - service.PLACE_RETRY_AFTER - timedelta(minutes=1))
+        )
+        await db.commit()
+    model(answer("unplaced"))
+    assert await service.place_pending() == 1
+
+
+@pytest.mark.integration
+async def test_a_change_noted_twice_is_read_once(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    script = model(answer("unplaced"))
+    assert await service.place_pending() == 1
+
+    # The look goes back over the last minutes each time, and finds the same change again.
+    await service.note_changes(company_id)
+    assert await service.place_pending() == 0
+
+    assert len(script.requests) == 1
+    async with open_session() as db:
+        assert await repository.latest_seen(db, company_id) is not None

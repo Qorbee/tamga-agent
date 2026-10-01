@@ -275,6 +275,12 @@ async def move_thread(
         )
         .values(category=None, sorted_by=None, sorted_at=None)
     )
+    # The thread holds other mail than it did: whatever read it reads it again.
+    await db.execute(
+        update(Thread)
+        .where(Thread.company_id == company_id, Thread.thread_key == to_key)
+        .values(changed_at=func.now())
+    )
 
 
 async def mail_after(
@@ -522,14 +528,17 @@ async def note_mail(
     bulk: bool,
     at: datetime,
 ) -> None:
-    """Records that a mail of this thread was processed: the thread's row is made, and what the
-    mail changes of its sorting is applied. A mail the company wrote makes the thread work,
-    whatever it was. A mail that is not bulk, in a thread that was noise only for being all bulk,
-    sends it back to be sorted."""
+    """Records that a mail of this thread was processed: the thread's row is made or marked as
+    changed, and what the mail changes of its sorting is applied. A mail the company wrote makes
+    the thread work, whatever it was. A mail that is not bulk, in a thread that was noise only
+    for being all bulk, sends it back to be sorted."""
+    row = insert(Thread).values(
+        id=uuid.uuid7(), company_id=company_id, thread_key=thread_key, changed_at=at
+    )
     await db.execute(
-        insert(Thread)
-        .values(id=uuid.uuid7(), company_id=company_id, thread_key=thread_key)
-        .on_conflict_do_nothing(index_elements=[Thread.company_id, Thread.thread_key])
+        row.on_conflict_do_update(
+            index_elements=[Thread.company_id, Thread.thread_key], set_={"changed_at": at}
+        )
     )
     this = (Thread.company_id == company_id, Thread.thread_key == thread_key)
     if outbound:
@@ -553,12 +562,12 @@ async def sort_by_rules(db: AsyncSession, company_id: uuid.UUID, at: datetime) -
     own = await db.execute(
         update(Thread)
         .where(*waiting, _in_thread(Message.direction == Direction.OUTBOUND))
-        .values(category=ThreadCategory.WORK, sorted_by=BY_OWN_MAIL, sorted_at=at)
+        .values(category=ThreadCategory.WORK, sorted_by=BY_OWN_MAIL, sorted_at=at, changed_at=at)
     )
     bulk = await db.execute(
         update(Thread)
         .where(*waiting, _in_thread(), ~_in_thread(Message.bulk.is_(False)))
-        .values(category=ThreadCategory.NOISE, sorted_by=BY_HEADERS, sorted_at=at)
+        .values(category=ThreadCategory.NOISE, sorted_by=BY_HEADERS, sorted_at=at, changed_at=at)
     )
     return (own.rowcount or 0) + (bulk.rowcount or 0)  # type: ignore[attr-defined]  # a DML result
 
@@ -624,7 +633,9 @@ async def set_sorting(
             Thread.thread_key == thread_key,
             Thread.category.is_(None),
         )
-        .values(category=category, sorted_by=sorted_by, reason=reason[:300], sorted_at=at)
+        .values(
+            category=category, sorted_by=sorted_by, reason=reason[:300], sorted_at=at, changed_at=at
+        )
     )
 
 
@@ -661,3 +672,145 @@ async def first_mail(
         .limit(limit)
     )
     return rows.all()
+
+
+# What reads conversations next
+
+# Sorted as these, a conversation is read further; noise is read by nothing.
+READ_FURTHER = (ThreadCategory.WORK, ThreadCategory.AUTOMATED)
+
+
+async def companies_with_read_threads(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone."""
+    rows = await db.scalars(
+        select(Thread.company_id).where(Thread.category.in_(READ_FURTHER)).distinct()
+    )
+    return list(rows)
+
+
+async def changed_threads(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    since: datetime,
+    after: tuple[datetime, uuid.UUID] | None,
+    limit: int,
+) -> Sequence[Thread]:
+    """Threads sorted as work or automated that changed at or after ``since``, in the order they
+    changed; ``after`` is the last one of the page before."""
+    filters = [
+        Thread.company_id == company_id,
+        Thread.category.in_(READ_FURTHER),
+        Thread.changed_at >= since,
+    ]
+    if after is not None:
+        filters.append(tuple_(Thread.changed_at, Thread.id) > after)
+    rows = await db.scalars(
+        select(Thread).where(*filters).order_by(Thread.changed_at, Thread.id).limit(limit)
+    )
+    return rows.all()
+
+
+async def get_thread_by_id(
+    db: AsyncSession, company_id: uuid.UUID, thread_id: uuid.UUID
+) -> Thread | None:
+    thread: Thread | None = await db.scalar(
+        select(Thread).where(Thread.company_id == company_id, Thread.id == thread_id)
+    )
+    return thread
+
+
+async def find_threads(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    q: str,
+    since: datetime | None,
+    until: datetime | None,
+    limit: int,
+) -> Sequence[Thread]:
+    """Threads sorted as work or automated with a mail that matches ``q`` and was sent in the
+    span, most recently active first."""
+    matching = [Message.company_id == company_id, _matches(q)]
+    if since is not None:
+        matching.append(Message.sent_at >= since)
+    if until is not None:
+        matching.append(Message.sent_at < until)
+    last_mail = (
+        select(func.max(Message.sent_at))
+        .where(Message.company_id == company_id, Message.thread_key == Thread.thread_key)
+        .scalar_subquery()
+    )
+    rows = await db.scalars(
+        select(Thread)
+        .where(
+            Thread.company_id == company_id,
+            Thread.category.in_(READ_FURTHER),
+            Thread.thread_key.in_(select(Message.thread_key).where(*matching)),
+        )
+        .order_by(last_mail.desc(), Thread.id)
+        .limit(limit)
+    )
+    return rows.all()
+
+
+async def mail_as_read(
+    db: AsyncSession, company_id: uuid.UUID, thread_keys: Sequence[str]
+) -> Sequence[Message]:
+    """These threads' mails as they were read, oldest first, a copy in another mailbox left
+    out."""
+    rows = await db.scalars(
+        select(Message)
+        .where(
+            Message.company_id == company_id,
+            Message.thread_key.in_(thread_keys),
+            Message.processed_at.is_not(None),
+            Message.copy_of_id.is_(None),
+        )
+        .order_by(Message.sent_at, Message.id)
+    )
+    return rows.all()
+
+
+async def threads_of_messages(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID], *, limit: int
+) -> Sequence[Thread]:
+    """The threads that hold these messages, most recently changed first."""
+    keys = select(Message.thread_key).where(
+        Message.company_id == company_id, Message.id.in_(message_ids)
+    )
+    rows = await db.scalars(
+        select(Thread)
+        .where(Thread.company_id == company_id, Thread.thread_key.in_(keys))
+        .order_by(Thread.changed_at.desc(), Thread.id)
+        .limit(limit)
+    )
+    return rows.all()
+
+
+async def messages_attaching(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> Sequence[MessageAttachment]:
+    rows = await db.scalars(
+        select(MessageAttachment).where(
+            MessageAttachment.company_id == company_id,
+            MessageAttachment.document_id.in_(document_ids),
+        )
+    )
+    return rows.all()
+
+
+async def touch_threads_carrying(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, at: datetime
+) -> None:
+    """Marks as changed the threads with a mail that carries this file."""
+    carriers = (
+        select(Message.thread_key)
+        .join(MessageAttachment, MessageAttachment.message_id == Message.id)
+        .where(Message.company_id == company_id, MessageAttachment.document_id == document_id)
+    )
+    await db.execute(
+        update(Thread)
+        .where(Thread.company_id == company_id, Thread.thread_key.in_(carriers))
+        .values(changed_at=at)
+    )

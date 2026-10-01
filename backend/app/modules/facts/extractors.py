@@ -20,6 +20,9 @@ type TextExtractor = Callable[[str], Iterable[NewFact]]
 REGEX: Final = "regex"
 
 _extractors: dict[str, TextExtractor] = {}
+# Kinds whose value names one job, or one document of one job: two items that share one belong
+# together. A party's IBAN, tax number or plate is in its every mail, so none of those is a key.
+_key_kinds: set[str] = {"invoice_number"}
 
 
 def register(name: str, extractor: TextExtractor) -> None:
@@ -27,6 +30,14 @@ def register(name: str, extractor: TextExtractor) -> None:
     if existing is not None and existing is not extractor:
         raise ValueError(f"fact extractor {name!r} is already registered")
     _extractors[name] = extractor
+
+
+def register_key_kind(kind: str) -> None:
+    _key_kinds.add(kind)
+
+
+def key_kinds() -> frozenset[str]:
+    return frozenset(_key_kinds)
 
 
 def from_text(text: str) -> list[NewFact]:

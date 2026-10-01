@@ -221,6 +221,37 @@ async def links_item(
     return found is not None
 
 
+async def links_of_items(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, item_ids: Sequence[uuid.UUID]
+) -> Sequence[ProjectLink]:
+    rows = await db.scalars(
+        select(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.item_kind == item_kind,
+            ProjectLink.item_id.in_(item_ids),
+        )
+        .order_by(ProjectLink.created_at, ProjectLink.id)
+    )
+    return rows.all()
+
+
+async def links_of_project(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
+) -> Sequence[ProjectLink]:
+    """A project's evidence, oldest first, without what the owner rejected."""
+    rows = await db.scalars(
+        select(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.project_id == project_id,
+            ProjectLink.status != LinkStatus.REJECTED,
+        )
+        .order_by(ProjectLink.created_at, ProjectLink.id)
+    )
+    return rows.all()
+
+
 def _link_filters(
     company_id: uuid.UUID,
     *,

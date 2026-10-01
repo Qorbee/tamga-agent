@@ -17,6 +17,7 @@ import hashlib
 import imaplib
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Final
@@ -30,7 +31,7 @@ from app.modules.companies.models import CompanyMode
 from app.modules.conversations import agents, html, quoted, repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
 from app.modules.conversations.mail import UNREADABLE, ParsedMail, parse_mail
-from app.modules.conversations.models import Channel, Direction, Message, ThreadCategory
+from app.modules.conversations.models import Channel, Direction, Message, Thread, ThreadCategory
 from app.modules.conversations.schemas import (
     AttachmentOut,
     MessageOut,
@@ -637,6 +638,153 @@ def _outbound(message: Message) -> bool:
     return message.direction == Direction.OUTBOUND
 
 
+# For what reads conversations next
+
+
+@dataclass(frozen=True, slots=True)
+class FileRead:
+    document_id: uuid.UUID
+    filename: str
+
+
+@dataclass(frozen=True, slots=True)
+class MailRead:
+    id: uuid.UUID
+    sent_at: datetime
+    sender: str | None
+    sender_name: str | None
+    # Written by the company itself.
+    outbound: bool
+    subject: str | None
+    # What its writer typed, without the history it quotes.
+    text: str
+    # The files beside its text; a picture its body shows inline is not one.
+    files: list[FileRead]
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadRead:
+    """A conversation as it was read: its mails oldest first, a copy in another mailbox once."""
+
+    id: uuid.UUID
+    category: ThreadCategory | None
+    changed_at: datetime
+    mails: list[MailRead]
+
+
+async def companies_with_read_threads(db: AsyncSession) -> list[uuid.UUID]:
+    return await repository.companies_with_read_threads(db)
+
+
+async def changed_threads(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    since: datetime,
+    after: tuple[datetime, uuid.UUID] | None,
+    limit: int,
+) -> list[tuple[uuid.UUID, datetime]]:
+    """The conversations sorted as work or automated that got mail or were sorted at or after
+    ``since``, each with when, in that order; ``after`` is the last of the page before."""
+    rows = await repository.changed_threads(db, company_id, since=since, after=after, limit=limit)
+    return [(row.id, row.changed_at) for row in rows]
+
+
+async def read_thread(
+    db: AsyncSession, company_id: uuid.UUID, thread_id: uuid.UUID
+) -> ThreadRead | None:
+    thread = await repository.get_thread_by_id(db, company_id, thread_id)
+    if thread is None:
+        return None
+    return (await _as_read_threads(db, company_id, [thread]))[0]
+
+
+async def search_threads(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    q: str,
+    since: datetime | None,
+    until: datetime | None,
+    limit: int,
+) -> list[ThreadRead]:
+    """Conversations sorted as work or automated holding a mail that matches ``q`` (as the app's
+    search matches) and was sent in the span, most recently active first. Noise is never found."""
+    threads = await repository.find_threads(
+        db, company_id, q=q, since=since, until=until, limit=limit
+    )
+    return await _as_read_threads(db, company_id, threads)
+
+
+async def threads_holding(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID], *, limit: int
+) -> list[ThreadRead]:
+    """The conversations these mails are in, most recently changed first."""
+    threads = await repository.threads_of_messages(db, company_id, message_ids, limit=limit)
+    return await _as_read_threads(db, company_id, threads)
+
+
+async def messages_attaching(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """For each of these files, the mails that carried it."""
+    carried: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for row in await repository.messages_attaching(db, company_id, document_ids):
+        carried.setdefault(row.document_id, []).append(row.message_id)
+    return carried
+
+
+async def _as_read_threads(
+    db: AsyncSession, company_id: uuid.UUID, threads: Sequence[Thread]
+) -> list[ThreadRead]:
+    mails = await repository.mail_as_read(db, company_id, [thread.thread_key for thread in threads])
+    attached = await repository.attachments_of_each(db, company_id, [mail.id for mail in mails])
+    by_key: dict[str, list[MailRead]] = {}
+    for mail in mails:
+        by_key.setdefault(mail.thread_key, []).append(
+            MailRead(
+                id=mail.id,
+                sent_at=mail.sent_at,
+                sender=mail.sender,
+                sender_name=mail.sender_name,
+                outbound=_outbound(mail),
+                subject=mail.subject,
+                # A reply of nothing but quoted history has no text of its own.
+                text=mail.own_text,
+                files=[
+                    FileRead(document_id=file.document_id, filename=file.filename)
+                    for file in attached.get(mail.id, [])
+                    if not file.inline
+                ],
+            )
+        )
+    return [
+        ThreadRead(
+            id=thread.id,
+            category=thread.category,
+            changed_at=thread.changed_at,
+            mails=by_key.get(thread.thread_key, []),
+        )
+        for thread in threads
+    ]
+
+
+async def model_reads_left(db: AsyncSession, company_id: uuid.UUID) -> int:
+    """What is left of the company's budget of model reads for a day (MAIL_MODEL_READS_PER_DAY),
+    which every agent that is sent its mail shares."""
+    spent = await repository.model_reads_since(db, company_id, utcnow() - SORT_WINDOW)
+    return get_settings().mail_model_reads_per_day - spent
+
+
+async def count_model_reads(
+    db: AsyncSession, company_id: uuid.UUID, agent: str, *, requests: int = 1
+) -> None:
+    """Counts requests in which ``agent`` was sent the company's mail against that budget. Does
+    not commit."""
+    for _ in range(requests):
+        await repository.add_model_read(db, company_id, agent, utcnow())
+
+
 # Reading what arrived
 
 
@@ -650,6 +798,15 @@ async def _attaches(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.U
 
 # A file a mail brought stays as long as the mail does: it cannot be deleted from the files page.
 documents.register_holder(Holder.MAIL, _attaches)
+
+
+async def _file_was_read(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    await repository.touch_threads_carrying(db, company_id, document_id, utcnow())
+
+
+# A file is often read after its mail: what reads conversations next sees the conversation as
+# changed once more is known of one of its files.
+documents.on_read(_file_was_read)
 
 
 async def list_messages(

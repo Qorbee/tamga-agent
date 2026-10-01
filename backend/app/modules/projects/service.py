@@ -204,6 +204,36 @@ async def get_projects(
     return {p.id: p for p in await repository.get_projects(db, company_id, ids)}
 
 
+async def find_projects(
+    db: AsyncSession, company_id: uuid.UUID, *, q: str | None, limit: int
+) -> Sequence[Project]:
+    """Projects by a word of their name or by a number they have had, most recently changed
+    first, without those the owner rejected."""
+    rows, _ = await repository.list_projects(
+        db,
+        company_id,
+        statuses=[status for status in ProjectStatus if status is not ProjectStatus.REJECTED],
+        q=q.strip() if q else None,
+        order_by=[Project.updated_at.desc()],
+        page=PageParams(limit=limit, offset=0),
+    )
+    return rows
+
+
+async def links_of_items(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, item_ids: Sequence[uuid.UUID]
+) -> Sequence[ProjectLink]:
+    """Every link of these items, whatever its status: what they are tied to, and what the owner
+    said they are not."""
+    return await repository.links_of_items(db, company_id, item_kind, item_ids)
+
+
+async def links_of_project(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
+) -> Sequence[ProjectLink]:
+    return await repository.links_of_project(db, company_id, project_id)
+
+
 async def find_by_number(db: AsyncSession, company_id: uuid.UUID, number: str) -> Project | None:
     """The project that has, or once had, this number: a strong key for linking."""
     found = await repository.find_by_number(db, company_id, numbering.normalise(number))

@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +70,19 @@ async def for_item(
     return facts.all()
 
 
+async def for_items(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, item_ids: Sequence[uuid.UUID]
+) -> Sequence[Fact]:
+    facts = await db.scalars(
+        select(Fact)
+        .where(
+            Fact.company_id == company_id, Fact.item_kind == item_kind, Fact.item_id.in_(item_ids)
+        )
+        .order_by(Fact.item_id, Fact.kind, Fact.normalised)
+    )
+    return facts.all()
+
+
 async def matching(
     db: AsyncSession, company_id: uuid.UUID, kind: str, normalised: str
 ) -> Sequence[Fact]:
@@ -77,6 +90,27 @@ async def matching(
         select(Fact)
         .where(Fact.company_id == company_id, Fact.kind == kind, Fact.normalised == normalised)
         .order_by(Fact.created_at)
+    )
+    return facts.all()
+
+
+async def matching_each(
+    db: AsyncSession, company_id: uuid.UUID, pairs: Sequence[tuple[str, str]], *, per_pair: int
+) -> Sequence[Fact]:
+    """For each (kind, normalised value), its first ``per_pair`` facts in the company, oldest
+    first, in one query."""
+    place = (
+        func.row_number()
+        .over(partition_by=(Fact.kind, Fact.normalised), order_by=(Fact.created_at, Fact.id))
+        .label("place")
+    )
+    ranked = (
+        select(Fact.id, place)
+        .where(Fact.company_id == company_id, tuple_(Fact.kind, Fact.normalised).in_(pairs))
+        .subquery()
+    )
+    facts = await db.scalars(
+        select(Fact).join(ranked, ranked.c.id == Fact.id).where(ranked.c.place <= per_pair)
     )
     return facts.all()
 

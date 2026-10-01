@@ -126,8 +126,9 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     # TypeSafe's Jev, for classification agents only; unset, they run on a language model.
     typesafe_api_key: SecretStr | None = None
-    # Mail conversations a model may read for one company in 24 hours. Zero: conversations are
-    # sorted by code alone, and no mail's text goes to the model's provider.
+    # Requests in which a model is sent one company's mail in 24 hours, to sort its conversations
+    # and to place them among the projects. Zero: both are done by code alone where code can, and
+    # no mail's text goes to the model's provider.
     mail_model_reads_per_day: int = Field(default=0, ge=0)
     # Pictures (a photo, a scanned page) the vision model may read for one company in 24 hours.
     # Zero: photos and scans wait, and no file goes to the model's provider.
