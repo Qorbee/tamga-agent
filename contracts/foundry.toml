@@ -8,7 +8,9 @@ script = "script"
 out = "out"
 libs = ["lib"]
 
-solc_version = "0.8.37"
+# One release behind the newest (0.8.37): Arc's explorer verifies source only with the compilers
+# its verifier has, and 0.8.36 is its newest (checked 2026-10-01). Move it when the explorer does.
+solc_version = "0.8.36"
 # Arc runs the Osaka hard fork (docs.arc.io, "EVM differences"; on testnet, CLZ executes — checked
 # 2026-09-28). Pinned because the compiler's default target moves with solc releases.
 evm_version = "osaka"

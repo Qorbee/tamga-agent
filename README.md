@@ -66,8 +66,8 @@ Arc testnet; nothing touches a company's bank or real money.
 - **The books:** a read-only accounting sync, through a country pack.
 - **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled.
 - **PolicyVault:** the contract that caps the executor, written, tested, and deployed on Arc
-  testnet through Circle: [`0xbc651378b33c25e263cc17c3668288a62facb5f9`](https://testnet.arcscan.app/address/0xbc651378b33c25e263cc17c3668288a62facb5f9)
-  ([its source, verified](https://repo.sourcify.dev/5042002/0xbc651378b33c25e263cc17c3668288a62facb5f9)), with Tamga's
+  testnet through Circle: [`0x6354dbccc4f5063fd10b9b1e4ff66d65d4224d0a`](https://testnet.arcscan.app/address/0x6354dbccc4f5063fd10b9b1e4ff66d65d4224d0a),
+  its source verified there, with Tamga's
   [treasury wallet](https://testnet.arcscan.app/address/0x42f1180241d22e93dfec51f68e8a59fe8752623a) as its admin. One vault holds every
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
