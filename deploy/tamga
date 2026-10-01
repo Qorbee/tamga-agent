@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# docker compose for the deployment, from any directory: the root docker-compose.yml with
+# deploy/compose.yml laid over it, deploy/.env, and the app profile. deploy/README.md uses it:
+#
+#   deploy/tamga up -d --build
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+exec docker compose -f docker-compose.yml -f deploy/compose.yml --env-file deploy/.env --profile app "$@"

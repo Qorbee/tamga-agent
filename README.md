@@ -172,7 +172,8 @@ If the root `.env` moved the ports, export `DATABASE_URL` (to the `app_test` dat
 | [`backend/`](backend/README.md) | The API service (FastAPI, PostgreSQL): agents, policy engine, intake, the worker |
 | [`frontend/`](frontend/README.md) | The web app (Next.js, shadcn/ui, assistant-ui): landing page, the chat-first owner app, the playground |
 | [`contracts/`](contracts/README.md) | Solidity with Foundry: PolicyVault, the contract that caps the executor |
-| `docker-compose.yml` | Local Postgres and file storage; the backend and web images under `--profile app` |
+| `docker-compose.yml` | Local Postgres, file storage and the converter; the backend and web images under `--profile app` |
+| [`deploy/`](deploy/README.md) | The production Compose file laid over it, and the server's steps |
 | `scripts/` | `setup-machine.sh` (per-machine supply-chain settings); `export-abi.sh` (contract ABIs into the backend); `find_hidden_unicode.py` (invisible characters, in CI and pre-commit) |
 | `.github/` | CI and the pull-request checklist |
 

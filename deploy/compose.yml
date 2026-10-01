@@ -1,0 +1,87 @@
+# The deployment on the Hetzner server (docs/architecture/01, Deploy), laid over docker-compose.yml,
+# which stays the one place the images and versions are written. deploy/README.md has the steps;
+# from the repository root on the server:
+#
+#   docker compose -f docker-compose.yml -f deploy/compose.yml --env-file deploy/.env --profile app up -d --build
+#
+# What this changes from local: no port is published (Nginx Proxy Manager reaches web and api over
+# its own network, and the server's other apps hold 5432 and 8000); files go to Cloudflare R2, so
+# the local storage and the converter's loopback relay do not start; Postgres has a real password;
+# the schema is migrated before the api and the worker start; everything restarts on its own.
+
+name: tamga
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    ports: !reset []
+    # The tests' database is a laptop's and CI's.
+    configs: !reset []
+    restart: unless-stopped
+
+  # R2 in production (ADR-0001).
+  storage:
+    profiles: [local]
+
+  converter:
+    restart: unless-stopped
+
+  # Only a worker run on the host needs it.
+  converter-port:
+    profiles: [local]
+
+  # The schema, before anything that reads it: api and worker wait for it to finish.
+  migrate:
+    profiles: [app]
+    build: ./backend
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - path: backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    env_file: !override
+      - path: backend/.env
+    # Local addresses reset: storage, CORS and invite links come from backend/.env.
+    environment: !override
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/app
+    ports: !reset []
+    networks: [default, proxy]
+    restart: unless-stopped
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    env_file: !override
+      - path: backend/.env
+    environment: !override
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/app
+      CONVERTER_URL: http://converter:3000
+    restart: unless-stopped
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+      converter:
+        condition: service_healthy
+
+  web:
+    build:
+      args:
+        # Inlined into the browser's JavaScript at build time: the API as the browser reaches it.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in deploy/.env}
+    ports: !reset []
+    networks: [default, proxy]
+    restart: unless-stopped
+
+networks:
+  # Nginx Proxy Manager's network, made by its own Compose project: NPM reaches web:3000 and
+  # backend:8000 by name on it.
+  proxy:
+    name: ${NPM_NETWORK:?set NPM_NETWORK in deploy/.env}
+    external: true

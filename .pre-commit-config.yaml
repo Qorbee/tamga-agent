@@ -24,7 +24,9 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
         # pnpm 12 writes its lockfile as two YAML documents: its own pinned binary, then the lock.
-        args: [--allow-multiple-documents]
+        # --unsafe parses for syntax without building anything, so Compose's !reset and !override
+        # tags (deploy/compose.yml) pass while broken YAML still fails.
+        args: [--allow-multiple-documents, --unsafe]
       - id: check-toml
       - id: check-added-large-files
       - id: detect-private-key
