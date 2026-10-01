@@ -73,7 +73,8 @@ def deploy(settings: Settings, min_timelock: int) -> dict[str, Any]:
     request = {
         "idempotencyKey": str(uuid.uuid5(uuid.NAMESPACE_OID, identity)),
         "name": "PolicyVault",
-        "description": "Pays each company's payees through the executor, within its caps",
+        # Circle takes letters, digits and spaces here: no apostrophe, no comma.
+        "description": "Pays the payees of each company through the executor within its caps",
         "walletId": settings.circle_treasury_wallet_id,
         "blockchain": settings.circle_blockchain,
         "abiJson": abi,

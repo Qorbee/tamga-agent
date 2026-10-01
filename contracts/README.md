@@ -63,4 +63,6 @@ Circle's fork, [`arc-foundry`](https://github.com/circlefin/arc-foundry), runs f
 Arc's rules if one ever depends on them.
 
 The vault Tamga pays from is deployed by `backend/scripts/deploy_policy_vault.py`, from Tamga's
-treasury wallet through Circle's contracts API.
+treasury wallet through Circle's contracts API. On Arc testnet it is
+[`0xbc651378b33c25e263cc17c3668288a62facb5f9`](https://testnet.arcscan.app/address/0xbc651378b33c25e263cc17c3668288a62facb5f9), and its
+source is [verified on Sourcify](https://repo.sourcify.dev/5042002/0xbc651378b33c25e263cc17c3668288a62facb5f9).
