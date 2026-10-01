@@ -21,6 +21,7 @@ from app.modules.documents import router as documents
 from app.modules.identity import router as identity
 from app.modules.linking import router as linking
 from app.modules.projects import router as projects
+from app.modules.translations import router as translations
 from app.packs.logistics import router as logistics
 from app.platform import isolated, tracing
 from app.platform.db import dispose_db, init_db
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.links)
     app.include_router(projects.proposals)
     app.include_router(linking.placements)
+    app.include_router(translations.translations)
     app.include_router(conversations.messages)
     app.include_router(conversations.threads)
     app.include_router(documents.documents)

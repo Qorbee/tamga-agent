@@ -3582,6 +3582,51 @@
         "title": "ThreadSummary",
         "type": "object"
       },
+      "TranslationOut": {
+        "properties": {
+          "texts": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "texts"
+        ],
+        "title": "TranslationOut",
+        "type": "object"
+      },
+      "TranslationRequest": {
+        "properties": {
+          "language": {
+            "$ref": "#/components/schemas/Language"
+          },
+          "texts": {
+            "items": {
+              "maxLength": 600,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Texts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "language",
+          "texts"
+        ],
+        "title": "TranslationRequest",
+        "type": "object"
+      },
       "UploadOut": {
         "properties": {
           "created_at": {
@@ -6585,6 +6630,53 @@
         "summary": "List Threads",
         "tags": [
           "threads"
+        ]
+      }
+    },
+    "/translations": {
+      "post": {
+        "description": "What Tamga wrote, in another language: read from what is kept, written once by a model.",
+        "operationId": "translations.translate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranslationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranslationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Translate",
+        "tags": [
+          "translations"
         ]
       }
     }

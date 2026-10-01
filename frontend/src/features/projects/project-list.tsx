@@ -10,6 +10,7 @@ import { Count } from "@/components/placement-rows";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { T } from "@/components/translated";
 import { listProjects, listShipments, type Project, type ProjectStatus } from "@/lib/api";
 import { formatListDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -132,7 +133,9 @@ function ProjectRow({ project, trucks }: { project: Project; trucks: number }) {
           {project.aliases.length > 0 ? <span>{t.board.aliases(project.aliases.join(", "))}</span> : null}
           {project.field_sources.number === "owner" ? <span className="sr-only">{t.board.ownerEdited}</span> : null}
         </span>
-        <span className="block text-base font-medium text-pretty break-words">{project.name}</span>
+        <span className="block text-base font-medium text-pretty break-words">
+          <T>{project.name}</T>
+        </span>
         <span className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
           {items > 0 ? <Count icon={Link01Icon} count={items} label={t.board.items(items)} /> : null}
           {trucks > 0 ? <Count icon={TruckIcon} count={trucks} label={t.board.trucks(trucks)} /> : null}

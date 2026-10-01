@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import { CanvasLink } from "@/components/canvas-link";
 import { IconButton } from "@/components/icon-button";
 import { PersonAvatar } from "@/components/person-avatar";
+import { T } from "@/components/translated";
 import { decidePlacement, type Placement } from "@/lib/api";
 import { formatListDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -106,14 +107,14 @@ export function JobFacts({ placements, className }: { placements: Placement[]; c
       {route ? (
         <li className="flex max-w-full min-w-0">
           <Fact icon={Route01Icon} label={t.project.route}>
-            {route}
+            <T>{route}</T>
           </Fact>
         </li>
       ) : null}
       {cargo ? (
         <li className="flex max-w-full min-w-0">
           <Fact icon={PackageIcon} label={t.project.cargo}>
-            {cargo}
+            <T>{cargo}</T>
           </Fact>
         </li>
       ) : null}
@@ -156,9 +157,8 @@ function PlacementRow({ placement }: { placement: Placement }) {
   const roleIcon = role ? ROLE_ICONS[role] : undefined;
   const roleLabel =
     role === "client" ? t.project.client : role === "subcontractor" ? t.project.subcontractor : "";
-  const reason =
-    placement.reason ||
-    (placement.placed_by === "keys" ? t.inbox.byNumbers : placement.placed_by === "thread" ? t.inbox.byThread : "");
+  // Why code placed it is the app's own wording, in the reader's language already.
+  const byCode = placement.placed_by === "keys" ? t.inbox.byNumbers : placement.placed_by === "thread" ? t.inbox.byThread : "";
 
   return (
     <li className="flex items-start gap-1 py-1 ps-2 pe-3">
@@ -192,7 +192,11 @@ function PlacementRow({ placement }: { placement: Placement }) {
               {formatListDate(new Date(conversation.last_sent_at), locale)}
             </time>
           </span>
-          {reason ? <span className="text-muted-foreground mt-1 line-clamp-2 block text-sm text-pretty">{reason}</span> : null}
+          {placement.reason || byCode ? (
+            <span className="text-muted-foreground mt-1 line-clamp-2 block text-sm text-pretty">
+              {placement.reason ? <T>{placement.reason}</T> : byCode}
+            </span>
+          ) : null}
           {decide.isError ? (
             <span className="text-danger-foreground mt-1 block text-xs" role="alert">
               {t.errors.generic}

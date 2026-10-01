@@ -133,6 +133,9 @@ class Settings(BaseSettings):
     # Pictures (a photo, a scanned page) the vision model may read for one company in 24 hours.
     # Zero: photos and scans wait, and no file goes to the model's provider.
     vision_pages_per_day: int = Field(default=0, ge=0)
+    # Characters a model may write for one company in 24 hours when what Tamga wrote is asked for
+    # in another language. Zero: nothing is translated, and no text goes to the model's provider.
+    translated_chars_per_day: int = Field(default=0, ge=0)
 
     # Traces of agent runs, to Langfuse Cloud's EU region (ADR-0007). Unset: nothing is exported.
     langfuse_public_key: str | None = None

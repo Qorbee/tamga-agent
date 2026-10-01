@@ -60,6 +60,10 @@ export const tr: Dictionary = {
     writesInHint: "Proje adları ve gelen kutusundaki notları. Sohbet, yazdığınız dilde yanıt verir.",
     ownerOnly: "Bunu yalnızca şirket sahibi değiştirir.",
   },
+  translate: {
+    show: "Tamga'nın notlarını Türkçe göster",
+    asWritten: "Tamga'nın notlarını yazıldığı gibi göster",
+  },
   project: {
     title: "Proje",
     client: "Müşteri",

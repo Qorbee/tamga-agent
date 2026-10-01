@@ -14,6 +14,7 @@ import { useState } from "react";
 import { CanvasLink } from "@/components/canvas-link";
 import { IconButton } from "@/components/icon-button";
 import { JobFacts, PlacementRows, useInvalidatePlacements } from "@/components/placement-rows";
+import { T } from "@/components/translated";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -186,7 +187,7 @@ function ProjectCard({ project, waiting }: { project: Project; waiting: Placemen
             view={{ kind: "project", id: project.id }}
             className="decoration-muted-foreground/60 text-base font-medium text-pretty break-words underline-offset-4 hover:underline"
           >
-            {project.name}
+            <T>{project.name}</T>
           </CanvasLink>
           <JobFacts placements={waiting} className="mt-1.5" />
         </div>
@@ -260,7 +261,9 @@ function Question({ placement, projects }: { placement: Placement; projects: Map
           {conversation.subject ? conversationName(conversation.subject) : t.inbox.noSubject}
         </span>
         {placement.reason ? (
-          <span className="text-muted-foreground line-clamp-2 block text-sm text-pretty">{placement.reason}</span>
+          <span className="text-muted-foreground line-clamp-2 block text-sm text-pretty">
+            <T>{placement.reason}</T>
+          </span>
         ) : null}
       </CanvasLink>
       <div className="flex flex-wrap gap-2">
@@ -276,7 +279,7 @@ function Question({ placement, projects }: { placement: Placement; projects: Map
               onClick={() => choose.mutate(id)}
             >
               <span className="text-muted-foreground shrink-0 font-mono text-xs">{project?.number ?? "…"}</span>
-              <span className="min-w-0 text-start break-words">{project?.name}</span>
+              <span className="min-w-0 text-start break-words">{project ? <T>{project.name}</T> : null}</span>
             </Button>
           );
         })}

@@ -58,6 +58,10 @@ export const en = {
     writesInHint: "Project names and its notes in the Inbox. The chat answers in the language you write in.",
     ownerOnly: "Only the owner changes this.",
   },
+  translate: {
+    show: "Show Tamga's notes in English",
+    asWritten: "Show Tamga's notes as written",
+  },
   project: {
     title: "Project",
     client: "Client",

@@ -4,6 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
 
 import { JobFacts, PlacementRows } from "@/components/placement-rows";
+import { T, TranslateToggle } from "@/components/translated";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getProject, listAllPlacements } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
@@ -22,7 +23,9 @@ export function ProjectTitle({ id }: { id: string }) {
   return (
     <>
       <span className="text-muted-foreground shrink-0 font-mono text-xs">{project.data.number}</span>
-      <span className="truncate">{project.data.name}</span>
+      <span className="truncate">
+        <T>{project.data.name}</T>
+      </span>
     </>
   );
 }
@@ -61,7 +64,9 @@ export function ProjectView({ id }: { id: string }) {
           <span className="text-foreground">{number}</span>
           {aliases.length > 0 ? <span>{t.board.aliases(aliases.join(", "))}</span> : null}
         </p>
-        <h3 className="text-xl font-medium tracking-tight text-pretty [overflow-wrap:anywhere]">{name}</h3>
+        <h3 className="text-xl font-medium tracking-tight text-pretty [overflow-wrap:anywhere]">
+          <T>{name}</T>
+        </h3>
         <div className="flex items-center gap-2">
           {status !== "rejected" ? (
             <span className="bg-secondary text-secondary-foreground inline-flex items-center gap-1.5 rounded-full py-1 ps-2 pe-2.5 text-xs font-medium">
@@ -71,6 +76,7 @@ export function ProjectView({ id }: { id: string }) {
           ) : null}
           <ProjectActions project={project.data} />
           <EditProjectDialog project={project.data} />
+          <TranslateToggle className="text-muted-foreground" />
         </div>
         <JobFacts placements={held} className="mt-1" />
       </header>

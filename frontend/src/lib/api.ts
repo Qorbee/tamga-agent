@@ -91,6 +91,10 @@ export type InviteAccept = Schemas["InviteAccept"];
 export const acceptInvite = (body: InviteAccept) =>
   request<Me>("/invites/accept", json("POST", body));
 
+/** What Tamga wrote, in another language; a text that could not be translated comes back as it was. */
+export const translate = (body: Schemas["TranslationRequest"]) =>
+  request<Schemas["TranslationOut"]>("/translations", json("POST", body));
+
 export const updateCompany = (body: Schemas["CompanyUpdate"]) =>
   request<Me>("/me/company", json("PATCH", body));
 
