@@ -18,6 +18,7 @@ from html.parser import HTMLParser
 from urllib.parse import unquote
 
 from app.platform import filetypes
+from app.platform.html import shown_text
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +199,7 @@ def own_parts(message: Message) -> Iterator[Message]:
 def _text_of(part: Message) -> str:
     content = text_of_part(part)
     if part.get_content_type() == "text/html":
-        return _html_to_text(content)
+        return shown_text(content).text
     return content.strip()
 
 
@@ -230,7 +231,7 @@ def _attachments(message: Message, body: Message | None) -> list[Attachment]:
         found.append(
             Attachment(
                 filename=_clean(filename or "") or f"attachment-{len(found) + 1}",
-                content_type=_clean(part.get_content_type()),
+                content_type=_clean(_declared_type(part)),
                 data=data,
                 inline=(
                     cid in shown and id(part) in own and filetypes.sniff(data) in filetypes.IMAGES
@@ -240,31 +241,9 @@ def _attachments(message: Message, body: Message | None) -> list[Attachment]:
     return found
 
 
-class _TextOnly(HTMLParser):
-    _BLOCKS = frozenset({"p", "div", "br", "tr", "li", "h1", "h2", "h3", "table"})
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-        self._skipping = 0
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in ("script", "style"):
-            self._skipping += 1
-        elif tag in self._BLOCKS:
-            self.parts.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in ("script", "style") and self._skipping:
-            self._skipping -= 1
-
-    def handle_data(self, data: str) -> None:
-        if not self._skipping:
-            self.parts.append(data)
-
-
-def _html_to_text(html: str) -> str:
-    parser = _TextOnly()
-    parser.feed(html)
-    lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
-    return "\n".join(line for line in lines if line)
+def _declared_type(part: Message) -> str:
+    """A part's type, with the charset a text file was written in: a legacy file names it only
+    there."""
+    charset = part.get_content_charset()
+    kind = part.get_content_type()
+    return f"{kind}; charset={charset}" if charset else kind

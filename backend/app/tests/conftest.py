@@ -28,6 +28,8 @@ os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:8333")
 os.environ.setdefault("S3_BUCKET", "tamga-test")
 os.environ.setdefault("S3_ACCESS_KEY_ID", "local")
 os.environ.setdefault("S3_SECRET_ACCESS_KEY", "local")
+# The converter in docker-compose.yml, through its relay.
+os.environ.setdefault("CONVERTER_URL", "http://localhost:3100")
 # A key the model layer can build a client with; the tests never reach the provider (below).
 os.environ.setdefault("OPENAI_API_KEY", "test-key-never-sent")
 

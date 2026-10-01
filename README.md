@@ -54,10 +54,13 @@ Arc testnet; nothing touches a company's bank or real money.
   typed. Each mail is read once, copies from other mailboxes included, from what its writer typed
   (the history it quotes cut off), and code reads its plates, IBANs and invoice, order and CMR
   numbers.
-- **Files:** uploads and mail attachments, stored once and opened in a canvas beside the chat: PDFs,
-  spreadsheets as Excel lays them out, images. Each is read once, in a locked child process: a PDF's
-  text layer and a spreadsheet's visible cells, with hidden text left out and counted, and the facts
-  code finds in them.
+- **Files:** uploads and mail attachments, stored once and opened in a canvas beside the chat, which
+  zooms, turns, renames, deletes an upload and goes back to the mail a file came from: PDFs,
+  spreadsheets as Excel lays them out, images, archives and `winmail.dat` as folders of their files,
+  Word files as the PDF an isolated LibreOffice makes of them, web pages in a sandboxed frame, XML
+  and text as text. Each is read once, in a locked child process: a PDF's text layer and a
+  spreadsheet's visible cells, with hidden text left out and counted, and the facts code finds in
+  them.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
 - **Projects and shipments:** the data model and the projects board.
 - **The books:** a read-only accounting sync, through a country pack.
@@ -97,7 +100,7 @@ Run directly, the backend opens archives with the system's libarchive: on Debian
 The backend image installs it.
 
 ```bash
-docker compose up -d                               # Postgres and file storage
+docker compose up -d                               # Postgres, file storage and the converter
 curl -X PUT http://localhost:8333/tamga            # once, on your port if you moved 8333: the
                                                    # storage creates no bucket itself
 cd backend && cp .env.example .env && uv sync
@@ -138,7 +141,9 @@ still runs, and each feature waits for its own:
   `uv run python scripts/create_circle_wallets.py` once, from `backend/`, and copy the two lines it
   prints (`CIRCLE_WALLET_SET_ID`, `CIRCLE_TREASURY_WALLET_ID`) into `backend/.env`: run again
   without them, it makes another wallet set;
-- traces: `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`.
+- traces: `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY`;
+- Word files shown and read as PDFs: `CONVERTER_URL`, already set in `.env.example` for the
+  converter `docker compose up -d` starts (its image is about 1.5 GB, pulled once).
 
 Contracts need Foundry at the release in `contracts/.foundry-version` and the library submodules
 (`git submodule update --init`) — [`contracts/README.md`](contracts/README.md).

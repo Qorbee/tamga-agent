@@ -19,7 +19,8 @@ class DocumentOut(BaseModel):
     doc_type: str | None
     sha256: str
     created_at: datetime
-    # How the web app can show it (GET /documents/{id}/content or /sheets); null: download only.
+    # How the web app can show it (GET /documents/{id}/content, /sheets, /parts, /rendition, /html
+    # or /text); null: download only.
     preview: Preview | None
     # Whether Tamga has read what it says; null when nobody asked (an inline logo).
     read_state: ReadState | None
@@ -27,6 +28,8 @@ class DocumentOut(BaseModel):
     unreadable_reason: Reason | None
     # Read only in part: pages, sheets, rows or columns past what a file is read for.
     truncated: bool
+    # An office file's PDF is made (GET /documents/{id}/rendition), shown in its place.
+    converted: bool
 
 
 class Holder(StrEnum):
@@ -58,6 +61,20 @@ class DocumentPartOut(BaseModel):
     # Null when it could not be taken out; `unreadable_reason` says why.
     document: DocumentOut | None
     unreadable_reason: Reason | None
+
+
+class HtmlOut(BaseModel):
+    """A web page made safe to show, for a frame that runs no script."""
+
+    html: str
+    # Pictures on the web it points at, loaded only when the reader asks.
+    remote_images: int
+
+
+class TextOut(BaseModel):
+    text: str
+    # The file goes on past a million characters.
+    truncated: bool
 
 
 class CellStyleOut(BaseModel):

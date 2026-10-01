@@ -44,6 +44,7 @@ from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import NotFound
+from app.platform.html import SafeHtml
 from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
@@ -555,7 +556,7 @@ async def get_message(db: AsyncSession, actor: Actor, message_id: uuid.UUID) -> 
     )
 
 
-async def _html_of(message: Message) -> html.MailHtml | None:
+async def _html_of(message: Message) -> SafeHtml | None:
     """The mail's HTML body, sanitized as it is read: a stricter sanitizer needs no backfill."""
     if message.raw_key is None:
         return None

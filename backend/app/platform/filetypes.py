@@ -7,6 +7,7 @@ is: a file is shown only when they agree on the kind, under the type its bytes p
 named ``invoice.pdf`` is only ever a download.
 """
 
+import re
 from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Final
@@ -20,6 +21,12 @@ class Preview(StrEnum):
     SHEET = "sheet"
     # A zip, rar, 7z or tar, or Outlook's winmail.dat: a folder of the files taken out of it.
     ARCHIVE = "archive"
+    # Word, RTF or OpenDocument text: the PDF the converter made of it (ADR-0012).
+    OFFICE = "office"
+    # A web page, made safe as a mail's body is and drawn in the same sandboxed frame.
+    HTML = "html"
+    # XML or plain text, shown as text.
+    TEXT = "text"
 
 
 PNG: Final = "image/png"
@@ -32,6 +39,13 @@ PDF: Final = "application/pdf"
 IMAGES: Final = frozenset({PNG, JPEG, GIF, WEBP, BMP})
 XLSX: Final = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 XLS: Final = "application/vnd.ms-excel"
+DOCX: Final = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+DOC: Final = "application/msword"
+RTF: Final = "application/rtf"
+ODT: Final = "application/vnd.oasis.opendocument.text"
+HTML: Final = "text/html"
+XML: Final = "application/xml"
+TEXT: Final = "text/plain"
 
 _DECLARED: Final = {
     PNG: PNG,
@@ -44,6 +58,15 @@ _DECLARED: Final = {
     PDF: PDF,
     XLSX: XLSX,
     XLS: XLS,
+    DOCX: DOCX,
+    DOC: DOC,
+    RTF: RTF,
+    "text/rtf": RTF,
+    ODT: ODT,
+    HTML: HTML,
+    XML: XML,
+    "text/xml": XML,
+    TEXT: TEXT,
 }
 _EXTENSIONS: Final = {
     ".png": PNG,
@@ -55,6 +78,14 @@ _EXTENSIONS: Final = {
     ".pdf": PDF,
     ".xlsx": XLSX,
     ".xls": XLS,
+    ".docx": DOCX,
+    ".doc": DOC,
+    ".rtf": RTF,
+    ".odt": ODT,
+    ".html": HTML,
+    ".htm": HTML,
+    ".xml": XML,
+    ".txt": TEXT,
 }
 _PREVIEWS: Final = {
     PNG: Preview.IMAGE,
@@ -65,9 +96,33 @@ _PREVIEWS: Final = {
     PDF: Preview.PDF,
     XLSX: Preview.SHEET,
     XLS: Preview.SHEET,
+    DOCX: Preview.OFFICE,
+    DOC: Preview.OFFICE,
+    RTF: Preview.OFFICE,
+    ODT: Preview.OFFICE,
+    HTML: Preview.HTML,
+    XML: Preview.TEXT,
+    TEXT: Preview.TEXT,
 }
 # Shown as rows read from the file (documents/sheets.py), never drawn from its bytes.
 SHEETS: Final = frozenset({XLSX, XLS})
+# Converted to PDF (platform/converter.py), by the extension that picks LibreOffice's reader.
+OFFICE: Final = frozenset({DOCX, DOC, RTF, ODT})
+_OLE2: Final = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_OFFICE_EXTENSIONS: Final = {DOCX: ".docx", DOC: ".doc", RTF: ".rtf", ODT: ".odt"}
+# Shown as text: an HTML page after the sanitizer, the rest as it is.
+TEXTS: Final = frozenset({HTML, XML, TEXT})
+# A text file's byte-order marks, and where its XML prolog or HTML names its encoding:
+# `<?xml … encoding="…"?>`, `<meta charset="…">`, `<meta … content="text/html; charset=…">`.
+_MARKS: Final = (
+    (b"\xef\xbb\xbf", "utf-8"),
+    (b"\xff\xfe", "utf-16-le"),
+    (b"\xfe\xff", "utf-16-be"),
+)
+_DECLARED_CHARSET: Final = re.compile(r"""charset\s*=\s*["']?([A-Za-z0-9_.:-]{1,40})""", re.I)
+_NAMED_ENCODING: Final = re.compile(
+    rb"""(?:encoding|charset)\s*=\s*["']?([A-Za-z0-9_.:-]{1,40})""", re.I
+)
 
 # Archives, by the name's extension: a declared zip type alone is not one, since mail clients label
 # .xlsx and .docx files (zips inside) that way too.
@@ -102,9 +157,13 @@ _ARCHIVE_KINDS: Final = {ZIP: "zip", RAR: "rar", SEVEN_ZIP: "7z", TAR: "tar", TN
 
 
 def media_type(declared: str, filename: str) -> str | None:
-    """The one type Tamga knows this file as, from its declared type, else its name."""
+    """The one type Tamga knows this file as, from its declared type, else its name. A declared
+    text type yields to a name Tamga knows: mail clients call what they do not know text."""
     known = _DECLARED.get(declared.split(";")[0].strip().lower())
-    return known or _EXTENSIONS.get(PurePosixPath(filename.lower()).suffix)
+    named = _EXTENSIONS.get(PurePosixPath(filename.lower()).suffix)
+    if known in TEXTS and named is not None:
+        return named
+    return known or named
 
 
 def preview(declared: str, filename: str) -> Preview | None:
@@ -178,3 +237,46 @@ def sniff(data: bytes) -> str | None:
     if b"%PDF-" in data[:1024]:
         return PDF
     return None
+
+
+def office_extension(media: str, data: bytes) -> str | None:
+    """The extension to convert an office file under, as its first bytes prove it: Word 97's
+    container, RTF, or a zip (Word's or OpenDocument's, as the name promised). None when they are
+    none of these: LibreOffice would open any bytes as text, and convert them."""
+    if data.startswith(_OLE2):
+        return ".doc"
+    if data.startswith(b"{\\rtf"):
+        return ".rtf"
+    if data.startswith(b"PK\x03\x04"):
+        return ".odt" if media == ODT else ".docx"
+    return None
+
+
+def charset(declared: str) -> str | None:
+    """The charset a declared type names (``text/plain; charset=windows-1254``), if any."""
+    found = _DECLARED_CHARSET.search(declared)
+    return found.group(1) if found else None
+
+
+def decode_text(data: bytes, declared: str | None = None) -> str | None:
+    """A text file's content: by its byte-order mark, else as UTF-8, else in the charset its
+    declared type names (``declared``), else in the encoding its XML prolog or HTML ``meta``
+    names, else as UTF-8 with what does not decode replaced. None when it is not text: a NUL
+    byte in it."""
+    for mark, encoding in _MARKS:
+        if data.startswith(mark):
+            return data[len(mark) :].decode(encoding, errors="replace").replace("\x00", "")
+    if b"\x00" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    named = _NAMED_ENCODING.search(data[:2048])
+    for candidate in (declared, named.group(1).decode("ascii") if named else None):
+        if candidate:
+            try:
+                return data.decode(candidate, errors="replace")
+            except LookupError:
+                pass
+    return data.decode("utf-8", errors="replace")

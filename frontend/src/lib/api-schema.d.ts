@@ -90,6 +90,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/{document_id}/html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Html
+         * @description A web page (`preview` html) made safe to show, as a mail's body is: for a frame that runs
+         *     no script and loads nothing from the web unless asked.
+         */
+        get: operations["documents.get_document_html"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/{document_id}/parts": {
         parameters: {
             query?: never;
@@ -111,6 +132,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/{document_id}/rendition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Rendition
+         * @description The PDF the converter made of a Word, RTF or OpenDocument file (`converted`).
+         */
+        get: operations["documents.get_document_rendition"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/{document_id}/sheets": {
         parameters: {
             query?: never;
@@ -124,6 +165,26 @@ export interface paths {
          *     cells, widths and heights. At most 20 sheets of a thousand rows and fifty columns.
          */
         get: operations["documents.get_document_sheets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{document_id}/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Document Text
+         * @description An XML or text file (`preview` text) as text, up to a million characters.
+         */
+        get: operations["documents.get_document_text"];
         put?: never;
         post?: never;
         delete?: never;
@@ -729,6 +790,8 @@ export interface components {
         DocumentDetail: {
             /** Content Type */
             content_type: string;
+            /** Converted */
+            converted: boolean;
             /**
              * Created At
              * Format: date-time
@@ -761,6 +824,8 @@ export interface components {
         DocumentOut: {
             /** Content Type */
             content_type: string;
+            /** Converted */
+            converted: boolean;
             /**
              * Created At
              * Format: date-time
@@ -861,6 +926,16 @@ export interface components {
          * @enum {string}
          */
         Holder: "mail" | "project" | "archive";
+        /**
+         * HtmlOut
+         * @description A web page made safe to show, for a frame that runs no script.
+         */
+        HtmlOut: {
+            /** Html */
+            html: string;
+            /** Remote Images */
+            remote_images: number;
+        };
         /** InviteAccept */
         InviteAccept: {
             /** Name */
@@ -1285,7 +1360,7 @@ export interface components {
          * @description How the web app shows a file; a file with none is only downloaded.
          * @enum {string}
          */
-        Preview: "image" | "pdf" | "sheet" | "archive";
+        Preview: "image" | "pdf" | "sheet" | "archive" | "office" | "html" | "text";
         /** ProjectCreate */
         ProjectCreate: {
             /** Name */
@@ -1630,6 +1705,13 @@ export interface components {
              */
             password: string;
         };
+        /** TextOut */
+        TextOut: {
+            /** Text */
+            text: string;
+            /** Truncated */
+            truncated: boolean;
+        };
         /** ThreadPage */
         ThreadPage: {
             /** Items */
@@ -1954,6 +2036,37 @@ export interface operations {
             };
         };
     };
+    "documents.get_document_html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HtmlOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "documents.list_document_parts": {
         parameters: {
             query?: never;
@@ -1985,6 +2098,37 @@ export interface operations {
             };
         };
     };
+    "documents.get_document_rendition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The PDF */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "documents.get_document_sheets": {
         parameters: {
             query?: never;
@@ -2003,6 +2147,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkbookOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "documents.get_document_text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextOut"];
                 };
             };
             /** @description Validation Error */

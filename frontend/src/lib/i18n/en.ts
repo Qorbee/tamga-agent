@@ -255,7 +255,15 @@ export const en = {
   files: {
     file: "File",
     download: "Download",
-    kinds: { image: "Image", pdf: "PDF", sheet: "Spreadsheet", archive: "Archive" },
+    kinds: {
+      image: "Image",
+      pdf: "PDF",
+      sheet: "Spreadsheet",
+      archive: "Archive",
+      office: "Document",
+      html: "Web page",
+      text: "Text",
+    },
     pages: (count: number) => `${count} ${count === 1 ? "page" : "pages"}`,
     truncated: (rows: number, columns: number) =>
       `Showing the first ${rows} rows and ${columns} columns. Download the file for the rest.`,
@@ -275,11 +283,24 @@ export const en = {
       notOpenable: "This archive could not be opened",
       notOpened: "Tamga opens an archive inside an archive, but none deeper. Download it to open it.",
     },
+    office: {
+      converting: "Making a PDF of it…",
+      convertingBody: "It appears here once Tamga has made a PDF of it, within a minute.",
+      notConverted: "No PDF could be made of this file",
+    },
+    page: {
+      title: "Web page",
+      remoteImagesWhy: "Showing them may tell whoever made the page that it was opened.",
+    },
+    text: {
+      title: "Text",
+      truncated: "Showing the first million characters. Download the file for the rest.",
+    },
     reasons: {
       password: "It is locked by a password.",
       unsupported: "Tamga cannot read this kind of file yet.",
       damaged: "It is damaged, or not what its name says.",
-      too_large: "It unpacks to more than Tamga takes out at once (200 MB, or 100 times its size).",
+      too_large: "It is larger than Tamga opens (an archive: 200 MB unpacked, or 100 times its size).",
       limits: "Reading it took more memory or time than Tamga allows.",
     },
     viewer: {

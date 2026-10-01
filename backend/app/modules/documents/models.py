@@ -52,6 +52,9 @@ class Document(CompanyScoped, Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     sha256: Mapped[bytes] = mapped_column(LargeBinary(32))
     storage_key: Mapped[str] = mapped_column(String(120))
+    # The PDF the converter made of a Word, RTF or OpenDocument file (ADR-0012), shown and read in
+    # its place: `<storage_key>.pdf`. Null until it is made.
+    rendition_key: Mapped[str | None] = mapped_column(String(130))
     # The first name it arrived under; each attachment keeps its own name too.
     filename: Mapped[str] = mapped_column(String(300))
     content_type: Mapped[str] = mapped_column(String(200))

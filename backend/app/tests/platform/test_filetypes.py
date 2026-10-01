@@ -11,9 +11,15 @@ def test_a_generic_type_is_recognised_by_its_name() -> None:
     assert filetypes.preview("application/vnd.ms-excel", "liste.xls") == Preview.SHEET
 
 
-def test_what_a_browser_cannot_show_safely_is_download_only() -> None:
-    assert filetypes.preview("text/html", "page.htm") is None
-    assert filetypes.preview("application/msword", "letter.doc") is None
+def test_what_a_browser_cannot_show_safely_is_shown_another_way_or_downloaded() -> None:
+    # A web page is sanitized and framed, a Word file shown as the PDF made of it: never the file.
+    assert filetypes.preview("text/html", "page.htm") == Preview.HTML
+    assert filetypes.inline_type("text/html", "page.htm", b"<html>") is None
+    assert filetypes.preview("application/octet-stream", "letter.doc") == Preview.OFFICE
+    assert filetypes.preview("text/xml", "e-fatura") == Preview.TEXT
+    # Declared as text, a file whose name says what it is stays that.
+    assert filetypes.preview("text/plain", "fatura.pdf") == Preview.PDF
+    assert filetypes.preview("application/octet-stream", "setup.exe") is None
     # An archive opens as the files taken out of it, and is itself only downloaded.
     assert filetypes.preview("application/zip", "files.zip") == Preview.ARCHIVE
     assert filetypes.inline_type("application/zip", "files.zip", b"PK\x03\x04") is None
@@ -46,3 +52,28 @@ def test_a_file_is_shown_only_as_what_its_bytes_prove() -> None:
     assert filetypes.inline_type("application/pdf", "fatura.pdf", b"<html><script>") is None
     assert filetypes.inline_type("application/pdf", "fatura.pdf", PNG) is None
     assert filetypes.inline_type("text/html", "page.html", PNG) is None
+
+
+def test_an_office_file_is_converted_only_as_what_its_bytes_prove() -> None:
+    docx = filetypes.DOCX
+    assert filetypes.office_extension(docx, b"PK\x03\x04 word/document.xml") == ".docx"
+    assert filetypes.office_extension(filetypes.ODT, b"PK\x03\x04 content.xml") == ".odt"
+    # Word saves RTF under .doc, and a .docx may be Word 97's: the bytes pick the reader.
+    assert filetypes.office_extension(docx, b"{\\rtf1\\ansi text") == ".rtf"
+    assert filetypes.office_extension(docx, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1") == ".doc"
+    # LibreOffice would convert any bytes as text: these are no office file.
+    assert filetypes.office_extension(filetypes.DOC, b"MZ\x90\x00 a program") is None
+
+
+def test_a_text_file_is_decoded_by_what_it_says_of_itself() -> None:
+    assert filetypes.decode_text("Çekici plakası".encode()) == "Çekici plakası"
+    assert filetypes.decode_text(b"\xff\xfe" + "Ş".encode("utf-16-le")) == "Ş"
+    prolog = '<?xml version="1.0" encoding="windows-1254"?><a>Şoför</a>'
+    assert filetypes.decode_text(prolog.encode("cp1254")) == prolog
+    meta = '<meta charset="iso-8859-9"><p>Teslim edildi, ğ</p>'
+    assert filetypes.decode_text(meta.encode("iso-8859-9")) == meta
+    assert filetypes.decode_text(b"\x89PNG\r\n\x1a\n\x00\x00") is None
+    # The charset its declared type names, when the file itself names none.
+    declared = filetypes.charset("text/plain; charset=windows-1254")
+    assert declared == "windows-1254"
+    assert filetypes.decode_text("Şoför".encode("cp1254"), declared) == "Şoför"

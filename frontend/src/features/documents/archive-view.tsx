@@ -7,12 +7,26 @@ import { useQuery } from "@tanstack/react-query";
 import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
 import { Skeleton } from "@/components/ui/skeleton";
-import { listDocumentParts, type DocumentDetail, type DocumentPart } from "@/lib/api";
+import { listDocumentParts, type DocumentDetail, type DocumentPart, type Preview } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 
-// How often an archive waiting to be opened asks again; the worker reads it within a minute or two.
+// How often a file waiting for the worker (an archive to open, a PDF to make) asks again; the
+// worker reads it within a minute or two.
 export const WAITING_POLL = 5000;
+
+/** A file the worker has yet to open or convert, said plainly while the view asks again. */
+export function WaitingView({ preview, title, body }: { preview: Preview; title: string; body: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="bg-secondary text-muted-foreground grid size-11 animate-pulse place-items-center rounded-2xl">
+        <HugeiconsIcon icon={fileIcon(preview)} strokeWidth={1.75} className="size-5" />
+      </div>
+      <p className="text-sm font-medium">{title}</p>
+      <p className="text-muted-foreground text-sm">{body}</p>
+    </div>
+  );
+}
 
 /**
  * An archive or a winmail.dat as a folder: the files taken out of it, grouped by the folders they
@@ -28,15 +42,7 @@ export function ArchiveView({ document, waiting }: { document: DocumentDetail; w
   });
 
   if (waiting) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="bg-secondary text-muted-foreground grid size-11 animate-pulse place-items-center rounded-2xl">
-          <HugeiconsIcon icon={fileIcon("archive")} strokeWidth={1.75} className="size-5" />
-        </div>
-        <p className="text-sm font-medium">{t.files.archive.opening}</p>
-        <p className="text-muted-foreground text-sm">{t.files.archive.openingBody}</p>
-      </div>
-    );
+    return <WaitingView preview="archive" title={t.files.archive.opening} body={t.files.archive.openingBody} />;
   }
   if (parts.isError) return <p className="text-danger-foreground p-4 text-sm">{t.errors.load}</p>;
   if (!parts.data) return <Skeleton className="m-4 h-64 rounded-xl" />;

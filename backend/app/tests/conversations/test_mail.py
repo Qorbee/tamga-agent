@@ -67,6 +67,21 @@ def test_files_are_found_even_inside_a_forwarded_mail() -> None:
     assert parsed.body_text == "See below"
 
 
+def test_a_text_file_keeps_the_charset_it_was_sent_in() -> None:
+    message = mail(From="ops@kaya.example", Subject="Liste")
+    message.set_content("Ekte.")
+    message.add_attachment(
+        "Şoför".encode("cp1254"), maintype="text", subtype="plain", filename="liste.txt"
+    )
+    [file] = message.iter_attachments()
+    file.set_param("charset", "windows-1254")
+
+    [attachment] = parse_mail(message.as_bytes()).attachments
+
+    # A legacy file names its encoding only there, and is decoded by it (filetypes.decode_text).
+    assert attachment.content_type == "text/plain; charset=windows-1254"
+
+
 def test_a_file_the_html_body_shows_is_inline_and_an_attached_one_is_not() -> None:
     message = mail(From="ops@kaya.example", Subject="Teslim")
     message.set_content("Teslim edildi.")

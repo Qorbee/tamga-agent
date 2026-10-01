@@ -1,10 +1,11 @@
 # Local development infrastructure. Credentials are LOCAL ONLY and match backend/.env.example.
 #
-#   docker compose up -d                 # Postgres and file storage; run the backend with uv
+#   docker compose up -d                 # Postgres, file storage and the converter; run the backend
+#                                        # with uv
 #   docker compose --profile app up -d   # ...plus the backend, worker and web images
 #
-# This file is the one place the Postgres and SeaweedFS versions are written: CI starts the same
-# services from it.
+# This file is the one place the Postgres, SeaweedFS and Gotenberg versions are written: CI starts
+# the same services from it.
 # Background jobs run on this Postgres too (ADR-0001), so there is no Redis.
 
 services:
@@ -51,6 +52,45 @@ services:
       timeout: 5s
       retries: 20
 
+  # Word, RTF and OpenDocument files converted to PDF (ADR-0012): Gotenberg with LibreOffice only,
+  # no Chromium. A file from outside is opened here, so it sits on a network with no route out and
+  # every feature that fetches (download-from, webhooks, a document's linked content) is off: a
+  # document cannot make it reach anything. The image is pinned by digest.
+  converter:
+    image: gotenberg/gotenberg:8.37.0-libreoffice@sha256:c85f019d6ae4927714507254331cc0ed72da7b619ee798e3a45de01f54372c12
+    command:
+      - gotenberg
+      - --api-timeout=60s
+      - --api-body-limit=50MB
+      - --api-disable-download-from
+      - --webhook-disable
+      - --prometheus-disable-collect
+      - --pdfengines-disable-routes
+      - --libreoffice-deny-public-ips
+      - --libreoffice-deny-private-ips
+    networks: [converter]
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # A port on loopback for a worker run on the host (and the tests): a network with no route out
+  # publishes none, so this relays it. It runs only scripts/converter-relay.py, never a document.
+  converter-port:
+    image: gotenberg/gotenberg:8.37.0-libreoffice@sha256:c85f019d6ae4927714507254331cc0ed72da7b619ee798e3a45de01f54372c12
+    command: ["python3", "/relay.py"]
+    configs:
+      - source: converter-relay
+        target: /relay.py
+    networks: [default, converter]
+    ports:
+      - "127.0.0.1:${CONVERTER_PORT:-3100}:3000"
+    depends_on:
+      converter:
+        condition: service_healthy
+
   backend:
     profiles: [app]
     build: ./backend
@@ -87,10 +127,15 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/app
       S3_ENDPOINT_URL: http://storage:8333
+      CONVERTER_URL: http://converter:3000
+    # The one service besides the relay that reaches the converter: it sends the files.
+    networks: [default, converter]
     depends_on:
       postgres:
         condition: service_healthy
       storage:
+        condition: service_healthy
+      converter:
         condition: service_healthy
 
   web:
@@ -110,6 +155,13 @@ configs:
   create-test-db:
     content: |
       CREATE DATABASE app_test;
+  converter-relay:
+    file: ./scripts/converter-relay.py
+
+networks:
+  # No route out: what is on it reaches only what else is on it.
+  converter:
+    internal: true
 
 volumes:
   postgres_data:

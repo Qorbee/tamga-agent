@@ -90,7 +90,7 @@ export function UploadPanel() {
             id="upload-file"
             type="file"
             className="sr-only"
-            accept="image/*,application/pdf,.xml,.xlsx,.xls,.csv,.zip,.rar,.7z,.tar,.tgz,.gz,.dat"
+            accept="image/*,application/pdf,.docx,.doc,.rtf,.odt,.html,.htm,.xml,.txt,.xlsx,.xls,.csv,.zip,.rar,.7z,.tar,.tgz,.gz,.dat"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           />
         </label>

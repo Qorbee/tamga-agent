@@ -254,7 +254,15 @@ export const tr: Dictionary = {
   files: {
     file: "Dosya",
     download: "İndir",
-    kinds: { image: "Görsel", pdf: "PDF", sheet: "Tablo", archive: "Arşiv" },
+    kinds: {
+      image: "Görsel",
+      pdf: "PDF",
+      sheet: "Tablo",
+      archive: "Arşiv",
+      office: "Belge",
+      html: "Web sayfası",
+      text: "Metin",
+    },
     pages: (count: number) => `${count} sayfa`,
     truncated: (rows: number, columns: number) =>
       `İlk ${rows} satır ve ${columns} sütun gösteriliyor. Tamamı için dosyayı indirin.`,
@@ -273,11 +281,24 @@ export const tr: Dictionary = {
       notOpenable: "Bu arşiv açılamadı",
       notOpened: "Tamga arşiv içindeki bir arşivi açar, daha derindekini açmaz. Açmak için indirin.",
     },
+    office: {
+      converting: "PDF'i hazırlanıyor…",
+      convertingBody: "Tamga PDF'ini hazırladığında, bir dakika içinde burada görünür.",
+      notConverted: "Bu dosyanın PDF'i hazırlanamadı",
+    },
+    page: {
+      title: "Web sayfası",
+      remoteImagesWhy: "Gösterilirse sayfayı hazırlayan, açıldığını öğrenebilir.",
+    },
+    text: {
+      title: "Metin",
+      truncated: "İlk bir milyon karakter gösteriliyor. Tamamı için dosyayı indirin.",
+    },
     reasons: {
       password: "Parolayla kilitli.",
       unsupported: "Tamga bu tür dosyayı henüz okuyamıyor.",
       damaged: "Bozuk ya da adının söylediği dosya değil.",
-      too_large: "Tamga'nın bir kerede çıkardığından fazlasına açılıyor (200 MB ya da boyutunun 100 katı).",
+      too_large: "Tamga'nın açtığından büyük (arşivde: açılınca 200 MB ya da boyutunun 100 katı).",
       limits: "Okunması Tamga'nın izin verdiğinden fazla bellek ya da zaman aldı.",
     },
     viewer: {

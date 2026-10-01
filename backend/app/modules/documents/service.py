@@ -2,6 +2,7 @@
 document each is (the registry), the files people upload by hand, and what each file says, read in
 a locked child process (ADR-0012) without what its viewer hides (ADR-0013)."""
 
+import asyncio
 import base64
 import hashlib
 import logging
@@ -10,6 +11,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import partial
 from pathlib import PurePosixPath
 from typing import Final
 
@@ -28,12 +30,14 @@ from app.modules.documents.schemas import (
     DocumentTypeOut,
     DocumentUpdate,
     Holder,
+    HtmlOut,
+    TextOut,
     UploadOut,
     WorkbookOut,
 )
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import filetypes, isolated, jobs, storage
+from app.platform import converter, filetypes, html, isolated, jobs, storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -56,6 +60,8 @@ READ_RETRY_AFTER: Final = timedelta(hours=1)
 MAX_TEXT: Final = 1_000_000
 # A page with less visible text than this is a scan, or mostly one.
 _SCANNED_PAGE: Final = 20
+# The largest web page, XML or text file read or shown; past it, it is only downloaded.
+MAX_TEXT_FILE: Final = 10 * 1024 * 1024
 
 # The runs that take files out of an archive read up to 200 MB of it, so each gets two minutes.
 _UNPACK_LIMITS: Final = isolated.Limits(deadline_seconds=120.0)
@@ -239,6 +245,48 @@ async def get_content(db: AsyncSession, actor: Actor, document_id: uuid.UUID) ->
     )
 
 
+async def get_rendition(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> FileContent:
+    """The PDF the converter made of an office file, shown in its place."""
+    document = await _document(db, actor.company_id, document_id)
+    if document.rendition_key is None:
+        raise NotFound("The document has no PDF made of it")
+    return FileContent(
+        data=await storage.get(document.rendition_key),
+        filename=f"{PurePosixPath(document.filename).stem}.pdf",
+        media_type=filetypes.PDF,
+        inline=True,
+    )
+
+
+async def get_html(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> HtmlOut:
+    """A web page made safe to show, as a mail's body is (platform/html.py)."""
+    decoded = await _text_file(db, actor, document_id, {filetypes.HTML})
+    # Without its styles and colours, as it is read: nothing in it is hidden from the reader.
+    shown = await asyncio.to_thread(partial(html.sanitize, decoded, styled=False))
+    return HtmlOut(html=shown.html, remote_images=shown.remote_images)
+
+
+async def get_text(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> TextOut:
+    """An XML or text file's content, to show as text."""
+    decoded = await _text_file(db, actor, document_id, {filetypes.XML, filetypes.TEXT})
+    return TextOut(text=decoded[:MAX_TEXT], truncated=len(decoded) > MAX_TEXT)
+
+
+async def _text_file(
+    db: AsyncSession, actor: Actor, document_id: uuid.UUID, kinds: set[str]
+) -> str:
+    document = await _document(db, actor.company_id, document_id)
+    if filetypes.media_type(document.content_type, document.filename) not in kinds:
+        raise BadRequest("The document is not a file shown this way")
+    if document.size > MAX_TEXT_FILE:
+        raise BadRequest("The file is too large to show")
+    data = await storage.get(document.storage_key)
+    decoded = filetypes.decode_text(data, filetypes.charset(document.content_type))
+    if decoded is None:
+        raise BadRequest("The file is not text")
+    return decoded
+
+
 async def get_parts(
     db: AsyncSession, actor: Actor, document_id: uuid.UUID
 ) -> list[DocumentPartOut]:
@@ -379,13 +427,14 @@ async def _delete(
 
 
 async def forget_file(company_id: uuid.UUID, sha256: bytes, storage_key: str) -> None:
-    """Deletes a deleted document's stored bytes, unless the same file is stored again. It holds
-    the lock ``store_file`` takes, so an upload of these bytes either finished first and is kept,
-    or waits and stores them again."""
+    """Deletes a deleted document's stored bytes and rendition, unless the same file is stored
+    again. It holds the lock ``store_file`` takes, so an upload of these bytes either finished
+    first and is kept, or waits and stores them again."""
     async with open_session() as db:
         await repository.lock_content(db, company_id, sha256)
         if await repository.get_by_hash(db, company_id, sha256) is None:
             await storage.delete(storage_key)
+            await storage.delete(rendition_key(storage_key))
         await db.commit()
 
 
@@ -445,47 +494,42 @@ async def read_pending() -> int:
 
 
 async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
-    """Reads one file by code: a PDF's text layer, a spreadsheet's visible cells, and the facts in
+    """Reads one file by code: a PDF's text layer, a spreadsheet's visible cells, the PDF the
+    converter makes of a Word file, the text of a web page, XML or text file, and the facts in
     them. A photo, or a PDF with a scanned page, is left for the vision model. Runs in the caller's
     transaction and does not commit."""
-    found = await repository.get_many(db, company_id, [document_id])
-    if not found or found[0].read_state != ReadState.PENDING or found[0].needs_vision:
+    # Shared, so a delete waits for the reading: it stores a rendition, and an archive's files.
+    document = await repository.lock_document(db, company_id, document_id, share=True)
+    if document is None or document.read_state != ReadState.PENDING or document.needs_vision:
         return
-    document = found[0]
+    media = filetypes.media_type(document.content_type, document.filename)
     data = await storage.get(document.storage_key)
     # First: a zip whose first member is a PDF has the PDF's header in its first kilobyte.
     if filetypes.archive_type(document.content_type, document.filename) is not None:
         await _unpack(db, document, data)
         return
     real = filetypes.sniff(data)
-    media = filetypes.media_type(document.content_type, document.filename)
     if real == filetypes.PDF:
-        pdf = _checked(reading.PdfText, await isolated.run("documents.pdf_text", data, real))
-        if isinstance(pdf, isolated.Reason):
-            _unreadable(document, pdf)
-            return
-        text, parts, hidden = "\f".join(pdf.pages), pdf.page_count, pdf.hidden
-        cut = pdf.page_count > len(pdf.pages)
-        scanned = any(len(page.strip()) < _SCANNED_PAGE for page in pdf.pages)
+        read = await _read_pdf(data)
     elif real in filetypes.IMAGES:
         document.needs_vision = True
         return
     elif media in filetypes.SHEETS:
-        sheet = _checked(reading.SheetText, await isolated.run("documents.sheet_text", data, media))
-        if isinstance(sheet, isolated.Reason):
-            _unreadable(document, sheet)
-            return
-        text, parts, hidden, scanned = sheet.text, sheet.sheet_count, sheet.hidden, False
-        cut = sheet.truncated
+        read = await _read_sheet(data, media)
+    elif media in filetypes.OFFICE:
+        read = await _read_office(document, data, media)
+    elif media in filetypes.TEXTS:
+        read = await _read_text(document, data, media)
     else:
-        # Word and the rest wait for their readers (ADR-0012), which read them again.
-        _unreadable(document, isolated.Reason.UNSUPPORTED)
+        read = isolated.Reason.UNSUPPORTED
+    if isinstance(read, isolated.Reason):
+        _unreadable(document, read)
         return
-    document.text = text[:MAX_TEXT]
-    document.truncated = cut or len(text) > MAX_TEXT
-    document.parts, document.hidden_parts = parts, hidden
-    document.needs_vision = scanned
-    if not scanned:
+    document.text = read.text[:MAX_TEXT]
+    document.truncated = read.cut or len(read.text) > MAX_TEXT
+    document.parts, document.hidden_parts = read.parts, read.hidden
+    document.needs_vision = read.scanned
+    if not read.scanned:
         document.read_state, document.read_at = ReadState.READ, utcnow()
     await facts.record_facts(
         db,
@@ -494,6 +538,81 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         item_id=document.id,
         facts=extractors.from_text(document.text),
     )
+
+
+class ConverterMissing(RuntimeError):
+    """An office file is due to be read, and CONVERTER_URL is not set."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Read:
+    text: str
+    # Pages or sheets; None for a file that has neither.
+    parts: int | None
+    hidden: int
+    # The text stops short of the file.
+    cut: bool = False
+    # A page with too little text on it: the vision model reads it.
+    scanned: bool = False
+
+
+async def _read_pdf(data: bytes) -> _Read | isolated.Reason:
+    pdf = _checked(reading.PdfText, await isolated.run("documents.pdf_text", data, filetypes.PDF))
+    if isinstance(pdf, isolated.Reason):
+        return pdf
+    return _Read(
+        text="\f".join(pdf.pages),
+        parts=pdf.page_count,
+        hidden=pdf.hidden,
+        cut=pdf.page_count > len(pdf.pages),
+        scanned=any(len(page.strip()) < _SCANNED_PAGE for page in pdf.pages),
+    )
+
+
+async def _read_sheet(data: bytes, media: str) -> _Read | isolated.Reason:
+    sheet = _checked(reading.SheetText, await isolated.run("documents.sheet_text", data, media))
+    if isinstance(sheet, isolated.Reason):
+        return sheet
+    return _Read(text=sheet.text, parts=sheet.sheet_count, hidden=sheet.hidden, cut=sheet.truncated)
+
+
+async def _read_office(document: Document, data: bytes, media: str) -> _Read | isolated.Reason:
+    """A Word, RTF or OpenDocument file, read from the PDF the converter makes of it, which is
+    kept and shown in its place (ADR-0012). Word text marked hidden is not in that PDF."""
+    extension = filetypes.office_extension(media, data)
+    if extension is None:
+        return isolated.Reason.DAMAGED
+    if not converter.configured():
+        # Not the file's fault: it waits, tried each hour, until CONVERTER_URL is set.
+        raise ConverterMissing
+    try:
+        pdf = await converter.to_pdf(data, extension)
+    except converter.Unconvertible as refused:
+        # LibreOffice fails short of memory too: the file is damaged only once it failed each try.
+        if refused.retry and document.read_failures + 1 < READ_TRIES:
+            raise
+        return refused.reason
+    key = rendition_key(document.storage_key)
+    await storage.put(key, pdf, content_type=filetypes.PDF)
+    document.rendition_key = key
+    return await _read_pdf(pdf)
+
+
+async def _read_text(document: Document, data: bytes, media: str) -> _Read | isolated.Reason:
+    """A web page, XML or text file, read in the locked child (reading.file_text)."""
+    if len(data) > MAX_TEXT_FILE:
+        return isolated.Reason.TOO_LARGE
+    hint = reading.TextHint(media=media, charset=filetypes.charset(document.content_type))
+    read = _checked(
+        reading.FileText, await isolated.run("documents.file_text", data, hint.model_dump_json())
+    )
+    if isinstance(read, isolated.Reason):
+        return read
+    return _Read(text=read.text, parts=None, hidden=read.hidden)
+
+
+def rendition_key(storage_key: str) -> str:
+    return f"{storage_key}.pdf"
 
 
 class _Refused(Exception):
@@ -690,4 +809,5 @@ def _out(document: Document) -> DocumentOut:
         read_state=document.read_state,
         unreadable_reason=document.unreadable_reason,
         truncated=document.truncated,
+        converted=document.rendition_key is not None,
     )

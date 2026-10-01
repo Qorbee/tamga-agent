@@ -5,7 +5,8 @@ Each reader runs only through ``isolated.run``, gets the bytes and returns JSON:
 - a PDF's text layer, page by page, without text drawn invisible or under 1 pt; a page with no text
   is a scan, for the vision model;
 - a spreadsheet's visible cells, row by row, without hidden sheets, rows and columns;
-- the spreadsheet as Excel lays it out, for the canvas.
+- the spreadsheet as Excel lays it out, for the canvas;
+- a web page's text as the canvas shows it, XML's values, a text file as it is.
 
 What is left out is counted, so a file full of hidden text is itself a signal.
 """
@@ -13,6 +14,7 @@ What is left out is counted, so a file full of hidden text is itself a signal.
 import ctypes
 import dataclasses
 import re
+from html import unescape
 from typing import Final
 
 import pypdfium2 as pdfium
@@ -20,6 +22,7 @@ import pypdfium2.raw as pdfium_c
 from pydantic import BaseModel, Field
 
 from app.modules.documents import sheets
+from app.platform import filetypes, html
 from app.platform.isolated import Json, Reason, Refused, register
 
 
@@ -41,6 +44,20 @@ class SheetText(BaseModel):
     truncated: bool
 
 
+class TextHint(BaseModel):
+    """What ``file_text`` is told of the file: its type, and the charset it was declared in."""
+
+    media: str
+    charset: str | None = None
+
+
+class FileText(BaseModel):
+    """What ``file_text`` sends back, as the parent checks it."""
+
+    text: str
+    hidden: int = Field(ge=0)
+
+
 # Pages a PDF is read for by code; the rest are counted, not read.
 MAX_PAGES: Final = 100
 # PDF text drawn in these modes is never painted: 3 draws nothing, 7 only clips.
@@ -59,6 +76,11 @@ _STROKED: Final = {
     pdfium_c.FPDF_TEXTRENDERMODE_STROKE_CLIP,
     pdfium_c.FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP,
 }
+# XML: a CDATA section's text is a value as it stands; a comment is none; a tag or a declaration
+# is what lies between the values.
+_CDATA: Final = re.compile(r"<!\[CDATA\[(.*?)\]\]>", re.S)
+_COMMENT: Final = re.compile(r"<!--.*?-->", re.S)
+_TAG: Final = re.compile(r"<[^>]*>")
 # Control characters a database text column refuses (NUL) or that carry nothing to read.
 _CONTROL: Final = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
@@ -156,3 +178,29 @@ def _workbook(data: bytes, media: str) -> sheets.Workbook:
         raise Refused(Reason.TOO_LARGE) from error
     except sheets.Unreadable as error:
         raise Refused(Reason.DAMAGED) from error
+
+
+@register("documents.file_text")
+def file_text(data: bytes, hint: str) -> Json:
+    """A web page's text as the canvas shows it: after the sanitizer, without its styles and
+    colours, so nothing read was hidden from the person. XML's values without its tags, a CDATA
+    section's as they stand. A text file as it is."""
+    request = TextHint.model_validate_json(hint)
+    decoded = filetypes.decode_text(data, request.charset)
+    if decoded is None:
+        raise Refused(Reason.DAMAGED)
+    if request.media == filetypes.HTML:
+        shown = html.shown_text(html.sanitize(decoded, styled=False).html)
+        return {"text": shown.text, "hidden": shown.hidden}
+    if request.media == filetypes.XML:
+        return {"text": _xml_values(decoded), "hidden": 0}
+    return {"text": decoded, "hidden": 0}
+
+
+def _xml_values(xml: str) -> str:
+    pieces = [
+        piece if index % 2 else unescape(_TAG.sub("\n", _COMMENT.sub("", piece)))
+        for index, piece in enumerate(_CDATA.split(xml))
+    ]
+    lines = (" ".join(line.split()) for line in "".join(pieces).splitlines())
+    return "\n".join(line for line in lines if line)

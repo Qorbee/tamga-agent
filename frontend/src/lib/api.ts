@@ -154,6 +154,14 @@ export const getDocument = (id: string) => request<DocumentDetail>(`/documents/$
 /** Drawable only as a verified image or PDF; anything else arrives as a download. */
 export const getDocumentFile = (id: string) => requestBlob(`/documents/${id}/content`);
 export const getDocumentSheets = (id: string) => request<Workbook>(`/documents/${id}/sheets`);
+/** The PDF made of a Word, RTF or OpenDocument file, once `converted`. */
+export const getDocumentRendition = (id: string) => requestBlob(`/documents/${id}/rendition`);
+export type PageHtml = Schemas["HtmlOut"];
+/** A web page made safe to show, for `HtmlFrame`. */
+export const getDocumentHtml = (id: string) => request<PageHtml>(`/documents/${id}/html`);
+export type FileText = Schemas["TextOut"];
+/** An XML or text file as text. */
+export const getDocumentText = (id: string) => request<FileText>(`/documents/${id}/text`);
 export type DocumentPart = Schemas["DocumentPartOut"];
 export type UnreadableReason = NonNullable<Document["unreadable_reason"]>;
 /** The files taken out of an archive or a winmail.dat, in their order there; none until it is read. */

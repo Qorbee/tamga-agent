@@ -1,13 +1,12 @@
 /**
- * An HTML reply split where the mails it quotes begin, with each `cid:` image pointed at the file it
- * shows, and each picture on the web held unless the reader asked for them. Mail clients mark the quote in their markup: Gmail's `div.gmail_quote`, Apple Mail's and
+ * An HTML reply split where the mails it quotes begin, its images placed as `parseSafeHtml` places
+ * them. Mail clients mark the quote in their markup: Gmail's `div.gmail_quote`, Apple Mail's and
  * Thunderbird's `blockquote type=cite` (after Thunderbird's `div.moz-cite-prefix` line), Outlook on
  * the web's `#divRplyFwdMsg` and `#appendonsend`, Yahoo's `div.yahoo_quoted`. Outlook for Windows marks
  * nothing, so its "From: … Sent: …" block is found by its text, as the plain-text view finds it.
- *
- * The HTML was sanitized by the backend; DOMParser builds an inert document from it, which runs no
- * script and loads nothing.
  */
+
+import { bodyAttributes, HELD_IMAGE, parseSafeHtml, takeStyles } from "@/lib/safe-html";
 
 const MARKED = [
   "div.gmail_quote",
@@ -27,11 +26,6 @@ const HEADER =
   /^(?:(?:From|Kimden|Gönderen|Von|De)\s*:.{0,400}?(?:Sent|Date|Gönderildi|Gönderilme Tarihi|Tarih|Gesendet|Envoyé)\s*:|-{2,}\s*(?:Original Message|Özgün İleti|Orijinal Mesaj|Orijinal İleti)|On\s.{0,300}?\swrote:)/i;
 const HEADER_START = /^\s*(?:From|Kimden|Gönderen|Von|De|-{2,}|On)\b/i;
 
-// A picture the frame will not load, drawn as a box in its place (`frameDocument` styles it).
-export const HELD_IMAGE = "data-held-image";
-// Smaller than this and without alt text, an image is a tracking pixel or a spacer: it only goes.
-const SEEN = 16;
-
 // A forward is the mail the sender wants read, not history to fold.
 const FORWARD = /^\s*(?:-{2,}\s*(?:Forwarded message|İletilen ileti|Iletilen ileti)|Begin forwarded message)/i;
 
@@ -44,27 +38,11 @@ export function splitQuotedHtml(
   forward: boolean,
   remote: boolean,
 ): SplitHtml {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  for (const image of doc.querySelectorAll("img[src]")) {
-    const src = image.getAttribute("src")!;
-    if (/^cid:/i.test(src)) {
-      const url = images[src.slice(4)];
-      if (url) image.setAttribute("src", url);
-      else image.removeAttribute("src");
-    } else if (/^https?:/i.test(src)) {
-      // Asked for, a picture loads; a tracking pixel never does, as it shows nothing.
-      if (remote && !tracker(image)) image.setAttribute("referrerpolicy", "no-referrer");
-      else image.removeAttribute("src");
-    }
-  }
-  for (const image of doc.querySelectorAll("img:not([src])")) holdImage(image);
+  const doc = parseSafeHtml(html, images, remote);
   // Both halves keep the mail's stylesheet: it lays out the quote as much as the reply.
-  const styles = [...doc.querySelectorAll("style")].map((style) => {
-    style.remove();
-    return style.outerHTML;
-  });
-  const whole = styles.join("") + doc.body.innerHTML;
-  const body = [...doc.body.attributes].map((given) => ` ${given.name}="${attributeText(given.value)}"`).join("");
+  const styles = takeStyles(doc);
+  const whole = styles + doc.body.innerHTML;
+  const body = bodyAttributes(doc);
 
   const marker = forward ? null : findMarker(doc.body);
   if (!marker || !doc.body.lastChild) return { own: whole, quoted: null, body };
@@ -77,53 +55,7 @@ export function splitQuotedHtml(
 
   const ownIsEmpty = !doc.body.textContent?.trim() && !doc.body.querySelector(`img, [${HELD_IMAGE}]`);
   if (ownIsEmpty || FORWARD.test(holder.textContent ?? "")) return { own: whole, quoted: null, body };
-  return { own: styles.join("") + doc.body.innerHTML, quoted: styles.join("") + holder.innerHTML, body };
-}
-
-function attributeText(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-}
-
-/**
- * An image left without a source (a picture on the web not asked for, or a file that is no image) as
- * mail clients show a blocked picture: a box of its size holding its alt text, instead of
- * the browser's broken-image icon. Without alt text and too small to see, it goes.
- */
-function holdImage(image: Element): void {
-  const alt = image.getAttribute("alt")?.trim() ?? "";
-  const width = pixels(image, "width") ?? 0;
-  const height = pixels(image, "height") ?? 0;
-  if (!alt && !(width >= SEEN && height >= SEEN)) {
-    image.remove();
-    return;
-  }
-  const box = image.ownerDocument.createElement("span");
-  box.setAttribute(HELD_IMAGE, "");
-  box.textContent = alt;
-  if (width) box.style.width = `${width}px`;
-  if (height) box.style.height = `${height}px`;
-  image.replaceWith(box);
-}
-
-/** An image the mail sized under `SEEN` both ways (zero included), with no alt text: there only to
- *  be fetched. */
-function tracker(image: Element): boolean {
-  const width = pixels(image, "width");
-  const height = pixels(image, "height");
-  return !image.getAttribute("alt")?.trim() && width !== null && height !== null && width < SEEN && height < SEEN;
-}
-
-/**
- * A size the mail gave an image in pixels, by inline style or attribute; null when it gave none. A
- * responsive newsletter image styles `width:100%;height:auto` over `width="600"`: the attribute
- * still says how big it is.
- */
-function pixels(image: Element, side: "width" | "height"): number | null {
-  for (const given of [(image as HTMLElement).style?.[side], image.getAttribute(side)]) {
-    const match = /^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/.exec(given ?? "");
-    if (match) return Math.round(Number(match[1]));
-  }
-  return null;
+  return { own: styles + doc.body.innerHTML, quoted: styles + holder.innerHTML, body };
 }
 
 function findMarker(body: HTMLElement): Element | null {

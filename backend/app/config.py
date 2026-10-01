@@ -71,6 +71,9 @@ class Settings(BaseSettings):
 
     # The largest upload accepted, in bytes; a phone photo or a scanned CMR is a few MB.
     upload_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    # The converter that turns Word, RTF and OpenDocument files into PDFs (ADR-0012), Gotenberg from
+    # docker-compose.yml. Unset, those files are left unsupported until it is set.
+    converter_url: str | None = None
 
     # The pilot's mailboxes, read into the pilot company (ADR-0008). Until a per-company connections
     # table exists, they are settings: a JSON list in MAILBOXES.

@@ -12,6 +12,8 @@ from app.modules.documents.schemas import (
     DocumentPartOut,
     DocumentTypeOut,
     DocumentUpdate,
+    HtmlOut,
+    TextOut,
     UploadOut,
     WorkbookOut,
 )
@@ -82,7 +84,35 @@ async def get_document(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) 
 )
 async def get_document_content(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> Response:
     """The file itself, for the web app to draw: inline only as a verified image or PDF."""
-    file = await service.get_content(db, actor, document_id)
+    return _file(await service.get_content(db, actor, document_id))
+
+
+@documents.get(
+    "/documents/{document_id}/rendition",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}, "description": "The PDF"}},
+)
+async def get_document_rendition(
+    document_id: uuid.UUID, actor: ActorDep, db: SessionDep
+) -> Response:
+    """The PDF the converter made of a Word, RTF or OpenDocument file (`converted`)."""
+    return _file(await service.get_rendition(db, actor, document_id))
+
+
+@documents.get("/documents/{document_id}/html")
+async def get_document_html(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> HtmlOut:
+    """A web page (`preview` html) made safe to show, as a mail's body is: for a frame that runs
+    no script and loads nothing from the web unless asked."""
+    return await service.get_html(db, actor, document_id)
+
+
+@documents.get("/documents/{document_id}/text")
+async def get_document_text(document_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> TextOut:
+    """An XML or text file (`preview` text) as text, up to a million characters."""
+    return await service.get_text(db, actor, document_id)
+
+
+def _file(file: service.FileContent) -> Response:
     disposition = "inline" if file.inline else "attachment"
     name = quote(file.filename, safe="")
     return Response(

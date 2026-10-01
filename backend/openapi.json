@@ -403,6 +403,10 @@
             "title": "Content Type",
             "type": "string"
           },
+          "converted": {
+            "title": "Converted",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -494,6 +498,7 @@
           "read_state",
           "unreadable_reason",
           "truncated",
+          "converted",
           "download_url",
           "held_by"
         ],
@@ -505,6 +510,10 @@
           "content_type": {
             "title": "Content Type",
             "type": "string"
+          },
+          "converted": {
+            "title": "Converted",
+            "type": "boolean"
           },
           "created_at": {
             "format": "date-time",
@@ -585,7 +594,8 @@
           "preview",
           "read_state",
           "unreadable_reason",
-          "truncated"
+          "truncated",
+          "converted"
         ],
         "title": "DocumentOut",
         "type": "object"
@@ -779,6 +789,25 @@
         ],
         "title": "Holder",
         "type": "string"
+      },
+      "HtmlOut": {
+        "description": "A web page made safe to show, for a frame that runs no script.",
+        "properties": {
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "remote_images": {
+            "title": "Remote Images",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "html",
+          "remote_images"
+        ],
+        "title": "HtmlOut",
+        "type": "object"
       },
       "InviteAccept": {
         "properties": {
@@ -2030,7 +2059,10 @@
           "image",
           "pdf",
           "sheet",
-          "archive"
+          "archive",
+          "office",
+          "html",
+          "text"
         ],
         "title": "Preview",
         "type": "string"
@@ -3105,6 +3137,24 @@
         "title": "SignIn",
         "type": "object"
       },
+      "TextOut": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated"
+        ],
+        "title": "TextOut",
+        "type": "object"
+      },
       "ThreadPage": {
         "properties": {
           "items": {
@@ -3794,6 +3844,55 @@
         ]
       }
     },
+    "/documents/{document_id}/html": {
+      "get": {
+        "description": "A web page (`preview` html) made safe to show, as a mail's body is: for a frame that runs\nno script and loads nothing from the web unless asked.",
+        "operationId": "documents.get_document_html",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Document Html",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/documents/{document_id}/parts": {
       "get": {
         "description": "The files taken out of an archive or a winmail.dat, in their order there, each under the\nname it had in it. Empty until the archive is read (`read_state`).",
@@ -3847,6 +3946,51 @@
         ]
       }
     },
+    "/documents/{document_id}/rendition": {
+      "get": {
+        "description": "The PDF the converter made of a Word, RTF or OpenDocument file (`converted`).",
+        "operationId": "documents.get_document_rendition",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "The PDF"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Document Rendition",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
     "/documents/{document_id}/sheets": {
       "get": {
         "description": "A spreadsheet as Excel lays it out: each cell's value and number format, the styles, merged\ncells, widths and heights. At most 20 sheets of a thousand rows and fifty columns.",
@@ -3891,6 +4035,55 @@
           }
         ],
         "summary": "Get Document Sheets",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/text": {
+      "get": {
+        "description": "An XML or text file (`preview` text) as text, up to a million characters.",
+        "operationId": "documents.get_document_text",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Document Text",
         "tags": [
           "documents"
         ]

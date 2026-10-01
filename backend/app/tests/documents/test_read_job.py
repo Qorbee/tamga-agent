@@ -31,7 +31,9 @@ async def test_an_upload_is_read_once_in_isolation_and_its_facts_recorded(
     invoice = pdf(text("Invoice no INV-2026-118, CMR: 0048213", y=700) + text("IBAN", mode=3))
     order = await upload(client, "fatura.pdf", invoice, "application/pdf")
     photo = await upload(client, "teslim.png", PNG, "image/png")
-    word = await upload(client, "talimat.docx", b"PK\x03\x04 a word file", "application/msword")
+    program = await upload(
+        client, "kurulum.exe", b"MZ\x90\x00 a program", "application/x-msdownload"
+    )
     broken = await upload(client, "bozuk.pdf", b"%PDF-1.7 a", "application/pdf")
     assert (await document(client, order))["read_state"] == "pending"
 
@@ -52,7 +54,7 @@ async def test_an_upload_is_read_once_in_isolation_and_its_facts_recorded(
     assert "IBAN" not in stored.text and stored.hidden_parts == 4 and stored.parts == 1
     # A photo waits for the vision model; what no reader knows yet, or cannot open, says why.
     assert (await document(client, photo))["read_state"] == "pending"
-    assert (await document(client, word))["unreadable_reason"] == "unsupported"
+    assert (await document(client, program))["unreadable_reason"] == "unsupported"
     assert (await document(client, broken))["unreadable_reason"] == "damaged"
 
 
