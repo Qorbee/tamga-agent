@@ -9,6 +9,8 @@ from sqlalchemy import (
     Text,
     and_,
     cast,
+    delete,
+    exists,
     func,
     select,
     true,
@@ -22,9 +24,12 @@ from app.modules.conversations.models import (
     Channel,
     Direction,
     MailFolder,
+    MailModelRead,
     Message,
     MessageAttachment,
     MessageLocation,
+    Thread,
+    ThreadCategory,
 )
 from app.platform import search
 from app.platform.pagination import PageParams, escape_like
@@ -195,10 +200,34 @@ async def thread_of(db: AsyncSession, company_id: uuid.UUID, rfc_message_id: str
 async def move_thread(
     db: AsyncSession, company_id: uuid.UUID, *, from_key: str, to_key: str
 ) -> None:
-    await db.execute(
+    """Moves a thread's mail under another key, when it has any, and its sorting with it: the
+    row takes the new key. When the thread it joins has a row of its own, that one is kept and
+    the moved one goes; one that was noise for being all bulk mail is sorted again, now that it
+    holds more."""
+    moved = await db.execute(
         update(Message)
         .where(Message.company_id == company_id, Message.thread_key == from_key)
         .values(thread_key=to_key)
+    )
+    if not moved.rowcount:  # type: ignore[attr-defined]  # a DML statement's result has one
+        return
+    joined = select(Thread.id).where(Thread.company_id == company_id, Thread.thread_key == to_key)
+    await db.execute(
+        update(Thread)
+        .where(Thread.company_id == company_id, Thread.thread_key == from_key, ~exists(joined))
+        .values(thread_key=to_key)
+    )
+    await db.execute(
+        delete(Thread).where(Thread.company_id == company_id, Thread.thread_key == from_key)
+    )
+    await db.execute(
+        update(Thread)
+        .where(
+            Thread.company_id == company_id,
+            Thread.thread_key == to_key,
+            Thread.sorted_by == BY_HEADERS,
+        )
+        .values(category=None, sorted_by=None, sorted_at=None)
     )
 
 
@@ -342,15 +371,25 @@ async def get_message(
 async def attachments_of(
     db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID
 ) -> Sequence[MessageAttachment]:
+    return (await attachments_of_each(db, company_id, [message_id])).get(message_id, [])
+
+
+async def attachments_of_each(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[MessageAttachment]]:
+    """Each message's files by name, in one query."""
     rows = await db.scalars(
         select(MessageAttachment)
         .where(
             MessageAttachment.company_id == company_id,
-            MessageAttachment.message_id == message_id,
+            MessageAttachment.message_id.in_(message_ids),
         )
         .order_by(MessageAttachment.filename)
     )
-    return rows.all()
+    files: dict[uuid.UUID, list[MessageAttachment]] = {}
+    for row in rows:
+        files.setdefault(row.message_id, []).append(row)
+    return files
 
 
 def _waiting(tries: int, retry_before: datetime) -> ColumnElement[bool]:
@@ -409,5 +448,170 @@ async def processed_copies(
             Message.copy_of_id.is_(None),
         )
         .order_by(Message.processed_at, Message.id)
+    )
+    return rows.all()
+
+
+# Sorting conversations
+
+BY_HEADERS = "headers"
+BY_OWN_MAIL = "own_mail"
+UNANSWERED = "unanswered"
+
+
+def _in_thread(*conditions: ColumnElement[bool]) -> ColumnElement[bool]:
+    return exists().where(
+        Message.company_id == Thread.company_id,
+        Message.thread_key == Thread.thread_key,
+        *conditions,
+    )
+
+
+async def note_mail(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    thread_key: str,
+    *,
+    outbound: bool,
+    bulk: bool,
+    at: datetime,
+) -> None:
+    """Records that a mail of this thread was processed: the thread's row is made, and what the
+    mail changes of its sorting is applied. A mail the company wrote makes the thread work,
+    whatever it was. A mail that is not bulk, in a thread that was noise only for being all bulk,
+    sends it back to be sorted."""
+    await db.execute(
+        insert(Thread)
+        .values(id=uuid.uuid7(), company_id=company_id, thread_key=thread_key)
+        .on_conflict_do_nothing(index_elements=[Thread.company_id, Thread.thread_key])
+    )
+    this = (Thread.company_id == company_id, Thread.thread_key == thread_key)
+    if outbound:
+        await db.execute(
+            update(Thread)
+            .where(*this, Thread.category.is_distinct_from(ThreadCategory.WORK))
+            .values(category=ThreadCategory.WORK, sorted_by=BY_OWN_MAIL, reason="", sorted_at=at)
+        )
+    elif not bulk:
+        await db.execute(
+            update(Thread)
+            .where(*this, Thread.sorted_by == BY_HEADERS)
+            .values(category=None, sorted_by=None, sorted_at=None)
+        )
+
+
+async def sort_by_rules(db: AsyncSession, company_id: uuid.UUID, at: datetime) -> int:
+    """Sorts every waiting thread that needs no model: one the company wrote in is work, and one
+    of bulk mail only is noise. Returns how many it sorted."""
+    waiting = (Thread.company_id == company_id, Thread.category.is_(None))
+    own = await db.execute(
+        update(Thread)
+        .where(*waiting, _in_thread(Message.direction == Direction.OUTBOUND))
+        .values(category=ThreadCategory.WORK, sorted_by=BY_OWN_MAIL, sorted_at=at)
+    )
+    bulk = await db.execute(
+        update(Thread)
+        .where(*waiting, _in_thread(), ~_in_thread(Message.bulk.is_(False)))
+        .values(category=ThreadCategory.NOISE, sorted_by=BY_HEADERS, sorted_at=at)
+    )
+    return (own.rowcount or 0) + (bulk.rowcount or 0)  # type: ignore[attr-defined]  # a DML result
+
+
+def _unsorted(tries: int, retry_before: datetime) -> ColumnElement[bool]:
+    return Thread.category.is_(None) & (
+        (Thread.sort_failures < tries) | (Thread.sort_failed_at <= retry_before)
+    )
+
+
+async def companies_with_unsorted(
+    db: AsyncSession, *, tries: int, retry_before: datetime
+) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone."""
+    rows = await db.scalars(
+        select(Thread.company_id).where(_unsorted(tries, retry_before)).distinct()
+    )
+    return list(rows)
+
+
+async def unsorted_threads(
+    db: AsyncSession, company_id: uuid.UUID, *, tries: int, retry_before: datetime, limit: int
+) -> list[str]:
+    rows = await db.scalars(
+        select(Thread.thread_key)
+        .where(Thread.company_id == company_id, _unsorted(tries, retry_before))
+        .order_by(Thread.created_at, Thread.id)
+        .limit(limit)
+    )
+    return list(rows)
+
+
+async def model_reads_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
+    """Calls in which a model was sent this company's mail since then, whatever came of them."""
+    count = await db.scalar(
+        select(func.count())
+        .select_from(MailModelRead)
+        .where(MailModelRead.company_id == company_id, MailModelRead.read_at >= since)
+    )
+    return count or 0
+
+
+async def add_model_read(db: AsyncSession, company_id: uuid.UUID, agent: str, at: datetime) -> None:
+    db.add(MailModelRead(company_id=company_id, agent=agent, read_at=at))
+    await db.flush()
+
+
+async def set_sorting(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    thread_key: str,
+    *,
+    category: ThreadCategory,
+    sorted_by: str,
+    reason: str,
+    at: datetime,
+) -> None:
+    """Writes a thread's sorting, unless something sorted it while the model read."""
+    await db.execute(
+        update(Thread)
+        .where(
+            Thread.company_id == company_id,
+            Thread.thread_key == thread_key,
+            Thread.category.is_(None),
+        )
+        .values(category=category, sorted_by=sorted_by, reason=reason[:300], sorted_at=at)
+    )
+
+
+async def add_sort_failure(
+    db: AsyncSession, company_id: uuid.UUID, thread_key: str, at: datetime
+) -> None:
+    await db.execute(
+        update(Thread)
+        .where(Thread.company_id == company_id, Thread.thread_key == thread_key)
+        .values(sort_failures=Thread.sort_failures + 1, sort_failed_at=at)
+    )
+
+
+async def get_thread(db: AsyncSession, company_id: uuid.UUID, thread_key: str) -> Thread | None:
+    thread: Thread | None = await db.scalar(
+        select(Thread).where(Thread.company_id == company_id, Thread.thread_key == thread_key)
+    )
+    return thread
+
+
+async def first_mail(
+    db: AsyncSession, company_id: uuid.UUID, thread_key: str, *, limit: int
+) -> Sequence[Message]:
+    """The thread's first mails as they were read, a copy in another mailbox left out."""
+    rows = await db.scalars(
+        select(Message)
+        .where(
+            Message.company_id == company_id,
+            Message.thread_key == thread_key,
+            Message.processed_at.is_not(None),
+            Message.copy_of_id.is_(None),
+        )
+        .order_by(Message.sent_at, Message.id)
+        .limit(limit)
     )
     return rows.all()

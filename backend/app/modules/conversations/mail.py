@@ -49,6 +49,8 @@ class ParsedMail:
     body_text: str
     sent_at: datetime | None
     attachments: list[Attachment] = field(default_factory=list)
+    # Sent to a list, not written to this reader: its headers carry what bulk senders add.
+    bulk: bool = False
 
 
 UNREADABLE = ParsedMail(
@@ -82,7 +84,20 @@ def parse_mail(raw: bytes) -> ParsedMail:
         body_text=_text_of(body) if body is not None else "",
         sent_at=_date(message),
         attachments=_attachments(message, body),
+        bulk=_bulk(message),
     )
+
+
+def _bulk(message: Message) -> bool:
+    """Whether the mail went to a list: an unsubscribe or list header, which the large mail
+    providers require of bulk senders, a bulk precedence, or a campaign's feedback id. A person's
+    mail client writes none of them, and neither does a system that notifies one customer of one
+    event (an invoice, a payment)."""
+    if _header(message, "List-Unsubscribe") or _header(message, "List-Id"):
+        return True
+    if (_header(message, "Precedence") or "").lower() in ("bulk", "list", "junk"):
+        return True
+    return _header(message, "Feedback-ID") is not None
 
 
 def _header(message: Message, name: str) -> str | None:

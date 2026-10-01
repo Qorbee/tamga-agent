@@ -20,3 +20,12 @@ async def process_mail(timestamp: int) -> None:
     processed = await service.process_pending()
     if processed:
         logger.info("processed %d messages", processed)
+
+
+@jobs.periodic("mail.sort", cron="* * * * *")
+async def sort_mail(timestamp: int) -> None:
+    """Conversations sorted into work, automated and noise: by code, then by the model within the
+    company's daily budget."""
+    sorted_count = await service.sort_pending()
+    if sorted_count:
+        logger.info("sorted %d conversations", sorted_count)

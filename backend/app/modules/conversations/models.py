@@ -40,6 +40,18 @@ class Direction(StrEnum):
     OUTBOUND = "outbound"
 
 
+class ThreadCategory(StrEnum):
+    """What a conversation is, which decides what reads it next (docs/architecture/06, Sorting)."""
+
+    # People writing about the company's business: an order, a load, an invoice, a payment.
+    WORK = "work"
+    # A system's notice of one real event in that business (an invoice issued, a payment made):
+    # tied to a project by the numbers it carries, without a model reading it again.
+    AUTOMATED = "automated"
+    # Marketing, newsletters, digests, account notices: kept and searchable, read by nothing.
+    NOISE = "noise"
+
+
 class Message(CompanyScoped, Base):
     """One item from a channel, stored once however many folders or re-reads it turns up in. Its
     text is data, never instructions (root AGENTS.md, invariant 3)."""
@@ -106,6 +118,8 @@ class Message(CompanyScoped, Base):
     # What its writer typed: the text above the quoted history (quoted.py), which facts are read
     # from. Filled when the message is processed.
     own_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Sent to a list, by its headers (mail.py): a conversation of nothing else is noise.
+    bulk: Mapped[bool] = mapped_column(default=False, server_default=false())
     # The copy processed in its place: the same mail stored from another mailbox (the same
     # Message-ID and text, other delivery headers), so it is read once.
     copy_of_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -118,6 +132,54 @@ class Message(CompanyScoped, Base):
     # bug or an outage is read once the cause is gone.
     process_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     process_failed_at: Mapped[datetime | None]
+
+
+class Thread(CompanyScoped, Base):
+    """A conversation, by its thread key: what it was sorted as, and by what. The row is made when
+    its first message is processed."""
+
+    __tablename__ = "threads"
+    __table_args__ = (
+        UniqueConstraint("company_id", "thread_key"),
+        # What waits to be sorted, oldest first.
+        Index(
+            "ix_threads_unsorted",
+            "company_id",
+            "created_at",
+            postgresql_where=text("category IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    thread_key: Mapped[str] = mapped_column(Text)
+    # Null while it waits to be sorted.
+    category: Mapped[ThreadCategory | None] = mapped_column(
+        text_enum(ThreadCategory, "threads_category_check")
+    )
+    # What sorted it: "headers" (bulk mail only), "own_mail" (the company wrote in it),
+    # "model:intake", or "unanswered" when the model gave no answer and it is kept as work.
+    sorted_by: Mapped[str | None] = mapped_column(String(40))
+    # The model's one line on why, for the owner to read.
+    reason: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    sorted_at: Mapped[datetime | None]
+    # Times the model could not be reached for it, and when it last could not: after three, it is
+    # tried once an hour.
+    sort_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    sort_failed_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class MailModelRead(CompanyScoped, Base):
+    """One call in which a model was sent a company's mail: what its budget for a day counts
+    (MAIL_MODEL_READS_PER_DAY). Written before the call is made, so a call that failed after the
+    provider read the mail is counted too."""
+
+    __tablename__ = "mail_model_reads"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    # The agent that read: "intake".
+    agent: Mapped[str] = mapped_column(String(40))
+    read_at: Mapped[datetime]
 
 
 class MessageLocation(CompanyScoped, Base):

@@ -7,6 +7,9 @@ by the hash of its raw bytes, with every folder it was seen in beside it.
 A stored message waits to be processed: a job reads it once, oldest first, keeping the text its
 writer typed and the facts code finds in it. A copy of a mail stored from a second mailbox is read
 as the first one was, not again.
+
+A conversation is then sorted (work, automated or noise), by code where its mail says enough and
+by the ``intake`` agent otherwise, so that what reads conversations next reads only work.
 """
 
 import asyncio
@@ -18,15 +21,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
+from pydantic_ai import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Mailbox, get_settings
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
-from app.modules.conversations import html, quoted, repository
+from app.modules.conversations import agents, html, quoted, repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
 from app.modules.conversations.mail import UNREADABLE, ParsedMail, parse_mail
-from app.modules.conversations.models import Channel, Direction, Message
+from app.modules.conversations.models import Channel, Direction, Message, ThreadCategory
 from app.modules.conversations.schemas import (
     AttachmentOut,
     MessageOut,
@@ -39,7 +43,7 @@ from app.modules.documents import service as documents
 from app.modules.documents.schemas import Holder
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import search, storage
+from app.platform import llm, search, storage
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -57,6 +61,17 @@ PROCESS_BATCH: Final = 100
 # outage, or a mail nobody can read).
 PROCESS_TRIES: Final = 3
 PROCESS_RETRY_AFTER: Final = timedelta(hours=1)
+# Conversations one company has sorted by the model per run, a call each.
+SORT_BATCH: Final = 30
+SORT_TRIES: Final = 3
+SORT_RETRY_AFTER: Final = timedelta(hours=1)
+# The budget of model reads (MAIL_MODEL_READS_PER_DAY) counts those made in this long.
+SORT_WINDOW: Final = timedelta(days=1)
+# What the model is shown of a conversation: its first mails, and this much of each one's text.
+_SORT_MAILS: Final = 3
+_SORT_TEXT: Final = 1500
+# One answer, and one more request when it fails the output's checks.
+_SORT_LIMITS: Final = UsageLimits(request_limit=2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +206,11 @@ async def ingest_mail(
     elif place.sent and message.direction is Direction.INBOUND:
         # First seen elsewhere (a copy the owner sent themselves); its Sent copy says who wrote it.
         message.direction = Direction.OUTBOUND
+        if message.processed_at is not None:
+            # Its thread was sorted without knowing the company wrote in it.
+            await repository.note_mail(
+                db, company_id, message.thread_key, outbound=True, bulk=message.bulk, at=utcnow()
+            )
     await repository.add_location(
         db,
         company_id=company_id,
@@ -245,6 +265,7 @@ async def _store_new_mail(
         body_text=parsed.body_text,
         search_text=_search_text(parsed),
         sent_at=parsed.sent_at or fetched.internaldate or utcnow(),
+        bulk=parsed.bulk,
     )
     message = await repository.insert_message_unless_stored(db, candidate)
     if message is None:  # stored a moment ago by another poll
@@ -306,8 +327,8 @@ async def reread_stored_mail(
     db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int = 200
 ) -> uuid.UUID | None:
     """Reads one batch of stored originals again, to fill what the parser learned to keep after
-    they were stored: the sender's name, which files the body shows inline, and the text a search
-    looks in. Returns the last
+    they were stored: the sender's name, which files the body shows inline, the text a search
+    looks in, and whether it is bulk mail. Returns the last
     message read, to pass as ``after`` for the next batch; None when every mail has been read. The
     caller commits."""
     batch = await repository.mail_after(db, company_id, after=after, limit=limit)
@@ -321,6 +342,7 @@ async def reread_stored_mail(
             continue
         message.sender_name = parsed.sender_name
         message.search_text = _search_text(parsed)
+        message.bulk = parsed.bulk
         await _mark_inline(db, company_id, message.id, parsed)
     return batch[-1].id if batch else None
 
@@ -406,6 +428,14 @@ async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: u
         db, company_id, [file.document_id for file in attachments if not file.inline]
     )
     message.processed_at = utcnow()
+    await repository.note_mail(
+        db,
+        company_id,
+        message.thread_key,
+        outbound=message.direction == Direction.OUTBOUND,
+        bulk=message.bulk,
+        at=message.processed_at,
+    )
 
 
 async def _processed_copy(db: AsyncSession, message: Message) -> Message | None:
@@ -425,6 +455,115 @@ async def _processed_copy(db: AsyncSession, message: Message) -> Message | None:
 def _as_read(message: Message) -> tuple[str, str]:
     """What facts are read from, with runs of spaces made one."""
     return " ".join((message.subject or "").split()), " ".join(message.body_text.split())
+
+
+# Sorting conversations
+
+
+async def sort_pending() -> int:
+    """Sorts the conversations that wait. Code sorts what a mail's own marks decide, for every
+    company and at no cost: one the company wrote in is work, one of bulk mail only is noise. The
+    ``intake`` agent sorts the rest, oldest first, within each company's budget of model reads for
+    a day (MAIL_MODEL_READS_PER_DAY; at zero no mail's text leaves for the model's provider). A
+    model that cannot be reached is counted against the conversation, which is tried again next
+    run, up to SORT_TRIES times, then once an hour. Returns how many were sorted."""
+    now = utcnow()
+    retry_before = now - SORT_RETRY_AFTER
+    budget = get_settings().mail_model_reads_per_day
+    async with open_session() as db:
+        company_ids = await repository.companies_with_unsorted(
+            db, tries=SORT_TRIES, retry_before=retry_before
+        )
+    sorted_count = 0
+    for company_id in company_ids:
+        async with open_session() as db:
+            sorted_count += await repository.sort_by_rules(db, company_id, now)
+            await db.commit()
+            left = budget - await repository.model_reads_since(db, company_id, now - SORT_WINDOW)
+            waiting = await repository.unsorted_threads(
+                db,
+                company_id,
+                tries=SORT_TRIES,
+                retry_before=retry_before,
+                limit=max(min(SORT_BATCH, left), 0),
+            )
+            company = (await companies.get_companies(db, [company_id])).get(company_id)
+        trace_content = company is not None and companies.traces_content(company.kind)
+        for thread_key in waiting:
+            try:
+                await sort_with_model(company_id, thread_key, trace_content=trace_content)
+            except Exception as error:  # one conversation that fails never stops the others
+                # The error's type only: its text can carry what the mail holds.
+                logger.warning("sorting a conversation failed: %s", type(error).__name__)
+                async with open_session() as db:
+                    await repository.add_sort_failure(db, company_id, thread_key, utcnow())
+                    await db.commit()
+                continue
+            sorted_count += 1
+    return sorted_count
+
+
+async def sort_with_model(company_id: uuid.UUID, thread_key: str, *, trace_content: bool) -> None:
+    """Has the ``intake`` agent sort one conversation from its first mails, in a call with no
+    tools (ADR-0013). An answer that cannot be used leaves the conversation as work, marked as
+    unanswered: reading one conversation too many costs less than dropping a customer's mail. No
+    transaction is open while the model reads. The read is counted before it is made, so a call
+    that fails once the provider has the mail still counts against the budget."""
+    async with open_session() as db:
+        excerpt = await _excerpt(db, company_id, thread_key)
+        await repository.add_model_read(db, company_id, agents.INTAKE, utcnow())
+        await db.commit()
+    try:
+        run = await llm.run(
+            agents.intake,
+            agents.conversation(excerpt),
+            deps=None,
+            limits=_SORT_LIMITS,
+            trace_content=trace_content,
+        )
+        category, reason, sorted_by = run.output.category, run.output.reason, agents.MODEL_SORTED
+        requests = run.usage.requests
+    except llm.NoAnswer as error:
+        category, reason, sorted_by = ThreadCategory.WORK, "", repository.UNANSWERED
+        requests = error.requests
+    async with open_session() as db:
+        # A request made again after an answer failed its checks sent the mail again.
+        for _ in range(requests - 1):
+            await repository.add_model_read(db, company_id, agents.INTAKE, utcnow())
+        await repository.set_sorting(
+            db,
+            company_id,
+            thread_key,
+            category=category,
+            sorted_by=sorted_by,
+            reason=" ".join(reason.replace("\x00", "").split()),
+            at=utcnow(),
+        )
+        await db.commit()
+
+
+async def _excerpt(db: AsyncSession, company_id: uuid.UUID, thread_key: str) -> str:
+    """The start of a conversation as the model is shown it: for each of its first mails who wrote
+    it, its subject, the names of the files beside it, and the start of its own text."""
+    parts = []
+    mails = await repository.first_mail(db, company_id, thread_key, limit=_SORT_MAILS)
+    attached = await repository.attachments_of_each(db, company_id, [mail.id for mail in mails])
+    for message in mails:
+        files = [file.filename for file in attached.get(message.id, []) if not file.inline]
+        sender = " ".join(part for part in (message.sender_name, f"<{message.sender}>") if part)
+        lines = [
+            f"From: {sender}" + (" (the company itself)" if _outbound(message) else ""),
+            f"Subject: {message.subject or ''}",
+        ]
+        if files:
+            lines.append("Files: " + ", ".join(files))
+        lines.append((message.own_text or message.body_text)[:_SORT_TEXT].strip())
+        parts.append("\n".join(lines))
+    return "\n\n---\n\n".join(parts)
+
+
+def _outbound(message: Message) -> bool:
+    return message.direction == Direction.OUTBOUND
 
 
 # Reading what arrived

@@ -1,5 +1,5 @@
 """Reads stored mail again, to fill what the parser learned to keep after it was stored: the
-sender's name, and which files a mail's HTML body shows inline.
+sender's name, which files a mail's HTML body shows inline, and whether it is bulk mail.
 
 uv run python scripts/reparse_mail.py                  (the pilot company, PILOT_COMPANY_ID)
 uv run python scripts/reparse_mail.py --company-id <id>
