@@ -35,6 +35,8 @@ class Holder(StrEnum):
 
     MAIL = "mail"
     PROJECT = "project"
+    # Taken out of an archive or a winmail.dat.
+    ARCHIVE = "archive"
 
 
 class DocumentDetail(DocumentOut):
@@ -44,6 +46,18 @@ class DocumentDetail(DocumentOut):
     # brought stays as long as the mail does, under the name it came with, and a project's evidence
     # stays with the project.
     held_by: list[Holder]
+
+
+class DocumentPartOut(BaseModel):
+    """A file in an archive, under the name it had there."""
+
+    position: int
+    # Its path in the archive: text to show.
+    name: str
+    size: int
+    # Null when it could not be taken out; `unreadable_reason` says why.
+    document: DocumentOut | None
+    unreadable_reason: Reason | None
 
 
 class CellStyleOut(BaseModel):
@@ -142,8 +156,8 @@ class DocumentUpdate(BaseModel):
     # A key from GET /document-types, or null when it is unknown.
     doc_type: str | None = Field(default=None, max_length=40)
     # The name Tamga shows it under. It keeps the file's extension, which says what kind of file it
-    # is. A file a mail brought keeps the name it came with: the one name for it everywhere, and the
-    # sender's.
+    # is. A file a mail or an archive brought keeps the name it came with: the one name for it
+    # everywhere, and the sender's.
     filename: str | None = Field(default=None, min_length=1, max_length=300)
 
 

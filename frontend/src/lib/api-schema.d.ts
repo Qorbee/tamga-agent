@@ -28,7 +28,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Documents */
+        /**
+         * List Documents
+         * @description Newest first, by when each file arrived or was last uploaded.
+         */
         get: operations["documents.list_documents"];
         put?: never;
         /** Upload Document */
@@ -61,7 +64,8 @@ export interface paths {
         /**
          * Update Document
          * @description Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the
-         *     extension (400), and a file a mail brought keeps the name it came with (409, `held_by`).
+         *     extension (400), and a file a mail or an archive brought keeps the name it came with (409,
+         *     `held_by`).
          */
         patch: operations["documents.update_document"];
         trace?: never;
@@ -78,6 +82,27 @@ export interface paths {
          * @description The file itself, for the web app to draw: inline only as a verified image or PDF.
          */
         get: operations["documents.get_document_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{document_id}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Document Parts
+         * @description The files taken out of an archive or a winmail.dat, in their order there, each under the
+         *     name it had in it. Empty until the archive is read (`read_state`).
+         */
+        get: operations["documents.list_document_parts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -771,6 +796,20 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * DocumentPartOut
+         * @description A file in an archive, under the name it had there.
+         */
+        DocumentPartOut: {
+            document: components["schemas"]["DocumentOut"] | null;
+            /** Name */
+            name: string;
+            /** Position */
+            position: number;
+            /** Size */
+            size: number;
+            unreadable_reason: components["schemas"]["Reason"] | null;
+        };
         /** DocumentTypeOut */
         DocumentTypeOut: {
             /** Fields */
@@ -821,7 +860,7 @@ export interface components {
          *     on.
          * @enum {string}
          */
-        Holder: "mail" | "project";
+        Holder: "mail" | "project" | "archive";
         /** InviteAccept */
         InviteAccept: {
             /** Name */
@@ -1246,7 +1285,7 @@ export interface components {
          * @description How the web app shows a file; a file with none is only downloaded.
          * @enum {string}
          */
-        Preview: "image" | "pdf" | "sheet";
+        Preview: "image" | "pdf" | "sheet" | "archive";
         /** ProjectCreate */
         ProjectCreate: {
             /** Name */
@@ -1722,6 +1761,7 @@ export interface operations {
                 q?: string | null;
                 doc_type?: string | null;
                 untyped?: boolean;
+                members?: boolean;
                 limit?: number;
                 offset?: number;
             };
@@ -1901,6 +1941,37 @@ export interface operations {
                 };
                 content: {
                     "application/octet-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "documents.list_document_parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPartOut"][];
                 };
             };
             /** @description Validation Error */

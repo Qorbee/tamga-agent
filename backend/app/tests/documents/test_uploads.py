@@ -95,6 +95,17 @@ async def test_a_file_is_renamed_only_under_its_own_extension(
     assert {other_kind.status_code, no_kind.status_code, control.status_code} == {400}
     assert other_kind.json()["error"]["field"] == "filename"
     assert (await client.get(url)).json()["filename"] == "August invoice.pdf"
+    # A .tar.gz keeps both parts: without .tar it is no longer an archive.
+    backup = await client.post(
+        "/documents",
+        params={"filename": "yedek.tar.gz"},
+        content=b"\x1f\x8b a",
+        headers={"content-type": "application/gzip"},
+    )
+    backup_url = f"/documents/{backup.json()['document']['id']}"
+    assert (await client.patch(backup_url, json={"filename": "b.gz"})).status_code == 400
+    kept = await client.patch(backup_url, json={"filename": "Eylül.tar.gz"})
+    assert (kept.status_code, kept.json()["preview"]) == (200, "archive")
 
 
 async def test_an_uploaded_file_is_deleted_with_its_bytes_unless_stored_again(
@@ -193,3 +204,42 @@ async def test_a_file_from_a_mail_or_on_a_project_is_not_deleted_nor_a_mails_ren
     assert typed.status_code == 200 and typed.json()["filename"] == "cmr.pdf"
     project_url = f"/documents/{linked.json()['document']['id']}"
     assert (await client.patch(project_url, json={"filename": "POD.pdf"})).status_code == 200
+
+
+async def test_files_are_listed_newest_first_and_one_uploaded_again_on_top(
+    client: httpx.AsyncClient, storage_bucket: None
+) -> None:
+    company_id = await guest_client(client)
+    headers = {"content-type": "application/pdf"}
+    first = await client.post(
+        "/documents", params={"filename": "a.pdf"}, content=b"%PDF-1.7 a", headers=headers
+    )
+    await client.post(
+        "/documents", params={"filename": "b.pdf"}, content=b"%PDF-1.7 b", headers=headers
+    )
+    mail = email.message.EmailMessage()
+    mail["From"] = "ops@kaya.example"
+    mail["Subject"] = "CMR"
+    mail.set_content("Ekte CMR var.")
+    mail.add_attachment(b"%PDF cmr", maintype="application", subtype="pdf", filename="cmr.pdf")
+    async with open_session() as db:
+        await conversations.ingest_mail(
+            db,
+            company_id=company_id,
+            place=conversations.FolderPlace(
+                mailbox="ops@acme.example", folder="INBOX", uidvalidity=1, sent=False
+            ),
+            fetched=FetchedMail(uid=1, raw=mail.as_bytes(), internaldate=None),
+            own_addresses={"ops@acme.example"},
+        )
+        await db.commit()
+    # The same file again, under another name: it comes back to the top, once.
+    await client.post(
+        "/documents", params={"filename": "a again.pdf"}, content=b"%PDF-1.7 a", headers=headers
+    )
+
+    listed = (await client.get("/documents", params={"members": False})).json()
+
+    # A mail's files are listed with the uploads.
+    assert [row["filename"] for row in listed["items"]] == ["a.pdf", "cmr.pdf", "b.pdf"]
+    assert listed["items"][0]["id"] == first.json()["document"]["id"]

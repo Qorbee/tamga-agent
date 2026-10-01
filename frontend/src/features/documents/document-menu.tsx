@@ -32,8 +32,8 @@ import { useI18n } from "@/lib/i18n/client";
 
 /**
  * The open file's name in the panel's title, with a menu: what it is, rename it in place, download
- * it, and delete it when only uploads keep it. A file a mail brought stays with the mail, under the
- * name it came with.
+ * it, and delete it when only uploads keep it. A file a mail or an archive brought stays with it,
+ * under the name it came with.
  */
 export function DocumentMenu({ document }: { document: DocumentDetail }) {
   const { t, locale } = useI18n();
@@ -45,7 +45,7 @@ export function DocumentMenu({ document }: { document: DocumentDetail }) {
   const keepFocus = useRef(false);
   // What named the file: the name it came with is the sender's, and the backend refuses another.
   // Its note leads, since it explains both items it turns off.
-  const named = document.held_by.find((holder) => holder === "mail");
+  const named = document.held_by.find((holder) => holder === "mail" || holder === "archive");
   const kept = named ?? document.held_by[0];
 
   if (renaming) return <RenameField document={document} onDone={() => setRenaming(false)} />;
@@ -116,10 +116,15 @@ export function DocumentMenu({ document }: { document: DocumentDetail }) {
   );
 }
 
-/** The last dot starts the extension, as the backend reads it; a leading dot starts none. */
+/**
+ * The last dot starts the extension, as the backend reads it, and `.tar.gz` is one; a leading dot
+ * starts none.
+ */
 function splitName(filename: string): [string, string] {
-  const dot = filename.lastIndexOf(".");
   const slash = filename.lastIndexOf("/");
+  const tar = filename.length - ".tar.gz".length;
+  if (tar > slash + 1 && filename.toLowerCase().endsWith(".tar.gz")) return [filename.slice(0, tar), filename.slice(tar)];
+  const dot = filename.lastIndexOf(".");
   return dot > slash + 1 ? [filename.slice(0, dot), filename.slice(dot)] : [filename, ""];
 }
 
@@ -139,7 +144,8 @@ function RenameField({ document, onDone }: { document: DocumentDetail; onDone: (
       void queryClient.invalidateQueries({ queryKey: ["documents"] });
       onDone();
     },
-    // Refused, a mail has brought the same file since the menu was opened: the menu learns it.
+    // Refused, a mail or an archive has brought the same file since the menu was opened: the menu
+    // learns it.
     onError: () => queryClient.invalidateQueries({ queryKey: ["document", document.id] }),
   });
 

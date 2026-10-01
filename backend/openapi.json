@@ -621,6 +621,52 @@
         "title": "DocumentPage",
         "type": "object"
       },
+      "DocumentPartOut": {
+        "description": "A file in an archive, under the name it had there.",
+        "properties": {
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Reason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "position",
+          "name",
+          "size",
+          "document",
+          "unreadable_reason"
+        ],
+        "title": "DocumentPartOut",
+        "type": "object"
+      },
       "DocumentTypeOut": {
         "properties": {
           "fields": {
@@ -728,7 +774,8 @@
         "description": "What keeps a file besides the uploads of it: a mail it came in, a project it is evidence\non.",
         "enum": [
           "mail",
-          "project"
+          "project",
+          "archive"
         ],
         "title": "Holder",
         "type": "string"
@@ -1982,7 +2029,8 @@
         "enum": [
           "image",
           "pdf",
-          "sheet"
+          "sheet",
+          "archive"
         ],
         "title": "Preview",
         "type": "string"
@@ -3356,6 +3404,7 @@
     },
     "/documents": {
       "get": {
+        "description": "Newest first, by when each file arrived or was last uploaded.",
         "operationId": "documents.list_documents",
         "parameters": [
           {
@@ -3399,6 +3448,16 @@
             "schema": {
               "default": false,
               "title": "Untyped",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "members",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Members",
               "type": "boolean"
             }
           },
@@ -3633,7 +3692,7 @@
         ]
       },
       "patch": {
-        "description": "Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the\nextension (400), and a file a mail brought keeps the name it came with (409, `held_by`).",
+        "description": "Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the\nextension (400), and a file a mail or an archive brought keeps the name it came with (409,\n`held_by`).",
         "operationId": "documents.update_document",
         "parameters": [
           {
@@ -3730,6 +3789,59 @@
           }
         ],
         "summary": "Get Document Content",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/documents/{document_id}/parts": {
+      "get": {
+        "description": "The files taken out of an archive or a winmail.dat, in their order there, each under the\nname it had in it. Empty until the archive is read (`read_state`).",
+        "operationId": "documents.list_document_parts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentPartOut"
+                  },
+                  "title": "Response Documents.List Document Parts",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Document Parts",
         "tags": [
           "documents"
         ]

@@ -33,10 +33,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM debian:trixie-slim
 
-# CA certificates for outbound HTTPS (external APIs), and libpq for psycopg, the job queue's
-# driver (its pure-Python build loads the system library). Nothing else from apt.
+# CA certificates for outbound HTTPS (external APIs); libpq for psycopg, the job queue's driver
+# (its pure-Python build loads the system library); libarchive for libarchive-c, which reads
+# archives in the locked child (ADR-0012). Nothing else from apt.
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates libpq5 \
+    && apt-get install --yes --no-install-recommends ca-certificates libpq5 libarchive13t64 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --uid 10001 --no-create-home app

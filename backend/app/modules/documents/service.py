@@ -2,6 +2,7 @@
 document each is (the registry), the files people upload by hand, and what each file says, read in
 a locked child process (ADR-0012) without what its viewer hides (ADR-0013)."""
 
+import base64
 import hashlib
 import logging
 import unicodedata
@@ -16,12 +17,14 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.documents import reading, registry, repository
-from app.modules.documents.models import Document, ReadState, Upload
+from app.modules.companies import service as companies
+from app.modules.documents import reading, registry, repository, unpacking
+from app.modules.documents.models import Document, DocumentPart, ReadState, Upload
 from app.modules.documents.schemas import (
     DocumentDetail,
     DocumentOut,
     DocumentPage,
+    DocumentPartOut,
     DocumentTypeOut,
     DocumentUpdate,
     Holder,
@@ -42,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 _UPLOADERS: Final = (Role.OWNER, Role.OPS)
 # What holds a file under the name it came with (a project names nothing): that file keeps it.
-_NAMING: Final = frozenset({Holder.MAIL})
+_NAMING: Final = frozenset({Holder.MAIL, Holder.ARCHIVE})
 # Files one company has read per run; a child per file, the next run a minute later takes the rest.
 READ_BATCH: Final = 20
 # How many times a file is tried each run when reading fails outside the file (storage, the
@@ -54,15 +57,29 @@ MAX_TEXT: Final = 1_000_000
 # A page with less visible text than this is a scan, or mostly one.
 _SCANNED_PAGE: Final = 20
 
+# The runs that take files out of an archive read up to 200 MB of it, so each gets two minutes.
+_UNPACK_LIMITS: Final = isolated.Limits(deadline_seconds=120.0)
+
 # Whether a module that keeps documents holds this one (a mail's attachments, a project's evidence).
 type HoldsCheck = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[bool]]
 _holders: dict[Holder, HoldsCheck] = {}
+# The DOS code page a country's Windows writes a zip's names in, when not as UTF-8 (ADR-0012).
+_codepages: dict[str, str] = {}
 
 
 def register_holder(holder: Holder, holds: HoldsCheck) -> None:
     """A module that keeps documents says, through ``holds``, whether it keeps one. Only a file no
     holder keeps can be deleted."""
     _holders[holder] = holds
+
+
+def register_name_codepage(country: str, codepage: str) -> None:
+    """A country pack names the code page its Windows writes a zip's names in (Turkey: cp857)."""
+    _codepages[country] = codepage
+
+
+# A file taken out of an archive stays as long as the archive does.
+register_holder(Holder.ARCHIVE, repository.is_part)
 
 
 async def store_file(
@@ -75,6 +92,7 @@ async def store_file(
     await repository.lock_content(db, company_id, sha256)
     existing = await repository.get_by_hash(db, company_id, sha256)
     if existing is not None:
+        _learn_kind(existing, filename, content_type)
         return existing
     key = storage.content_key(company_id, data)
     await storage.put(key, data, content_type=content_type)
@@ -87,6 +105,24 @@ async def store_file(
         content_type=content_type[:200],
         size=len(data),
     )
+
+
+def _learn_kind(document: Document, filename: str, content_type: str) -> None:
+    """A file first stored under a name and type that say nothing (``ATT00001.bin``,
+    ``application/octet-stream``) takes the type a later name gives it (``invoice.pdf`` in an
+    archive), so it is shown and read as what it is; one left unsupported for want of it is read
+    again. Its name stays: the owner may have chosen it."""
+    if filetypes.preview(document.content_type, document.filename) is not None:
+        return
+    known = filetypes.archive_type(content_type, filename) or filetypes.media_type(
+        content_type, filename
+    )
+    if known is None:
+        return
+    document.content_type = known
+    if document.unreadable_reason == isolated.Reason.UNSUPPORTED:
+        document.read_state, document.unreadable_reason = ReadState.PENDING, None
+        document.read_at, document.read_failures, document.read_failed_at = None, 0, None
 
 
 async def upload(
@@ -148,6 +184,7 @@ async def list_documents(
     q: str | None,
     doc_type: str | None,
     untyped: bool,
+    members: bool,
     page: PageParams,
 ) -> DocumentPage:
     rows, total = await repository.list_documents(
@@ -156,6 +193,7 @@ async def list_documents(
         q=q.strip() if q else None,
         doc_type=doc_type,
         untyped=untyped,
+        members=members,
         page=page,
     )
     return DocumentPage(
@@ -201,6 +239,27 @@ async def get_content(db: AsyncSession, actor: Actor, document_id: uuid.UUID) ->
     )
 
 
+async def get_parts(
+    db: AsyncSession, actor: Actor, document_id: uuid.UUID
+) -> list[DocumentPartOut]:
+    """The files taken out of an archive, in their order there; none before it is read."""
+    await _document(db, actor.company_id, document_id)
+    parts = await repository.parts_of(db, actor.company_id, document_id)
+    members = await get_documents(
+        db, actor.company_id, [part.document_id for part in parts if part.document_id]
+    )
+    return [
+        DocumentPartOut(
+            position=part.position,
+            name=part.name,
+            size=part.size,
+            document=_out(members[part.document_id]) if part.document_id in members else None,
+            unreadable_reason=part.unreadable_reason,
+        )
+        for part in parts
+    ]
+
+
 async def get_sheets(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> WorkbookOut:
     document = await _document(db, actor.company_id, document_id)
     media = filetypes.media_type(document.content_type, document.filename)
@@ -241,15 +300,17 @@ async def update_document(
 
 
 async def _check_renamable(db: AsyncSession, company_id: uuid.UUID, document: Document) -> None:
-    """A file a mail brought keeps the name it came with: it is the one name for it everywhere,
-    and the sender's. Only a file people put in themselves is theirs to name."""
+    """A file a mail or an archive brought keeps the name it came with: it is the one name for it
+    everywhere, and the sender's. Only a file people put in themselves is theirs to name."""
     # A mail storing the same file waits on the content lock and a new link on the row's, so
     # neither lands between the check and the rename.
     await repository.lock_content(db, company_id, document.sha256)
     if await repository.lock_document(db, company_id, document.id) is None:
         raise NotFound("No such document")
     if any(holder in _NAMING for holder in await _held_by(db, company_id, document.id)):
-        raise Conflict("A file that came in a mail keeps the name it came with", field="filename")
+        raise Conflict(
+            "A file that came in a mail or an archive keeps the name it came with", field="filename"
+        )
 
 
 def _new_name(old: str, new: str) -> str:
@@ -258,39 +319,63 @@ def _new_name(old: str, new: str) -> str:
     name = new.strip()
     if not name or any(unicodedata.category(char) == "Cc" for char in name):
         raise BadRequest("Name the file", field="filename")
-    extension = PurePosixPath(old).suffix
-    if PurePosixPath(name).suffix.lower() != extension.lower():
+    extension = filetypes.extension(old)
+    if filetypes.extension(name).lower() != extension.lower():
         raise BadRequest(f"Keep the file's extension ({extension or 'none'})", field="filename")
     return name
 
 
 async def delete_document(db: AsyncSession, actor: Actor, document_id: uuid.UUID) -> None:
-    """Deletes an uploaded file, with what was read from it. A file a mail brought or a project
-    holds as evidence is refused (``held_by``). Its stored bytes go in a job after the commit,
-    unless the same file has been stored again by then."""
+    """Deletes an uploaded file, with what was read from it, and, for an archive, the files taken
+    out of it that nothing else keeps. A file a mail brought, an archive holds or a project links
+    is refused (``held_by``). The stored bytes go in a job after the commit, unless the same file
+    has been stored again by then."""
     actor.require(*_UPLOADERS)
     document = await _document(db, actor.company_id, document_id)
+    if not await _delete(db, actor.company_id, document, uploads_hold=False):
+        raise Conflict("Only an uploaded file that nothing else keeps can be deleted")
+    await db.commit()
+
+
+async def _delete(
+    db: AsyncSession, company_id: uuid.UUID, document: Document, *, uploads_hold: bool
+) -> bool:
+    """Deletes the document unless something holds it (and, with ``uploads_hold``, unless an
+    upload does), then the members only it held. False when it is kept."""
     # A mail storing the same file waits on the content lock and a new link on the row's, so
     # neither lands between the check and the delete: a mail's attachment row would cascade away.
-    await repository.lock_content(db, actor.company_id, document.sha256)
-    if await repository.lock_document(db, actor.company_id, document_id) is None:
-        raise NotFound("No such document")
-    if await _held_by(db, actor.company_id, document_id):
-        raise Conflict("Only an uploaded file that nothing else keeps can be deleted")
+    await repository.lock_content(db, company_id, document.sha256)
+    if await repository.lock_document(db, company_id, document.id) is None:
+        return False
+    if await _held_by(db, company_id, document.id):
+        return False
+    if uploads_hold and await repository.has_uploads(db, company_id, document.id):
+        return False
+    # Once each: the same file can sit in an archive under two names.
+    members = list(
+        dict.fromkeys(
+            part.document_id
+            for part in await repository.parts_of(db, company_id, document.id)
+            if part.document_id is not None and part.document_id != document.id
+        )
+    )
     stored = {
-        "company_id": str(actor.company_id),
+        "company_id": str(company_id),
         "sha256": document.sha256.hex(),
         "storage_key": document.storage_key,
     }
     await facts.forget_item(
-        db, company_id=actor.company_id, item_kind=ItemKind.DOCUMENT, item_id=document_id
+        db, company_id=company_id, item_kind=ItemKind.DOCUMENT, item_id=document.id
     )
-    await repository.delete_document(db, actor.company_id, document_id)
+    # Its parts rows go with it, so its members are held by one archive fewer.
+    await repository.delete_document(db, company_id, document.id)
     # tasks imports this module, so the job is found here, where it is deferred.
     from app.modules.documents import tasks
 
     await jobs.defer(db, tasks.forget_file, args=stored)
-    await db.commit()
+    for member in await repository.get_many(db, company_id, members):
+        await _delete(db, company_id, member, uploads_hold=True)
+    return True
 
 
 async def forget_file(company_id: uuid.UUID, sha256: bytes, storage_key: str) -> None:
@@ -368,6 +453,10 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         return
     document = found[0]
     data = await storage.get(document.storage_key)
+    # First: a zip whose first member is a PDF has the PDF's header in its first kilobyte.
+    if filetypes.archive_type(document.content_type, document.filename) is not None:
+        await _unpack(db, document, data)
+        return
     real = filetypes.sniff(data)
     media = filetypes.media_type(document.content_type, document.filename)
     if real == filetypes.PDF:
@@ -389,7 +478,7 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         text, parts, hidden, scanned = sheet.text, sheet.sheet_count, sheet.hidden, False
         cut = sheet.truncated
     else:
-        # Word, archives and the rest wait for their readers (ADR-0012), which read them again.
+        # Word and the rest wait for their readers (ADR-0012), which read them again.
         _unreadable(document, isolated.Reason.UNSUPPORTED)
         return
     document.text = text[:MAX_TEXT]
@@ -405,6 +494,138 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         item_id=document.id,
         facts=extractors.from_text(document.text),
     )
+
+
+class _Refused(Exception):
+    def __init__(self, reason: isolated.Reason) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+
+
+async def _unpack(db: AsyncSession, document: Document, data: bytes) -> None:
+    """Takes the files out of an archive or a winmail.dat in the locked child, a batch per run,
+    and stores each as a document of its own, joined to the archive under the name it had there.
+    Each is then read like an attachment, except an archive inside an archive inside another:
+    one level of nesting is opened, nothing deeper. A refused run leaves nothing of the archive
+    behind but its reason."""
+    kind = filetypes.archive_kind(document.content_type, document.filename, data)
+    if kind is None:
+        _unreadable(document, isolated.Reason.DAMAGED)
+        return
+    company_id = document.company_id
+    # What went to storage, by hash and key: the rows themselves go with a refused savepoint.
+    stored: list[tuple[bytes, str]] = []
+    try:
+        async with db.begin_nested():
+            count, omitted = await _take_out(db, document, unpacking.Kind(kind), data, stored)
+    except _Refused as refused:
+        _unreadable(document, refused.reason)
+        # The rows went with the savepoint, the bytes already in storage did not: each goes
+        # unless a file stored before holds it.
+        from app.modules.documents import tasks
+
+        for sha256, storage_key in stored:
+            await jobs.defer(
+                db,
+                tasks.forget_file,
+                args={
+                    "company_id": str(company_id),
+                    "sha256": sha256.hex(),
+                    "storage_key": storage_key,
+                },
+            )
+        return
+    document.parts, document.truncated = count, omitted > 0
+    document.read_state, document.read_at = ReadState.READ, utcnow()
+
+
+async def _take_out(
+    db: AsyncSession,
+    document: Document,
+    kind: unpacking.Kind,
+    data: bytes,
+    stored: list[tuple[bytes, str]],
+) -> tuple[int, int]:
+    """The runs of the child, each reply held to the archive's limits by what this process
+    counts itself (``stored`` gathers what went to storage): a child a crafted file took over
+    can report anything."""
+    company_id = document.company_id
+    codepage = await _codepage(db, company_id)
+    nested = await repository.is_part(db, company_id, document.id)
+    request = unpacking.Request(kind=kind, codepage=codepage)
+    position = taken = 0
+    while True:
+        outcome = await isolated.run(
+            "documents.unpack", data, request.model_dump_json(), limits=_UNPACK_LIMITS
+        )
+        batch = _checked(unpacking.Unpacked, outcome)
+        if isinstance(batch, isolated.Reason):
+            raise _Refused(batch)
+        # Each run but the last sends at least one member, and no more than the cap in all, so
+        # the runs end.
+        if position + len(batch.members) > unpacking.MAX_MEMBERS or (
+            batch.next is not None and not batch.members
+        ):
+            raise _Refused(isolated.Reason.DAMAGED)
+        parts: list[DocumentPart] = []
+        to_read: list[uuid.UUID] = []
+        for member in batch.members:
+            part = DocumentPart(
+                company_id=company_id,
+                container_id=document.id,
+                position=position,
+                name=member.name,
+                size=member.size,
+            )
+            position += 1
+            parts.append(part)
+            if member.data is None:
+                part.unreadable_reason = member.refused or isolated.Reason.PASSWORD
+                continue
+            try:
+                content = base64.b64decode(member.data, validate=True)
+            except ValueError as error:
+                raise _Refused(isolated.Reason.DAMAGED) from error
+            taken += len(content)
+            if unpacking.too_much(taken, len(data)):
+                raise _Refused(isolated.Reason.TOO_LARGE)
+            name = PurePosixPath(member.name).name or member.name
+            file = await store_file(
+                db,
+                company_id=company_id,
+                data=content,
+                filename=name,
+                content_type=_guessed_type(name),
+            )
+            part.document_id, part.size = file.id, len(content)
+            stored.append((file.sha256, file.storage_key))
+            if not (nested and filetypes.archive_type(file.content_type, file.filename)):
+                to_read.append(file.id)
+        await repository.add_parts(db, parts)
+        await request_reading(db, company_id, to_read)
+        if batch.next is None:
+            return position, batch.omitted
+        # Each run sends at least one member, so a run that did not move on is a broken reply.
+        if batch.next <= request.start:
+            raise _Refused(isolated.Reason.DAMAGED)
+        spent = max(batch.spent, taken)
+        request = request.model_copy(update={"start": batch.next, "spent": spent})
+
+
+def _guessed_type(name: str) -> str:
+    """A member has no declared type, so its name says what to expect, as it does for a file a
+    mail client labels ``application/octet-stream``."""
+    return (
+        filetypes.archive_type("", name)
+        or filetypes.media_type("", name)
+        or "application/octet-stream"
+    )
+
+
+async def _codepage(db: AsyncSession, company_id: uuid.UUID) -> str:
+    company = (await companies.get_companies(db, [company_id])).get(company_id)
+    country = company.country if company is not None else ""
+    return _codepages.get(country, unpacking.DEFAULT_CODEPAGE)
 
 
 def _checked[T: BaseModel](shape: type[T], outcome: isolated.Outcome) -> T | isolated.Reason:

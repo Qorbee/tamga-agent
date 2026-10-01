@@ -23,7 +23,8 @@ The worker that runs background jobs is the same image with another command (`py
 
 ## Running it
 
-From `backend/`, with `docker compose up -d` running at the repository root:
+From `backend/`, with `docker compose up -d` running at the repository root, and the system's
+libarchive installed (the root README says how):
 
 ```bash
 cp .env.example .env

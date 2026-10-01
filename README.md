@@ -91,6 +91,11 @@ the port there first, then use the same port in `backend/.env`. The root `.env` 
 servers take a flag instead: `uvicorn … --port 8001`, `pnpm dev -p 3001`. Then set the API URL in
 `frontend/.env`, and `CORS_ORIGINS` and `WEB_URL` in `backend/.env`, to match.
 
+Run directly, the backend opens archives with the system's libarchive: on Debian or Ubuntu
+`sudo apt install libarchive13t64` (`libarchive13` before Ubuntu 24.04 and Debian 13); on macOS
+`brew install libarchive`, then `export LIBARCHIVE=$(brew --prefix libarchive)/lib/libarchive.dylib`.
+The backend image installs it.
+
 ```bash
 docker compose up -d                               # Postgres and file storage
 curl -X PUT http://localhost:8333/tamga            # once, on your port if you moved 8333: the

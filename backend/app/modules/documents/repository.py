@@ -2,11 +2,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, delete, func, select, text, update
+from sqlalchemy import ColumnElement, delete, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.documents.models import Document, ReadState
+from app.modules.documents.models import Document, DocumentPart, ReadState, Upload
 from app.platform.pagination import PageParams, escape_like
 
 
@@ -74,6 +74,7 @@ async def list_documents(
     q: str | None,
     doc_type: str | None,
     untyped: bool,
+    members: bool,
     page: PageParams,
 ) -> tuple[Sequence[Document], int]:
     filters: list[ColumnElement[bool]] = [Document.company_id == company_id]
@@ -83,11 +84,27 @@ async def list_documents(
         filters.append(Document.doc_type == doc_type)
     if untyped:
         filters.append(Document.doc_type.is_(None))
+    last_upload = (
+        select(func.max(Upload.created_at))
+        .where(Upload.company_id == company_id, Upload.document_id == Document.id)
+        .scalar_subquery()
+    )
+    if not members:
+        # A file taken out of an archive opens from it, unless someone uploaded it too.
+        member = (
+            select(DocumentPart.id)
+            .where(DocumentPart.company_id == company_id, DocumentPart.document_id == Document.id)
+            .exists()
+        )
+        filters.append(or_(~member, last_upload.is_not(None)))
+    # Newest first, by when it arrived or was last uploaded: the same file uploaded again comes back
+    # to the top. GREATEST passes over a null.
+    order = func.greatest(Document.created_at, last_upload).desc()
     total = await db.scalar(select(func.count()).select_from(Document).where(*filters))
     rows = await db.scalars(
         select(Document)
         .where(*filters)
-        .order_by(Document.created_at.desc(), Document.id)
+        .order_by(order, Document.id)
         .limit(page.limit)
         .offset(page.offset)
     )
@@ -172,3 +189,38 @@ async def delete_document(db: AsyncSession, company_id: uuid.UUID, document_id: 
     await db.execute(
         delete(Document).where(Document.company_id == company_id, Document.id == document_id)
     )
+
+
+async def add_parts(db: AsyncSession, parts: Sequence[DocumentPart]) -> None:
+    db.add_all(parts)
+    await db.flush()
+
+
+async def parts_of(
+    db: AsyncSession, company_id: uuid.UUID, container_id: uuid.UUID
+) -> Sequence[DocumentPart]:
+    rows = await db.scalars(
+        select(DocumentPart)
+        .where(DocumentPart.company_id == company_id, DocumentPart.container_id == container_id)
+        .order_by(DocumentPart.position)
+    )
+    return rows.all()
+
+
+async def is_part(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+    """Whether the file was taken out of an archive."""
+    found = await db.scalar(
+        select(DocumentPart.id)
+        .where(DocumentPart.company_id == company_id, DocumentPart.document_id == document_id)
+        .limit(1)
+    )
+    return found is not None
+
+
+async def has_uploads(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+    found = await db.scalar(
+        select(Upload.id)
+        .where(Upload.company_id == company_id, Upload.document_id == document_id)
+        .limit(1)
+    )
+    return found is not None

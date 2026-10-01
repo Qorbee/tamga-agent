@@ -255,7 +255,7 @@ export const en = {
   files: {
     file: "File",
     download: "Download",
-    kinds: { image: "Image", pdf: "PDF", sheet: "Spreadsheet" },
+    kinds: { image: "Image", pdf: "PDF", sheet: "Spreadsheet", archive: "Archive" },
     pages: (count: number) => `${count} ${count === 1 ? "page" : "pages"}`,
     truncated: (rows: number, columns: number) =>
       `Showing the first ${rows} rows and ${columns} columns. Download the file for the rest.`,
@@ -266,6 +266,22 @@ export const en = {
     noPreviewBody: "Download it to open it on your device.",
     failed: "This file could not be shown. Download it to open it on your device.",
     pageFailed: "This page could not be drawn. Download the file to see it.",
+    archive: {
+      opening: "Opening the archive…",
+      openingBody: "Its files appear here once Tamga has taken them out, within a minute or two.",
+      empty: "This archive holds no files.",
+      count: (count: number) => `${count} ${count === 1 ? "file" : "files"}`,
+      truncated: "only the first 200 are taken out; download the archive for the rest",
+      notOpenable: "This archive could not be opened",
+      notOpened: "Tamga opens an archive inside an archive, but none deeper. Download it to open it.",
+    },
+    reasons: {
+      password: "It is locked by a password.",
+      unsupported: "Tamga cannot read this kind of file yet.",
+      damaged: "It is damaged, or not what its name says.",
+      too_large: "It unpacks to more than Tamga takes out at once (200 MB, or 100 times its size).",
+      limits: "Reading it took more memory or time than Tamga allows.",
+    },
     viewer: {
       controls: "Zoom and turn",
       zoomIn: "Zoom in",
@@ -284,6 +300,7 @@ export const en = {
       kept: {
         mail: "It came in a mail, so it keeps that name and stays with the mail.",
         project: "It is evidence on a project, so it stays there.",
+        archive: "It came in an archive, so it keeps that name and stays with the archive.",
       },
       deleteTitle: (name: string) => `Delete ${name}?`,
       deleteBody: "The file and what Tamga read from it are removed for good.",

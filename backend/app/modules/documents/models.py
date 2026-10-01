@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    CheckConstraint,
     ForeignKey,
     Index,
     LargeBinary,
@@ -104,3 +105,34 @@ class Upload(CompanyScoped, Base):
     # What the uploader typed with it; data, never instructions (root AGENTS.md, invariant 3).
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class DocumentPart(CompanyScoped, Base):
+    """A file taken out of an archive or a winmail.dat (ADR-0012): the member, stored once per
+    company by content like any file, under the name it had in its container, as a mail's
+    attachments are. A member that could not be taken out (a password) has no document, and says
+    why."""
+
+    __tablename__ = "document_parts"
+    __table_args__ = (
+        UniqueConstraint("container_id", "position"),
+        CheckConstraint(
+            "(document_id IS NULL) = (unreadable_reason IS NOT NULL)",
+            name="document_parts_document_or_reason_check",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    container_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    # Its order in the container, and its name there: a path to show, never one on a disk.
+    position: Mapped[int]
+    name: Mapped[str] = mapped_column(String(1000))
+    size: Mapped[int]
+    unreadable_reason: Mapped[Reason | None] = mapped_column(
+        text_enum(Reason, "document_parts_unreadable_reason_check")
+    )

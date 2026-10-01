@@ -245,6 +245,7 @@ dependencies = [
     { name = "circle-developer-controlled-wallets" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "libarchive-c" },
     { name = "nh3" },
     { name = "openpyxl" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
@@ -254,6 +255,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pypdfium2" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tnefparse" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "xlrd" },
 ]
@@ -278,6 +280,7 @@ requires-dist = [
     { name = "circle-developer-controlled-wallets", specifier = ">=9.6.0" },
     { name = "fastapi", specifier = ">=0.141" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "libarchive-c", specifier = ">=5.3" },
     { name = "nh3", specifier = ">=0.3.7" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.44.0" },
@@ -287,6 +290,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15" },
     { name = "pypdfium2", specifier = ">=5.13.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.54" },
+    { name = "tnefparse", specifier = ">=1.4.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.53" },
     { name = "xlrd", specifier = ">=2.0.2" },
 ]
@@ -1022,6 +1026,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/25/67/04432aae0c1e2729bff14e1841f4a3fb63a9e354318e66622251487760c3/lazy_imports-1.2.0.tar.gz", hash = "sha256:3c546b3c1e7c4bf62a07f897f6179d9feda6118e71ef6ecc47a339cab3d2e2d9", size = 24470, upload-time = "2025-12-28T13:51:51.218Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/62/60ed24fa8707f10c1c5aef94791252b820be3dd6bdfc6e2fcdb08bc8912f/lazy_imports-1.2.0-py3-none-any.whl", hash = "sha256:97134d6552e2ba16f1a278e316f05313ab73b360e848e40d593d08a5c2406fdf", size = 18681, upload-time = "2025-12-28T13:51:49.802Z" },
+]
+
+[[package]]
+name = "libarchive-c"
+version = "5.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/23/e72434d5457c24113e0c22605cbf7dd806a2561294a335047f5aa8ddc1ca/libarchive_c-5.3.tar.gz", hash = "sha256:5ddb42f1a245c927e7686545da77159859d5d4c6d00163c59daff4df314dae82", size = 54349, upload-time = "2025-05-22T08:08:04.604Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/3f/ff00c588ebd7eae46a9d6223389f5ae28a3af4b6d975c0f2a6d86b1342b9/libarchive_c-5.3-py3-none-any.whl", hash = "sha256:651550a6ec39266b78f81414140a1e04776c935e72dfc70f1d7c8e0a3672ffba", size = 17035, upload-time = "2025-05-22T08:08:03.045Z" },
 ]
 
 [[package]]
@@ -2076,6 +2089,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/f6/80760e98a08e6649d2d68afb6035af713121dfb615acce8c4f73810ec438/tiktoken-0.14.0-cp315-cp315t-musllinux_1_2_aarch64.whl", hash = "sha256:86f66c85e796f5d05d5c4a60ec1d40cbfebc47a32464053528c797163fa9ab89", size = 1251479, upload-time = "2026-08-17T19:49:36.419Z" },
     { url = "https://files.pythonhosted.org/packages/c5/84/50966fb6918a0fb9b32721277e5342bf729a2d74350074d662fbedf9772e/tiktoken-0.14.0-cp315-cp315t-musllinux_1_2_x86_64.whl", hash = "sha256:149d97453c4c98c04b081d64a85e635921269b532710d6faf81e9e82b790e7d3", size = 1316673, upload-time = "2026-08-17T19:49:37.756Z" },
     { url = "https://files.pythonhosted.org/packages/35/5e/9b01afd037bfa22a0033963fa091e0f75b6fb15cd85bffb42ff86e697323/tiktoken-0.14.0-cp315-cp315t-win_amd64.whl", hash = "sha256:561e7580f84a79859af1ef6f676968e9030fcc3fe195700b15235bca64f009c9", size = 987929, upload-time = "2026-08-17T19:49:38.947Z" },
+]
+
+[[package]]
+name = "tnefparse"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/aa/d1dee78d61c18abcec8de0343aca06e012e2007739c4868de8b254b6ab2f/tnefparse-1.4.0.tar.gz", hash = "sha256:bd871432b9afecb478fda2bbd4ab3673de00db4ba5dcc723bbb6c86a76420f95", size = 2612426, upload-time = "2021-01-24T21:43:46.305Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/f7/b92196c250d3e093e891677ccf31c469f41910acec80fc984b7460eb4e83/tnefparse-1.4.0-py3-none-any.whl", hash = "sha256:b0e9e9dced05f182dafe19167fd28ff2cce102da30a7ff1101dc387194d012ba", size = 30927, upload-time = "2021-01-24T21:43:35.674Z" },
 ]
 
 [[package]]

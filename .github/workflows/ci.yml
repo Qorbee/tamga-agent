@@ -49,6 +49,11 @@ jobs:
           version: latest-known
           enable-cache: true
       - run: uv sync --locked
+      # libarchive-c binds the system's libarchive (ADR-0012), as the image installs it.
+      - name: libarchive
+        run: |
+          ldconfig -p | grep -q 'libarchive\.so\.13' \
+            || { sudo apt-get update && sudo apt-get install --yes --no-install-recommends libarchive13t64; }
       - name: ruff (lint)
         run: uv run ruff check .
       - name: ruff (format)

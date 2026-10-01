@@ -90,7 +90,7 @@ export function UploadPanel() {
             id="upload-file"
             type="file"
             className="sr-only"
-            accept="image/*,application/pdf,.xml,.xlsx,.xls,.csv"
+            accept="image/*,application/pdf,.xml,.xlsx,.xls,.csv,.zip,.rar,.7z,.tar,.tgz,.gz,.dat"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
           />
         </label>
@@ -174,7 +174,11 @@ function kilobytes(bytes: number, locale: Locale): string {
 
 function RecentDocuments({ types }: { types: DocumentType[] }) {
   const { t } = useI18n();
-  const documents = useQuery({ queryKey: ["documents"], queryFn: () => listDocuments({ limit: 50 }) });
+  // Every file, newest first, but those taken out of an archive: they open from it.
+  const documents = useQuery({
+    queryKey: ["documents", { members: false }],
+    queryFn: () => listDocuments({ members: false, limit: 50 }),
+  });
 
   return (
     <section className="grid gap-3">

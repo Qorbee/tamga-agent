@@ -254,7 +254,7 @@ export const tr: Dictionary = {
   files: {
     file: "Dosya",
     download: "İndir",
-    kinds: { image: "Görsel", pdf: "PDF", sheet: "Tablo" },
+    kinds: { image: "Görsel", pdf: "PDF", sheet: "Tablo", archive: "Arşiv" },
     pages: (count: number) => `${count} sayfa`,
     truncated: (rows: number, columns: number) =>
       `İlk ${rows} satır ve ${columns} sütun gösteriliyor. Tamamı için dosyayı indirin.`,
@@ -264,6 +264,22 @@ export const tr: Dictionary = {
     noPreviewBody: "Cihazınızda açmak için indirin.",
     failed: "Bu dosya gösterilemedi. Cihazınızda açmak için indirin.",
     pageFailed: "Bu sayfa çizilemedi. Görmek için dosyayı indirin.",
+    archive: {
+      opening: "Arşiv açılıyor…",
+      openingBody: "Tamga dosyaları çıkardığında, bir iki dakika içinde burada görünür.",
+      empty: "Bu arşivde dosya yok.",
+      count: (count: number) => `${count} dosya`,
+      truncated: "yalnızca ilk 200'ü çıkarılır; geri kalanı için arşivi indirin",
+      notOpenable: "Bu arşiv açılamadı",
+      notOpened: "Tamga arşiv içindeki bir arşivi açar, daha derindekini açmaz. Açmak için indirin.",
+    },
+    reasons: {
+      password: "Parolayla kilitli.",
+      unsupported: "Tamga bu tür dosyayı henüz okuyamıyor.",
+      damaged: "Bozuk ya da adının söylediği dosya değil.",
+      too_large: "Tamga'nın bir kerede çıkardığından fazlasına açılıyor (200 MB ya da boyutunun 100 katı).",
+      limits: "Okunması Tamga'nın izin verdiğinden fazla bellek ya da zaman aldı.",
+    },
     viewer: {
       controls: "Yakınlaştır ve döndür",
       zoomIn: "Yakınlaştır",
@@ -282,6 +298,7 @@ export const tr: Dictionary = {
       kept: {
         mail: "Bir e-postayla geldi; o adı korur ve e-postayla birlikte kalır.",
         project: "Bir projede kanıt, orada kalır.",
+        archive: "Bir arşivin içinde geldi; o adı korur ve arşivle birlikte kalır.",
       },
       deleteTitle: (name: string) => `${name} silinsin mi?`,
       deleteBody: "Dosya ve Tamga'nın ondan okudukları kalıcı olarak silinir.",

@@ -9,6 +9,7 @@ from app.modules.documents.schemas import (
     DocumentDetail,
     DocumentOut,
     DocumentPage,
+    DocumentPartOut,
     DocumentTypeOut,
     DocumentUpdate,
     UploadOut,
@@ -59,9 +60,13 @@ async def list_documents(
     doc_type: Annotated[str | None, Query(max_length=40)] = None,
     # Only files nobody has typed yet: the upload page's "to sort" list.
     untyped: bool = False,
+    # False leaves out the files taken out of an archive or a winmail.dat, which open from it,
+    # unless someone uploaded them too: the upload page's recent files.
+    members: bool = True,
 ) -> DocumentPage:
+    """Newest first, by when each file arrived or was last uploaded."""
     return await service.list_documents(
-        db, actor, q=q, doc_type=doc_type, untyped=untyped, page=page
+        db, actor, q=q, doc_type=doc_type, untyped=untyped, members=members, page=page
     )
 
 
@@ -94,6 +99,15 @@ async def get_document_content(document_id: uuid.UUID, actor: ActorDep, db: Sess
     )
 
 
+@documents.get("/documents/{document_id}/parts")
+async def list_document_parts(
+    document_id: uuid.UUID, actor: ActorDep, db: SessionDep
+) -> list[DocumentPartOut]:
+    """The files taken out of an archive or a winmail.dat, in their order there, each under the
+    name it had in it. Empty until the archive is read (`read_state`)."""
+    return await service.get_parts(db, actor, document_id)
+
+
 @documents.get("/documents/{document_id}/sheets")
 async def get_document_sheets(
     document_id: uuid.UUID, actor: ActorDep, db: SessionDep
@@ -108,7 +122,8 @@ async def update_document(
     document_id: uuid.UUID, body: DocumentUpdate, actor: ActorDep, db: SessionDep
 ) -> DocumentOut:
     """Its type or the name Tamga shows it under; only the fields sent change. A new name keeps the
-    extension (400), and a file a mail brought keeps the name it came with (409, `held_by`)."""
+    extension (400), and a file a mail or an archive brought keeps the name it came with (409,
+    `held_by`)."""
     return await service.update_document(db, actor, document_id, body)
 
 

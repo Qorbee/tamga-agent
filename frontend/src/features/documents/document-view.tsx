@@ -10,18 +10,25 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDownload } from "@/hooks/use-download";
 import { useObjectUrl } from "@/hooks/use-object-url";
-import { getDocument, getDocumentFile, getDocumentSheets } from "@/lib/api";
+import { getDocument, getDocumentFile, getDocumentSheets, type UnreadableReason } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
+import { ArchiveView, WAITING_POLL } from "./archive-view";
 import { DocumentMenu } from "./document-menu";
 import { ImageView } from "./image-view";
 import { PdfView } from "./pdf-view";
 import { SheetView } from "./sheet-view";
 
 function useDocument(id: string) {
-  return useQuery({ queryKey: ["document", id], queryFn: () => getDocument(id) });
+  return useQuery({
+    queryKey: ["document", id],
+    queryFn: () => getDocument(id),
+    // An archive waiting to be opened is asked again until the worker has read it.
+    refetchInterval: (query) =>
+      query.state.data?.preview === "archive" && query.state.data.read_state === "pending" ? WAITING_POLL : false,
+  });
 }
 
 /** The canvas's title for a file: its name and kind, opening its menu. */
@@ -49,7 +56,7 @@ export function DocumentView({ id, className }: { id: string; className?: string
 
   if (document.isError) return <p className="text-danger-foreground p-4 text-sm">{t.errors.load}</p>;
   if (!document.data) return <Skeleton className="m-4 h-64 rounded-xl" />;
-  const { preview } = document.data;
+  const { preview, read_state: read, unreadable_reason: reason } = document.data;
 
   return (
     <div className={cn("h-full", className)}>
@@ -57,6 +64,10 @@ export function DocumentView({ id, className }: { id: string; className?: string
         <SheetPreview id={id} />
       ) : preview === "image" || preview === "pdf" ? (
         <DrawnPreview id={id} preview={preview} name={document.data.filename} />
+      ) : preview === "archive" && (read === "read" || read === "pending") ? (
+        <ArchiveView document={document.data} waiting={read === "pending"} />
+      ) : preview === "archive" ? (
+        <NoPreview id={id} failed={reason !== null} reason={reason} notOpened={read === null} />
       ) : (
         <NoPreview id={id} />
       )}
@@ -96,18 +107,34 @@ function DrawnImage({ file, name, onFailed }: { file: Blob; name: string; onFail
   return url ? <ImageView url={url} name={name} onFailed={onFailed} /> : null;
 }
 
-function NoPreview({ id, failed = false }: { id: string; failed?: boolean }) {
+/**
+ * A file offered as a download: one no viewer takes, one that failed to draw, or an archive that
+ * could not be opened (with why) or is too deep to be (`notOpened`).
+ */
+function NoPreview({
+  id,
+  failed = false,
+  reason = null,
+  notOpened = false,
+}: {
+  id: string;
+  failed?: boolean;
+  reason?: UnreadableReason | null;
+  notOpened?: boolean;
+}) {
   const { t, locale } = useI18n();
   const document = useDocument(id);
   const download = useDownload(id);
+  const title = reason ? t.files.archive.notOpenable : notOpened ? t.files.archive.notOpened : failed ? t.files.failed : t.files.noPreview;
+  const body = reason ? t.files.reasons[reason] : failed ? null : t.files.noPreviewBody;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
       <div className="bg-secondary text-muted-foreground grid size-11 place-items-center rounded-2xl">
         <HugeiconsIcon icon={fileIcon(document.data?.preview)} strokeWidth={1.75} className="size-5" />
       </div>
       <div>
-        <p className="text-sm font-medium">{failed ? t.files.failed : t.files.noPreview}</p>
-        {failed ? null : <p className="text-muted-foreground mt-1 text-sm">{t.files.noPreviewBody}</p>}
+        <p className="text-sm font-medium">{title}</p>
+        {body ? <p className="text-muted-foreground mt-1 text-sm">{body}</p> : null}
       </div>
       {document.data ? (
         <Button variant="outline" size="sm" disabled={download.isPending} onClick={() => download.mutate()}>
