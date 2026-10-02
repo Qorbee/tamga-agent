@@ -116,6 +116,17 @@ export const en = {
     cards: {
       gone: "This is no longer here.",
     },
+    /** How full a chat is, and compacting it. */
+    context: {
+      used: (percent: number) => `${percent}% of this chat's context is used`,
+      what: "Tamga is sent the whole chat with every question. Before it fills, the earlier part is written into notes by itself.",
+      half: "This chat is more than half full. Compacting writes its earlier part into notes: answers stay quick, and nothing you see is removed.",
+      compact: "Compact now",
+      compacting: "Compacting…",
+      failed: "It could not be compacted. Try again later.",
+      nothing: "Nothing new to compact: the notes already cover this chat.",
+      compacted: "Earlier messages were compacted here. Tamga works from its notes of them.",
+    },
   },
   /** The chat's own controls — composer, message actions, attachments, tools, thread list. */
   chat: {

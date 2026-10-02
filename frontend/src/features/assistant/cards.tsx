@@ -85,13 +85,28 @@ const CARDS: Record<CardKind, AssistantDataUI> = {
   conversation_question: card("conversation_question", QuestionCard),
 };
 
-/** Registers the cards with the chat; rendered once, inside the chat's runtime. */
+/** Where the chat was compacted: above it Tamga works from notes, and every message is still here. */
+function CompactedHere() {
+  const { t } = useI18n();
+  return (
+    <div data-slot="chat-compacted" role="separator" className="text-muted-foreground my-4 flex items-center gap-3 text-xs">
+      <span className="bg-border h-px flex-1" />
+      <span className="max-w-[75%] text-center text-pretty">{t.assistant.context.compacted}</span>
+      <span className="bg-border h-px flex-1" />
+    </div>
+  );
+}
+
+const Compacted = makeAssistantDataUI({ name: "agui-activity/compaction", render: CompactedHere });
+
+/** Registers the cards and the mark with the chat; rendered once, inside the chat's runtime. */
 export function ChatCards() {
   return (
     <>
       {Object.entries(CARDS).map(([kind, Registered]) => (
         <Registered key={kind} />
       ))}
+      <Compacted />
     </>
   );
 }

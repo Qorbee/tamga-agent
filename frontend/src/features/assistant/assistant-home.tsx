@@ -11,6 +11,7 @@ import { useChats, useInvalidateChats } from "@/lib/use-chats";
 
 import { useChatShown } from "./chat-runtime";
 import { ChatTitle } from "./chat-title";
+import { ContextMeter } from "./context-meter";
 import { Welcome } from "./welcome";
 
 /**
@@ -27,7 +28,7 @@ export function AssistantHome() {
       <ReadWhenShown />
       <PageHeader title={started ? <ChatTitle /> : undefined} />
       <div className="min-h-0 flex-1">
-        <Thread components={{ Welcome }} placeholder={t.assistant.placeholder} />
+        <Thread components={{ Welcome, ComposerMeter: ContextMeter }} placeholder={t.assistant.placeholder} />
       </div>
     </div>
   );

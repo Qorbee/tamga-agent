@@ -115,6 +115,16 @@ export const tr: Dictionary = {
     cards: {
       gone: "Bu artık burada değil.",
     },
+    context: {
+      used: (percent: number) => `Bu sohbetin bağlamı %${percent} dolu`,
+      what: "Tamga her soruda sohbetin tamamını okur. Dolmadan önce eski kısmı kendiliğinden notlara yazılır.",
+      half: "Bu sohbetin yarısından fazlası doldu. Sıkıştırmak eski kısmını notlara yazar: yanıtlar hızlı kalır, gördüklerinizden hiçbir şey silinmez.",
+      compact: "Şimdi sıkıştır",
+      compacting: "Sıkıştırılıyor…",
+      failed: "Sıkıştırılamadı. Daha sonra yeniden deneyin.",
+      nothing: "Sıkıştırılacak yeni bir şey yok: notlar bu sohbeti zaten kapsıyor.",
+      compacted: "Önceki mesajlar burada sıkıştırıldı. Tamga onların notlarıyla çalışır.",
+    },
   },
   chat: {
     messageInput: "Mesaj alanı",

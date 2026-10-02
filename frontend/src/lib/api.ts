@@ -234,6 +234,8 @@ export const updateChat = (id: string, body: Schemas["ChatUpdate"]) =>
 export const deleteChat = (id: string) => request<void>(`/chats/${id}`, { method: "DELETE" });
 /** This user has read the chat up to now. */
 export const markChatRead = (id: string) => request<void>(`/chats/${id}/read`, { method: "PUT" });
+/** Has the chat's earlier part written into notes, which its runs are then sent in its place. */
+export const compactChat = (id: string) => request<Chat>(`/chats/${id}/compact`, { method: "POST" });
 /** The cards Tamga leaves under what it writes, and the record each shows. */
 export type CardKind = Schemas["CardKind"];
 export type CardContent = Schemas["CardContent"];
