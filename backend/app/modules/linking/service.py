@@ -13,6 +13,7 @@ again.
 """
 
 import logging
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -96,6 +97,10 @@ _READ: Final = (ThreadCategory.WORK, ThreadCategory.AUTOMATED)
 _INVOICE_NUMBER: Final = "invoice_number"
 # A job's first and last day, in a reading and on a project.
 _DAYS: Final = ("starts_on", "ends_on")
+# The fields of a reading that name a firm, and what is no firm's name: a mail address, or a
+# web domain standing alone.
+_FIRMS: Final = ("client", "subcontractor", "consignee", "party")
+_ADDRESS: Final = re.compile(r"\S+@\S+|(?:www\.)?[\w-]+(?:\.[\w-]+)*\.[^\W\d_]{2,}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,13 +594,16 @@ def _from_model(
         )
     if placing.decision == "new_project" and placing.new_project is not None:
         name = " ".join(placing.new_project.name.replace("\x00", "").split())[:300]
-        if not name:
-            return unplaced
         job = placing.new_project.model_dump(exclude={"name"}, exclude_none=True)
+        title = _title(_as_read(job) or {})
+        # The model's own words name the project only when the job does not, and an address
+        # is no more a project's name than a firm's.
+        if not title and (not name or _ADDRESS.fullmatch(name)):
+            return unplaced
         return _Decision(
             Outcome.PROPOSED,
             agents.MODEL_PLACED,
-            new_name=_title(_as_read(job) or {}) or name,
+            new_name=title or name,
             confidence=placing.confidence,
             reason=reason,
             cited=cited,
@@ -648,10 +656,17 @@ def _known(readings: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def _as_read(read: dict[str, Any]) -> dict[str, str] | None:
-    """What a model read, as it is kept: one line a value, the empty ones left out."""
+    """What a model read, as it is kept: one line a value, the empty ones left out. A firm
+    given only as a mail address or a web domain is left out too: that is where a mail came
+    from, not who the firm is, and a project would be named by it."""
     kept = {
         key: " ".join(str(value).replace("\x00", "").split())[:300] for key, value in read.items()
     }
+    for firm in _FIRMS:
+        if _ADDRESS.fullmatch(kept.get(firm, "")):
+            del kept[firm]
+    if "party" not in kept:
+        kept.pop("party_role", None)
     return {key: value for key, value in kept.items() if value} or None
 
 

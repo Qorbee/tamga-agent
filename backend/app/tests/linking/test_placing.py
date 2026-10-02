@@ -972,6 +972,50 @@ async def test_a_job_with_neither_client_nor_route_keeps_the_few_words_it_was_gi
 
 
 @pytest.mark.integration
+async def test_a_mail_address_or_a_domain_is_no_firms_name(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    # All the mail shows of who wrote is where it came from, and the model gives that.
+    model(
+        answer(
+            "new_project",
+            party="ada@stone.example",
+            party_role="client",
+            new_project={
+                "name": "Coils for Munich",
+                "client": "stone.example",
+                "consignee": "Weber Logistik GmbH",
+            },
+        )
+    )
+    assert await service.place_pending() == 1
+
+    # The project is named by the few words on the job, not by a domain, and no firm is kept
+    # that is only an address; a firm named by its name stays.
+    [project] = await the_projects(company_id)
+    assert project.name == "Coils for Munich"
+    placed = await placement(company_id, "<order@x>")
+    assert placed.reading == {"consignee": "Weber Logistik GmbH"}
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("address", ["stone.example", "ada@stone.example", "www.taşımacı.com.tr"])
+async def test_a_project_is_not_proposed_under_an_address_alone(
+    client: httpx.AsyncClient, model: Callable[..., Script], address: str
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    # The model has no words for the job either: the address is all it names it by.
+    model(answer("new_project", new_project={"name": address, "client": address}))
+    assert await service.place_pending() == 1
+
+    assert await the_projects(company_id) == []
+    assert (await placement(company_id, "<order@x>")).outcome is Outcome.UNPLACED
+
+
+@pytest.mark.integration
 async def test_a_conversation_the_owner_rejects_no_longer_names_or_dates_the_project(
     client: httpx.AsyncClient, model: Callable[..., Script]
 ) -> None:

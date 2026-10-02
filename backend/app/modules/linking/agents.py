@@ -171,6 +171,10 @@ reports to the company, and invoices the company.
 A freight company can be either: go by who orders and who carries in this conversation, never \
 by the firm's name. Leave both empty when the mail does not show it.
 
+A firm is named as the mail writes its name: in the text, a signature or the sender's display \
+name. A mail address or a web domain is not a name: when that is all the mail shows of a \
+firm, leave the firm empty.
+
 What is known of a job is kept as fields, in `new_project` for a new one and in `job` for a \
 link (there, only what this conversation adds). Fill a field only with what the mail states; \
 leave it empty otherwise, never a guess:
