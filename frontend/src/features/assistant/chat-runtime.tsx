@@ -47,6 +47,8 @@ import {
   useInvalidateChats,
 } from "@/lib/use-chats";
 
+import { ChatCards } from "./cards";
+
 /** How often a chat's messages are read again while Tamga answers in it for someone else. */
 const WHILE_ANSWERING = 3_000;
 
@@ -256,6 +258,7 @@ export function ChatRuntime({ children }: { children: ReactNode }) {
     <SessionContext.Provider value={session}>
       <AssistantRuntimeProvider runtime={runtime}>
         <ServerCopy chatId={chatId} session={session} />
+        <ChatCards />
         {children}
       </AssistantRuntimeProvider>
     </SessionContext.Provider>
@@ -323,9 +326,20 @@ function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
   return null;
 }
 
-/** A chat's stored messages as the thread shows them. */
-function shown(messages: readonly unknown[]): ThreadMessageLike[] {
-  return fromAgUiMessages(messages, { showThinking: false });
+/**
+ * A chat's stored messages as the thread shows them. A card is drawn on the assistant message
+ * before it; one with none (what Tamga wrote could not be used) gets an empty one to stand on.
+ */
+function shown(messages: readonly { id?: unknown; role?: unknown }[]): ThreadMessageLike[] {
+  const owned: unknown[] = [];
+  let before: unknown;
+  for (const message of messages) {
+    if (message.role === "activity" && before !== "assistant" && before !== "activity")
+      owned.push({ id: `${String(message.id)}-owner`, role: "assistant", content: "" });
+    owned.push(message);
+    before = message.role;
+  }
+  return fromAgUiMessages(owned, { showThinking: false });
 }
 
 function asThreadMessage(message: ThreadMessageLike): ThreadMessage {
@@ -333,9 +347,9 @@ function asThreadMessage(message: ThreadMessageLike): ThreadMessage {
 }
 
 /**
- * What a list of messages says, to tell whether two say the same: who wrote, and the words, with
- * one writer's messages in a row read as one (a stream and the stored copy split an answer with
- * tool calls differently).
+ * What a list of messages says, to tell whether two say the same: who wrote, the words and the
+ * cards, with one writer's messages in a row read as one (a stream and the stored copy split an
+ * answer with tool calls differently).
  */
 function said(messages: readonly Pick<ThreadMessageLike, "role" | "content">[]): string {
   const turns: string[] = [];
@@ -344,7 +358,15 @@ function said(messages: readonly Pick<ThreadMessageLike, "role" | "content">[]):
     const words =
       typeof message.content === "string"
         ? message.content
-        : message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+        : message.content
+            .map((part) =>
+              part.type === "text"
+                ? part.text
+                : part.type === "data"
+                  ? `\u0002${part.name}\u0002${JSON.stringify(part.data)}`
+                  : "",
+            )
+            .join("");
     if (!words) continue;
     if (message.role === writer) turns[turns.length - 1] += words;
     else turns.push(`${message.role}\u0000${words}`);

@@ -112,6 +112,9 @@ export const tr: Dictionary = {
       open_conversation: "Bir yazışmayı okudu",
       search_invoices: "Faturalarda aradı",
     },
+    cards: {
+      gone: "Bu artık burada değil.",
+    },
   },
   chat: {
     messageInput: "Mesaj alanı",
@@ -286,6 +289,8 @@ export const tr: Dictionary = {
     byNumbers: "Bu projeyle ortak bir numara taşıyor.",
     byThread: "Bu projedeki bir yazışmaya gelen yeni e-posta.",
     confirmed: "Onaylandı",
+    rejected: "Reddedildi",
+    unplaced: "Projelerin dışında bırakıldı",
     showAll: (count: number) => `${count} yazışmanın hepsini göster`,
     proposals: "Önerilen değişiklikler",
     mail: "E-posta",

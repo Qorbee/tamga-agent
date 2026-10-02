@@ -77,7 +77,8 @@ re-apply them:
 - `thread.aui.tsx`, `tool-group.aui.tsx`, `tool-fallback.aui.tsx`: a group of tool calls is named
   by what they did, from `t.assistant.tools` ("Opened a project ×3"), and a message that only
   looked things up sits close to the next one with no action bar. An answer that failed on the
-  server (`run_failed`) is said in the reader's words.
+  server (`run_failed`) is said in the reader's words. A message with no words (a card that
+  stands alone) has no action bar either.
 - `thread.aui.tsx`, `attachment.aui.tsx`, `tool-fallback.aui.tsx`: written against
   `@assistant-ui/react` 0.15.21, which lacked `submission` and `dismissible`. The package is now
   0.15.22; the two are not put back, since nothing asks for an approval yet. When approvals come,

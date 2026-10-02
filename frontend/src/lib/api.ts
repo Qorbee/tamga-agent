@@ -146,6 +146,7 @@ export async function listAllPlacements(params: PlacementFilter): Promise<Placem
   }
 }
 /** The owner's answer for a whole conversation: its waiting links, or the project it belongs to. */
+export const getPlacement = (id: string) => request<Placement>(`/placements/${id}`);
 export const decidePlacement = (id: string, body: Schemas["PlacementDecision"]) =>
   request<Placement>(`/placements/${id}`, json("PATCH", body));
 
@@ -233,6 +234,9 @@ export const updateChat = (id: string, body: Schemas["ChatUpdate"]) =>
 export const deleteChat = (id: string) => request<void>(`/chats/${id}`, { method: "DELETE" });
 /** This user has read the chat up to now. */
 export const markChatRead = (id: string) => request<void>(`/chats/${id}/read`, { method: "PUT" });
+/** The cards Tamga leaves under what it writes, and the record each shows. */
+export type CardKind = Schemas["CardKind"];
+export type CardContent = Schemas["CardContent"];
 /** A chat's messages as the chat protocol (AG-UI) carries them, oldest first. */
 export const getChatMessages = (id: string) => request<Schemas["ChatMessages"]>(`/chats/${id}/messages`);
 /**

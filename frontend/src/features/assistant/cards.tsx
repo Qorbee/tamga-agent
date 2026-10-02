@@ -1,0 +1,97 @@
+"use client";
+
+import { makeAssistantDataUI, type AssistantDataUI, type DataMessagePartProps } from "@assistant-ui/react";
+import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
+
+import { Skeleton } from "@/components/ui/skeleton";
+import { ProjectCard, Questions } from "@/components/waiting-cards";
+import {
+  ApiError,
+  getPlacement,
+  getProject,
+  listAllPlacements,
+  type CardContent,
+  type CardKind,
+} from "@/lib/api";
+import { useI18n } from "@/lib/i18n/client";
+
+/**
+ * The cards under what Tamga writes on its own (ADR-0018). The server says only which record a
+ * card shows; the card reads that record like any page does, so it is the Inbox's own card, it
+ * answers through the same requests, and it shows the record as it is now, not as it was when
+ * Tamga wrote.
+ */
+function ProposalCard({ data }: DataMessagePartProps<CardContent>) {
+  const project = useQuery({
+    queryKey: ["project", data.id],
+    queryFn: () => getProject(data.id),
+    retry: false,
+  });
+  const placements = useQuery({
+    queryKey: ["placements", { projects: [data.id] }],
+    queryFn: () => listAllPlacements({ project_id: [data.id] }),
+  });
+  return (
+    <Card pending={project.isPending || placements.isPending} error={project.error ?? placements.error}>
+      {project.data ? (
+        <ProjectCard
+          project={project.data}
+          waiting={(placements.data ?? []).filter((placement) => placement.conversation)}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+function QuestionCard({ data }: DataMessagePartProps<CardContent>) {
+  const placement = useQuery({
+    queryKey: ["placements", data.id],
+    queryFn: () => getPlacement(data.id),
+    retry: false,
+  });
+  return (
+    <Card pending={placement.isPending} error={placement.error}>
+      {placement.data?.conversation ? <Questions placements={[placement.data]} /> : null}
+    </Card>
+  );
+}
+
+/** A card while its record loads, and what is said when the record cannot be shown. */
+function Card({ pending, error, children }: { pending: boolean; error: unknown; children: ReactNode }) {
+  const { t } = useI18n();
+  return (
+    <div data-slot="chat-card" className="my-3">
+      {error ? (
+        <p className="text-muted-foreground border-border rounded-2xl border px-4 py-3 text-sm" role="status">
+          {error instanceof ApiError && error.status === 404 ? t.assistant.cards.gone : t.errors.load}
+        </p>
+      ) : pending ? (
+        <Skeleton className="h-32 rounded-2xl" />
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
+/** The chat protocol's activity messages reach the thread as data parts under this prefix. */
+const card = (kind: CardKind, render: (props: DataMessagePartProps<CardContent>) => ReactNode): AssistantDataUI =>
+  makeAssistantDataUI<CardContent>({ name: `agui-activity/${kind}`, render });
+
+/** A renderer for every kind of card the API names: a new kind fails the build until it has one. */
+const CARDS: Record<CardKind, AssistantDataUI> = {
+  project_proposal: card("project_proposal", ProposalCard),
+  conversation_question: card("conversation_question", QuestionCard),
+};
+
+/** Registers the cards with the chat; rendered once, inside the chat's runtime. */
+export function ChatCards() {
+  return (
+    <>
+      {Object.entries(CARDS).map(([kind, Registered]) => (
+        <Registered key={kind} />
+      ))}
+    </>
+  );
+}

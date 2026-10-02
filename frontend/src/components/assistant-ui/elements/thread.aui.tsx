@@ -575,6 +575,12 @@ const AssistantMessage: FC = () => {
   // A message that only looked things up is a step on the way to the answer: it sits close to
   // the next one and has nothing to copy.
   const stepsOnly = called.length > 0 && called.every(Boolean);
+  // A card that stands alone says nothing in words: there is nothing under it to copy.
+  const worded = useAuiState((s) =>
+    s.message.content.some((part) => part.type === "text" && part.text.trim() !== ""),
+  );
+  const running = useAuiState((s) => s.message.status?.type === "running");
+  const actions = !stepsOnly && (worded || running);
   const steps = (indices: readonly number[]) => {
     const counts = new Map<string, number>();
     for (const index of indices) {
@@ -594,7 +600,7 @@ const AssistantMessage: FC = () => {
       data-role="assistant"
       className={cn(
         "fade-in slide-in-from-bottom-1 animate-in relative duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto]",
-        stepsOnly ? "-mb-4" : "-mb-7.5 pb-7.5",
+        stepsOnly ? "-mb-4" : actions ? "-mb-7.5 pb-7.5" : "",
       )}
     >
       <div
@@ -678,7 +684,7 @@ const AssistantMessage: FC = () => {
         <MessageError />
       </div>
 
-      {!stepsOnly && (
+      {actions && (
         <div
           data-slot="aui_assistant-message-footer"
           className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}

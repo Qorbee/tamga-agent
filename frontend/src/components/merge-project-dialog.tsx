@@ -42,8 +42,9 @@ export function MergeProjectDialog({
   );
 }
 
-// What a merge changes: the lists both projects were in, and everything read by project.
-const CHANGED = ["projects", "project", "placements", "project-links", "field-proposals"];
+// What a merge changes: the lists both projects were in, everything read by project, and a
+// chat's card that showed the project that went, which the server points at the one that stays.
+const CHANGED = ["projects", "project", "placements", "project-links", "field-proposals", "chat-messages"];
 
 /** A project's number with hyphens that do not break: it reads as one word at a line's end. */
 const unbroken = (number: string) => number.replaceAll("-", "\u2011");

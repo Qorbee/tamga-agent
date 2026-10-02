@@ -112,6 +112,10 @@ export const en = {
       open_conversation: "Read a conversation",
       search_invoices: "Searched the invoices",
     } as Record<string, string>,
+    /** The cards Tamga leaves under what it writes. */
+    cards: {
+      gone: "This is no longer here.",
+    },
   },
   /** The chat's own controls — composer, message actions, attachments, tools, thread list. */
   chat: {
@@ -288,6 +292,8 @@ export const en = {
     byNumbers: "Shares a number with this project.",
     byThread: "New mail in a conversation that is already in this project.",
     confirmed: "Confirmed",
+    rejected: "Rejected",
+    unplaced: "Left out of the projects",
     showAll: (count: number) => `Show all ${count}`,
     proposals: "Proposed changes",
     mail: "Mail",
