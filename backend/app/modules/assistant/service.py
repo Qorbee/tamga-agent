@@ -21,13 +21,7 @@ from fastapi import Request
 from fastapi.responses import Response
 from pydantic import ValidationError
 from pydantic_ai import UsageLimits
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelMessagesTypeAdapter,
-    ModelRequest,
-    ModelResponse,
-    UserPromptPart,
-)
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic_ai.usage import RunUsage
@@ -35,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.assistant import agents, repository
+from app.modules.assistant import agents, context, repository
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.schemas import (
     CardContent,
@@ -43,6 +37,7 @@ from app.modules.assistant.schemas import (
     ChatMessages,
     ChatOut,
     ChatPage,
+    CompactionMessage,
 )
 from app.modules.companies import service as companies
 from app.modules.projects import service as projects
@@ -166,9 +161,10 @@ async def mark_read(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> None:
 async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> ChatMessages:
     """What a reader is shown of a chat, as the chat protocol carries it: what was written,
     without the model's reasoning and without the notes code gave a turn Tamga took on its
-    own, and each card where it was put, as an activity message of its kind."""
+    own, and each card where it was put, as an activity message of its kind. A chat that was
+    compacted is shown whole, with a mark where its notes were written."""
     chat = await _chat(db, actor.company_id, chat_id)
-    shown: list[CardMessage | dict[str, Any]] = []
+    shown: list[CardMessage | CompactionMessage | dict[str, Any]] = []
     written: list[ModelMessage] = []
 
     def flush() -> None:
@@ -190,7 +186,11 @@ async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> Ch
                 )
             )
             continue
-        message = loaded([row.message])[0]
+        if row.kind is MessageKind.NOTES:
+            flush()
+            shown.append(CompactionMessage(id=str(row.id)))
+            continue
+        message = context.loaded([row.message])[0]
         if row.began_by is Origin.TAMGA and isinstance(message, ModelRequest):
             said = [part for part in message.parts if not isinstance(part, UserPromptPart)]
             if not said:
@@ -242,8 +242,29 @@ async def run_chat(
     chat = await _chat(db, actor.company_id, chat_id, for_update=True)
     if is_running(chat, now):
         raise Conflict("Tamga is still answering in this chat")
-    history = loaded(await repository.messages(db, actor.company_id, chat.id))
     company = (await companies.get_companies(db, [actor.company_id])).get(actor.company_id)
+    traces = company is not None and companies.traces_content(company.kind)
+    admitted = False
+    if context.due(chat):
+        # The chat is nearly full: its earlier part is written into notes first. A compaction
+        # that fails does not cost the owner their answer; the run is sent the chat as it is.
+        try:
+            await compact(db, chat, now, began_by=Origin.OWNER, trace_content=traces, whole=True)
+        except TooManyRequests:
+            raise
+        except Exception as error:
+            # The error's type only: a provider's error can quote what it was sent.
+            logger.warning("compacting a chat before its run failed: %s", type(error).__name__)
+        # The day's budget let the compaction begin, and the question it was made for is
+        # answered with it: the budget's last request is not spent on preparing an answer
+        # that is then refused.
+        admitted = True
+        # The compaction wrote through sessions of its own: the row is read again, and locked.
+        now = utcnow()
+        await db.refresh(chat, with_for_update=True)
+        if is_running(chat, now):
+            raise Conflict("Tamga is still answering in this chat")
+    history = await context.sent(db, actor.company_id, chat.id)
     adapter = AGUIAdapter(
         agent=agents.assistant,
         # Of what the client sent, only the run's id: its messages, and any tool, state or
@@ -280,12 +301,12 @@ async def run_chat(
             agents.ASSISTANT,
             # The assistant answers in the language it is written to.
             language=None,
-            trace_content=company is not None and companies.traces_content(company.kind),
+            trace_content=traces,
         ),
     )
     await repository.lock_budget(db, actor.company_id)
     spent = await repository.requests_since(db, actor.company_id, Origin.OWNER, now - RUN_WINDOW)
-    if spent >= get_settings().chat_requests_per_day:
+    if not admitted and spent >= get_settings().chat_requests_per_day:
         raise TooManyRequests("The chat has no requests left today")
     await repository.add_run(
         db, actor.company_id, run_id, began_by=Origin.OWNER, requests=RUN_REQUESTS, at=now
@@ -293,7 +314,7 @@ async def run_chat(
     await repository.add_messages(
         db,
         chat,
-        dumped([question]),
+        context.dumped([question]),
         run_id=run_id,
         began_by=Origin.OWNER,
         user_id=actor.user_id,
@@ -312,6 +333,76 @@ async def run_chat(
     # A reverse proxy must pass each event on as it comes (ADR-0006).
     response.headers["X-Accel-Buffering"] = "no"
     return response
+
+
+async def compact_chat(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> ChatOut:
+    """The owner's own Compact: the chat's earlier part is written into notes now, whatever
+    its size. The chat is not changed for its readers, who still see every message."""
+    actor.require(*_ASKERS)
+    now = utcnow()
+    chat = await _chat(db, actor.company_id, chat_id, for_update=True)
+    if is_running(chat, now):
+        raise Conflict("Tamga is still answering in this chat")
+    company = (await companies.get_companies(db, [actor.company_id])).get(actor.company_id)
+    try:
+        await compact(
+            db,
+            chat,
+            now,
+            began_by=Origin.OWNER,
+            trace_content=company is not None and companies.traces_content(company.kind),
+            # Asked for again with nothing new said, the last exchange still stays as it was.
+            whole=False,
+        )
+    except llm.NoAnswer as error:
+        raise Conflict("The notes could not be written: the chat is as it was") from error
+    # The compaction wrote through sessions of its own: the row is read again.
+    await db.refresh(chat)
+    return _describe(chat, unread=await repository.is_unread(db, chat, actor.user_id))
+
+
+async def compact(
+    db: AsyncSession,
+    chat: Chat,
+    now: datetime,
+    *,
+    began_by: Origin,
+    trace_content: bool,
+    whole: bool,
+) -> None:
+    """Compacts a chat the caller holds locked and free: claims it as a run does, takes the
+    most the compactor may ask from the day's budget of whoever it is for (the owner's
+    questions, or the turns Tamga takes on its own), and commits the caller's transaction
+    before the model is called. However it ends, the chat is free again and the budget is
+    charged what was asked. ``whole``: see ``context.compact``."""
+    company_id, chat_id, run_id = chat.company_id, chat.id, uuid.uuid7()
+    settings = get_settings()
+    budget = (
+        settings.chat_requests_per_day
+        if began_by is Origin.OWNER
+        else settings.tamga_requests_per_day
+    )
+    await repository.lock_budget(db, company_id)
+    if await repository.requests_since(db, company_id, began_by, now - RUN_WINDOW) >= budget:
+        raise TooManyRequests("The chat has no requests left today")
+    await repository.add_run(
+        db, company_id, run_id, began_by=began_by, requests=context.COMPACT_REQUESTS, at=now
+    )
+    chat.running_since = now
+    await db.commit()
+    usage = RunUsage()
+    try:
+        await context.compact(
+            company_id,
+            chat_id,
+            run_id=run_id,
+            began=now,
+            usage=usage,
+            trace_content=trace_content,
+            whole=whole,
+        )
+    finally:
+        await end_run(company_id, chat_id, run_id, now, usage.requests)
 
 
 async def stop_run(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> None:
@@ -399,7 +490,12 @@ async def _keep(
         if chat is None or chat.running_since != began:
             return
         await repository.add_messages(
-            db, chat, dumped(written), run_id=run_id, began_by=Origin.OWNER, user_id=actor.user_id
+            db,
+            chat,
+            context.dumped(written),
+            run_id=run_id,
+            began_by=Origin.OWNER,
+            user_id=actor.user_id,
         )
         answers = [message for message in written if isinstance(message, ModelResponse)]
         if answers:
@@ -432,15 +528,6 @@ def _title(said: str) -> str:
     """The start of what the user first wrote, as the chat's name."""
     text = " ".join(said.split())
     return text if len(text) <= _TITLE_LENGTH else text[: _TITLE_LENGTH - 1] + "…"
-
-
-def dumped(messages: list[ModelMessage]) -> list[dict[str, Any]]:
-    stored: list[dict[str, Any]] = ModelMessagesTypeAdapter.dump_python(messages, mode="json")
-    return stored
-
-
-def loaded(stored: list[dict[str, Any]]) -> list[ModelMessage]:
-    return ModelMessagesTypeAdapter.validate_python(stored)
 
 
 async def _chat(

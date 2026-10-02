@@ -94,31 +94,47 @@ async def delete_chat(db: AsyncSession, chat: Chat) -> None:
 
 
 async def messages(
-    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID
+    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID, *, after: int | None = None
 ) -> list[dict[str, Any]]:
     """A chat's messages of the model layer as they were stored, in the order they were
-    written: what a run is sent."""
+    written; ``after``, only those past that place."""
+    filters = [
+        ChatMessage.company_id == company_id,
+        ChatMessage.chat_id == chat_id,
+        ChatMessage.kind == MessageKind.MODEL,
+    ]
+    if after is not None:
+        filters.append(ChatMessage.position > after)
     rows = await db.scalars(
-        select(ChatMessage.message)
-        .where(
-            ChatMessage.company_id == company_id,
-            ChatMessage.chat_id == chat_id,
-            ChatMessage.kind == MessageKind.MODEL,
-        )
-        .order_by(ChatMessage.position)
+        select(ChatMessage.message).where(*filters).order_by(ChatMessage.position)
     )
     return list(rows)
 
 
-async def rows(
-    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID
-) -> Sequence[ChatMessage]:
-    """Everything a chat holds, messages and cards, in order: what a reader is shown."""
-    found = await db.scalars(
+async def notes(db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID) -> ChatMessage | None:
+    """The notes of the chat's last compaction, when it was ever compacted."""
+    row: ChatMessage | None = await db.scalar(
         select(ChatMessage)
-        .where(ChatMessage.company_id == company_id, ChatMessage.chat_id == chat_id)
-        .order_by(ChatMessage.position)
+        .where(
+            ChatMessage.company_id == company_id,
+            ChatMessage.chat_id == chat_id,
+            ChatMessage.kind == MessageKind.NOTES,
+        )
+        .order_by(ChatMessage.position.desc())
+        .limit(1)
     )
+    return row
+
+
+async def rows(
+    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID, *, after: int | None = None
+) -> Sequence[ChatMessage]:
+    """Everything a chat holds, messages, cards and notes, in order: what a reader is shown;
+    ``after``, only what is past that place."""
+    filters = [ChatMessage.company_id == company_id, ChatMessage.chat_id == chat_id]
+    if after is not None:
+        filters.append(ChatMessage.position > after)
+    found = await db.scalars(select(ChatMessage).where(*filters).order_by(ChatMessage.position))
     return found.all()
 
 

@@ -59,10 +59,22 @@ class CardMessage(BaseModel):
     content: CardContent
 
 
+class CompactionMessage(BaseModel):
+    """Where a chat was compacted, carried as an activity message: runs are sent notes in place
+    of the messages above it, which a reader still sees."""
+
+    id: str
+    role: Literal["activity"] = "activity"
+    activity_type: Literal["compaction"] = Field(
+        default="compaction", serialization_alias="activityType"
+    )
+    content: dict[str, Any] = {}
+
+
 class ChatMessages(BaseModel):
     """A chat's messages as the chat protocol (AG-UI) carries them, oldest first: what a client
     hands its runtime to show the chat. The server keeps its own copy and never reads a client's
     back (ADR-0006)."""
 
     # The protocol's own messages, as its client library types them, and Tamga's cards.
-    messages: list[CardMessage | dict[str, Any]]
+    messages: list[CardMessage | CompactionMessage | dict[str, Any]]

@@ -388,6 +388,9 @@
                   "$ref": "#/components/schemas/CardMessage"
                 },
                 {
+                  "$ref": "#/components/schemas/CompactionMessage"
+                },
+                {
                   "additionalProperties": true,
                   "type": "object"
                 }
@@ -554,6 +557,38 @@
           "hidden"
         ],
         "title": "ColumnOut",
+        "type": "object"
+      },
+      "CompactionMessage": {
+        "description": "Where a chat was compacted, carried as an activity message: runs are sent notes in place\nof the messages above it, which a reader still sees.",
+        "properties": {
+          "activityType": {
+            "const": "compaction",
+            "default": "compaction",
+            "title": "Activitytype",
+            "type": "string"
+          },
+          "content": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Content",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "activity",
+            "default": "activity",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CompactionMessage",
         "type": "object"
       },
       "CompanyKind": {
@@ -4418,6 +4453,55 @@
           }
         ],
         "summary": "Update Chat",
+        "tags": [
+          "chats"
+        ]
+      }
+    },
+    "/chats/{chat_id}/compact": {
+      "post": {
+        "description": "Writes the chat's earlier part into notes, which its runs are then sent in place of\nthose messages. It happens by itself before a run once the chat nears its window.",
+        "operationId": "chats.compact_chat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Chat Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Compact Chat",
         "tags": [
           "chats"
         ]

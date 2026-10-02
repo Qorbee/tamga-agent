@@ -47,6 +47,27 @@ export interface paths {
         patch: operations["chats.update_chat"];
         trace?: never;
     };
+    "/chats/{chat_id}/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compact Chat
+         * @description Writes the chat's earlier part into notes, which its runs are then sent in place of
+         *     those messages. It happens by itself before a run once the chat nears its window.
+         */
+        post: operations["chats.compact_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chats/{chat_id}/messages": {
         parameters: {
             query?: never;
@@ -1002,7 +1023,7 @@ export interface components {
          */
         ChatMessages: {
             /** Messages */
-            messages: (components["schemas"]["CardMessage"] | {
+            messages: (components["schemas"]["CardMessage"] | components["schemas"]["CompactionMessage"] | {
                 [key: string]: unknown;
             })[];
         };
@@ -1058,6 +1079,34 @@ export interface components {
             hidden: boolean;
             /** Width */
             width: number | null;
+        };
+        /**
+         * CompactionMessage
+         * @description Where a chat was compacted, carried as an activity message: runs are sent notes in place
+         *     of the messages above it, which a reader still sees.
+         */
+        CompactionMessage: {
+            /**
+             * Activitytype
+             * @default compaction
+             * @constant
+             */
+            activityType: "compaction";
+            /**
+             * Content
+             * @default {}
+             */
+            content: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @default activity
+             * @constant
+             */
+            role: "activity";
         };
         /**
          * CompanyKind
@@ -2413,6 +2462,37 @@ export interface operations {
                 "application/json": components["schemas"]["ChatUpdate"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "chats.compact_chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

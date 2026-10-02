@@ -24,7 +24,7 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.assistant import agents, repository, service
+from app.modules.assistant import agents, context, repository, service
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.companies import service as companies
 from app.modules.companies.models import Company, CompanyMode
@@ -37,7 +37,7 @@ from app.platform import llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
-from app.platform.errors import NotFound
+from app.platform.errors import NotFound, TooManyRequests
 from app.platform.pagination import MAX_LIMIT, PageParams
 
 logger = logging.getLogger(__name__)
@@ -251,6 +251,27 @@ async def _speak(company: Company, finding: Finding) -> int:
             await repository.add(db, chat)
         elif service.is_running(chat, now):  # the owner is being answered there: next pass
             return 0
+        elif context.due(chat):
+            # The chat it goes to is nearly full: it is compacted first, from the budget of
+            # Tamga's own turns, so the turn is not sent the whole of an outgrown chat.
+            try:
+                await service.compact(
+                    db,
+                    chat,
+                    now,
+                    began_by=Origin.TAMGA,
+                    trace_content=companies.traces_content(company.kind),
+                    whole=True,
+                )
+            except TooManyRequests:
+                return 0
+            except Exception as error:
+                logger.warning("compacting a chat before a turn failed: %s", type(error).__name__)
+            # The compaction wrote through sessions of its own: the row is read again, locked.
+            now = utcnow()
+            await db.refresh(chat, with_for_update=True)
+            if service.is_running(chat, now):
+                return 0
         await repository.lock_budget(db, company.id)
         spent = await repository.requests_since(
             db, company.id, Origin.TAMGA, now - service.RUN_WINDOW
@@ -260,7 +281,7 @@ async def _speak(company: Company, finding: Finding) -> int:
         await repository.add_run(
             db, company.id, run_id, began_by=Origin.TAMGA, requests=TURN_REQUESTS, at=now
         )
-        history = service.loaded(await repository.messages(db, company.id, chat.id))
+        history = await context.sent(db, company.id, chat.id)
         chat.running_since = now
         chat_id = chat.id
         await db.commit()
@@ -308,7 +329,7 @@ async def _speak(company: Company, finding: Finding) -> int:
                 await repository.add_messages(
                     db,
                     kept,
-                    service.dumped(written),
+                    context.dumped(written),
                     run_id=run_id,
                     began_by=Origin.TAMGA,
                     user_id=None,

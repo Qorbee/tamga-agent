@@ -27,10 +27,12 @@ class Origin(StrEnum):
 
 
 class MessageKind(StrEnum):
-    """What a row of a chat is: a message of the model layer, or a card code put there."""
+    """What a row of a chat is: a message of the model layer, a card code put there, or the
+    notes a compaction wrote of the chat up to a place."""
 
     MODEL = "model"
     CARD = "card"
+    NOTES = "notes"
 
 
 class CardKind(StrEnum):
@@ -92,7 +94,9 @@ class ChatMessage(CompanyScoped, Base):
     """One message of a run, as Pydantic AI holds it (a request with what the user wrote and
     what tools returned, or the model's response), in the order they were written. Or a card:
     a record code shows in the chat (a proposed project, a conversation to place), by its kind
-    and id, which no model writes and no model is sent."""
+    and id, which no model writes and no model is sent. Or notes: the summary a compaction
+    wrote, and the place it covers the chat through, which runs are sent in place of the
+    messages up to there."""
 
     __tablename__ = "chat_messages"
     __table_args__ = (

@@ -87,6 +87,13 @@ async def run_chat(
     return await service.run_chat(db, actor, chat_id, request)
 
 
+@chats.post("/chats/{chat_id}/compact")
+async def compact_chat(chat_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> ChatOut:
+    """Writes the chat's earlier part into notes, which its runs are then sent in place of
+    those messages. It happens by itself before a run once the chat nears its window."""
+    return await service.compact_chat(db, actor, chat_id)
+
+
 @chats.delete("/chats/{chat_id}/runs/current", status_code=status.HTTP_204_NO_CONTENT)
 async def stop_run(chat_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> None:
     """Stops the answer being written in the chat, when one is."""

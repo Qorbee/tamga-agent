@@ -491,6 +491,40 @@ async def test_a_chat_left_empty_by_a_worker_that_stopped_is_removed(
     assert chat["title"] != "Left behind" and chat["last_message_at"] is not None
 
 
+async def test_a_turn_into_a_chat_that_is_nearly_full_compacts_it_first(
+    client: httpx.AsyncClient,
+    linker: Callable[..., Any],  # noqa: F811
+    tamga: Callable[..., Script],
+    owner_asks: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id = await a_proposal(client, linker)
+    [project] = (await client.get("/projects")).json()["items"]
+    # The owner asked about the project in a chat, which holds it and has grown full.
+    chat_id = (await client.post("/chats", json={})).json()["id"]
+    owner_asks(("open_project", {"number": project["number"]}), "It is proposed.")
+    events(await ask(client, chat_id, user("What is the new project?")))
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE chats SET context_tokens = :tokens WHERE id = :id"),
+            {"tokens": get_settings().chat_context_tokens, "id": chat_id},
+        )
+        await db.commit()
+
+    script = tamga("The owner asked about the new project.", "Stone asks for a truck to Munich.")
+    assert await turns.speak_pending() == 1
+
+    # Notes were written first, from the budget of Tamga's own turns, and the turn was sent
+    # them in place of the chat.
+    [chat] = await chats_of(client)
+    assert chat["id"] == chat_id
+    roles = [message["role"] for message in await shown(client, chat_id)]
+    assert roles[-3:] == ["activity", "assistant", "activity"]
+    told = script.said(1)
+    assert "The owner asked about the new project." in told[0]
+    assert "What is the new project?" not in " ".join(told)
+    assert await spent(company_id, Origin.TAMGA) == 2
+
+
 async def test_the_actor_of_tamgas_own_turns_changes_nothing(client: httpx.AsyncClient) -> None:
     company_id = await guest_client(client)
     actor = Actor.of_tamga(company_id)
