@@ -11,7 +11,7 @@ decides what a run is given and keeps what it wrote.
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, Final
@@ -60,8 +60,13 @@ RUN_REQUESTS: Final = 15
 RUN_FAILED: Final = "run_failed"
 # The longest message a user may write.
 MESSAGE_LENGTH: Final = 20_000
-# A chat with no title takes the start of its first message.
+# A chat with no title takes the start of its first message at once, and a moment later the
+# name a model gives that message.
 _TITLE_LENGTH: Final = 60
+# What the model that names a chat reads of its first message: a name needs no more of it.
+_TITLE_READS: Final = 1_000
+# What a model puts around a name, asked not to.
+_TITLE_WRAPPED: Final = " \"'“”‘’«»."
 # The model's reasoning is kept with its messages, so its next run has it, and is not sent to
 # a client: the protocol carries it as an opaque value for a client to hand back, and no client
 # hands this server anything back.
@@ -319,15 +324,25 @@ async def run_chat(
         began_by=Origin.OWNER,
         user_id=actor.user_id,
     )
+    naming = None
     if not chat.title:
         chat.title = _title(said.content)
+        # The name's one request is taken from the day's budget with the run's own, before
+        # either model is called.
+        named = uuid.uuid7()
+        await repository.add_run(
+            db, actor.company_id, named, began_by=Origin.OWNER, requests=1, at=now
+        )
+        naming = _name(
+            actor.company_id, chat_id, named, said.content, chat.title, trace_content=traces
+        )
     chat.last_message_at = now
     chat.running_since = now
     await repository.mark_read(db, chat, actor.user_id, now)
     await db.commit()
     await db.close()
     _runs[chat_id] = asyncio.create_task(
-        _run(events, reader, chat_id, actor.company_id, run_id, now, usage)
+        _run(events, reader, chat_id, actor.company_id, run_id, now, usage, naming)
     )
     response = adapter.streaming_response(_read(reader))
     # A reverse proxy must pass each event on as it comes (ADR-0006).
@@ -423,10 +438,13 @@ async def _run(
     run_id: uuid.UUID,
     began: datetime,
     usage: RunUsage,
+    naming: Coroutine[Any, Any, None] | None,
 ) -> None:
     """Drives a run to its end and hands its events, without the model's reasoning, to whoever
     reads. However it ends (its answer, an error, a stop), the chat is free for its next run
-    and the day's budget is charged what the run asked, in place of the most it could have."""
+    and the day's budget is charged what the run asked, in place of the most it could have.
+    ``naming`` names a chat that had no name, while its first question is answered."""
+    named = None if naming is None else asyncio.create_task(naming)
     try:
         async for event in events:
             if isinstance(event, RunErrorEvent):
@@ -441,6 +459,10 @@ async def _run(
     finally:
         try:
             await end_run(company_id, chat_id, run_id, began, usage.requests)
+            # The reader is let go once the chat has its name, so the list a client reads
+            # when an answer ends shows it. The name is long written by then, as a rule.
+            if named is not None:
+                await named
         finally:
             # A run given up for dead may end after the chat took its next one, whose task
             # this is then not.
@@ -528,6 +550,48 @@ def _title(said: str) -> str:
     """The start of what the user first wrote, as the chat's name."""
     text = " ".join(said.split())
     return text if len(text) <= _TITLE_LENGTH else text[: _TITLE_LENGTH - 1] + "…"
+
+
+async def _name(
+    company_id: uuid.UUID,
+    chat_id: uuid.UUID,
+    run_id: uuid.UUID,
+    said: str,
+    held: str,
+    *,
+    trace_content: bool,
+) -> None:
+    """Has a model name a chat from the first message written in it: one request, of a small
+    model, which the caller took from the day's budget as ``run_id`` and which is set here to
+    what was asked. The chat takes the name only while it still holds ``held``, the start of
+    that message, so a name the owner gave meanwhile stays. A name that could not be written
+    is no error to anyone: the chat keeps the one it has."""
+    usage = RunUsage()
+    name = ""
+    try:
+        result = await llm.run(
+            agents.titler,
+            llm.fenced_text("The chat's first message", said[:_TITLE_READS]),
+            deps=None,
+            limits=UsageLimits(request_limit=1),
+            # In the language the message is in.
+            language=None,
+            trace_content=trace_content,
+            usage=usage,
+        )
+        name = _title(result.output.strip(_TITLE_WRAPPED))
+        if not name:
+            logger.warning("naming a chat gave no name")
+    except Exception as error:
+        # The error's type only: a provider's error can quote what it was sent.
+        logger.warning("naming a chat failed: %s", type(error).__name__)
+    async with open_session() as db:
+        await repository.settle_run(db, company_id, run_id, usage.requests)
+        if name:
+            chat = await repository.get_chat(db, company_id, chat_id, for_update=True)
+            if chat is not None and chat.title == held:
+                chat.title = name
+        await db.commit()
 
 
 async def _chat(

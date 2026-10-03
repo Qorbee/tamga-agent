@@ -262,6 +262,27 @@ async def test_in_a_chat_tamga_opened_the_owner_asks_about_anything(
     assert sum(raised_at is not None for raised_at in by_id.values()) == 1
 
 
+async def test_a_project_the_owner_rejected_no_longer_waits(
+    client: httpx.AsyncClient,
+    linker: Callable[..., Any],  # noqa: F811
+    owner_asks: Callable[..., Script],  # noqa: F811
+) -> None:
+    await a_proposal(client, linker)
+    [project] = (await client.get("/projects")).json()["items"]
+    script = owner_asks(("waiting", {}), "One project waits.", ("waiting", {}), "Nothing.")
+    chat_id = (await client.post("/chats", json={})).json()["id"]
+
+    await ask(client, chat_id, user("What waits?"))
+    assert project["number"] in script.returned(1)
+
+    # Rejected, it keeps the link that was suggested to it, and that link is not asked for.
+    rejected = await client.patch(f"/projects/{project['id']}", json={"status": "rejected"})
+    assert rejected.status_code == 200, rejected.text
+    await ask(client, chat_id, user("And now?", "m2"))
+    assert project["number"] not in script.returned(3)
+    assert "Nothing waits." in script.returned(3)
+
+
 async def test_the_days_chats_and_the_budget_bound_what_tamga_opens(
     client: httpx.AsyncClient,
     linker: Callable[..., Any],  # noqa: F811

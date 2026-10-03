@@ -1,11 +1,12 @@
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator, Callable
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, Final
 
 import httpx
 import pytest
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -27,7 +28,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.assistant import service
+from app.modules.assistant import agents, service
 from app.modules.assistant.models import ChatMessage, ChatRecord, ChatRun
 from app.platform import llm
 from app.platform.db import open_session
@@ -41,6 +42,11 @@ pytestmark = pytest.mark.integration
 type Step = str | tuple[str, dict[str, Any]] | Exception
 
 
+# What the model that names a chat does unless a test says otherwise: it cannot be reached, so
+# a chat keeps the start of its first message and nothing is counted.
+NO_NAME: Final = ModelHTTPError(503, "namer")
+
+
 class Script:
     """A stand-in for the model that plays its steps, a request each, as a stream, and keeps
     what it was sent."""
@@ -51,6 +57,10 @@ class Script:
         self.infos: list[AgentInfo] = []
         # Set by a test that wants the model to wait before it answers.
         self.gate: asyncio.Event | None = None
+        # What the model that names a chat was sent, a request each, and what a test has
+        # happen while it works.
+        self.named: list[list[ModelMessage]] = []
+        self.while_naming: Callable[[], Awaitable[object]] | None = None
 
     async def respond(
         self, messages: list[ModelMessage], info: AgentInfo
@@ -101,13 +111,28 @@ class Script:
 
 @pytest.fixture
 def model(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Script]:
-    """Puts a scripted stand-in in the model's place, with a budget of forty requests a day."""
+    """Puts a scripted stand-in in the model's place, with a budget of forty requests a day.
+    ``name``: what the model that names a chat answers."""
     monkeypatch.setattr(get_settings(), "chat_requests_per_day", 40)
 
-    def install(*steps: Step) -> Script:
+    def install(*steps: Step, name: str | Exception = NO_NAME) -> Script:
         script = Script(*steps)
         stand_in = FunctionModel(script.answer, stream_function=script.respond)
-        monkeypatch.setattr(llm, "model_for", lambda name: stand_in)
+
+        # The model that names a chat is another one, asked once for a chat's first question.
+        async def named(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            script.named.append(list(messages))
+            assert info.function_tools == []
+            if script.while_naming is not None:
+                await script.while_naming()
+            if isinstance(name, Exception):
+                raise name
+            return ModelResponse(parts=[TextPart(name)])
+
+        namer = FunctionModel(named)
+        monkeypatch.setattr(
+            llm, "model_for", lambda agent: namer if agent == agents.TITLER else stand_in
+        )
         return script
 
     return install
@@ -199,6 +224,52 @@ async def test_a_run_answers_and_its_messages_are_kept_and_name_the_chat(
         ("assistant", "Nothing waits for you today."),
     ]
     assert await requests_counted(company_id) == 1
+
+
+async def test_a_model_names_a_chat_from_its_first_question_and_from_nothing_else(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    chat_id = await new_chat(client)
+    script = model("Nothing waits.", "It left on Monday.", name=' "Today\'s open items." ')
+
+    await ask(client, chat_id, user("What waits for me today? " + "x" * 2_000))
+
+    # The stream ended with the name written, as it was given without what a model puts
+    # around one, and the request it took is counted with the answer's.
+    assert (await client.get(f"/chats/{chat_id}")).json()["title"] == "Today's open items"
+    assert await requests_counted(company_id) == 2
+    # The namer read the start of the question, as content from outside, and nothing else.
+    [[asked]] = script.named
+    assert isinstance(asked, ModelRequest)
+    [read] = [part.content for part in asked.parts if isinstance(part, UserPromptPart)]
+    assert isinstance(read, str)
+    assert "What waits for me today?" in read and "x" * 1_000 not in read
+    assert "Nothing waits." not in read
+
+    # A chat is named once: its later questions ask no name.
+    await ask(client, chat_id, user("And the truck?", "m2"))
+    assert len(script.named) == 1
+    assert (await client.get(f"/chats/{chat_id}")).json()["title"] == "Today's open items"
+
+
+async def test_a_name_somebody_gave_a_chat_is_not_replaced_by_a_models(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    await guest_client(client)
+    # A chat opened with a name asks no model for one.
+    held = (await client.post("/chats", json={"title": "The Munich truck"})).json()["id"]
+    script = model("It left on Monday.", "Nothing waits.", name="Truck departure")
+    await ask(client, held, user("When did it leave?"))
+    assert script.named == []
+    assert (await client.get(f"/chats/{held}")).json()["title"] == "The Munich truck"
+
+    # One renamed while the model was writing its name keeps what it was renamed to.
+    chat_id = await new_chat(client)
+    script.while_naming = lambda: client.patch(f"/chats/{chat_id}", json={"title": "Mine"})
+    await ask(client, chat_id, user("What waits for me today?"))
+    assert len(script.named) == 1
+    assert (await client.get(f"/chats/{chat_id}")).json()["title"] == "Mine"
 
 
 async def test_a_run_is_given_the_stored_history_and_never_the_clients(
