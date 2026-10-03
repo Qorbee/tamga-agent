@@ -59,6 +59,8 @@ class InvoiceRecord:
     cancelled: bool = False
     status: str | None = None
     description: str | None = None
+    # The source's id of the record of the same bill in another list, where the source says.
+    same_as_source_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

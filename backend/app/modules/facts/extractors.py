@@ -18,11 +18,12 @@ from app.modules.parties.models import IdentifierKind
 type TextExtractor = Callable[[str], Iterable[NewFact]]
 
 REGEX: Final = "regex"
+INVOICE_NUMBER: Final = "invoice_number"
 
 _extractors: dict[str, TextExtractor] = {}
 # Kinds whose value names one job, or one document of one job: two items that share one belong
 # together. A party's IBAN, tax number or plate is in its every mail, so none of those is a key.
-_key_kinds: set[str] = {"invoice_number"}
+_key_kinds: set[str] = {INVOICE_NUMBER}
 
 
 def register(name: str, extractor: TextExtractor) -> None:
@@ -114,7 +115,7 @@ def invoice_numbers(text: str) -> Iterable[NewFact]:
     for match in _INVOICE.finditer(text):
         number = match.group(1).rstrip(".-/")
         if is_reference(number):
-            yield NewFact("invoice_number", number, reference(number), 0.85, REGEX)
+            yield NewFact(INVOICE_NUMBER, number, reference(number), 0.85, REGEX)
 
 
 register("iban", ibans)

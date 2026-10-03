@@ -1512,6 +1512,8 @@ export interface components {
             payment_date: string | null;
             /** Remaining Amount */
             remaining_amount: string | null;
+            /** Same As Id */
+            same_as_id: string | null;
             /** Source */
             source: string;
             /** Status */

@@ -42,6 +42,7 @@ class Invoice(CompanyScoped, Base):
         Index(None, "company_id", "e_document_id"),
         Index(None, "company_id", "issue_date"),
         ForeignKeyConstraint(["company_id", "party_id"], ["parties.company_id", "parties.id"]),
+        ForeignKeyConstraint(["company_id", "same_as_id"], ["invoices.company_id", "invoices.id"]),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -75,6 +76,9 @@ class Invoice(CompanyScoped, Base):
     # What the invoice says it is for, as written in the books: a freight line with its route,
     # plates or order number. Data, never instructions.
     description: Mapped[str | None] = mapped_column(Text)
+    # The record of the same bill in another of the source's lists: an incoming e-invoice's
+    # purchase, once it was booked. A project holds the bill once, as that record.
+    same_as_id: Mapped[uuid.UUID | None]
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB)
     synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

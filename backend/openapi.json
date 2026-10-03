@@ -1522,6 +1522,18 @@
             ],
             "title": "Remaining Amount"
           },
+          "same_as_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Same As Id"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -1587,6 +1599,7 @@
           "cancelled",
           "status",
           "description",
+          "same_as_id",
           "synced_at"
         ],
         "title": "InvoiceOut",

@@ -403,6 +403,13 @@ async def links_of_project(
     return rows.all()
 
 
+async def companies_with_projects(db: AsyncSession) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(Project.company_id).where(Project.status != ProjectStatus.REJECTED).distinct()
+    )
+    return list(rows.all())
+
+
 async def all_links_of_project(
     db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
 ) -> Sequence[ProjectLink]:

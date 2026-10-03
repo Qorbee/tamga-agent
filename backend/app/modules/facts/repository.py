@@ -122,6 +122,10 @@ async def get_many(
     return facts.all()
 
 
+async def forget_ids(db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]) -> None:
+    await db.execute(delete(Fact).where(Fact.company_id == company_id, Fact.id.in_(ids)))
+
+
 async def forget(
     db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, item_id: uuid.UUID
 ) -> None:

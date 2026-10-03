@@ -39,7 +39,13 @@ from app.modules.linking.models import Outcome, Placement
 from app.modules.linking.schemas import JobReading, PlacementOut, PlacementPage
 from app.modules.parties import service as parties
 from app.modules.projects import service as projects
-from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProjectStatus
+from app.modules.projects.models import (
+    FieldSource,
+    LinkMethod,
+    LinkStatus,
+    ProjectLink,
+    ProjectStatus,
+)
 from app.modules.projects.schemas import ProjectJob
 from app.platform import llm
 from app.platform.auth import Actor, Role
@@ -96,7 +102,6 @@ UNANSWERED: Final = "unanswered"
 _KEY_CONFIDENCE: Final = 0.9
 _THREAD_CONFIDENCE: Final = 0.6
 _READ: Final = (ThreadCategory.WORK, ThreadCategory.AUTOMATED)
-_INVOICE_NUMBER: Final = "invoice_number"
 # A job's first and last day, in a reading and on a project.
 _DAYS: Final = ("starts_on", "ends_on")
 # The fields of a reading that name a firm, and what is no firm's name: a mail address, or a
@@ -196,7 +201,140 @@ async def place_pending() -> int:
             placed += done
             async with open_session() as db:
                 left = await conversations.model_reads_left(db, company_id)
+        await _place_bills(company_id)
+    # A company whose projects the owner made by hand has bills to place, and no conversation.
+    async with open_session() as db:
+        others = set(await projects.companies_with_projects(db)) - set(company_ids)
+    for company_id in sorted(others):
+        await _place_bills(company_id)
     return placed
+
+
+async def _place_bills(company_id: uuid.UUID) -> None:
+    """The company's bills placed after its conversations, which may have made the project a
+    bill's numbers point to. A failure is logged and tried again next run."""
+    try:
+        async with open_session() as db:
+            bills = await place_invoices(db, company_id)
+            await db.commit()
+    except Exception as error:
+        logger.warning("placing bills failed: %s", type(error).__name__)
+        return
+    if bills.linked:
+        logger.info("bills placed in projects: %d", bills.linked)
+
+
+@dataclass(slots=True)
+class BillsPlaced:
+    linked: int = 0
+    # Its numbers point to more than one project: the owner places it.
+    several: int = 0
+    # No project holds an item that shares a number with it.
+    none: int = 0
+
+
+async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced:
+    """Suggests each bill no project holds yet to the one project that holds an item sharing a
+    key number with it: its number, its e-document id, an order or CMR number its description
+    gives. A bill is placed once, as the record a project holds: an incoming e-invoice booked as a
+    purchase is placed as that purchase, with what both of them say. A number more than
+    KEY_MAX_ITEMS items share names no job. Does not commit."""
+    bills = {bill.id: bill for bill in await books.placeable_invoices(db, company_id)}
+    records: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for bill in bills.values():
+        records.setdefault(bill.same_as_id or bill.id, []).append(bill.id)
+    held = {
+        link.item_id
+        for link in await projects.links_of_items(db, company_id, ItemKind.INVOICE, list(bills))
+    }
+    # An e-invoice a project held before it was booked: the project holds it as its purchase now.
+    for target, ids in records.items():
+        for alias in held & set(ids) - {target}:
+            await projects.move_item_links(db, company_id, ItemKind.INVOICE, alias, target)
+            held = (held - {alias}) | {target}
+    # A bill whose booked record is cancelled, or one a project already holds as either record,
+    # is not loose.
+    loose = {
+        target: ids
+        for target, ids in records.items()
+        if target in bills and not held & {target, *ids}
+    }
+    kinds = extractors.key_kinds()
+    keys: dict[uuid.UUID, set[tuple[str, str]]] = {target: set() for target in loose}
+    record_of = {each: target for target, ids in loose.items() for each in ids}
+    for fact in await facts.facts_of_items(
+        db, company_id=company_id, item_kind=ItemKind.INVOICE, item_ids=list(record_of)
+    ):
+        if fact.kind in kinds:
+            keys[record_of[fact.item_id]].add((fact.kind, fact.normalised))
+    for target, ids in loose.items():
+        for each in ids:
+            if document_id := bills[each].e_document_id:
+                keys[target] |= {(kind, _as_compared_id(document_id)) for kind in kinds}
+    same = await facts.items_sharing_each(
+        db,
+        company_id=company_id,
+        pairs=sorted(set().union(*keys.values())),
+        per_pair=KEY_MAX_ITEMS + 1 + max((len(ids) for ids in loose.values()), default=0),
+    )
+    sharing: dict[uuid.UUID, dict[tuple[ItemKind, uuid.UUID], set[uuid.UUID]]] = {}
+    for target, pairs in keys.items():
+        mine = set(loose[target])
+        for pair in pairs:
+            others = [
+                fact
+                for fact in same[pair]
+                if not (fact.item_kind is ItemKind.INVOICE and fact.item_id in mine)
+            ]
+            if len(others) > KEY_MAX_ITEMS:
+                continue
+            for other in others:
+                items = sharing.setdefault(target, {})
+                items.setdefault((other.item_kind, other.item_id), set()).add(other.id)
+    tied: dict[tuple[ItemKind, uuid.UUID], list[ProjectLink]] = {}
+    for item_kind in (ItemKind.MESSAGE, ItemKind.DOCUMENT, ItemKind.INVOICE):
+        ids = list(
+            {item_id for items in sharing.values() for kind, item_id in items if kind is item_kind}
+        )
+        for link in await projects.links_of_items(db, company_id, item_kind, ids):
+            if link.status is not LinkStatus.REJECTED:
+                tied.setdefault((item_kind, link.item_id), []).append(link)
+    known = await projects.get_projects(
+        db, company_id, list({link.project_id for links in tied.values() for link in links})
+    )
+    placed = BillsPlaced()
+    for target in loose:
+        found: dict[uuid.UUID, set[uuid.UUID]] = {}
+        for item, fact_ids in sharing.get(target, {}).items():
+            for link in tied.get(item, []):
+                if known[link.project_id].status is not ProjectStatus.REJECTED:
+                    found.setdefault(link.project_id, set()).update(fact_ids)
+        if len(found) > 1:
+            placed.several += 1
+        elif not found:
+            placed.none += 1
+        else:
+            [(project_id, evidence)] = found.items()
+            await projects.link_item(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.INVOICE,
+                item_id=target,
+                project_id=project_id,
+                method=LinkMethod.KEY,
+                confidence=_KEY_CONFIDENCE,
+                evidence=sorted(evidence),
+            )
+            placed.linked += 1
+    return placed
+
+
+def _as_compared_id(document_id: str) -> str:
+    """An e-document id as facts hold one: a UUID in its canonical form, else lower case."""
+    try:
+        return str(uuid.UUID(document_id))
+    except ValueError:
+        return document_id.lower()
 
 
 async def note_changes(company_id: uuid.UUID) -> None:
@@ -476,7 +614,7 @@ async def _key_candidates(
     for invoice in await books.invoices_named(
         db,
         company_id,
-        numbers=[value for kind, value in looked_up if kind == _INVOICE_NUMBER],
+        numbers=[value for kind, value in looked_up if kind == extractors.INVOICE_NUMBER],
         e_document_ids=[value.lower() for _, value in looked_up],
     ):
         names = {extractors.reference(invoice.number or ""), (invoice.e_document_id or "").lower()}

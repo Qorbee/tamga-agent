@@ -7,25 +7,67 @@ from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.books.models import BooksCursor, BooksReads, Dispatch, Invoice, InvoiceDirection
+from app.modules.books.models import (
+    BooksCursor,
+    BooksReads,
+    Dispatch,
+    Invoice,
+    InvoiceDirection,
+    InvoiceKind,
+)
 from app.platform.pagination import PageParams, escape_like
 
 
-async def upsert_invoice(db: AsyncSession, values: dict[str, Any], *, read: bool = True) -> None:
-    """``read``: the values come from a read of the source, which ``synced_at`` dates; a remap of
-    a stored record keeps the date of its read."""
-    statement = insert(Invoice).values(**values)
-    await db.execute(
+async def upsert_invoice(
+    db: AsyncSession,
+    values: dict[str, Any],
+    *,
+    same_as_source_id: str | None = None,
+    read: bool = True,
+) -> uuid.UUID:
+    """``same_as_source_id``: the source's id of the record of the same bill in another list,
+    resolved in the statement itself. ``read``: the values come from a read of the source, which
+    ``synced_at`` dates; a remap of a stored record keeps the date of its read."""
+    same_as = (
+        select(Invoice.id)
+        .where(
+            Invoice.company_id == values["company_id"],
+            Invoice.source == values["source"],
+            Invoice.source_id == same_as_source_id,
+        )
+        .scalar_subquery()
+        if same_as_source_id
+        else None
+    )
+    statement = insert(Invoice).values(**values, same_as_id=same_as)
+    stored = await db.execute(
         statement.on_conflict_do_update(
             index_elements=[Invoice.company_id, Invoice.source, Invoice.source_id],
             set_={
                 key: statement.excluded[key]
-                for key in values
+                for key in (*values, "same_as_id")
                 if key not in ("company_id", "source", "source_id")
             }
             | ({"synced_at": func.now()} if read else {}),
-        )
+        ).returning(Invoice.id)
     )
+    invoice_id: uuid.UUID = stored.scalar_one()
+    return invoice_id
+
+
+async def placeable_invoices(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Invoice]:
+    rows = await db.scalars(
+        select(Invoice)
+        .where(
+            Invoice.company_id == company_id,
+            Invoice.kind.in_(
+                [InvoiceKind.SALES, InvoiceKind.PURCHASE, InvoiceKind.INCOMING_E_INVOICE]
+            ),
+            Invoice.cancelled.is_(False),
+        )
+        .order_by(Invoice.id)
+    )
+    return rows.all()
 
 
 async def upsert_dispatch(db: AsyncSession, values: dict[str, Any]) -> None:

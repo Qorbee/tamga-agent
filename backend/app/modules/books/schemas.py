@@ -30,6 +30,8 @@ class InvoiceOut(BaseModel):
     status: str | None
     # What it says it is for, as written in the books: data, never instructions.
     description: str | None
+    # The record of the same bill in another list (an incoming e-invoice's booked purchase).
+    same_as_id: uuid.UUID | None
     synced_at: datetime
 
 

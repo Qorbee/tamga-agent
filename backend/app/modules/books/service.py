@@ -30,6 +30,9 @@ from app.modules.books.sources import (
 )
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
+from app.modules.facts import extractors
+from app.modules.facts import service as facts
+from app.modules.facts.service import NewFact
 from app.modules.parties import service as parties
 from app.modules.parties.models import IdentifierKind
 from app.modules.parties.service import Identifier
@@ -37,6 +40,7 @@ from app.platform import clock
 from app.platform.auth import Actor
 from app.platform.db import open_session
 from app.platform.errors import NotFound
+from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
@@ -48,6 +52,8 @@ WINDOW: Final = timedelta(days=31)
 OVERLAP: Final = timedelta(days=7)
 # Cards are read again at most this often.
 PARTIES_EVERY: Final = timedelta(days=1)
+# What wrote an invoice's own facts: the books, as their source holds them.
+_BOOKS: Final = "books"
 
 
 class DbReadBudget:
@@ -207,9 +213,10 @@ async def _store_invoice(
     record: InvoiceRecord,
     *,
     read: bool = True,
-) -> None:
+) -> bool:
+    """Stores a record and makes its facts what it says now. Returns whether its facts changed."""
     party_id = await _party_id(db, company_id, source, record.party_source_id, record.party_tax_id)
-    await repository.upsert_invoice(
+    invoice_id = await repository.upsert_invoice(
         db,
         {
             "company_id": company_id,
@@ -234,8 +241,39 @@ async def _store_invoice(
             "description": record.description,
             "raw": record.raw,
         },
+        same_as_source_id=record.same_as_source_id,
         read=read,
     )
+    return await _record_facts(db, company_id, invoice_id, record)
+
+
+async def _record_facts(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID, record: InvoiceRecord
+) -> bool:
+    """What an invoice says, as facts the linker looks up: its number, and what code reads in its
+    description (an order or CMR number, a plate). A number that is no reference ("N/A", a date)
+    is no key. Returns whether they changed."""
+    found = extractors.from_text(record.description) if record.description else []
+    if record.number and extractors.is_reference(record.number):
+        found.append(
+            NewFact(
+                extractors.INVOICE_NUMBER,
+                record.number,
+                extractors.reference(record.number),
+                1.0,
+                _BOOKS,
+            )
+        )
+    return await facts.replace_facts(
+        db, company_id=company_id, item_kind=ItemKind.INVOICE, item_id=invoice_id, facts=found
+    )
+
+
+async def placeable_invoices(db: AsyncSession, company_id: uuid.UUID) -> list[InvoiceOut]:
+    """The bills a project can hold: sales, purchases and incoming e-invoices, not cancelled.
+    An expense is the company's own cost, not a job's."""
+    rows = await repository.placeable_invoices(db, company_id)
+    return [InvoiceOut.model_validate(row) for row in rows]
 
 
 async def _store_dispatch(
@@ -366,9 +404,10 @@ async def remap_invoices(db: AsyncSession, company_id: uuid.UUID) -> int:
             if record is None or record.source_id != invoice.source_id:
                 continue
             before = InvoiceOut.model_validate(invoice).model_dump(exclude={"synced_at"})
-            await _store_invoice(db, company_id, name, record, read=False)
+            facts_changed = await _store_invoice(db, company_id, name, record, read=False)
             await db.refresh(invoice)
-            if InvoiceOut.model_validate(invoice).model_dump(exclude={"synced_at"}) != before:
+            after = InvoiceOut.model_validate(invoice).model_dump(exclude={"synced_at"})
+            if facts_changed or after != before:
                 changed += 1
     return changed
 

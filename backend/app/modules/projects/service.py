@@ -363,6 +363,39 @@ async def _move_links(
     await db.flush()
 
 
+async def move_item_links(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    item_kind: ItemKind,
+    from_id: uuid.UUID,
+    to_id: uuid.UUID,
+) -> None:
+    """Gives an item's links to another item that is the same thing: an e-invoice, once booked,
+    as its purchase. Where the other already has a link in that project, the one that says more
+    stays, as in a merge. Does not commit."""
+    theirs = {
+        link.project_id: link
+        for link in await repository.links_of_items(db, company_id, item_kind, [to_id])
+    }
+    for link in await repository.links_of_items(db, company_id, item_kind, [from_id]):
+        other = theirs.get(link.project_id)
+        if other is None:
+            link.item_id = to_id
+            continue
+        if _weight(link) > _weight(other):
+            other.status, other.method = link.status, link.method
+            other.decided_by, other.decided_at = link.decided_by, link.decided_at
+        other.confidence = max(other.confidence, link.confidence)
+        other.evidence = sorted(set(other.evidence) | set(link.evidence))
+        await db.delete(link)
+    await db.flush()
+
+
+async def companies_with_projects(db: AsyncSession) -> list[uuid.UUID]:
+    """The companies with a project not rejected."""
+    return await repository.companies_with_projects(db)
+
+
 def _weight(link: ProjectLink) -> tuple[bool, int]:
     """Which of two links to one item stays in a merge: the owner's, then the one that says more."""
     return link.method is LinkMethod.OWNER, _LINK_RANK[link.status]
