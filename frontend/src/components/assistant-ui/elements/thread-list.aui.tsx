@@ -14,7 +14,7 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 import { DeleteChatDialog } from "@/components/delete-chat-dialog";
-import { useChats } from "@/lib/use-chats";
+import { useChats, useReadAhead } from "@/lib/use-chats";
 import {
   Collapsible,
   CollapsibleContent,
@@ -348,6 +348,7 @@ export const ThreadListItem: FC = () => {
   const isRunning = useAuiState((s) => s.threadListItem.isRunning) || answeredElsewhere === true;
   const isUnread = useUnreadChats().has(id);
   const isArchived = useAuiState((s) => s.threadListItem.status === "archived");
+  const readAhead = useReadAhead();
   const [isRenaming, setIsRenaming] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -375,6 +376,8 @@ export const ThreadListItem: FC = () => {
         <ThreadListItemPrimitive.Trigger
           ref={triggerRef}
           data-slot="aui_thread-list-item-trigger"
+          onPointerEnter={() => readAhead(id)}
+          onFocus={() => readAhead(id)}
           className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-lg px-3 text-start text-sm outline-none group-hover/thread:pe-9 group-has-focus-visible/thread:pe-9 group-has-data-[state=open]/thread:pe-9 focus-visible:ring-1"
         >
           {isRunning && (

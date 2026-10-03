@@ -225,6 +225,7 @@ export const uploadDocument = (file: File, params: { docType?: string; note?: st
 // Chats (ADR-0018): kept on the server, which also holds what was said in each.
 export type Chat = Schemas["ChatOut"];
 export type ChatPage = Schemas["ChatPage"];
+export type ChatMessages = Schemas["ChatMessages"];
 export const listChats = (params: { archived?: boolean }) =>
   request<ChatPage>(`/chats${query({ ...params, limit: PAGE })}`);
 /** Opens a chat under the id the app chose; sent again, it gives the chat that id already opened. */
@@ -243,7 +244,7 @@ export const getAssistant = () => request<Assistant>("/assistant");
 export type CardKind = Schemas["CardKind"];
 export type CardContent = Schemas["CardContent"];
 /** A chat's messages as the chat protocol (AG-UI) carries them, oldest first. */
-export const getChatMessages = (id: string) => request<Schemas["ChatMessages"]>(`/chats/${id}/messages`);
+export const getChatMessages = (id: string) => request<ChatMessages>(`/chats/${id}/messages`);
 /**
  * Asks in a chat. `init` is the chat protocol's own request (its body, headers and abort signal);
  * the answer is the stream of the protocol's events, for its client to read.

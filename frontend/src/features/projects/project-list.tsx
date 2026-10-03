@@ -18,6 +18,7 @@ import { useI18n } from "@/lib/i18n/client";
 
 import { NewProjectDialog } from "./new-project-dialog";
 import { ProjectActions, STATUS_ICONS } from "./project-actions";
+import { useReadProjectAhead } from "./project-view";
 
 /** What needs the owner first. Rejected proposals are not shown: the list is the work in hand. */
 const STATUSES = ["proposed", "active", "draft", "closed"] as const satisfies readonly ProjectStatus[];
@@ -120,6 +121,7 @@ export function ProjectList() {
 
 function ProjectRow({ project, trucks }: { project: Project; trucks: number }) {
   const { t, locale } = useI18n();
+  const readAhead = useReadProjectAhead();
   // Whatever is tied to it or suggested for it: mails, and files or invoices tied by hand.
   const items = project.confirmed_links + project.suggested_links;
 
@@ -127,6 +129,8 @@ function ProjectRow({ project, trucks }: { project: Project; trucks: number }) {
     <li className="flex items-center gap-1 py-1 ps-2 pe-3">
       <CanvasLink
         view={{ kind: "project", id: project.id }}
+        onPointerEnter={() => readAhead(project.id)}
+        onFocus={() => readAhead(project.id)}
         className="hover:bg-accent/40 aria-[current=true]:bg-secondary min-w-0 flex-1 rounded-xl px-2 py-2.5 transition-colors"
       >
         <span className="text-muted-foreground flex items-baseline gap-2 font-mono text-xs">

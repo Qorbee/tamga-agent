@@ -38,6 +38,8 @@ import {
   stopChatRun,
   updateChat,
   type Assistant,
+  type ChatMessages,
+  type ChatPage,
 } from "@/lib/api";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -135,9 +137,9 @@ class Session {
     this.currentSince = Number.POSITIVE_INFINITY;
   }
 
-  /** What is on screen now is what the server holds. */
-  settle() {
-    this.currentSince = Date.now();
+  /** What is on screen now is what the server held at ``since``. */
+  settle(since = Date.now()) {
+    this.currentSince = since;
   }
 
   watch(shown: boolean) {
@@ -232,6 +234,25 @@ export function ChatRuntime({ children }: { children: ReactNode }) {
       onSwitchToThread: async (id) => {
         session.open(id, true);
         setChatId(id);
+        // A copy already read (an earlier visit, or the pointer resting on its row) is shown at
+        // once, so the chat never stands empty while it loads: when it holds what the list knows
+        // of, because nothing waits unread in the chat or the copy was read after the list was.
+        // An unread message is never marked read on a copy that lacks it. Once the copy is no
+        // longer fresh, `ServerCopy` reads the server's behind it, which replaces it only where
+        // it says something else.
+        const known = queryClient.getQueryState<ChatMessages>(chatMessagesKey(id));
+        const chats = queryClient.getQueryState<ChatPage>(CHATS_KEY);
+        const listed = chats?.data?.items.find((chat) => chat.id === id);
+        if (
+          known?.data &&
+          chats !== undefined &&
+          listed !== undefined &&
+          !listed.running &&
+          (!listed.unread || known.dataUpdatedAt >= chats.dataUpdatedAt)
+        ) {
+          session.settle(known.dataUpdatedAt);
+          return { messages: shown(known.data.messages).map(asThreadMessage) };
+        }
         try {
           const kept = await queryClient.fetchQuery({
             queryKey: chatMessagesKey(id),
@@ -338,12 +359,14 @@ function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
 
   // The list says the chat changed on the server (a message was written, a run there ended):
   // the stored copy is read again. Without this a run that ends between two polls of the
-  // messages would leave its answer unfetched.
+  // messages would leave its answer unfetched. Another chat opened is no change: its copy is
+  // read as it opens, and reading it here too would read it twice.
   const changed = `${chat?.last_message_at ?? ""}|${chat?.running ?? ""}`;
-  const lastChanged = useRef(changed);
+  const lastChanged = useRef({ chatId, changed });
   useEffect(() => {
-    if (lastChanged.current === changed) return;
-    lastChanged.current = changed;
+    const before = lastChanged.current;
+    lastChanged.current = { chatId, changed };
+    if (before.chatId !== chatId || before.changed === changed) return;
     if (!answering) void queryClient.invalidateQueries({ queryKey: chatMessagesKey(chatId) });
   }, [changed, answering, chatId, queryClient]);
 

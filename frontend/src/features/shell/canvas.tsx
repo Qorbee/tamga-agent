@@ -134,7 +134,8 @@ export function CanvasPanel({
           <span className="sr-only">{t.shell.closeCanvas}</span>
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* The scrollbar's room is kept, so what is shown never moves sideways as it comes and goes. */}
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <CanvasScope>{children}</CanvasScope>
       </div>
     </section>

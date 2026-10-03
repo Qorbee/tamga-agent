@@ -64,7 +64,7 @@ export function AppShell({
         className="h-dvh min-h-0 overflow-hidden"
       >
         <AppSidebar width={width} onWidthChange={setWidth} />
-        <SidebarInset className="min-w-0 overflow-y-auto">{children}</SidebarInset>
+        <SidebarInset className="min-w-0 overflow-y-auto [scrollbar-gutter:stable]">{children}</SidebarInset>
         {canvas}
       </SidebarProvider>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />

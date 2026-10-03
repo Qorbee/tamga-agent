@@ -1,7 +1,7 @@
 "use client";
 
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { JobFacts, PlacementRows } from "@/components/placement-rows";
 import { T, TranslateToggle } from "@/components/translated";
@@ -11,8 +11,35 @@ import { useI18n } from "@/lib/i18n/client";
 
 import { ProjectActions, STATUS_ICONS } from "./project-actions";
 
+// How long a project read ahead of its opening is fresh enough not to be read again for it.
+const READ_AHEAD = 30_000;
+
+const projectKey = (id: string) => ["project", id] as const;
+const placementsKey = (id: string) => ["placements", { projects: [id] }] as const;
+
 function useProject(id: string) {
-  return useQuery({ queryKey: ["project", id], queryFn: () => getProject(id), retry: false });
+  return useQuery({ queryKey: projectKey(id), queryFn: () => getProject(id), retry: false });
+}
+
+/**
+ * Reads a project and its conversations before it is opened, while the pointer or focus is on its
+ * row, so the canvas opens on them instead of on a placeholder that leaves and takes the
+ * scrollbar with it.
+ */
+export function useReadProjectAhead() {
+  const queryClient = useQueryClient();
+  return (id: string) => {
+    void queryClient.prefetchQuery({
+      queryKey: projectKey(id),
+      queryFn: () => getProject(id),
+      staleTime: READ_AHEAD,
+    });
+    void queryClient.prefetchQuery({
+      queryKey: placementsKey(id),
+      queryFn: () => listAllPlacements({ project_id: [id] }),
+      staleTime: READ_AHEAD,
+    });
+  };
 }
 
 /** The project's number and name, for the canvas's title bar. */
@@ -37,7 +64,7 @@ export function ProjectView({ id }: { id: string }) {
   const { t } = useI18n();
   const project = useProject(id);
   const placements = useQuery({
-    queryKey: ["placements", { projects: [id] }],
+    queryKey: placementsKey(id),
     queryFn: () => listAllPlacements({ project_id: [id] }),
   });
 
