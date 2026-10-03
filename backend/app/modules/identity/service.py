@@ -27,6 +27,7 @@ from app.modules.identity.schemas import (
     MembershipOut,
     UserOut,
 )
+from app.modules.playground import service as playground
 from app.platform import storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
@@ -160,6 +161,7 @@ async def create_guest_session(db: AsyncSession, *, client: str) -> OpenedSessio
     user = await repository.add_user(db, User(is_guest=True))
     await repository.add_membership(db, user_id=user.id, company_id=company.id, role=Role.OWNER)
     opened = await _open_session(db, user, company.id, expires_at)
+    await playground.seed_later(db, company.id)
     await db.commit()
     return opened
 

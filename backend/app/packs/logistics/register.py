@@ -1,19 +1,21 @@
 """What the logistics pack plugs into the core: its document types, the facts its text holds,
-how an accepted field proposal is written onto a shipment, and which project cannot be merged
-into another."""
+how an accepted field proposal is written onto a shipment, which project cannot be merged into
+another, and the freight scenario a judge's sandbox opens with."""
 
 from app.modules.documents import registry
 from app.modules.facts import extractors
+from app.modules.playground import service as playground
 from app.modules.projects import fields
 from app.modules.projects import service as projects
 from app.modules.projects.models import ProposalTarget
-from app.packs.logistics import documents, facts, service
+from app.packs.logistics import documents, facts, sandbox, service
 
 for document_type in documents.TYPES:
     registry.register(document_type)
 
 fields.register_target(ProposalTarget.SHIPMENT, service.accept_field)
 projects.guard_merge(service.refuse_merge)
+playground.register_seed(sandbox.seed)
 
 extractors.register("logistics.cmr_number", facts.cmr_numbers)
 extractors.register("logistics.plate", facts.labelled_plates)

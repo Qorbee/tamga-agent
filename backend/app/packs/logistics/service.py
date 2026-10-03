@@ -73,6 +73,14 @@ async def add_shipment(
     return shipment
 
 
+async def fill_shipment(
+    db: AsyncSession, shipment: Shipment, values: Mapping[str, Any], *, source: FieldSource
+) -> None:
+    """Writes a truck's fields from code (a sandbox's scenario, an import), as ``source`` says
+    they came; does not commit."""
+    await _write(db, shipment, values, source, evidence=())
+
+
 async def update_shipment(
     db: AsyncSession, actor: Actor, shipment_id: uuid.UUID, values: Mapping[str, Any]
 ) -> ShipmentOut:

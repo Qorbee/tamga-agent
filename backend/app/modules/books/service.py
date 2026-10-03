@@ -26,6 +26,7 @@ from app.modules.books.sources import (
     BudgetSpent,
     DispatchRecord,
     InvoiceRecord,
+    PartyCard,
 )
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
@@ -122,6 +123,30 @@ async def sync_source(company_id: uuid.UUID, source: BooksSource) -> SyncResult:
             logger.warning("books sync stopped: %s", exc)
             result.budget_spent = True
     return result
+
+
+async def store_records(
+    company_id: uuid.UUID,
+    source: str,
+    cards: Sequence[PartyCard],
+    invoices: Sequence[InvoiceRecord],
+) -> None:
+    """Stores a fixed set of records as if ``source`` had given them: a sandbox's scenario, which
+    has no dates to page through and must not depend on how far back the pilot's sync reads."""
+    async with open_session() as db:
+        for card in cards:
+            await parties.sync_party(
+                db,
+                company_id=company_id,
+                source=source,
+                source_id=card.source_id,
+                name=card.name,
+                kind=card.kind,
+                identifiers=card.identifiers,
+            )
+        for invoice in invoices:
+            await _store_invoice(db, company_id, source, invoice)
+        await db.commit()
 
 
 async def _sync_parties(
