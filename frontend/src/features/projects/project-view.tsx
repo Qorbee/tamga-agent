@@ -3,30 +3,29 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { InlineText } from "@/components/inline-text";
-import { PlacementRows } from "@/components/placement-rows";
 import { T } from "@/components/translated";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, getProject, listAllPlacements, listProjectParties } from "@/lib/api";
+import { ApiError, getProject, listProjectParties } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 import { useCanEditProjects } from "@/lib/use-role";
 
 import { ProjectMenu } from "./project-actions";
 import { partiesKey, ProjectProperties, useProjectUpdate } from "./project-properties";
+import { linksKey, placementsKey, ProjectTimeline, readLinks, readPlacements } from "./project-timeline";
 
 // How long a project read ahead of its opening is fresh enough not to be read again for it.
 const READ_AHEAD = 30_000;
 
 const projectKey = (id: string) => ["project", id] as const;
-const placementsKey = (id: string) => ["placements", { projects: [id] }] as const;
 
 function useProject(id: string) {
   return useQuery({ queryKey: projectKey(id), queryFn: () => getProject(id), retry: false });
 }
 
 /**
- * Reads a project, its parties and its conversations before it is opened, while the pointer or
- * focus is on its row, so the canvas opens on them instead of on a placeholder that leaves and
- * takes the scrollbar with it.
+ * Reads a project, its parties and its file before it is opened, while the pointer or focus is on
+ * its row, so the canvas opens on them instead of on a placeholder that leaves and takes the
+ * scrollbar with it.
  */
 export function useReadProjectAhead() {
   const queryClient = useQueryClient();
@@ -43,9 +42,10 @@ export function useReadProjectAhead() {
     });
     void queryClient.prefetchQuery({
       queryKey: placementsKey(id),
-      queryFn: () => listAllPlacements({ project_id: [id] }),
+      queryFn: () => readPlacements(id),
       staleTime: READ_AHEAD,
     });
+    void queryClient.prefetchQuery({ queryKey: linksKey(id), queryFn: () => readLinks(id), staleTime: READ_AHEAD });
   };
 }
 
@@ -63,16 +63,12 @@ export function ProjectTitleMenu({ id }: { id: string }) {
 }
 
 /**
- * A project in the canvas: its name and its properties, each edited where it is shown, and the
- * conversations tied to it, those that still wait for the owner first, each with why it is here.
+ * A project in the canvas: its name and its properties, each edited where it is shown, and its
+ * file: every mail, file and invoice tied to it, a day at a time.
  */
 export function ProjectView({ id }: { id: string }) {
   const { t } = useI18n();
   const project = useProject(id);
-  const placements = useQuery({
-    queryKey: placementsKey(id),
-    queryFn: () => listAllPlacements({ project_id: [id] }),
-  });
 
   if (project.isError)
     return (
@@ -82,11 +78,6 @@ export function ProjectView({ id }: { id: string }) {
     );
   if (!project.data) return <Skeleton className="m-5 h-32 rounded-2xl" />;
 
-  const held = (placements.data ?? []).filter((placement) => placement.conversation);
-  const waitingFirst = [...held].sort(
-    (a, b) => Number(b.suggested_links > 0) - Number(a.suggested_links > 0),
-  );
-
   return (
     // One column no wider than the canvas: a long word wraps instead of widening the grid.
     <div className="grid grid-cols-1 gap-6 p-4 sm:p-5">
@@ -95,23 +86,7 @@ export function ProjectView({ id }: { id: string }) {
         <ProjectProperties project={project.data} />
       </header>
 
-      <section className="grid grid-cols-1 gap-2">
-        <h4 className="flex items-baseline gap-2 text-sm font-medium">
-          {t.project.conversations}
-          <span className="text-muted-foreground tabular-nums">{placements.data ? held.length : ""}</span>
-        </h4>
-        {placements.isError ? (
-          <p className="text-danger-foreground text-sm" role="alert">
-            {t.errors.load}
-          </p>
-        ) : placements.isPending ? (
-          <Skeleton className="h-24 rounded-2xl" />
-        ) : held.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t.project.noConversations}</p>
-        ) : (
-          <PlacementRows placements={waitingFirst} className="border-border overflow-hidden rounded-2xl border" />
-        )}
-      </section>
+      <ProjectTimeline id={id} />
     </div>
   );
 }

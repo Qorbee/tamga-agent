@@ -141,9 +141,33 @@ export const listShipments = (projectIds: readonly string[]) =>
 
 // Links and proposals: what waits on the owner.
 export type ProjectLink = Schemas["LinkOut"];
+export type LinkPage = Schemas["LinkPage"];
 export type LinkCreate = Schemas["LinkCreate"];
+/** What a link ties, with when and how it came: given when the list is asked to `expand` it. */
+export type LinkItem = NonNullable<ProjectLink["item"]>;
+type LinkFilter = {
+  project_id?: string;
+  shipment_id?: string;
+  item_kind?: ProjectLink["item_kind"];
+  status?: ProjectLink["status"][];
+  expand?: "item"[];
+};
+export const listLinks = (params: LinkFilter & { limit?: number; offset?: number }) =>
+  request<LinkPage>(`/project-links${query({ ...params, limit: params.limit ?? PAGE })}`);
+/** Every page of them: a project's whole file, not its first page. */
+export async function listAllLinks(params: LinkFilter): Promise<ProjectLink[]> {
+  const items: ProjectLink[] = [];
+  for (;;) {
+    const page = await listLinks({ ...params, offset: items.length });
+    items.push(...page.items);
+    if (page.items.length === 0 || items.length >= page.total) return items;
+  }
+}
 export const createLink = (body: LinkCreate) =>
   request<ProjectLink>("/project-links", json("POST", body));
+/** The owner's answer on one item: confirmed or rejected, its truck, its proof. */
+export const updateLink = (id: string, body: Schemas["LinkUpdate"]) =>
+  request<ProjectLink>(`/project-links/${id}`, json("PATCH", body));
 
 // Placements: where the linker put each conversation, and why.
 export type Placement = Schemas["PlacementOut"];
@@ -171,6 +195,10 @@ export const listProposals = (params: { status?: FieldProposal["status"][]; limi
   request<ProposalPage>(`/field-proposals${query({ ...params, limit: params.limit ?? 50 })}`);
 export const decideProposal = (id: string, status: Schemas["ProposalDecision"]["status"]) =>
   request<FieldProposal>(`/field-proposals/${id}`, json("PATCH", { status }));
+
+// Books: invoices as the accounting system holds them, read only.
+export type Invoice = Schemas["InvoiceOut"];
+export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
 
 // Messages
 export type MessageSummary = Schemas["MessageSummary"];

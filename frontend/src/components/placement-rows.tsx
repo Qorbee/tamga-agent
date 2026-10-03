@@ -269,7 +269,7 @@ function PlacementRow({ placement }: { placement: Placement }) {
 }
 
 /** The owner's answer while a conversation waits, with how sure the placement is; a tick once given. */
-function RowAnswer({
+export function RowAnswer({
   waiting,
   confidence,
   children,

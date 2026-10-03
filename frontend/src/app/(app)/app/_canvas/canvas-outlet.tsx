@@ -1,6 +1,7 @@
 "use client";
 
 import { useCanvasView, useForgetOpenedByLink } from "@/components/canvas-link";
+import { InvoiceTitle, InvoiceView } from "@/features/books/invoice-view";
 import { DocumentDownload, DocumentTitle, DocumentView } from "@/features/documents/document-view";
 import { MailSubject, MailThread } from "@/features/mail/mail-thread";
 import { ProjectTitle, ProjectTitleMenu, ProjectView } from "@/features/projects/project-view";
@@ -39,6 +40,12 @@ function CanvasRecord({ view }: { view: CanvasView }) {
       return (
         <CanvasPanel label={t.project.title} title={<ProjectTitle id={view.id} />} actions={<ProjectTitleMenu id={view.id} />}>
           <ProjectView id={view.id} />
+        </CanvasPanel>
+      );
+    case "invoice":
+      return (
+        <CanvasPanel label={t.books.invoice} title={<InvoiceTitle id={view.id} />}>
+          <InvoiceView id={view.id} />
         </CanvasPanel>
       );
   }
