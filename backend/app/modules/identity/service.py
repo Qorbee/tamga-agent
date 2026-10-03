@@ -28,6 +28,7 @@ from app.modules.identity.schemas import (
     UserOut,
 )
 from app.modules.playground import service as playground
+from app.modules.settlement import service as settlement
 from app.platform import storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
@@ -257,15 +258,21 @@ async def accept_invite(
 
 async def expire_sandboxes(*, batch: int = 50) -> int:
     """Deletes guest sandboxes past their lifetime: their stored files, the company with every
-    row it owns, and their guests. Returns how many sandboxes went. Files go first: a failure
-    there leaves the company for the next run, never files nothing points at."""
-    deleted = 0
+    row it owns, and their guests. Returns how many sandboxes went. What is left of a sandbox's
+    test USDC on the vault goes back to the treasury first, and files before rows: a failure in
+    either leaves the company for the next run, never USDC or files nothing points at."""
     async with open_session() as db:
-        for company_id in await companies.expired_sandboxes(db, utcnow(), limit=batch):
-            await storage.delete_prefix(f"{company_id}/")
+        expired = await companies.expired_sandboxes(db, utcnow(), limit=batch)
+    deleted = 0
+    for company_id in expired:
+        if not await settlement.release_remainder(company_id):
+            continue
+        await storage.delete_prefix(f"{company_id}/")
+        async with open_session() as db:
             await companies.delete_sandbox(db, company_id)
             await db.commit()
-            deleted += 1
+        deleted += 1
+    async with open_session() as db:
         await repository.delete_orphan_guests(db)
         await db.commit()
     return deleted

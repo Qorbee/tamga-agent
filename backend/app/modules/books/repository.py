@@ -86,6 +86,21 @@ async def spend_read(
     return reads
 
 
+async def payable_parties(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(Invoice.party_id)
+        .where(
+            Invoice.company_id == company_id,
+            Invoice.direction == InvoiceDirection.PAYABLE,
+            Invoice.party_id.is_not(None),
+        )
+        .distinct()
+        # In one order, so a registration tried again names its payees as it first did.
+        .order_by(Invoice.party_id)
+    )
+    return [party_id for party_id in rows if party_id is not None]
+
+
 async def invoice_exists(db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
     found = await db.scalar(
         select(Invoice.id).where(Invoice.company_id == company_id, Invoice.id == invoice_id)

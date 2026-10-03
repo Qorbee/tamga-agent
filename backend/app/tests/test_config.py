@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -160,6 +161,14 @@ def test_a_chain_address_that_is_not_one_is_refused() -> None:
     settings = load_settings(policy_vault_address="0x" + "aB" * 20)
     assert settings.policy_vault_address == "0x" + "aB" * 20
     assert settings.usdc_address == "0x3600000000000000000000000000000000000000"
+
+
+def test_a_sandbox_amount_finer_than_usdcs_unit_is_refused() -> None:
+    with pytest.raises(ValidationError, match="sandbox_deposit_usdc"):
+        load_settings(sandbox_deposit_usdc="0.0000001")
+    assert load_settings(sandbox_deposit_usdc="0.000001").sandbox_deposit_usdc == Decimal(
+        "0.000001"
+    )
 
 
 def test_a_blank_key_counts_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:

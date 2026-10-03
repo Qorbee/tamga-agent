@@ -123,6 +123,11 @@ async def create_wallets(names: Sequence[str], *, idempotency_key: uuid.UUID) ->
     ]
 
 
+async def wallet(wallet_id: str) -> Wallet:
+    found = (await _get(f"/wallets/{wallet_id}"))["wallet"]
+    return Wallet(id=str(found["id"]), address=str(found["address"]))
+
+
 def _parameter(value: str | int | list[str]) -> Any:
     # Circle takes numbers as decimal strings, so a uint256 above 2^53 survives JSON.
     return str(value) if isinstance(value, int) else value

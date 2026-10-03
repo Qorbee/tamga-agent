@@ -80,7 +80,12 @@ async def test_reads_past_the_children_a_process_runs_wait_their_turn() -> None:
 def test_a_reader_is_reached_only_through_run() -> None:
     # ADR-0012: nothing calls a registered reader, or the parser under the spreadsheet readers,
     # outside the child.
-    names = {reader.__name__ for reader in isolated.registered().values()}
+    names = {
+        reader.__name__
+        for reader in isolated.registered().values()
+        # The tests' own readers (one is called ``sleep``) are no app reader.
+        if not reader.__module__.startswith("app.tests.")
+    }
     names |= {"read_workbook", "visible_text"}
     allowed = {"modules/documents/reading.py", "modules/documents/sheets.py"}
     offenders = []

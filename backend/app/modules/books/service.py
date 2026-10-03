@@ -280,6 +280,11 @@ def _cut(value: str | None, length: int) -> str | None:
 # Reading what was synced
 
 
+async def payable_parties(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
+    """The parties the company owes bills to, as its books hold them: whom it may pay."""
+    return await repository.payable_parties(db, company_id)
+
+
 async def invoice_exists(db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
     return await repository.invoice_exists(db, company_id, invoice_id)
 

@@ -7,6 +7,7 @@ A new variable goes here, in ``.env.example`` with a comment, and nowhere else.
 """
 
 import uuid
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -193,6 +194,14 @@ class Settings(BaseSettings):
     # Circle's CLI that drives it, signed in for testnet with `circle wallet login`.
     agent_wallet_address: EvmAddress | None = None
     circle_cli: str = "circle"
+    # What a judge's sandbox is given on the vault when it opens (ADR-0015), in test USDC from the
+    # treasury: its deposit, its caps, and its timelock (the vault refuses one under 60 seconds).
+    # What is left of the deposit goes back to the treasury before the sandbox is deleted.
+    # USDC has six decimals, so an amount with more is refused rather than cut.
+    sandbox_deposit_usdc: Decimal = Field(default=Decimal("0.5"), gt=0, decimal_places=6)
+    sandbox_per_payment_cap_usdc: Decimal = Field(default=Decimal("0.3"), gt=0, decimal_places=6)
+    sandbox_daily_cap_usdc: Decimal = Field(default=Decimal("0.5"), gt=0, decimal_places=6)
+    sandbox_timelock_seconds: int = Field(default=120, ge=60)
 
     # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
     guest_hours: int = 24

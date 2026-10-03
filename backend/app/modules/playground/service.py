@@ -2,8 +2,9 @@
 
 Identity creates a sandbox empty, with its guest and session, and asks for it to be seeded. The
 scenarios packs register here then fill it in a job of their own, so the guest's click does not
-wait on them. A scenario writes only into the sandbox it is given, through the services that own
-each record, as any other source of that record would.
+wait on them, and its account on the vault is opened after them. A scenario writes only into
+the sandbox it is given, through the services that own each record, as any other source of that
+record would.
 """
 
 import logging
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
+from app.modules.settlement import service as settlement
 from app.platform import jobs
 from app.platform.db import open_session
 
@@ -48,3 +50,7 @@ async def seed(company_id: uuid.UUID) -> None:
         return
     for scenario in _seeds:
         await scenario(company_id)
+    # Its account on the vault is opened once its books say whom it owes, who become its payees.
+    async with open_session() as db:
+        await settlement.open_later(db, company_id, settlement.sandbox_terms())
+        await db.commit()
