@@ -8,10 +8,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base, text_enum
@@ -25,6 +26,15 @@ class ShipmentStatus(StrEnum):
     AT_BORDER = "at_border"
     DELIVERED = "delivered"
     CANCELLED = "cancelled"
+
+
+class ShipmentState(StrEnum):
+    """Whether the truck is the owner's: one code proposed waits for a yes, and a rejected one
+    is kept so its plates are never proposed on that project again (ADR-0021)."""
+
+    PROPOSED = "proposed"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
 
 
 class LocationContact(StrEnum):
@@ -84,6 +94,15 @@ class Shipment(CompanyScoped, Base):
     delivery_date: Mapped[date | None]
     status: Mapped[ShipmentStatus] = mapped_column(
         text_enum(ShipmentStatus, "shipments_status_check"), default=ShipmentStatus.PLANNED
+    )
+    state: Mapped[ShipmentState] = mapped_column(
+        text_enum(ShipmentState, "shipments_state_check"),
+        default=ShipmentState.CONFIRMED,
+        server_default=ShipmentState.CONFIRMED.value,
+    )
+    # The facts a proposed truck was read from: its plates in the project's papers and mail.
+    evidence: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, server_default="{}"
     )
     # Field name → FieldSource, as on projects: the owner's values win.
     field_sources: Mapped[dict[str, str]] = mapped_column(

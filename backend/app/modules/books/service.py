@@ -269,6 +269,13 @@ async def _record_facts(
     )
 
 
+async def booked_from(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """The records that are this bill too: an incoming e-invoice booked as this purchase."""
+    return list(await repository.same_as(db, company_id, invoice_id))
+
+
 async def placeable_invoices(db: AsyncSession, company_id: uuid.UUID) -> list[InvoiceOut]:
     """The bills a project can hold: sales, purchases and incoming e-invoices, not cancelled.
     An expense is the company's own cost, not a job's."""

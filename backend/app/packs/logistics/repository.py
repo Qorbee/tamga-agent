@@ -26,13 +26,24 @@ async def get_shipment(
 
 
 async def list_shipments(
-    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    project_ids: Sequence[uuid.UUID],
+    *,
+    for_update: bool = False,
 ) -> Sequence[Shipment]:
-    rows = await db.scalars(
+    """With ``for_update``, read fresh and held until commit: an owner's edit of one of them waits,
+    while a link may still name them (no key lock, so a link's foreign key check never waits)."""
+    statement = (
         select(Shipment)
         .where(Shipment.company_id == company_id, Shipment.project_id.in_(project_ids))
         .order_by(Shipment.project_id, Shipment.created_at, Shipment.id)
     )
+    if for_update:
+        statement = statement.with_for_update(key_share=True).execution_options(
+            populate_existing=True
+        )
+    rows = await db.scalars(statement)
     return rows.all()
 
 

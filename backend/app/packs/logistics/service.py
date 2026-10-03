@@ -14,16 +14,20 @@ from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.books import service as books
 from app.modules.companies import service as companies
+from app.modules.facts import extractors
+from app.modules.facts import service as facts
 from app.modules.parties import service as parties
 from app.modules.projects import service as projects
-from app.modules.projects.models import FieldSource, ProposalTarget
+from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProposalTarget
 from app.packs.logistics import repository
 from app.packs.logistics.models import (
     LocationContact,
     LocationSource,
     Shipment,
     ShipmentLocation,
+    ShipmentState,
 )
 from app.packs.logistics.schemas import (
     LocationCreate,
@@ -35,6 +39,7 @@ from app.packs.logistics.schemas import (
 from app.platform import clock
 from app.platform.auth import Actor, Role
 from app.platform.errors import BadRequest, Conflict, NotFound
+from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
 _EDITORS: Final = (Role.OWNER, Role.OPS)
@@ -45,11 +50,62 @@ _PLATES: Final = ("truck_plate", "trailer_plate")
 async def refuse_merge(
     db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
 ) -> None:
-    """A project with trucks is not merged into another: its trucks, and the papers confirmed
-    on them, are tied to it in the database, and would go with it. The owner merges the other
-    way, into the one that has the trucks."""
-    if await repository.list_shipments(db, company_id, [source_id]):
+    """A project with a truck the owner confirmed, wrote on or followed is not merged into
+    another: the truck, and the papers confirmed on it, are tied to it in the database. The owner
+    merges the other way. What code proposed goes: its papers come off its trucks, a proposed
+    truck is dropped (the papers that named it propose it again on the project that stays), and
+    a rejected one stays rejected there, so its plates stay out."""
+    trucks = await repository.list_shipments(db, company_id, [source_id], for_update=True)
+    followed = {
+        location.shipment_id
+        for location in await repository.last_locations(db, company_id, [t.id for t in trucks])
+    }
+    if any(
+        truck.state is ShipmentState.CONFIRMED or truck.id in followed or _written_by_owner(truck)
+        for truck in trucks
+    ):
         raise Conflict("This project has trucks: merge the other project into this one")
+    await projects.take_off_trucks(db, company_id, [truck.id for truck in trucks])
+    target = list(await repository.list_shipments(db, company_id, [target_id], for_update=True))
+    for truck in trucks:
+        if truck.state is ShipmentState.REJECTED:
+            await _keep_rejected(db, company_id, truck, target_id, target)
+        await projects.drop_field_proposals(db, company_id, ProposalTarget.SHIPMENT, truck.id)
+        await db.delete(truck)
+    await db.flush()
+
+
+def _written_by_owner(truck: Shipment) -> bool:
+    return any(FieldSource(source) is FieldSource.OWNER for source in truck.field_sources.values())
+
+
+async def _keep_rejected(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    rejected: Shipment,
+    target_id: uuid.UUID,
+    target: list[Shipment],
+) -> None:
+    """Carries the owner's rejection of a truck to the project a merge keeps: a truck code
+    proposed there with the same plates is rejected with it, and where no truck there names all
+    of them, the rejected one is made again."""
+    plates = _compared_plates(rejected)
+    same = [truck for truck in target if _compared_plates(truck) & plates]
+    proposed = [truck for truck in same if truck.state is ShipmentState.PROPOSED]
+    await projects.take_off_trucks(db, company_id, [truck.id for truck in proposed])
+    for truck in proposed:
+        truck.state = ShipmentState.REJECTED
+    if plates <= {plate for truck in same for plate in _compared_plates(truck)}:
+        return
+    again = await add_shipment(db, company_id=company_id, project_id=target_id)
+    again.state, again.evidence = ShipmentState.REJECTED, list(rejected.evidence)
+    again.truck_plate, again.trailer_plate = rejected.truck_plate, rejected.trailer_plate
+    again.field_sources = dict(rejected.field_sources)
+    target.append(again)
+
+
+def _compared_plates(truck: Shipment) -> set[str]:
+    return {extractors.reference(p) for p in (truck.truck_plate, truck.trailer_plate) if p}
 
 
 async def create_shipment(
@@ -84,9 +140,20 @@ async def fill_shipment(
 async def update_shipment(
     db: AsyncSession, actor: Actor, shipment_id: uuid.UUID, values: Mapping[str, Any]
 ) -> ShipmentOut:
+    """The owner's edit of a truck, and the owner's answer to one code proposed: a rejected
+    truck loses the papers code placed on it, and keeps its plates from being proposed again."""
     actor.require(*_EDITORS)
+    state = values.get("state")
+    if state is not None:
+        # Whether a truck is the job's is the owner's call, as a link's is.
+        actor.require(Role.OWNER)
     shipment = await _shipment(db, actor.company_id, shipment_id)
-    await _write(db, shipment, values, FieldSource.OWNER, evidence=())
+    fields = {field: value for field, value in values.items() if field != "state"}
+    if state is not None:
+        if state == ShipmentState.REJECTED:
+            await projects.take_off_trucks(db, actor.company_id, [shipment.id])
+        shipment.state = ShipmentState(state)
+    await _write(db, shipment, fields, FieldSource.OWNER, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [shipment]))[0]
 
@@ -256,9 +323,76 @@ async def _describe(
             loading_date=s.loading_date,
             delivery_date=s.delivery_date,
             status=s.status,
+            state=s.state,
+            evidence=s.evidence,
             field_sources={k: FieldSource(v) for k, v in s.field_sources.items()},
             last_location=LocationOut.model_validate(last[s.id]) if s.id in last else None,
             created_at=s.created_at,
         )
         for s in shipments
     ]
+
+
+async def proofs(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """Each confirmed truck's proofs of delivery that count for money (ADR-0021, decision 4): a
+    confirmed link the owner made or answered, marked as proof, on that truck. The ids of the
+    links, by truck; a truck with none is left out. The payment rules read only this."""
+    trucks = [
+        truck.id
+        for truck in await repository.list_shipments(db, company_id, project_ids)
+        if truck.state is ShipmentState.CONFIRMED
+    ]
+    found: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for link in await projects.links_on_trucks(db, company_id, trucks):
+        if (
+            link.status is LinkStatus.CONFIRMED
+            and link.proof_of_delivery
+            and link.method is LinkMethod.OWNER
+            and link.shipment_id is not None
+        ):
+            found.setdefault(link.shipment_id, []).append(link.id)
+    return found
+
+
+async def trucks_billed(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """The confirmed trucks a bill pays for, in the projects that hold it confirmed: the truck its
+    link names, else those whose plates the bill names. None when it names none, and the payment
+    rules then hold the bill."""
+    links = [
+        link
+        for link in await projects.links_of_items(db, company_id, ItemKind.INVOICE, [invoice_id])
+        if link.status is LinkStatus.CONFIRMED
+    ]
+    trucks = {
+        truck.id: truck
+        for truck in await repository.list_shipments(
+            db, company_id, list({link.project_id for link in links})
+        )
+        if truck.state is ShipmentState.CONFIRMED
+    }
+    # The bill as booked, and the e-invoice it was booked from, whose plates filing read too.
+    records = [invoice_id, *await books.booked_from(db, company_id, invoice_id)]
+    named = {
+        fact.normalised
+        for fact in await facts.facts_of_items(
+            db, company_id=company_id, item_kind=ItemKind.INVOICE, item_ids=records
+        )
+        if fact.kind == "plate"
+    }
+    billed: list[uuid.UUID] = []
+    for link in links:
+        if link.shipment_id is not None:
+            if link.shipment_id in trucks:
+                billed.append(link.shipment_id)
+            continue
+        for truck in trucks.values():
+            plates = {
+                extractors.reference(p) for p in (truck.truck_plate, truck.trailer_plate) if p
+            }
+            if truck.project_id == link.project_id and plates & named:
+                billed.append(truck.id)
+    return sorted(set(billed))

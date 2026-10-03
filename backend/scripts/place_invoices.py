@@ -22,11 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import packs  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.modules.linking import service  # noqa: E402
-from app.platform.db import dispose_db, init_db, open_session  # noqa: E402
+from app.platform.db import dispose_db, import_all_models, init_db, open_session  # noqa: E402
 
 
 async def place(company_id: uuid.UUID, *, write: bool) -> service.BillsPlaced:
     packs.register_all()
+    # A link names the user who decided it: every table must be known before one is written.
+    import_all_models()
     init_db(str(get_settings().database_url))
     try:
         async with open_session() as db:

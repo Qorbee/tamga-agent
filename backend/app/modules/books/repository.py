@@ -229,6 +229,15 @@ async def invoices_of_source(
     return rows.all()
 
 
+async def same_as(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
+) -> Sequence[uuid.UUID]:
+    rows = await db.scalars(
+        select(Invoice.id).where(Invoice.company_id == company_id, Invoice.same_as_id == invoice_id)
+    )
+    return rows.all()
+
+
 async def get_invoices(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> Sequence[Invoice]:

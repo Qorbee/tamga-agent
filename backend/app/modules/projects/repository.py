@@ -403,6 +403,49 @@ async def links_of_project(
     return rows.all()
 
 
+async def links_on_trucks(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    shipment_ids: Sequence[uuid.UUID],
+    *,
+    for_update: bool = False,
+) -> Sequence[ProjectLink]:
+    """Every link placed on one of these trucks."""
+    statement = select(ProjectLink).where(
+        ProjectLink.company_id == company_id, ProjectLink.shipment_id.in_(shipment_ids)
+    )
+    rows = await db.scalars(statement.with_for_update() if for_update else statement)
+    return rows.all()
+
+
+async def suggest_truck(
+    db: AsyncSession, company_id: uuid.UUID, link_id: uuid.UUID, shipment_id: uuid.UUID
+) -> bool:
+    """Sets the truck on a link still code's and on no truck, as the row stands now."""
+    result = await db.execute(
+        update(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.id == link_id,
+            ProjectLink.method != LinkMethod.OWNER,
+            ProjectLink.shipment_id.is_(None),
+        )
+        .values(shipment_id=shipment_id)
+        .returning(ProjectLink.id)
+        .execution_options(synchronize_session="fetch")
+    )
+    return result.first() is not None
+
+
+async def open_projects(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Project]:
+    rows = await db.scalars(
+        select(Project)
+        .where(Project.company_id == company_id, Project.status != ProjectStatus.REJECTED)
+        .order_by(Project.id)
+    )
+    return rows.all()
+
+
 async def companies_with_projects(db: AsyncSession) -> list[uuid.UUID]:
     rows = await db.scalars(
         select(Project.company_id).where(Project.status != ProjectStatus.REJECTED).distinct()

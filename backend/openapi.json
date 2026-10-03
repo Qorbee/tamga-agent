@@ -4003,6 +4003,14 @@
             ],
             "title": "Driver Phone"
           },
+          "evidence": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
           "field_sources": {
             "additionalProperties": {
               "$ref": "#/components/schemas/FieldSource"
@@ -4051,6 +4059,9 @@
             "format": "uuid",
             "title": "Project Id",
             "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ShipmentState"
           },
           "status": {
             "$ref": "#/components/schemas/ShipmentStatus"
@@ -4103,12 +4114,24 @@
           "loading_date",
           "delivery_date",
           "status",
+          "state",
+          "evidence",
           "field_sources",
           "last_location",
           "created_at"
         ],
         "title": "ShipmentOut",
         "type": "object"
+      },
+      "ShipmentState": {
+        "description": "Whether the truck is the owner's: one code proposed waits for a yes, and a rejected one\nis kept so its plates are never proposed on that project again (ADR-0021).",
+        "enum": [
+          "proposed",
+          "confirmed",
+          "rejected"
+        ],
+        "title": "ShipmentState",
+        "type": "string"
       },
       "ShipmentStatus": {
         "enum": [
@@ -4193,6 +4216,21 @@
                 "type": "null"
               }
             ]
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
           },
           "status": {
             "anyOf": [

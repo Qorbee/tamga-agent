@@ -1,10 +1,16 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.projects.models import FieldSource
-from app.packs.logistics.models import LocationContact, LocationSource, ShipmentStatus
+from app.packs.logistics.models import (
+    LocationContact,
+    LocationSource,
+    ShipmentState,
+    ShipmentStatus,
+)
 
 
 class LocationOut(BaseModel):
@@ -59,7 +65,8 @@ class ShipmentCreate(ShipmentFields):
 
 
 class ShipmentUpdate(ShipmentFields):
-    pass
+    # The owner's answer to a truck code proposed. Rejecting one takes code's papers off it.
+    state: Literal["confirmed", "rejected"] | None = None
 
 
 class ShipmentOut(BaseModel):
@@ -77,6 +84,10 @@ class ShipmentOut(BaseModel):
     loading_date: date | None
     delivery_date: date | None
     status: ShipmentStatus
+    # Proposed by code from its plates, confirmed (the owner's, or one the owner made), rejected.
+    state: ShipmentState
+    # The facts a proposed truck was read from.
+    evidence: list[uuid.UUID]
     field_sources: dict[str, FieldSource]
     # The newest reported position, if any.
     last_location: LocationOut | None

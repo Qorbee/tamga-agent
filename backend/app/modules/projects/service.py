@@ -441,6 +441,51 @@ async def links_of_project(
     return await repository.links_of_project(db, company_id, project_id)
 
 
+async def open_projects(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Project]:
+    """The company's projects but the rejected ones."""
+    return await repository.open_projects(db, company_id)
+
+
+async def links_on_trucks(
+    db: AsyncSession, company_id: uuid.UUID, shipment_ids: Sequence[uuid.UUID]
+) -> Sequence[ProjectLink]:
+    """Every link placed on one of these trucks, whatever its status."""
+    if not shipment_ids:
+        return []
+    return await repository.links_on_trucks(db, company_id, shipment_ids)
+
+
+async def suggest_truck(
+    db: AsyncSession, company_id: uuid.UUID, link_id: uuid.UUID, shipment_id: uuid.UUID
+) -> bool:
+    """Code's guess of the truck an item belongs to (ADR-0021), never its proof of delivery.
+    Written only while the link is still code's and on no truck, as the row stands when written:
+    the owner may have answered it since code read it. Whether it was written."""
+    return await repository.suggest_truck(db, company_id, link_id, shipment_id)
+
+
+async def take_off_trucks(
+    db: AsyncSession, company_id: uuid.UUID, shipment_ids: Sequence[uuid.UUID]
+) -> None:
+    """Takes code's papers off these trucks, before they are rejected or dropped; a link the
+    owner placed on one is refused, for the owner to move first. Does not commit."""
+    if not shipment_ids:
+        return
+    links = await repository.links_on_trucks(db, company_id, shipment_ids, for_update=True)
+    if any(link.method is LinkMethod.OWNER for link in links):
+        raise Conflict("You placed papers on this truck: move them to another truck first")
+    for link in links:
+        link.shipment_id = None
+    await db.flush()
+
+
+async def drop_field_proposals(
+    db: AsyncSession, company_id: uuid.UUID, target: ProposalTarget, target_id: uuid.UUID
+) -> None:
+    """Removes what was proposed for a row that is going: a proposal names its row by id only."""
+    await repository.drop_proposals(db, company_id, target, target_id)
+
+
 async def find_by_number(db: AsyncSession, company_id: uuid.UUID, number: str) -> Project | None:
     """The project that has, or once had, this number: a strong key for linking."""
     found = await repository.find_by_number(db, company_id, numbering.normalise(number))

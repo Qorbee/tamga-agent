@@ -2339,6 +2339,8 @@ export interface components {
             driver_name: string | null;
             /** Driver Phone */
             driver_phone: string | null;
+            /** Evidence */
+            evidence: string[];
             /** Field Sources */
             field_sources: {
                 [key: string]: components["schemas"]["FieldSource"];
@@ -2357,6 +2359,7 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            state: components["schemas"]["ShipmentState"];
             status: components["schemas"]["ShipmentStatus"];
             /** Subcontractor Id */
             subcontractor_id: string | null;
@@ -2365,6 +2368,13 @@ export interface components {
             /** Truck Plate */
             truck_plate: string | null;
         };
+        /**
+         * ShipmentState
+         * @description Whether the truck is the owner's: one code proposed waits for a yes, and a rejected one
+         *     is kept so its plates are never proposed on that project again (ADR-0021).
+         * @enum {string}
+         */
+        ShipmentState: "proposed" | "confirmed" | "rejected";
         /**
          * ShipmentStatus
          * @enum {string}
@@ -2383,6 +2393,8 @@ export interface components {
             /** Loading Date */
             loading_date?: string | null;
             location_contact?: components["schemas"]["LocationContact"] | null;
+            /** State */
+            state?: ("confirmed" | "rejected") | null;
             status?: components["schemas"]["ShipmentStatus"] | null;
             /** Subcontractor Id */
             subcontractor_id?: string | null;
