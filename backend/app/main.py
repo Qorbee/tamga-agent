@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.projects)
     app.include_router(projects.links)
     app.include_router(projects.proposals)
+    app.include_router(projects.checklists)
     app.include_router(linking.placements)
     app.include_router(parties.parties)
     app.include_router(translations.translations)

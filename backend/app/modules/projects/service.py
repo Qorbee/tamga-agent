@@ -109,6 +109,8 @@ type JobReader = Callable[
     [AsyncSession, uuid.UUID, Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, ProjectJob]]
 ]
 _job_readers: list[JobReader] = []
+# A key link this sure is evidence a decision may rest on before the owner's yes (ADR-0010).
+KEY_EVIDENCE: Final = 0.9
 # Which of two links to one item says more: the owner's yes, then a suggestion, then a no.
 _LINK_RANK: Final = {LinkStatus.REJECTED: 0, LinkStatus.SUGGESTED: 1, LinkStatus.CONFIRMED: 2}
 _CONFIRMED_BY_OWNER: Final = (ProjectStatus.ACTIVE, ProjectStatus.CLOSED)
@@ -292,6 +294,7 @@ async def merge_project(
     await _move_parties(db, actor.company_id, source.id, target.id)
     await _move_links(db, actor.company_id, source.id, target.id)
     await repository.move_numbers(db, actor.company_id, source.id, target.id)
+    await repository.move_marks(db, actor.company_id, source.id, target.id)
     await repository.drop_proposals(db, actor.company_id, ProposalTarget.PROJECT, source.id)
     if source.status in _CONFIRMED_BY_OWNER and target.status not in _CONFIRMED_BY_OWNER:
         target.status = ProjectStatus.ACTIVE
@@ -439,6 +442,27 @@ async def links_of_project(
     db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
 ) -> Sequence[ProjectLink]:
     return await repository.links_of_project(db, company_id, project_id)
+
+
+def is_evidence(link: ProjectLink) -> bool:
+    """Whether a decision may rest on this link (ADR-0010): the owner confirmed it, or a key
+    names it surely enough. A proof of delivery asks more (ADR-0021)."""
+    if link.status is LinkStatus.CONFIRMED:
+        return True
+    return (
+        link.status is LinkStatus.SUGGESTED
+        and link.method is LinkMethod.KEY
+        and link.confidence >= KEY_EVIDENCE
+    )
+
+
+async def links_of_projects(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> Sequence[ProjectLink]:
+    """These projects' links but the rejected ones."""
+    if not project_ids:
+        return []
+    return await repository.links_of_projects(db, company_id, project_ids)
 
 
 async def open_projects(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Project]:

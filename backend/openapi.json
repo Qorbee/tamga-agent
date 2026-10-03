@@ -581,6 +581,170 @@
         "title": "ChatUpdate",
         "type": "object"
       },
+      "ChecklistItemOut": {
+        "description": "One item of a project's or a truck's checklist, as it stands: ``done`` (a confirmed paper,\nor the owner's mark), ``waiting`` (a paper suggested, a proof not yet marked, a bill not yet\npaid), ``missing``, or ``not_needed``. ``link_ids`` are the project links that fill it.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "link_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Link Ids",
+            "type": "array"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChecklistMarkOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "shipment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Id"
+          },
+          "state": {
+            "enum": [
+              "done",
+              "waiting",
+              "missing",
+              "not_needed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "shipment_id",
+          "key",
+          "state",
+          "required",
+          "link_ids",
+          "mark"
+        ],
+        "title": "ChecklistItemOut",
+        "type": "object"
+      },
+      "ChecklistMarkKind": {
+        "description": "The owner's word on one item of a project's or a truck's checklist.",
+        "enum": [
+          "not_needed",
+          "needed",
+          "done"
+        ],
+        "title": "ChecklistMarkKind",
+        "type": "string"
+      },
+      "ChecklistMarkOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "mark": {
+            "$ref": "#/components/schemas/ChecklistMarkKind"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "shipment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "shipment_id",
+          "key",
+          "mark",
+          "updated_at"
+        ],
+        "title": "ChecklistMarkOut",
+        "type": "object"
+      },
+      "ChecklistMarkSet": {
+        "properties": {
+          "key": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "mark": {
+            "$ref": "#/components/schemas/ChecklistMarkKind"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "shipment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Id"
+          }
+        },
+        "required": [
+          "project_id",
+          "key",
+          "mark"
+        ],
+        "title": "ChecklistMarkSet",
+        "type": "object"
+      },
       "ColumnOut": {
         "properties": {
           "hidden": {
@@ -5169,6 +5333,192 @@
         "summary": "Stop Run",
         "tags": [
           "chats"
+        ]
+      }
+    },
+    "/checklist-items": {
+      "get": {
+        "operationId": "checklists.list_checklist_items",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "minItems": 1,
+              "title": "Project Id",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shipment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "done",
+                      "waiting",
+                      "missing",
+                      "not_needed"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChecklistItemOut"
+                  },
+                  "title": "Response Checklists.List Checklist Items",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Checklist Items",
+        "tags": [
+          "checklists"
+        ]
+      }
+    },
+    "/checklist-marks": {
+      "put": {
+        "operationId": "checklists.set_checklist_mark",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChecklistMarkSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChecklistMarkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Set Checklist Mark",
+        "tags": [
+          "checklists"
+        ]
+      }
+    },
+    "/checklist-marks/{mark_id}": {
+      "delete": {
+        "operationId": "checklists.delete_checklist_mark",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mark_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Mark Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Checklist Mark",
+        "tags": [
+          "checklists"
         ]
       }
     },

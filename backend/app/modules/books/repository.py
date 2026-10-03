@@ -230,12 +230,14 @@ async def invoices_of_source(
 
 
 async def same_as(
-    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
-) -> Sequence[uuid.UUID]:
-    rows = await db.scalars(
-        select(Invoice.id).where(Invoice.company_id == company_id, Invoice.same_as_id == invoice_id)
+    db: AsyncSession, company_id: uuid.UUID, invoice_ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    rows = await db.execute(
+        select(Invoice.id, Invoice.same_as_id).where(
+            Invoice.company_id == company_id, Invoice.same_as_id.in_(invoice_ids)
+        )
     )
-    return rows.all()
+    return [(alias, target) for alias, target in rows.tuples() if target is not None]
 
 
 async def get_invoices(

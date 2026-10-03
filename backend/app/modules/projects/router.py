@@ -4,9 +4,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Query, status
 
 from app.modules.identity.deps import ActorDep
-from app.modules.projects import service
+from app.modules.projects import checklist, service
 from app.modules.projects.models import LinkStatus, ProjectStatus, ProposalStatus, ProposalTarget
 from app.modules.projects.schemas import (
+    ChecklistItemOut,
+    ChecklistMarkOut,
+    ChecklistMarkSet,
+    ChecklistState,
     LinkCreate,
     LinkOut,
     LinkPage,
@@ -32,6 +36,7 @@ from app.platform.pagination import PageDep
 projects = APIRouter(tags=["projects"])
 links = APIRouter(tags=["project_links"])
 proposals = APIRouter(tags=["field_proposals"])
+checklists = APIRouter(tags=["checklists"])
 
 
 @projects.get("/projects")
@@ -194,3 +199,28 @@ async def decide_proposal(
     proposal_id: uuid.UUID, body: ProposalDecision, actor: ActorDep, db: SessionDep
 ) -> ProposalOut:
     return await service.decide_proposal(db, actor, proposal_id, accept=body.status == "accepted")
+
+
+@checklists.get("/checklist-items")
+async def list_checklist_items(
+    actor: ActorDep,
+    db: SessionDep,
+    project_id: Annotated[list[uuid.UUID], Query(min_length=1, max_length=200)],
+    shipment_id: uuid.UUID | None = None,
+    state: Annotated[list[ChecklistState] | None, Query()] = None,
+) -> list[ChecklistItemOut]:
+    return await checklist.list_items(
+        db, actor, project_id, shipment_id=shipment_id, states=state or ()
+    )
+
+
+@checklists.put("/checklist-marks")
+async def set_checklist_mark(
+    body: ChecklistMarkSet, actor: ActorDep, db: SessionDep
+) -> ChecklistMarkOut:
+    return await checklist.set_mark(db, actor, body)
+
+
+@checklists.delete("/checklist-marks/{mark_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_checklist_mark(mark_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> None:
+    await checklist.delete_mark(db, actor, mark_id)

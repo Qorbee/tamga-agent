@@ -297,3 +297,47 @@ class FieldProposal(CompanyScoped, Base):
     )
     decided_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ChecklistMarkKind(StrEnum):
+    """The owner's word on one item of a project's or a truck's checklist."""
+
+    # Not asked of this job: a domestic job's CMR.
+    NOT_NEEDED = "not_needed"
+    # Asked of this job though the template does not ask it.
+    NEEDED = "needed"
+    # Done without a paper Tamga holds: an order given by phone. Never a proof of delivery.
+    DONE = "done"
+
+
+class ChecklistMark(CompanyScoped, Base):
+    """The owner's mark on one checklist item: a project's when ``shipment_id`` is null, else one
+    truck's. What the item is comes from the template a pack registered; the mark only overrides
+    whether it is asked and whether it is done."""
+
+    __mapper_args__ = {"eager_defaults": True}
+    __tablename__ = "checklist_marks"
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id", "project_id", "shipment_id", "key", postgresql_nulls_not_distinct=True
+        ),
+        ForeignKeyConstraint(
+            ["company_id", "project_id"], ["projects.company_id", "projects.id"], ondelete="CASCADE"
+        ),
+        # The logistics pack's table, named in the database only, as for project_links.
+        ForeignKeyConstraint(
+            ["company_id", "project_id", "shipment_id"],
+            ["shipments.company_id", "shipments.project_id", "shipments.id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    project_id: Mapped[uuid.UUID]
+    shipment_id: Mapped[uuid.UUID | None]
+    key: Mapped[str] = mapped_column(String(40))
+    mark: Mapped[ChecklistMarkKind] = mapped_column(
+        text_enum(ChecklistMarkKind, "checklist_marks_mark_check")
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

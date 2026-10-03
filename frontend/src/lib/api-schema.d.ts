@@ -165,6 +165,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/checklist-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Checklist Items */
+        get: operations["checklists.list_checklist_items"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/checklist-marks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Checklist Mark */
+        put: operations["checklists.set_checklist_mark"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/checklist-marks/{mark_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Checklist Mark */
+        delete: operations["checklists.delete_checklist_mark"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/document-types": {
         parameters: {
             query?: never;
@@ -1146,6 +1197,75 @@ export interface components {
             archived?: boolean | null;
             /** Title */
             title?: string | null;
+        };
+        /**
+         * ChecklistItemOut
+         * @description One item of a project's or a truck's checklist, as it stands: ``done`` (a confirmed paper,
+         *     or the owner's mark), ``waiting`` (a paper suggested, a proof not yet marked, a bill not yet
+         *     paid), ``missing``, or ``not_needed``. ``link_ids`` are the project links that fill it.
+         */
+        ChecklistItemOut: {
+            /** Key */
+            key: string;
+            /** Link Ids */
+            link_ids: string[];
+            mark: components["schemas"]["ChecklistMarkOut"] | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Required */
+            required: boolean;
+            /** Shipment Id */
+            shipment_id: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "waiting" | "missing" | "not_needed";
+        };
+        /**
+         * ChecklistMarkKind
+         * @description The owner's word on one item of a project's or a truck's checklist.
+         * @enum {string}
+         */
+        ChecklistMarkKind: "not_needed" | "needed" | "done";
+        /** ChecklistMarkOut */
+        ChecklistMarkOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key */
+            key: string;
+            mark: components["schemas"]["ChecklistMarkKind"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Shipment Id */
+            shipment_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ChecklistMarkSet */
+        ChecklistMarkSet: {
+            /** Key */
+            key: string;
+            mark: components["schemas"]["ChecklistMarkKind"];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Shipment Id */
+            shipment_id?: string | null;
         };
         /** ColumnOut */
         ColumnOut: {
@@ -2858,6 +2978,101 @@ export interface operations {
             header?: never;
             path: {
                 chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "checklists.list_checklist_items": {
+        parameters: {
+            query: {
+                project_id: string[];
+                shipment_id?: string | null;
+                state?: ("done" | "waiting" | "missing" | "not_needed")[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistItemOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "checklists.set_checklist_mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChecklistMarkSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistMarkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "checklists.delete_checklist_mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mark_id: string;
             };
             cookie?: never;
         };

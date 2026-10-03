@@ -10,6 +10,7 @@ from app.modules.conversations.models import Channel
 from app.modules.conversations.schemas import MessageSummary
 from app.modules.documents.schemas import DocumentOut
 from app.modules.projects.models import (
+    ChecklistMarkKind,
     FieldSource,
     LinkMethod,
     LinkStatus,
@@ -238,3 +239,40 @@ class ProposalPage(BaseModel):
 
 class ProposalDecision(BaseModel):
     status: Literal["accepted", "dismissed"]
+
+
+ChecklistState = Literal["done", "waiting", "missing", "not_needed"]
+
+
+class ChecklistMarkOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    shipment_id: uuid.UUID | None
+    key: str
+    mark: ChecklistMarkKind
+    updated_at: datetime
+
+
+class ChecklistItemOut(BaseModel):
+    """One item of a project's or a truck's checklist, as it stands: ``done`` (a confirmed paper,
+    or the owner's mark), ``waiting`` (a paper suggested, a proof not yet marked, a bill not yet
+    paid), ``missing``, or ``not_needed``. ``link_ids`` are the project links that fill it."""
+
+    project_id: uuid.UUID
+    shipment_id: uuid.UUID | None
+    key: str
+    state: ChecklistState
+    # Whether the job asks for it: the template's default, or the owner's mark.
+    required: bool
+    link_ids: list[uuid.UUID]
+    mark: ChecklistMarkOut | None
+
+
+class ChecklistMarkSet(BaseModel):
+    project_id: uuid.UUID
+    # A truck's item; null for the project's own.
+    shipment_id: uuid.UUID | None = None
+    key: str = Field(min_length=1, max_length=40)
+    mark: ChecklistMarkKind

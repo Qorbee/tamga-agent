@@ -19,6 +19,7 @@ from app.modules.companies import service as companies
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.modules.parties import service as parties
+from app.modules.projects import checklist
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProposalTarget
 from app.packs.logistics import repository
@@ -50,18 +51,21 @@ _PLATES: Final = ("truck_plate", "trailer_plate")
 async def refuse_merge(
     db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
 ) -> None:
-    """A project with a truck the owner confirmed, wrote on or followed is not merged into
+    """A project with a truck the owner confirmed, wrote on, marked or followed is not merged into
     another: the truck, and the papers confirmed on it, are tied to it in the database. The owner
     merges the other way. What code proposed goes: its papers come off its trucks, a proposed
     truck is dropped (the papers that named it propose it again on the project that stays), and
     a rejected one stays rejected there, so its plates stay out."""
     trucks = await repository.list_shipments(db, company_id, [source_id], for_update=True)
+    ids = [truck.id for truck in trucks]
     followed = {
-        location.shipment_id
-        for location in await repository.last_locations(db, company_id, [t.id for t in trucks])
+        location.shipment_id for location in await repository.last_locations(db, company_id, ids)
     }
+    marked = await checklist.marked_trucks(db, company_id, ids)
     if any(
-        truck.state is ShipmentState.CONFIRMED or truck.id in followed or _written_by_owner(truck)
+        truck.state is ShipmentState.CONFIRMED
+        or truck.id in followed | marked
+        or _written_by_owner(truck)
         for truck in trucks
     ):
         raise Conflict("This project has trucks: merge the other project into this one")
@@ -89,13 +93,13 @@ async def _keep_rejected(
     """Carries the owner's rejection of a truck to the project a merge keeps: a truck code
     proposed there with the same plates is rejected with it, and where no truck there names all
     of them, the rejected one is made again."""
-    plates = _compared_plates(rejected)
-    same = [truck for truck in target if _compared_plates(truck) & plates]
+    plates = compared_plates(rejected)
+    same = [truck for truck in target if compared_plates(truck) & plates]
     proposed = [truck for truck in same if truck.state is ShipmentState.PROPOSED]
     await projects.take_off_trucks(db, company_id, [truck.id for truck in proposed])
     for truck in proposed:
         truck.state = ShipmentState.REJECTED
-    if plates <= {plate for truck in same for plate in _compared_plates(truck)}:
+    if plates <= {plate for truck in same for plate in compared_plates(truck)}:
         return
     again = await add_shipment(db, company_id=company_id, project_id=target_id)
     again.state, again.evidence = ShipmentState.REJECTED, list(rejected.evidence)
@@ -104,7 +108,8 @@ async def _keep_rejected(
     target.append(again)
 
 
-def _compared_plates(truck: Shipment) -> set[str]:
+def compared_plates(truck: Shipment) -> set[str]:
+    """A truck's plates as facts compare them."""
     return {extractors.reference(p) for p in (truck.truck_plate, truck.trailer_plate) if p}
 
 
@@ -375,7 +380,7 @@ async def trucks_billed(
         if truck.state is ShipmentState.CONFIRMED
     }
     # The bill as booked, and the e-invoice it was booked from, whose plates filing read too.
-    records = [invoice_id, *await books.booked_from(db, company_id, invoice_id)]
+    records = [invoice_id, *await books.booked_from(db, company_id, [invoice_id])]
     named = {
         fact.normalised
         for fact in await facts.facts_of_items(

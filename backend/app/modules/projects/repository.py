@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.modules.projects.models import (
+    ChecklistMark,
+    ChecklistMarkKind,
     FieldProposal,
     FieldSource,
     LinkMethod,
@@ -387,6 +389,22 @@ async def links_of_items(
     return rows.all()
 
 
+async def links_of_projects(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> Sequence[ProjectLink]:
+    """These projects' evidence, oldest first, without what the owner rejected."""
+    rows = await db.scalars(
+        select(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.project_id.in_(project_ids),
+            ProjectLink.status != LinkStatus.REJECTED,
+        )
+        .order_by(ProjectLink.created_at, ProjectLink.id)
+    )
+    return rows.all()
+
+
 async def links_of_project(
     db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
 ) -> Sequence[ProjectLink]:
@@ -635,4 +653,90 @@ async def activate_if_draft(db: AsyncSession, company_id: uuid.UUID, project_id:
         )
         .values(status=ProjectStatus.ACTIVE)
         .execution_options(synchronize_session="fetch")
+    )
+
+
+# Checklist marks
+
+
+async def marks_of_projects(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> Sequence[ChecklistMark]:
+    rows = await db.scalars(
+        select(ChecklistMark).where(
+            ChecklistMark.company_id == company_id, ChecklistMark.project_id.in_(project_ids)
+        )
+    )
+    return rows.all()
+
+
+async def set_mark(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    project_id: uuid.UUID,
+    shipment_id: uuid.UUID | None,
+    key: str,
+    mark: ChecklistMarkKind,
+) -> ChecklistMark:
+    statement = (
+        insert(ChecklistMark)
+        .values(
+            company_id=company_id,
+            project_id=project_id,
+            shipment_id=shipment_id,
+            key=key,
+            mark=mark,
+        )
+        .on_conflict_do_update(
+            index_elements=["company_id", "project_id", "shipment_id", "key"],
+            set_={"mark": mark, "updated_at": func.now()},
+        )
+        .returning(ChecklistMark)
+        .execution_options(populate_existing=True)
+    )
+    return (await db.scalars(statement)).one()
+
+
+async def get_mark(
+    db: AsyncSession, company_id: uuid.UUID, mark_id: uuid.UUID
+) -> ChecklistMark | None:
+    rows = await db.scalars(
+        select(ChecklistMark).where(
+            ChecklistMark.company_id == company_id, ChecklistMark.id == mark_id
+        )
+    )
+    return rows.first()
+
+
+async def marked_trucks(
+    db: AsyncSession, company_id: uuid.UUID, shipment_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    rows = await db.scalars(
+        select(ChecklistMark.shipment_id).where(
+            ChecklistMark.company_id == company_id, ChecklistMark.shipment_id.in_(shipment_ids)
+        )
+    )
+    return {row for row in rows.all() if row is not None}
+
+
+async def move_marks(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """Moves a merged project's own marks where the project that stays has none for the item;
+    the rest go with the project."""
+    kept = select(ChecklistMark.key).where(
+        ChecklistMark.company_id == company_id,
+        ChecklistMark.project_id == target_id,
+        ChecklistMark.shipment_id.is_(None),
+    )
+    await db.execute(
+        update(ChecklistMark)
+        .where(
+            ChecklistMark.company_id == company_id,
+            ChecklistMark.project_id == source_id,
+            ChecklistMark.shipment_id.is_(None),
+            ChecklistMark.key.not_in(kept),
+        )
+        .values(project_id=target_id)
+        .execution_options(synchronize_session=False)
     )

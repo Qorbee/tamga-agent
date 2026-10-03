@@ -270,10 +270,13 @@ async def _record_facts(
 
 
 async def booked_from(
-    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
-) -> list[uuid.UUID]:
-    """The records that are this bill too: an incoming e-invoice booked as this purchase."""
-    return list(await repository.same_as(db, company_id, invoice_id))
+    db: AsyncSession, company_id: uuid.UUID, invoice_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """The records that are these bills too: each incoming e-invoice booked as one of these
+    purchases, with the purchase."""
+    if not invoice_ids:
+        return {}
+    return dict(await repository.same_as(db, company_id, invoice_ids))
 
 
 async def placeable_invoices(db: AsyncSession, company_id: uuid.UUID) -> list[InvoiceOut]:
