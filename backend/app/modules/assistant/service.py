@@ -44,7 +44,7 @@ from app.modules.assistant.schemas import (
 from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
 from app.modules.projects import service as projects
-from app.platform import llm
+from app.platform import events, llm
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session, violated_constraint
@@ -504,6 +504,8 @@ async def end_run(
     async with open_session() as db:
         await repository.settle_run(db, company_id, run_id, requests)
         await repository.end_run(db, company_id, chat_id, began)
+        # The owner's other tabs and devices, and the members', see the chat move.
+        await events.publish(db, company_id, events.EventKind.CHAT, chat_id)
         await db.commit()
 
 

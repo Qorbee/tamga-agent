@@ -209,6 +209,12 @@ export const listProposals = (params: { status?: FieldProposal["status"][]; limi
 export const decideProposal = (id: string, status: Schemas["ProposalDecision"]["status"]) =>
   request<FieldProposal>(`/field-proposals/${id}`, json("PATCH", { status }));
 
+// The company event stream: a note that something changed, never its content. What changed is
+// read again through the resources above.
+export type CompanyEvent = Schemas["CompanyEvent"];
+export const openCompanyEvents = () =>
+  new EventSource(`${env.apiUrl}/events`, { withCredentials: true });
+
 // Books: invoices as the accounting system holds them, read only.
 export type Invoice = Schemas["InvoiceOut"];
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);

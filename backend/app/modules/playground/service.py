@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
 from app.modules.settlement import service as settlement
-from app.platform import jobs
+from app.platform import events, jobs
 from app.platform.db import open_session
 
 logger = logging.getLogger(__name__)
@@ -53,4 +53,7 @@ async def seed(company_id: uuid.UUID) -> None:
     # Its account on the vault is opened once its books say whom it owes, who become its payees.
     async with open_session() as db:
         await settlement.open_later(db, company_id, settlement.sandbox_terms())
+        # The judge's page was open while it was seeded: everything it shows is new.
+        for kind in events.EventKind:
+            await events.publish(db, company_id, kind)
         await db.commit()

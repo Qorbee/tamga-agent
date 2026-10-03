@@ -59,6 +59,17 @@ export const tr: Dictionary = {
     writesIn: "Tamga'nın yazı dili",
     writesInHint: "Proje adları ve gelen kutusundaki notları. Sohbet, yazdığınız dilde yanıt verir.",
     ownerOnly: "Bunu yalnızca şirket sahibi değiştirir.",
+    notifications: "Bildirimler",
+    notifyHere: "Bu cihazda",
+    notifyHint: "Bu sekme arka plandayken Tamga size yazınca bir bildirim.",
+    notifyTurnOn: "Aç",
+    notifyOn: "Açık",
+    notifyBlocked: "Bu tarayıcının ayarlarında engelli",
+  },
+  events: {
+    tamgaWrote: "Tamga size yazdı",
+    open: "Aç",
+    dismiss: "Kapat",
   },
   translate: {
     show: "Tamga'nın notlarını Türkçe göster",

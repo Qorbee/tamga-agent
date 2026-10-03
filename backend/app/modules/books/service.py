@@ -36,7 +36,7 @@ from app.modules.facts.service import NewFact
 from app.modules.parties import service as parties
 from app.modules.parties.models import IdentifierKind
 from app.modules.parties.service import Identifier
-from app.platform import clock
+from app.platform import clock, events
 from app.platform.auth import Actor
 from app.platform.db import open_session
 from app.platform.errors import NotFound
@@ -103,6 +103,8 @@ async def sync_pilot_books() -> SyncResult:
             one = await sync_source(company_id, source)
         finally:
             await source.close()
+        if one.parties or one.invoices:
+            await events.publish_now(company_id, [events.EventKind.INVOICES])
         result.parties += one.parties
         result.invoices += one.invoices
         result.dispatches += one.dispatches

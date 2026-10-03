@@ -10,21 +10,20 @@ export const chatMessagesKey = (id: string) => ["chat-messages", id] as const;
 /** How long messages read ahead of a chat's opening are fresh enough not to be read again for it. */
 const READ_AHEAD = 30_000;
 
-/** How often the list is read again: quickly while Tamga answers somewhere, else now and then. */
+/** How often the list is read again while Tamga answers somewhere. */
 const WHILE_ANSWERING = 3_000;
-const AT_REST = 30_000;
 
 /**
- * The company's chats that are not archived, those this user has not read first. Until the
- * server pushes its events, the list is read again on a timer, so a chat Tamga wrote in shows
- * as unread without a reload.
+ * The company's chats that are not archived, those this user has not read first. The company
+ * event stream says when one changes (`features/shell/company-events.tsx`); while a chat is
+ * being answered the list is also read on a timer, for the end of a run on another device.
  */
 export function useChats() {
   return useQuery({
     queryKey: CHATS_KEY,
     queryFn: () => listChats({}),
     refetchInterval: (query) =>
-      query.state.data?.items.some((chat) => chat.running) ? WHILE_ANSWERING : AT_REST,
+      query.state.data?.items.some((chat) => chat.running) ? WHILE_ANSWERING : false,
   });
 }
 

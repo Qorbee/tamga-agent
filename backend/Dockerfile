@@ -53,4 +53,7 @@ WORKDIR /app
 USER app
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# The company event stream holds a response open for minutes: on a stop, open streams are cut
+# after five seconds, so the app's own shutdown (tracing flushed, the listener closed) still runs
+# inside Docker's ten.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--timeout-graceful-shutdown", "5"]

@@ -47,7 +47,7 @@ from app.modules.projects.models import (
     ProjectStatus,
 )
 from app.modules.projects.schemas import ProjectJob
-from app.platform import llm
+from app.platform import events, llm
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -201,6 +201,8 @@ async def place_pending() -> int:
                     await db.commit()
                 continue
             placed += done
+            if done:
+                await events.publish_now(company_id, [events.EventKind.PROJECTS])
             async with open_session() as db:
                 left = await conversations.model_reads_left(db, company_id)
         await _place_bills(company_id)
@@ -218,6 +220,8 @@ async def _place_bills(company_id: uuid.UUID) -> None:
     try:
         async with open_session() as db:
             bills = await place_invoices(db, company_id)
+            if bills.linked:
+                await events.publish(db, company_id, events.EventKind.PROJECTS)
             await db.commit()
     except Exception as error:
         logger.warning("placing bills failed: %s", type(error).__name__)

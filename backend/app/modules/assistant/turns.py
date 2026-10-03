@@ -34,7 +34,7 @@ from app.modules.linking.models import Outcome
 from app.modules.linking.schemas import PlacementOut
 from app.modules.projects import service as projects
 from app.modules.projects.models import ProjectStatus
-from app.platform import llm
+from app.platform import events, llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -352,6 +352,7 @@ async def _speak(company: Company, finding: Finding) -> int:
             await repository.touch_record(db, kept, record_kind, record_id, at, raised=True)
             for opened_kind, opened_id in dict.fromkeys(seat.opened):
                 await repository.touch_record(db, kept, opened_kind, opened_id, at)
+            await events.publish(db, company.id, events.EventKind.CHAT, chat_id, by_tamga=True)
             await db.commit()
             stored = True
     await service.end_run(company.id, chat_id, run_id, now, usage.requests)

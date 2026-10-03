@@ -30,7 +30,7 @@ libarchive installed (the root README says how):
 cp .env.example .env
 uv sync
 uv run alembic upgrade head
-uv run uvicorn app.main:app --reload     # http://localhost:8000/docs
+uv run uvicorn app.main:app --reload --timeout-graceful-shutdown 5    # http://localhost:8000/docs
 ```
 
 ## Checks

@@ -405,6 +405,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Events
+         * @description What changes in the caller's company from now on: one note per kind and record, without
+         *     its content. The browser reads what changed through the resources it already uses.
+         */
+        get: operations["events.stream_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/field-proposals": {
         parameters: {
             query?: never;
@@ -1302,6 +1323,17 @@ export interface components {
              */
             role: "activity";
         };
+        /** CompanyEvent */
+        CompanyEvent: {
+            /**
+             * By Tamga
+             * @default false
+             */
+            by_tamga: boolean;
+            /** Id */
+            id?: string | null;
+            kind: components["schemas"]["EventKind"];
+        };
         /**
          * CompanyKind
          * @description Whose data the company holds (ADR-0003).
@@ -1480,6 +1512,11 @@ export interface components {
             /** Filename */
             filename?: string | null;
         };
+        /**
+         * EventKind
+         * @enum {string}
+         */
+        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices";
         /**
          * FieldSource
          * @description Where an editable field's value came from; the owner's always wins (ADR-0010).
@@ -3466,6 +3503,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "events.stream_events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
                 };
             };
         };

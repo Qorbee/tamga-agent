@@ -5,13 +5,14 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 import { AppSidebar } from "./app-sidebar";
+import { CompanyEvents } from "./company-events";
 import { SearchDialog } from "./search-dialog";
 import { SettingsDialog } from "./settings-dialog";
 import { ShellActionsContext } from "./shell-actions";
 
 /**
  * The owner app's frame: sidebar, the page, and the canvas, plus the two dialogs any part of it
- * opens (Search, Settings). The sizes come from the layout, which reads them from cookies, so the
+ * opens (Search, Settings), and the company event stream that keeps them current. The sizes come from the layout, which reads them from cookies, so the
  * first render already has the owner's widths. `canvas` is the canvas, sized by the layout too.
  */
 export function AppShell({
@@ -69,6 +70,7 @@ export function AppShell({
       </SidebarProvider>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <CompanyEvents />
     </ShellActionsContext.Provider>
   );
 }

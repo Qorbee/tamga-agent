@@ -44,7 +44,7 @@ from app.modules.documents import service as documents
 from app.modules.documents.schemas import Holder
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import llm, search, storage
+from app.platform import events, llm, search, storage
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -473,6 +473,7 @@ async def process_pending() -> int:
             try:
                 async with open_session() as db:
                     await process_message(db, company_id, message_id)
+                    await events.publish(db, company_id, events.EventKind.THREADS)
                     await db.commit()
             except Exception as error:  # one mail that fails never stops the others
                 # The error's type only: a database error's text can carry the values it wrote.
@@ -625,8 +626,11 @@ async def sort_pending() -> int:
     sorted_count = 0
     for company_id in company_ids:
         async with open_session() as db:
-            sorted_count += await repository.sort_by_rules(db, company_id, now)
+            by_rules = await repository.sort_by_rules(db, company_id, now)
+            if by_rules:
+                await events.publish(db, company_id, events.EventKind.THREADS)
             await db.commit()
+            sorted_count += by_rules
             left = budget - await repository.model_reads_since(db, company_id, now - SORT_WINDOW)
             waiting = await repository.unsorted_threads(
                 db,
@@ -650,6 +654,7 @@ async def sort_pending() -> int:
                     await repository.add_sort_failure(db, company_id, thread_key, utcnow())
                     await db.commit()
                 continue
+            await events.publish_now(company_id, [events.EventKind.THREADS])
             sorted_count += 1
     return sorted_count
 

@@ -802,6 +802,35 @@
         "title": "CompactionMessage",
         "type": "object"
       },
+      "CompanyEvent": {
+        "properties": {
+          "by_tamga": {
+            "default": false,
+            "title": "By Tamga",
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EventKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "CompanyEvent",
+        "type": "object"
+      },
       "CompanyKind": {
         "description": "Whose data the company holds (ADR-0003).",
         "enum": [
@@ -1296,6 +1325,17 @@
         },
         "title": "DocumentUpdate",
         "type": "object"
+      },
+      "EventKind": {
+        "enum": [
+          "chat",
+          "projects",
+          "documents",
+          "threads",
+          "invoices"
+        ],
+        "title": "EventKind",
+        "type": "string"
       },
       "FieldSource": {
         "description": "Where an editable field's value came from; the owner's always wins (ADR-0010).",
@@ -6186,6 +6226,55 @@
         "summary": "Get Document Text",
         "tags": [
           "documents"
+        ]
+      }
+    },
+    "/events": {
+      "get": {
+        "description": "What changes in the caller's company from now on: one note per kind and record, without\nits content. The browser reads what changed through the resources it already uses.",
+        "operationId": "events.stream_events",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "properties": {
+                    "data": {
+                      "contentMediaType": "application/json",
+                      "contentSchema": {
+                        "$ref": "#/components/schemas/CompanyEvent"
+                      },
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Stream Events",
+        "tags": [
+          "events"
         ]
       }
     },

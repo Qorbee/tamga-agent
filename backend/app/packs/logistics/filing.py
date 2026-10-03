@@ -33,6 +33,7 @@ from app.modules.projects.models import (
 from app.packs.logistics import repository
 from app.packs.logistics.models import Shipment, ShipmentState
 from app.packs.logistics.service import add_shipment, fill_shipment
+from app.platform import events
 from app.platform.db import open_session
 from app.platform.items import ItemKind
 
@@ -65,6 +66,8 @@ async def file_all() -> Filed:
     for company_id in company_ids:
         async with open_session() as db:
             filed = await file_company(db, company_id)
+            if filed.trucks or filed.placed or filed.bills:
+                await events.publish(db, company_id, events.EventKind.PROJECTS)
             await db.commit()
         total.trucks += filed.trucks
         total.placed += filed.placed

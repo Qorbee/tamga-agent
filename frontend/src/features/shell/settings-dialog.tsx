@@ -13,12 +13,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getMe, updateCompany, type WritingLanguage } from "@/lib/api";
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+
+import { allowNotifications, canNotify } from "./notify";
 
 // The chosen option is filled and in full ink; the others recede.
 const SEGMENT =
@@ -59,6 +62,7 @@ export function SettingsDialog({
             <LanguagePicker />
           </Row>
         </section>
+        <NotificationsSection />
         <section className="flex flex-col">
           <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.company}</h3>
           <Row label={t.settings.writesIn} hint={t.settings.writesInHint}>
@@ -79,6 +83,43 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </span>
       {children}
     </div>
+  );
+}
+
+/** Rendered only while the dialog is open, in the browser; a browser with no notifications has
+ * nothing to show here. */
+function NotificationsSection() {
+  const { t } = useI18n();
+  if (!canNotify()) return null;
+  return (
+    <section className="flex flex-col">
+      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.notifications}</h3>
+      <Row label={t.settings.notifyHere} hint={t.settings.notifyHint}>
+        <BrowserNotifications />
+      </Row>
+    </section>
+  );
+}
+
+/** The browser's own notification, asked for once: a browser that was refused never asks again. */
+function BrowserNotifications() {
+  const { t } = useI18n();
+  const [permission, setPermission] = useState(() => Notification.permission);
+
+  if (permission === "granted") {
+    return <span className="text-muted-foreground text-sm">{t.settings.notifyOn}</span>;
+  }
+  if (permission === "denied") {
+    return <span className="text-muted-foreground text-sm">{t.settings.notifyBlocked}</span>;
+  }
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => void allowNotifications().then(setPermission)}
+    >
+      {t.settings.notifyTurnOn}
+    </Button>
   );
 }
 

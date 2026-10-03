@@ -62,6 +62,17 @@ export const en = {
     writesIn: "Tamga writes in",
     writesInHint: "Project names and its notes in the Inbox. The chat answers in the language you write in.",
     ownerOnly: "Only the owner changes this.",
+    notifications: "Notifications",
+    notifyHere: "On this device",
+    notifyHint: "A notice when Tamga writes to you while this tab is in the background.",
+    notifyTurnOn: "Turn on",
+    notifyOn: "On",
+    notifyBlocked: "Blocked in this browser's settings",
+  },
+  events: {
+    tamgaWrote: "Tamga wrote to you",
+    open: "Open",
+    dismiss: "Dismiss",
   },
   translate: {
     show: "Show Tamga's notes in English",

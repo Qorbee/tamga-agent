@@ -61,6 +61,12 @@ strict = true
 packages = ["app"]
 
 [[tool.mypy.overrides]]
+# asyncpg ships no types (SQLAlchemy drives it everywhere else); platform/events.py only listens
+# with it, and hands on the text of each note it hears.
+module = ["asyncpg", "asyncpg.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # xlrd ships no types and has no stubs; documents/sheets.py turns what it reads into typed rows.
 module = ["xlrd", "xlrd.*"]
 ignore_missing_imports = true

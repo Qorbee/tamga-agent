@@ -25,10 +25,11 @@ from app.modules.parties import router as parties
 from app.modules.projects import router as projects
 from app.modules.translations import router as translations
 from app.packs.logistics import router as logistics
-from app.platform import isolated, tracing
+from app.platform import events, isolated, tracing
 from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
 from app.platform.origin import OriginCheck
+from app.routers import events as event_stream
 from app.routers import health
 
 
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         # Sending what is batched waits on the network: never on the event loop.
         await asyncio.to_thread(tracing.shutdown_tracing)
+        await events.close()
         await dispose_db()
 
 
@@ -80,6 +82,7 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
 
     app.include_router(health.router)
+    app.include_router(event_stream.router)
     # Each module's routers, one line each.
     app.include_router(identity.sessions)
     app.include_router(identity.me)

@@ -41,7 +41,17 @@ from app.modules.documents.schemas import (
 )
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import converter, filetypes, html, isolated, jobs, llm, search, storage
+from app.platform import (
+    converter,
+    events,
+    filetypes,
+    html,
+    isolated,
+    jobs,
+    llm,
+    search,
+    storage,
+)
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -609,6 +619,7 @@ async def read_pending() -> int:
             try:
                 async with open_session() as db:
                     await read_document(db, company_id, document_id)
+                    await events.publish(db, company_id, events.EventKind.DOCUMENTS)
                     await db.commit()
             except Exception as error:  # one file that fails never stops the others
                 # The error's type only: its text can carry what the file holds.
@@ -732,6 +743,7 @@ async def read_pending_with_vision() -> int:
                 continue
             if pictures is None:
                 break
+            await events.publish_now(company_id, [events.EventKind.DOCUMENTS])
             left -= pictures
             read += 1
     return read
