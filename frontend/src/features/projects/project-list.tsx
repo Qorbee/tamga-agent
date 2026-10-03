@@ -90,11 +90,13 @@ export function ProjectList() {
             <ToggleGroupItem
               value={value}
               aria-label={t.board.columns[value]}
-              className="group/status text-muted-foreground data-[state=on]:bg-secondary data-[state=on]:text-foreground min-w-0 gap-1.5 px-2 max-sm:data-[state=on]:flex-1 sm:flex-1"
+              // Styled by `aria-checked`, the radio's own state: the hint around it takes over
+              // `data-state` with the tooltip's (open or closed).
+              className="group/status text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground min-w-0 gap-1.5 px-2 max-sm:aria-checked:flex-1 sm:flex-1"
             >
               <HugeiconsIcon icon={STATUS_ICONS[value]} strokeWidth={1.75} className="shrink-0" />
               {/* On a phone only the chosen status is spelled out; the others are an icon and a count. */}
-              <span className="truncate max-sm:group-data-[state=off]/status:sr-only">{t.board.columns[value]}</span>
+              <span className="truncate max-sm:group-aria-[checked=false]/status:sr-only">{t.board.columns[value]}</span>
               <span className="tabular-nums">{projects.data ? count(value) : ""}</span>
             </ToggleGroupItem>
           </Hint>
