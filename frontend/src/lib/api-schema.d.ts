@@ -1257,6 +1257,7 @@ export interface components {
             created_at: string;
             /** Doc Type */
             doc_type: string | null;
+            doc_type_source: components["schemas"]["TypeSource"] | null;
             /** Download Url */
             download_url: string;
             /** Filename */
@@ -1291,6 +1292,7 @@ export interface components {
             created_at: string;
             /** Doc Type */
             doc_type: string | null;
+            doc_type_source: components["schemas"]["TypeSource"] | null;
             /** Filename */
             filename: string;
             /**
@@ -2453,6 +2455,13 @@ export interface components {
             /** Texts */
             texts: string[];
         };
+        /**
+         * TypeSource
+         * @description Who said what kind of file a document is: the owner's word stands, code and the model only
+         *     fill a type nobody gave.
+         * @enum {string}
+         */
+        TypeSource: "owner" | "code" | "model";
         /** UploadOut */
         UploadOut: {
             /**

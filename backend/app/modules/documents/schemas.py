@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.modules.documents.models import ReadState
+from app.modules.documents.models import ReadState, TypeSource
 from app.modules.documents.sheets import Border, CellKind, HAlign, VAlign
 from app.platform.filetypes import Preview
 from app.platform.isolated import Reason
@@ -17,6 +17,8 @@ class DocumentOut(BaseModel):
     content_type: str
     size: int
     doc_type: str | None
+    # Who gave the type: the owner, code reading the file, or a model; null while it has none.
+    doc_type_source: TypeSource | None
     sha256: str
     created_at: datetime
     # How the web app can show it (GET /documents/{id}/content, /sheets, /parts, /rendition, /html

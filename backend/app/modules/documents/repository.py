@@ -10,6 +10,7 @@ from app.modules.documents.models import (
     Document,
     DocumentPart,
     ReadState,
+    TypeSource,
     Upload,
     VisionRead,
 )
@@ -69,6 +70,37 @@ async def get_many(
 ) -> Sequence[Document]:
     rows = await db.scalars(
         select(Document).where(Document.company_id == company_id, Document.id.in_(ids))
+    )
+    return rows.all()
+
+
+async def type_if_untyped(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, key: str, source: TypeSource
+) -> bool:
+    """Types a file only if its stored row has no type, in one statement."""
+    typed = await db.execute(
+        update(Document)
+        .where(
+            Document.company_id == company_id,
+            Document.id == document_id,
+            Document.doc_type.is_(None),
+        )
+        .values(doc_type=key, doc_type_source=source)
+        .execution_options(synchronize_session=False)
+    )
+    return bool(getattr(typed, "rowcount", 0))
+
+
+async def untyped_read(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Document]:
+    """The company's files that were read and have no type yet."""
+    rows = await db.scalars(
+        select(Document)
+        .where(
+            Document.company_id == company_id,
+            Document.read_state == ReadState.READ,
+            Document.doc_type.is_(None),
+        )
+        .order_by(Document.id)
     )
     return rows.all()
 

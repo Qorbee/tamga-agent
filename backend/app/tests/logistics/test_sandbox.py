@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
+from app.modules.documents import service as documents
 from app.modules.playground import service as playground
 from app.packs.logistics import sandbox
 from app.platform.db import open_session
@@ -51,6 +52,9 @@ async def test_a_sandbox_opens_with_a_job_one_truck_of_which_can_be_paid(
     [proof] = [link for link in links["items"] if link["proof_of_delivery"]]
     assert proof["item_kind"] == "document"
     assert proof["shipment_id"] == trucks[sandbox.PLATE_DELIVERED]["id"]
+    # Once read, the CMR is typed by code.
+    await documents.read_pending()
+    assert (await client.get(f"/documents/{proof['item_id']}")).json()["doc_type"] == "cmr"
     on_road = [
         link for link in links["items"] if link["shipment_id"] == trucks[sandbox.PLATE_MOVING]["id"]
     ]

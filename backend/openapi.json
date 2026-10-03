@@ -791,6 +791,16 @@
             ],
             "title": "Doc Type"
           },
+          "doc_type_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TypeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "download_url": {
             "title": "Download Url",
             "type": "string"
@@ -860,6 +870,7 @@
           "content_type",
           "size",
           "doc_type",
+          "doc_type_source",
           "sha256",
           "created_at",
           "preview",
@@ -898,6 +909,16 @@
               }
             ],
             "title": "Doc Type"
+          },
+          "doc_type_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TypeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "filename": {
             "title": "Filename",
@@ -957,6 +978,7 @@
           "content_type",
           "size",
           "doc_type",
+          "doc_type_source",
           "sha256",
           "created_at",
           "preview",
@@ -4384,6 +4406,16 @@
         ],
         "title": "TranslationRequest",
         "type": "object"
+      },
+      "TypeSource": {
+        "description": "Who said what kind of file a document is: the owner's word stands, code and the model only\nfill a type nobody gave.",
+        "enum": [
+          "owner",
+          "code",
+          "model"
+        ],
+        "title": "TypeSource",
+        "type": "string"
       },
       "UploadOut": {
         "properties": {

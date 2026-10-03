@@ -20,11 +20,12 @@ from pydantic import BaseModel, ValidationError
 from pydantic_ai import UsageLimits
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import get_settings
 from app.modules.companies import service as companies
 from app.modules.documents import agents, reading, registry, repository, unpacking
-from app.modules.documents.models import Document, DocumentPart, ReadState, Upload
+from app.modules.documents.models import Document, DocumentPart, ReadState, TypeSource, Upload
 from app.modules.documents.schemas import (
     DocumentDetail,
     DocumentOut,
@@ -40,7 +41,7 @@ from app.modules.documents.schemas import (
 )
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import converter, filetypes, html, isolated, jobs, llm, storage
+from app.platform import converter, filetypes, html, isolated, jobs, llm, search, storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -119,8 +120,36 @@ def on_read(listener: ReadListener) -> None:
 
 async def _was_read(db: AsyncSession, document: Document) -> None:
     document.read_state, document.read_at = ReadState.READ, utcnow()
+    await _classify(db, document)
     for listener in _read_listeners:
         await listener(db, document.company_id, document.id)
+
+
+async def _classify(db: AsyncSession, document: Document) -> None:
+    """Types a file nobody typed by what is plainly written in it, before anything that rests on
+    its type hears of it. Written only where the stored row is still untyped: a type the owner
+    saved while the file was being read stands."""
+    if document.doc_type is not None:
+        return
+    key = registry.classify(
+        registry.Seen(filename=document.filename, text=search.fold(document.text))
+    )
+    if key is not None and await repository.type_if_untyped(
+        db, document.company_id, document.id, key, TypeSource.CODE
+    ):
+        set_committed_value(document, "doc_type", key)
+        set_committed_value(document, "doc_type_source", TypeSource.CODE)
+
+
+async def classify_read(db: AsyncSession, company_id: uuid.UUID) -> dict[str, int]:
+    """Types by code every file of the company read before the rules existed, and counts them
+    by type. Does not commit."""
+    counts: dict[str, int] = {}
+    for document in await repository.untyped_read(db, company_id):
+        await _classify(db, document)
+        if document.doc_type is not None:
+            counts[document.doc_type] = counts.get(document.doc_type, 0) + 1
+    return counts
 
 
 def register_name_codepage(country: str, codepage: str) -> None:
@@ -203,9 +232,10 @@ async def upload(
         filename=filename,
         content_type=content_type or "application/octet-stream",
     )
-    # The uploader's type fills an unknown one; it never replaces a type already recorded.
-    if doc_type is not None and document.doc_type is None:
-        document.doc_type = doc_type
+    # The uploader's type fills an unknown one, or one code or a model guessed; it never replaces
+    # a type a person gave.
+    if doc_type is not None and document.doc_type_source is not TypeSource.OWNER:
+        document.doc_type, document.doc_type_source = doc_type, TypeSource.OWNER
     row = Upload(
         company_id=actor.company_id,
         document_id=document.id,
@@ -435,6 +465,8 @@ async def update_document(
     if "doc_type" in body.model_fields_set:
         _check_type(body.doc_type)
         document.doc_type = body.doc_type
+        # Cleared, the type is unknown again, and code may tell it next time the file is read.
+        document.doc_type_source = TypeSource.OWNER if body.doc_type is not None else None
     if body.filename is not None:
         name = _new_name(document.filename, body.filename)
         await _check_renamable(db, actor.company_id, document)
@@ -611,8 +643,10 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         if _holds_writing(data):
             document.needs_vision = True
         else:
-            # Nothing was learned of it, so what rests on a file's reading is not told.
+            # Nothing was learned of it, so what rests on a file's reading is not told; its name
+            # may still say what it is.
             document.read_state, document.read_at = ReadState.READ, utcnow()
+            await _classify(db, document)
         return
     elif media in filetypes.SHEETS:
         read = await _read_sheet(data, media)
@@ -794,6 +828,7 @@ async def read_with_vision(
                 # What code read of it stays, and says its scanned pages are missing.
                 document.read_state, document.read_at = ReadState.READ, utcnow()
                 document.truncated = True
+                await _classify(db, document)
             elif isinstance(seen, isolated.Reason):
                 _unreadable(document, seen)
             else:
@@ -1224,6 +1259,7 @@ def _out(document: Document) -> DocumentOut:
         content_type=document.content_type,
         size=document.size,
         doc_type=document.doc_type,
+        doc_type_source=document.doc_type_source,
         sha256=document.sha256.hex(),
         created_at=document.created_at,
         preview=filetypes.preview(document.content_type, document.filename),

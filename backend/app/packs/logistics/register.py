@@ -12,6 +12,8 @@ from app.packs.logistics import documents, facts, sandbox, service
 
 for document_type in documents.TYPES:
     registry.register(document_type)
+registry.register_classifier(documents.classify)
+registry.register_classifier(documents.classify_by_name, by_name=True)
 
 fields.register_target(ProposalTarget.SHIPMENT, service.accept_field)
 projects.guard_merge(service.refuse_merge)

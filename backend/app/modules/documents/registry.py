@@ -6,6 +6,7 @@ its e-documents and tax-id checks, a sector pack its own papers (a CMR); each re
 ``register.py``, so the core never imports a pack.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -42,6 +43,37 @@ def get(key: str) -> DocumentType | None:
 
 def all_types() -> list[DocumentType]:
     return sorted(_types.values(), key=lambda t: (t.pack != "core", t.pack, t.key))
+
+
+@dataclass(frozen=True, slots=True)
+class Seen:
+    """What code knows of a file once it was read, for telling its type: its name, and its text
+    folded as search folds it (no case, no accents, words between single spaces)."""
+
+    filename: str
+    text: str
+
+
+# A file's type from what is plainly written in it, or None: rules, never a model.
+type Classifier = Callable[[Seen], str | None]
+
+_by_content: list[Classifier] = []
+_by_name: list[Classifier] = []
+
+
+def register_classifier(classifier: Classifier, *, by_name: bool = False) -> None:
+    """A pack adds a rule that types a file by code: a CMR's printed boxes, an e-invoice's
+    profile. A rule that reads only the file's name (``by_name``) is weaker: every rule on what
+    the file says is asked first, whichever pack registered it."""
+    (_by_name if by_name else _by_content).append(classifier)
+
+
+def classify(seen: Seen) -> str | None:
+    for classifier in (*_by_content, *_by_name):
+        key = classifier(seen)
+        if key is not None and key in _types:
+            return key
+    return None
 
 
 class Invoice(BaseModel):

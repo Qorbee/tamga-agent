@@ -31,6 +31,15 @@ class ReadState(StrEnum):
     UNREADABLE = "unreadable"
 
 
+class TypeSource(StrEnum):
+    """Who said what kind of file a document is: the owner's word stands, code and the model only
+    fill a type nobody gave."""
+
+    OWNER = "owner"
+    CODE = "code"
+    MODEL = "model"
+
+
 class Document(CompanyScoped, Base):
     """A file, stored once per company by content: the same CMR forwarded three times is one
     document, read once. Where it came from is recorded by whoever holds it (a message's
@@ -47,6 +56,9 @@ class Document(CompanyScoped, Base):
             "created_at",
             postgresql_where=text("read_state = 'pending' AND NOT needs_vision"),
         ),
+        CheckConstraint(
+            "(doc_type IS NULL) = (doc_type_source IS NULL)", name="documents_doc_type_source_set"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -61,6 +73,9 @@ class Document(CompanyScoped, Base):
     size: Mapped[int]
     # A key in the document-type registry (documents/registry.py) once known: a CMR, an e-fatura.
     doc_type: Mapped[str | None] = mapped_column(String(40))
+    doc_type_source: Mapped[TypeSource | None] = mapped_column(
+        text_enum(TypeSource, "documents_doc_type_source_check")
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Reading it (documents/service.py, read_pending): asked for when it arrives as an attachment
