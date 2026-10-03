@@ -4,7 +4,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import ForeignKeyConstraint, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -72,6 +72,9 @@ class Invoice(CompanyScoped, Base):
     cancelled: Mapped[bool] = mapped_column(default=False)
     # The source's own status text, as read.
     status: Mapped[str | None] = mapped_column(String(60))
+    # What the invoice says it is for, as written in the books: a freight line with its route,
+    # plates or order number. Data, never instructions.
+    description: Mapped[str | None] = mapped_column(Text)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB)
     synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

@@ -11,7 +11,9 @@ from app.modules.books.models import BooksCursor, BooksReads, Dispatch, Invoice,
 from app.platform.pagination import PageParams, escape_like
 
 
-async def upsert_invoice(db: AsyncSession, values: dict[str, Any]) -> None:
+async def upsert_invoice(db: AsyncSession, values: dict[str, Any], *, read: bool = True) -> None:
+    """``read``: the values come from a read of the source, which ``synced_at`` dates; a remap of
+    a stored record keeps the date of its read."""
     statement = insert(Invoice).values(**values)
     await db.execute(
         statement.on_conflict_do_update(
@@ -21,7 +23,7 @@ async def upsert_invoice(db: AsyncSession, values: dict[str, Any]) -> None:
                 for key in values
                 if key not in ("company_id", "source", "source_id")
             }
-            | {"synced_at": func.now()},
+            | ({"synced_at": func.now()} if read else {}),
         )
     )
 
@@ -170,6 +172,17 @@ async def find_invoices(
         .where(*filters)
         .order_by(Invoice.issue_date.desc().nulls_last(), Invoice.id)
         .limit(limit)
+    )
+    return rows.all()
+
+
+async def invoices_of_source(
+    db: AsyncSession, company_id: uuid.UUID, source: str
+) -> Sequence[Invoice]:
+    rows = await db.scalars(
+        select(Invoice)
+        .where(Invoice.company_id == company_id, Invoice.source == source)
+        .order_by(Invoice.id)
     )
     return rows.all()
 

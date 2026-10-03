@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, status
 
@@ -139,6 +139,7 @@ async def list_links(
     link_status: Annotated[list[LinkStatus], Query(alias="status")] = [],  # noqa: B006
     item_kind: ItemKind | None = None,
     item_id: uuid.UUID | None = None,
+    expand: Annotated[list[Literal["item"]], Query()] = [],  # noqa: B006
 ) -> LinkPage:
     return await service.list_links(
         db,
@@ -148,6 +149,7 @@ async def list_links(
         statuses=link_status,
         item_kind=item_kind,
         item_id=item_id,
+        with_items="item" in expand,
         page=page,
     )
 

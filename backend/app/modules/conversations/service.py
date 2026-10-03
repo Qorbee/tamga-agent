@@ -807,6 +807,49 @@ async def threads_holding(
     return await _as_read_threads(db, company_id, threads)
 
 
+async def message_summaries(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, MessageSummary]:
+    """These mails as a list row shows them; one that is gone is left out."""
+    if not ids:
+        return {}
+    rows = await repository.messages_by_ids(db, company_id, ids)
+    return {message.id: _summary(message, count) for message, count in rows}
+
+
+@dataclass(frozen=True, slots=True)
+class Carrier:
+    """The first mail that brought a file."""
+
+    message_id: uuid.UUID
+    sent_at: datetime
+    channel: Channel
+
+
+async def first_carriers(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, Carrier]:
+    """For each of these files, the first mail that brought it, itself or inside an archive. A
+    file no mail brought (an upload) is left out."""
+    if not document_ids:
+        return {}
+    outer = await documents.containers_of_each(db, company_id, document_ids)
+    every = {*document_ids, *(each for containers in outer.values() for each in containers)}
+    first = {
+        document_id: Carrier(message_id=message_id, sent_at=sent_at, channel=channel)
+        for document_id, message_id, sent_at, channel in await repository.first_carriers(
+            db, company_id, list(every)
+        )
+    }
+    found = {}
+    for document_id in document_ids:
+        # The file came first in whichever came first: itself, or an archive that held it.
+        carriers = [first[each] for each in (document_id, *outer[document_id]) if each in first]
+        if carriers:
+            found[document_id] = min(carriers, key=lambda carrier: carrier.sent_at)
+    return found
+
+
 async def messages_attaching(
     db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[uuid.UUID]]:

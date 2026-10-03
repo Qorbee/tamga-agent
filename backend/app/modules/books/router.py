@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 
 from app.modules.books import service
 from app.modules.books.models import InvoiceDirection
-from app.modules.books.schemas import InvoicePage
+from app.modules.books.schemas import InvoiceOut, InvoicePage
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
 from app.platform.pagination import PageDep
@@ -25,3 +25,8 @@ async def list_invoices(
     return await service.list_invoices(
         db, actor, direction=direction, party_id=party_id, q=q, page=page
     )
+
+
+@invoices.get("/invoices/{invoice_id}")
+async def get_invoice(invoice_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> InvoiceOut:
+    return await service.get_invoice(db, actor, invoice_id)

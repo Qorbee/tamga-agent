@@ -490,6 +490,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invoices/{invoice_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Invoice */
+        get: operations["invoices.get_invoice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -1207,6 +1224,26 @@ export interface components {
          * @enum {string}
          */
         Direction: "inbound" | "outbound";
+        /**
+         * DocumentBrief
+         * @description A linked file, for the project's timeline: when and how it came.
+         */
+        DocumentBrief: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            channel: components["schemas"]["Channel"];
+            document: components["schemas"]["DocumentOut"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            item_kind: "document";
+            /** Message Id */
+            message_id: string | null;
+        };
         /** DocumentDetail */
         DocumentDetail: {
             /** Content Type */
@@ -1409,6 +1446,28 @@ export interface components {
             token: string;
         };
         /**
+         * InvoiceBrief
+         * @description A linked invoice, for the project's timeline.
+         */
+        InvoiceBrief: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Channel
+             * @constant
+             */
+            channel: "books";
+            invoice: components["schemas"]["InvoiceOut"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            item_kind: "invoice";
+        };
+        /**
          * InvoiceDirection
          * @enum {string}
          */
@@ -1424,6 +1483,8 @@ export interface components {
             cancelled: boolean;
             /** Currency */
             currency: string | null;
+            /** Description */
+            description: string | null;
             direction: components["schemas"]["InvoiceDirection"];
             /** Due Date */
             due_date: string | null;
@@ -1565,6 +1626,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Item */
+            item?: (components["schemas"]["MessageBrief"] | components["schemas"]["DocumentBrief"] | components["schemas"]["InvoiceBrief"]) | null;
             /**
              * Item Id
              * Format: uuid
@@ -1707,6 +1770,24 @@ export interface components {
             row: number;
             /** Rows */
             rows: number;
+        };
+        /**
+         * MessageBrief
+         * @description A linked mail, for the project's timeline.
+         */
+        MessageBrief: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            channel: components["schemas"]["Channel"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            item_kind: "message";
+            message: components["schemas"]["MessageSummary"];
         };
         /** MessageOut */
         MessageOut: {
@@ -3404,6 +3485,37 @@ export interface operations {
             };
         };
     };
+    "invoices.get_invoice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "me.get_me": {
         parameters: {
             query?: never;
@@ -3698,6 +3810,7 @@ export interface operations {
                 status?: components["schemas"]["LinkStatus"][];
                 item_kind?: components["schemas"]["ItemKind"] | null;
                 item_id?: string | null;
+                expand?: "item"[];
                 limit?: number;
                 offset?: number;
             };

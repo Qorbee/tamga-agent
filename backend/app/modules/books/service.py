@@ -36,6 +36,7 @@ from app.modules.parties.service import Identifier
 from app.platform import clock
 from app.platform.auth import Actor
 from app.platform.db import open_session
+from app.platform.errors import NotFound
 from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
@@ -200,7 +201,12 @@ async def _sync_windows(
 
 
 async def _store_invoice(
-    db: AsyncSession, company_id: uuid.UUID, source: str, record: InvoiceRecord
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    source: str,
+    record: InvoiceRecord,
+    *,
+    read: bool = True,
 ) -> None:
     party_id = await _party_id(db, company_id, source, record.party_source_id, record.party_tax_id)
     await repository.upsert_invoice(
@@ -225,8 +231,10 @@ async def _store_invoice(
             "remaining_amount": record.remaining_amount,
             "cancelled": record.cancelled,
             "status": _cut(record.status, 60),
+            "description": record.description,
             "raw": record.raw,
         },
+        read=read,
     )
 
 
@@ -336,6 +344,33 @@ async def get_invoices(
 ) -> list[InvoiceOut]:
     rows = await repository.get_invoices(db, company_id, ids)
     return [InvoiceOut.model_validate(row) for row in rows]
+
+
+async def get_invoice(db: AsyncSession, actor: Actor, invoice_id: uuid.UUID) -> InvoiceOut:
+    found = await get_invoices(db, actor.company_id, [invoice_id])
+    if not found:
+        raise NotFound("No such invoice")
+    return found[0]
+
+
+async def remap_invoices(db: AsyncSession, company_id: uuid.UUID) -> int:
+    """Maps every stored invoice again from the record its source gave, so a field the mapping
+    has learned fills without reading the source again. Returns how many changed; does not
+    commit."""
+    changed = 0
+    for name, registered in sources.registered().items():
+        if registered.remap is None:
+            continue
+        for invoice in await repository.invoices_of_source(db, company_id, name):
+            record = registered.remap(invoice.raw, invoice.direction, invoice.kind)
+            if record is None or record.source_id != invoice.source_id:
+                continue
+            before = InvoiceOut.model_validate(invoice).model_dump(exclude={"synced_at"})
+            await _store_invoice(db, company_id, name, record, read=False)
+            await db.refresh(invoice)
+            if InvoiceOut.model_validate(invoice).model_dump(exclude={"synced_at"}) != before:
+                changed += 1
+    return changed
 
 
 async def invoices_named(

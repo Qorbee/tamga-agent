@@ -16,7 +16,7 @@ transaction and never commit; those behind the API commit.
 
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Final
 
@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.books import service as books
 from app.modules.companies import service as companies
 from app.modules.conversations import service as conversations
+from app.modules.conversations.models import Channel
 from app.modules.documents import service as documents
 from app.modules.documents.schemas import Holder
 from app.modules.parties import service as parties
@@ -46,8 +47,12 @@ from app.modules.projects.models import (
     ProposalTarget,
 )
 from app.modules.projects.schemas import (
+    DocumentBrief,
+    InvoiceBrief,
+    ItemBrief,
     LinkOut,
     LinkPage,
+    MessageBrief,
     NumberingOut,
     ProjectJob,
     ProjectOut,
@@ -88,6 +93,7 @@ _SORTS: Final[dict[str, ColumnElement[Any]]] = {
 }
 # Editable project fields; stage is computed, status moves only through _TRANSITIONS.
 _DATES: Final = ("starts_on", "ends_on")
+_NOON: Final = time(12)
 _PROJECT_FIELDS: Final = frozenset({"name", "number", *_DATES})
 
 
@@ -972,6 +978,7 @@ async def list_links(
     statuses: Sequence[LinkStatus],
     item_kind: ItemKind | None,
     item_id: uuid.UUID | None,
+    with_items: bool = False,
     page: PageParams,
 ) -> LinkPage:
     rows, total = await repository.list_links(
@@ -985,12 +992,53 @@ async def list_links(
         newest_first=True,
         page=page,
     )
-    return LinkPage(
-        items=[LinkOut.model_validate(row) for row in rows],
-        total=total,
-        limit=page.limit,
-        offset=page.offset,
-    )
+    links = [LinkOut.model_validate(row) for row in rows]
+    if with_items:
+        links = await _with_items(db, actor.company_id, links)
+    return LinkPage(items=links, total=total, limit=page.limit, offset=page.offset)
+
+
+async def _with_items(
+    db: AsyncSession, company_id: uuid.UUID, links: list[LinkOut]
+) -> list[LinkOut]:
+    """Each link with what its item is, each kind read in one go."""
+
+    def ids(kind: ItemKind) -> list[uuid.UUID]:
+        return list({link.item_id for link in links if link.item_kind is kind})
+
+    file_ids = ids(ItemKind.DOCUMENT)
+    messages = await conversations.message_summaries(db, company_id, ids(ItemKind.MESSAGE))
+    files = await documents.document_outs(db, company_id, file_ids)
+    carriers = await conversations.first_carriers(db, company_id, file_ids)
+    invoices = {
+        each.id: each for each in await books.get_invoices(db, company_id, ids(ItemKind.INVOICE))
+    }
+    briefs: dict[uuid.UUID, ItemBrief] = {}
+    for id_, message in messages.items():
+        briefs[id_] = MessageBrief(
+            item_kind="message", at=message.sent_at, channel=message.channel, message=message
+        )
+    for id_, file in files.items():
+        carrier = carriers.get(id_)
+        briefs[id_] = DocumentBrief(
+            item_kind="document",
+            at=carrier.sent_at if carrier else file.created_at,
+            channel=carrier.channel if carrier else Channel.UPLOAD,
+            document=file,
+            message_id=carrier.message_id if carrier else None,
+        )
+    for id_, invoice in invoices.items():
+        briefs[id_] = InvoiceBrief(
+            item_kind="invoice",
+            at=(
+                datetime.combine(invoice.issue_date, _NOON, tzinfo=UTC)
+                if invoice.issue_date
+                else invoice.synced_at
+            ),
+            channel="books",
+            invoice=invoice,
+        )
+    return [link.model_copy(update={"item": briefs.get(link.item_id)}) for link in links]
 
 
 async def _flush_link(db: AsyncSession, link: ProjectLink, *, add: bool = False) -> None:

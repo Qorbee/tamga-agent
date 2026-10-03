@@ -456,6 +456,35 @@ async def carriers_of(
     return list(rows.tuples().all())
 
 
+async def messages_by_ids(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> Sequence[tuple[Message, int]]:
+    """These mails, each with how many files it carried."""
+    rows = await db.execute(
+        select(Message, _file_count()).where(Message.company_id == company_id, Message.id.in_(ids))
+    )
+    return rows.tuples().all()
+
+
+async def first_carriers(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, uuid.UUID, datetime, Channel]]:
+    """For each of these files, the earliest mail that carried it: the file, the mail, its time
+    and its channel."""
+    rows = await db.execute(
+        select(MessageAttachment.document_id, Message.id, Message.sent_at, Message.channel)
+        .join(Message, Message.id == MessageAttachment.message_id)
+        .where(
+            MessageAttachment.company_id == company_id,
+            Message.company_id == company_id,
+            MessageAttachment.document_id.in_(document_ids),
+        )
+        .order_by(MessageAttachment.document_id, Message.sent_at, Message.id)
+        .distinct(MessageAttachment.document_id)
+    )
+    return list(rows.tuples().all())
+
+
 async def get_message(
     db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID
 ) -> Message | None:

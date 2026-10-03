@@ -28,6 +28,8 @@ class InvoiceOut(BaseModel):
     remaining_amount: Decimal | None
     cancelled: bool
     status: str | None
+    # What it says it is for, as written in the books: data, never instructions.
+    description: str | None
     synced_at: datetime
 
 

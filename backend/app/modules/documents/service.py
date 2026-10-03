@@ -1139,6 +1139,24 @@ async def containers_of(
     return found
 
 
+async def containers_of_each(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """``containers_of`` for several files, an archive's depth at a time in one query."""
+    found: dict[uuid.UUID, list[uuid.UUID]] = {each: [] for each in document_ids}
+    # Which of the files asked about each archive at this depth holds.
+    reaching: dict[uuid.UUID, set[uuid.UUID]] = {each: {each} for each in document_ids}
+    while reaching:
+        deeper: dict[uuid.UUID, set[uuid.UUID]] = {}
+        for member, container in await repository.container_pairs(db, company_id, list(reaching)):
+            for origin in reaching[member]:
+                if container != origin and container not in found[origin]:
+                    found[origin].append(container)
+                    deeper.setdefault(container, set()).add(origin)
+        reaching = deeper
+    return found
+
+
 async def members_of(
     db: AsyncSession, company_id: uuid.UUID, container_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[uuid.UUID]]:
@@ -1167,6 +1185,15 @@ async def get_documents(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, Document]:
     return {row.id: row for row in await repository.get_many(db, company_id, ids)}
+
+
+async def document_outs(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, DocumentOut]:
+    """These files as a list shows them; one that is gone is left out."""
+    if not ids:
+        return {}
+    return {row.id: _out(row) for row in await repository.get_many(db, company_id, ids)}
 
 
 async def _document(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> Document:

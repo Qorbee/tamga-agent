@@ -723,6 +723,48 @@
         "title": "Direction",
         "type": "string"
       },
+      "DocumentBrief": {
+        "description": "A linked file, for the project's timeline: when and how it came.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "document": {
+            "$ref": "#/components/schemas/DocumentOut"
+          },
+          "item_kind": {
+            "const": "document",
+            "title": "Item Kind",
+            "type": "string"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          }
+        },
+        "required": [
+          "item_kind",
+          "at",
+          "channel",
+          "document",
+          "message_id"
+        ],
+        "title": "DocumentBrief",
+        "type": "object"
+      },
       "DocumentDetail": {
         "properties": {
           "content_type": {
@@ -1265,6 +1307,37 @@
         "title": "InviteToken",
         "type": "object"
       },
+      "InvoiceBrief": {
+        "description": "A linked invoice, for the project's timeline.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "channel": {
+            "const": "books",
+            "title": "Channel",
+            "type": "string"
+          },
+          "invoice": {
+            "$ref": "#/components/schemas/InvoiceOut"
+          },
+          "item_kind": {
+            "const": "invoice",
+            "title": "Item Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_kind",
+          "at",
+          "channel",
+          "invoice"
+        ],
+        "title": "InvoiceBrief",
+        "type": "object"
+      },
       "InvoiceDirection": {
         "enum": [
           "receivable",
@@ -1299,6 +1372,17 @@
               }
             ],
             "title": "Currency"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "direction": {
             "$ref": "#/components/schemas/InvoiceDirection"
@@ -1480,6 +1564,7 @@
           "remaining_amount",
           "cancelled",
           "status",
+          "description",
           "synced_at"
         ],
         "title": "InvoiceOut",
@@ -1775,6 +1860,35 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "document": "#/components/schemas/DocumentBrief",
+                    "invoice": "#/components/schemas/InvoiceBrief",
+                    "message": "#/components/schemas/MessageBrief"
+                  },
+                  "propertyName": "item_kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MessageBrief"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DocumentBrief"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InvoiceBrief"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item"
           },
           "item_id": {
             "format": "uuid",
@@ -2195,6 +2309,35 @@
           "columns"
         ],
         "title": "MergeOut",
+        "type": "object"
+      },
+      "MessageBrief": {
+        "description": "A linked mail, for the project's timeline.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/Channel"
+          },
+          "item_kind": {
+            "const": "message",
+            "title": "Item Kind",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/MessageSummary"
+          }
+        },
+        "required": [
+          "item_kind",
+          "at",
+          "channel",
+          "message"
+        ],
+        "title": "MessageBrief",
         "type": "object"
       },
       "MessageOut": {
@@ -6069,6 +6212,54 @@
         ]
       }
     },
+    "/invoices/{invoice_id}": {
+      "get": {
+        "operationId": "invoices.get_invoice",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Invoice",
+        "tags": [
+          "invoices"
+        ]
+      }
+    },
     "/me": {
       "get": {
         "operationId": "me.get_me",
@@ -6747,6 +6938,20 @@
                 }
               ],
               "title": "Item Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expand",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "const": "item",
+                "type": "string"
+              },
+              "title": "Expand",
+              "type": "array"
             }
           },
           {

@@ -1,10 +1,14 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.modules.books.schemas import InvoiceOut
+from app.modules.conversations.models import Channel
+from app.modules.conversations.schemas import MessageSummary
+from app.modules.documents.schemas import DocumentOut
 from app.modules.projects.models import (
     FieldSource,
     LinkMethod,
@@ -131,6 +135,41 @@ class ProjectPartyCreate(BaseModel):
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
 
 
+class MessageBrief(BaseModel):
+    """A linked mail, for the project's timeline."""
+
+    item_kind: Literal["message"]
+    at: datetime
+    channel: Channel
+    message: MessageSummary
+
+
+class DocumentBrief(BaseModel):
+    """A linked file, for the project's timeline: when and how it came."""
+
+    item_kind: Literal["document"]
+    # When the first mail that brought it was sent, else when it was uploaded.
+    at: datetime
+    channel: Channel
+    document: DocumentOut
+    # The first mail that brought it, itself or inside an archive; null for an upload.
+    message_id: uuid.UUID | None
+
+
+class InvoiceBrief(BaseModel):
+    """A linked invoice, for the project's timeline."""
+
+    item_kind: Literal["invoice"]
+    # An invoice has a day, not an hour: its issue day at noon UTC, which falls on that day for a
+    # reader anywhere from UTC-11 to UTC+11; when it was read from the books if it has no day.
+    at: datetime
+    channel: Literal["books"]
+    invoice: InvoiceOut
+
+
+ItemBrief = Annotated[MessageBrief | DocumentBrief | InvoiceBrief, Field(discriminator="item_kind")]
+
+
 class LinkOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -147,6 +186,8 @@ class LinkOut(BaseModel):
     decided_by: uuid.UUID | None
     decided_at: datetime | None
     created_at: datetime
+    # What the item is, with `expand=item`; null otherwise, or when the item is gone.
+    item: ItemBrief | None = None
 
 
 class LinkPage(BaseModel):

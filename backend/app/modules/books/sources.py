@@ -58,6 +58,7 @@ class InvoiceRecord:
     remaining_amount: Decimal | None = None
     cancelled: bool = False
     status: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +94,8 @@ class BooksSource(Protocol):
 
 # (company id, budget) → a source for that company, or None when it is not configured for it.
 type SourceFactory = Callable[[uuid.UUID, ReadBudget], BooksSource | None]
+# (the record as the source gave it, its direction, its kind) → the invoice it maps to now.
+type InvoiceRemap = Callable[[dict[str, Any], InvoiceDirection, InvoiceKind], InvoiceRecord | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,13 +103,21 @@ class RegisteredSource:
     factory: SourceFactory
     # Reads a month Tamga allows itself against this product's quota; read when a sync starts.
     monthly_reads: Callable[[], int]
+    # Maps a stored record again, so a field added to the mapping fills without a read.
+    remap: InvoiceRemap | None = None
 
 
 _sources: dict[str, RegisteredSource] = {}
 
 
-def register(name: str, factory: SourceFactory, *, monthly_reads: Callable[[], int]) -> None:
-    _sources[name] = RegisteredSource(factory=factory, monthly_reads=monthly_reads)
+def register(
+    name: str,
+    factory: SourceFactory,
+    *,
+    monthly_reads: Callable[[], int],
+    remap: InvoiceRemap | None = None,
+) -> None:
+    _sources[name] = RegisteredSource(factory=factory, monthly_reads=monthly_reads, remap=remap)
 
 
 def registered() -> dict[str, RegisteredSource]:

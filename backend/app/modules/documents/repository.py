@@ -263,6 +263,18 @@ async def containers_of(
     return list(rows.all())
 
 
+async def container_pairs(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """Each of these files with each archive it was taken out of."""
+    rows = await db.execute(
+        select(DocumentPart.document_id, DocumentPart.container_id)
+        .where(DocumentPart.company_id == company_id, DocumentPart.document_id.in_(document_ids))
+        .distinct()
+    )
+    return [(member, container) for member, container in rows.tuples() if member is not None]
+
+
 async def members_of(
     db: AsyncSession, company_id: uuid.UUID, container_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[uuid.UUID]]:
