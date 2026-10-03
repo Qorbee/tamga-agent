@@ -76,7 +76,10 @@ Arc testnet; nothing touches a company's bank or real money.
 - **The chat:** chats are kept on the server, and the assistant answers in them from the
   company's own mail, projects and invoices with read-only tools, streamed over AG-UI. The
   history a run reads is the server's, never the browser's; an answer is finished and kept when
-  the page that asked is closed; unread is per person.
+  the page that asked is closed; unread is per person. A ring beside Send shows how full a chat
+  is, and before it fills its earlier part is written into notes; a model names each chat from
+  its first question, in one small request; whoever asks chooses the model and how long it
+  reasons.
 - **Tamga writes first:** when it proposes a project or cannot choose one for a conversation, it
   writes to the owner in the chat that already holds that record, or opens a new one, and code
   puts a card under its message, on which the owner answers. Such a turn acts for the company
@@ -92,10 +95,9 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, in this order: the assistant's draft tools and approvals, and a chat's context shown and
-compacted; the policy engine, its decisions and their log; the executor
-that pays from the vault; the replay of past projects with its score, and the playground's
-scenarios.
+Next, in this order: the policy engine, its decisions and their log, with the approval in the
+chat; the executor that pays from the vault; the company's event stream and the assistant's
+draft tools; the replay of past projects with its score, and the playground's scenarios.
 
 ## This repository
 
