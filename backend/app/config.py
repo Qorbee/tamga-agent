@@ -28,6 +28,8 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 LOCAL_WEB_URL = "http://localhost:3000"
+# Arc testnet's public node: enough for a laptop and CI, never what a deployment reads the vault by.
+PUBLIC_ARC_RPC = "https://rpc.testnet.arc.network"
 EvmAddress = Annotated[str, StringConstraints(pattern=r"^0x[0-9a-fA-F]{40}$")]
 # The most pictures of one file a call shows the vision model (ADR-0013): the documents module
 # draws no more (reading.MAX_PICTURED), and a budget of pictures is never smaller.
@@ -184,6 +186,13 @@ class Settings(BaseSettings):
     arc_explorer_url: str = "https://testnet.arcscan.app"
     # Printed by scripts/deploy_policy_vault.py, which deploys the vault once (ADR-0015).
     policy_vault_address: EvmAddress | None = None
+    # The node the vault is read through. The team's own URL (`arc-canteen rpc-url`) carries a
+    # token, so it is a secret; the public testnet node is the default, outside a deployment.
+    arc_rpc_url: SecretStr = SecretStr(PUBLIC_ARC_RPC)
+    # The executor (ADR-0017): the Circle Agent Wallet that may call `release` and `anchor`, and
+    # Circle's CLI that drives it, signed in for testnet with `circle wallet login`.
+    agent_wallet_address: EvmAddress | None = None
+    circle_cli: str = "circle"
 
     # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
     guest_hours: int = 24
@@ -274,6 +283,12 @@ class Settings(BaseSettings):
             raise ValueError(f"set {', '.join(missing)}: file storage is required when deployed")
         if any(not mailbox.tls for mailbox in self.mailboxes):
             raise ValueError("MAILBOXES must use TLS when deployed")
+        # Settlement reads the vault's caps: a deployment does it through the team's own node.
+        if (
+            self.policy_vault_address is not None
+            and self.arc_rpc_url.get_secret_value() == PUBLIC_ARC_RPC
+        ):
+            raise ValueError("set ARC_RPC_URL to the team's own node: the vault is read through it")
         for model in sorted(self.models()):
             key = MODEL_PROVIDER_KEYS[model.partition(":")[0]]
             if getattr(self, key) is None:

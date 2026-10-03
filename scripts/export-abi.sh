@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Writes the ABI of each contract in contracts/src/ to backend/app/platform/abi/<Name>.json, where the
-# backend's chain client reads it. The copies are generated, never edited: CI runs this script and
+# Writes the ABI of each contract in contracts/src/ to backend/app/platform/abi/<Name>.json, and its
+# functions' selectors to <Name>.selectors.json, where the backend's chain client reads them. The copies are generated, never edited: CI runs this script and
 # fails when a committed copy differs (ADR-0001 — the same pattern as backend/openapi.json).
 #
 #   scripts/export-abi.sh        # after any change to a contract's functions, events or errors
@@ -21,5 +21,8 @@ for source in src/*.sol; do
   name="$(basename "$source" .sol)"
   mkdir -p "$dest"
   forge inspect "$source:$name" abi --json > "$dest/$name.json"
-  echo "wrote backend/app/platform/abi/$name.json"
+  # Each function's selector, by its signature: the backend reads the chain without a Keccak
+  # implementation of its own.
+  forge inspect "$source:$name" methodIdentifiers --json > "$dest/$name.selectors.json"
+  echo "wrote backend/app/platform/abi/$name.json and $name.selectors.json"
 done

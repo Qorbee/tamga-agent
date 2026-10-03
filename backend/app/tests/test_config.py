@@ -36,6 +36,22 @@ def test_a_complete_deployment_starts() -> None:
     assert settings.web_url == "https://tamga.qorbee.com"
 
 
+def test_a_deployment_reads_the_vault_through_the_teams_own_node() -> None:
+    deployed = {
+        "app_env": "production",
+        "web_url": "https://tamga.qorbee.com",
+        "openai_api_key": "sk-x",
+        "policy_vault_address": "0x6354dbccc4f5063fd10b9b1e4ff66d65d4224d0a",
+    }
+    with pytest.raises(ValidationError, match="ARC_RPC_URL"):
+        load_settings(**deployed)
+
+    settings = load_settings(**deployed, arc_rpc_url="https://rpc.example/token")
+    assert settings.arc_rpc_url.get_secret_value() == "https://rpc.example/token"
+    # A laptop reads it through the public node.
+    assert load_settings(policy_vault_address=deployed["policy_vault_address"]).arc_rpc_url
+
+
 def mailbox(
     *, host: str = "imap.example.com", username: str = "ops@broker.example", tls: bool = True
 ) -> Mailbox:
