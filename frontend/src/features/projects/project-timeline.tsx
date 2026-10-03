@@ -1,9 +1,17 @@
 "use client";
 
-import { Cancel01Icon, Invoice01Icon, MoreHorizontalIcon, Tick02Icon } from "@hugeicons/core-free-icons";
+import {
+  Cancel01Icon,
+  CheckmarkBadge01Icon,
+  Invoice01Icon,
+  MoreHorizontalIcon,
+  Tick02Icon,
+  TruckIcon,
+  Upload01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
@@ -20,6 +28,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,10 +42,13 @@ import {
   listAllPlacements,
   listDocumentTypes,
   updateLink,
+  uploadDocument,
+  type ChecklistItem,
   type LinkItem,
   type MessageSummary,
   type Placement,
   type ProjectLink,
+  type Shipment,
 } from "@/lib/api";
 import { formatDate, formatListDate, formatMoney } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -41,6 +56,8 @@ import { conversationName } from "@/lib/mail-text";
 import { useInvalidatePlacements } from "@/lib/use-invalidate-placements";
 import { useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
+
+import { plateOf, useChecklist, useTrucks } from "./truck-board";
 
 export const linksKey = (id: string) => ["project-links", { project_id: id, expand: "item" }] as const;
 export const placementsKey = (id: string) => ["placements", { projects: [id] }] as const;
@@ -58,6 +75,15 @@ type Row =
   | { kind: "invoice"; key: string; at: string; link: ProjectLink; item: BillItem };
 
 type Show = "all" | "mail" | "files" | "invoices";
+// The papers a truck's proof of delivery can be, once the owner says so (ADR-0021).
+const PROOF_PAPERS = new Set(["cmr", "pod_photo"]);
+// What a missing item is uploaded as; the others come from the books.
+const UPLOADED_AS: Record<string, string> = {
+  loading_photo: "loading_photo",
+  cmr: "cmr",
+  proof_of_delivery: "pod_photo",
+  client_order: "transport_order",
+};
 const SHOWN: Record<Show, Row["kind"] | null> = { all: null, mail: "mail", files: "file", invoices: "invoice" };
 
 /** The calendar day a moment falls on where the reader is, as `2026-10-04`. */
@@ -112,18 +138,37 @@ function rowsOf(links: ProjectLink[], placements: Placement[]): Row[] {
 
 /**
  * Everything tied to the project, whatever brought it: mail, files and the books' invoices, a day
- * at a time, newest first. What still waits for the owner is answered on its row.
+ * at a time, newest first, and what is still missing above them. What still waits for the owner
+ * is answered on its row. With a truck chosen on the board, only what is on that truck.
  */
-export function ProjectTimeline({ id }: { id: string }) {
+export function ProjectTimeline({
+  id,
+  truck,
+  onTruck,
+}: {
+  id: string;
+  truck: string | null;
+  onTruck: (truckId: string | null) => void;
+}) {
   const { t, locale } = useI18n();
   const [show, setShow] = useState<Show>("all");
   const links = useQuery({ queryKey: linksKey(id), queryFn: () => readLinks(id) });
   const placements = useQuery({ queryKey: placementsKey(id), queryFn: () => readPlacements(id) });
+  const trucks = (useTrucks(id).data ?? []).filter((each) => each.state !== "rejected");
+  const checklist = useChecklist(id).data ?? [];
+  const chosen = trucks.find((each) => each.id === truck);
 
-  const rows = rowsOf(links.data ?? [], placements.data ?? []);
+  const onChosen = (row: Row) =>
+    !chosen ||
+    (row.kind === "mail" ? row.links.some((link) => link.shipment_id === chosen.id) : row.link.shipment_id === chosen.id);
+  const rows = rowsOf(links.data ?? [], placements.data ?? []).filter(onChosen);
   const counts = { all: rows.length, mail: 0, files: 0, invoices: 0 } satisfies Record<Show, number>;
   for (const row of rows) counts[row.kind === "mail" ? "mail" : row.kind === "file" ? "files" : "invoices"] += 1;
   const shown = rows.filter((row) => SHOWN[show] === null || row.kind === SHOWN[show]);
+  const missing =
+    show === "all" || show === "files"
+      ? checklist.filter((item) => item.state === "missing" && (!chosen || item.shipment_id === chosen.id))
+      : [];
   const days: { day: string; rows: Row[] }[] = [];
   for (const row of shown) {
     const day = dayOf(row.at);
@@ -136,8 +181,21 @@ export function ProjectTimeline({ id }: { id: string }) {
     <section className="grid grid-cols-1 gap-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h4 className="text-sm font-medium">{t.project.timeline}</h4>
-        {rows.length > 0 ? (
+        {rows.length > 0 || chosen ? (
           <div className="flex flex-wrap gap-1.5" role="group" aria-label={t.project.timeline}>
+            {chosen ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                className="rounded-full font-mono"
+                aria-label={t.project.showAll}
+                onClick={() => onTruck(null)}
+              >
+                <HugeiconsIcon icon={TruckIcon} strokeWidth={1.75} aria-hidden />
+                {plateOf(chosen)}
+                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} aria-hidden />
+              </Button>
+            ) : null}
             {(Object.keys(SHOWN) as Show[]).map((each) =>
               each === "all" || counts[each] > 0 ? (
                 <Button
@@ -162,7 +220,18 @@ export function ProjectTimeline({ id }: { id: string }) {
         </p>
       ) : links.isPending ? (
         <Skeleton className="h-32 rounded-2xl" />
-      ) : rows.length === 0 ? (
+      ) : null}
+      {missing.length > 0 ? (
+        <div className="grid gap-1.5">
+          <h5 className="text-muted-foreground px-1 text-xs font-medium">{t.project.missing}</h5>
+          <ul className="divide-border border-border divide-y overflow-hidden rounded-2xl border">
+            {missing.map((item) => (
+              <GapRow key={`${item.shipment_id}:${item.key}`} item={item} trucks={trucks} />
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {links.isError || links.isPending ? null : rows.length === 0 ? (
         <p className="text-muted-foreground text-sm">{t.project.noItems}</p>
       ) : shown.length === 0 ? (
         <p className="text-muted-foreground text-sm">{t.project.noneShown}</p>
@@ -178,9 +247,9 @@ export function ProjectTimeline({ id }: { id: string }) {
                   row.kind === "mail" ? (
                     <MailRow key={row.key} row={row} />
                   ) : row.kind === "file" ? (
-                    <FileRow key={row.key} link={row.link} item={row.item} />
+                    <FileRow key={row.key} link={row.link} item={row.item} trucks={trucks} />
                   ) : (
-                    <InvoiceRow key={row.key} link={row.link} item={row.item} />
+                    <InvoiceRow key={row.key} link={row.link} item={row.item} trucks={trucks} />
                   ),
                 )}
               </ul>
@@ -313,7 +382,7 @@ function MailRow({ row }: { row: Extract<Row, { kind: "mail" }> }) {
   );
 }
 
-function FileRow({ link, item }: { link: ProjectLink; item: FileItem }) {
+function FileRow({ link, item, trucks }: { link: ProjectLink; item: FileItem; trucks: Shipment[] }) {
   const { t, locale } = useI18n();
   const types = useQuery({ queryKey: ["document-types"], queryFn: listDocumentTypes, staleTime: Infinity });
   const file = item.document;
@@ -324,6 +393,9 @@ function FileRow({ link, item }: { link: ProjectLink; item: FileItem }) {
   return (
     <ItemRow
       link={link}
+      trucks={trucks}
+      proofPaper={typeKey !== null && PROOF_PAPERS.has(typeKey)}
+      isFile
       view={{ kind: "document", id: file.id }}
       icon={<RowIcon icon={fileIcon(file.preview)} />}
       title={file.filename}
@@ -340,7 +412,7 @@ function FileRow({ link, item }: { link: ProjectLink; item: FileItem }) {
   );
 }
 
-function InvoiceRow({ link, item }: { link: ProjectLink; item: BillItem }) {
+function InvoiceRow({ link, item, trucks }: { link: ProjectLink; item: BillItem; trucks: Shipment[] }) {
   const { t, locale } = useI18n();
   const bill = item.invoice;
   const total =
@@ -348,6 +420,7 @@ function InvoiceRow({ link, item }: { link: ProjectLink; item: BillItem }) {
   return (
     <ItemRow
       link={link}
+      trucks={trucks}
       view={{ kind: "invoice", id: bill.id }}
       icon={<RowIcon icon={Invoice01Icon} />}
       title={
@@ -366,15 +439,25 @@ function InvoiceRow({ link, item }: { link: ProjectLink; item: BillItem }) {
   );
 }
 
-/** A file's or an invoice's row: answered on its own link, moved by tying it elsewhere. */
+/**
+ * A file's or an invoice's row: answered on its own link, put on a truck, moved by tying it
+ * elsewhere. A CMR or delivery photo on a truck asks whether it is that truck's proof of delivery:
+ * only the owner's yes makes it one (ADR-0021).
+ */
 function ItemRow({
   link,
+  trucks,
+  proofPaper = false,
+  isFile = false,
   view,
   icon,
   title,
   detail,
 }: {
   link: ProjectLink;
+  trucks: Shipment[];
+  proofPaper?: boolean;
+  isFile?: boolean;
   view: Parameters<typeof CanvasLink>[0]["view"];
   icon: ReactNode;
   title: ReactNode;
@@ -388,18 +471,65 @@ function ItemRow({
     mutationFn: (answer: "confirmed" | "rejected") => updateLink(link.id, { status: answer }),
     onSuccess: invalidate,
   });
+  const place = useMutation({
+    mutationFn: (shipmentId: string | null) => updateLink(link.id, { shipment_id: shipmentId }),
+    onSuccess: invalidate,
+  });
+  const prove = useMutation({
+    mutationFn: () => updateLink(link.id, { status: "confirmed", proof_of_delivery: true }),
+    onSuccess: invalidate,
+  });
+  const truck = trucks.find((each) => each.id === link.shipment_id);
+  const proven = link.proof_of_delivery && link.status === "confirmed" && link.method === "owner" && truck;
+  const failed = decide.error ?? place.error ?? prove.error;
   return (
     <TimelineRow
       view={view}
       icon={icon}
       title={title}
-      detail={detail}
+      detail={
+        <>
+          {detail}
+          {truck ? (
+            <span className="inline-flex items-center gap-1 font-mono">
+              <HugeiconsIcon icon={TruckIcon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+              {plateOf(truck)}
+            </span>
+          ) : null}
+          {proven ? (
+            <span className="text-success-foreground inline-flex items-center gap-1">
+              <HugeiconsIcon icon={CheckmarkBadge01Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+              {t.project.proof}
+            </span>
+          ) : null}
+        </>
+      }
       note={
-        decide.isError ? (
-          <span className="text-danger-foreground mt-1 block text-xs" role="alert">
-            {t.errors.generic}
-          </span>
-        ) : null
+        <>
+          {proofPaper && truck && !proven && isOwner ? (
+            <span className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+              <span>{t.project.proofQuestion(plateOf(truck))}</span>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={prove.isPending}
+                onClick={(event) => {
+                  // The row opens the file; the answer is the button's own.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  prove.mutate();
+                }}
+              >
+                {t.project.proofYes}
+              </Button>
+            </span>
+          ) : null}
+          {failed ? (
+            <span className="text-danger-foreground mt-1 block text-xs" role="alert">
+              {failed instanceof Error && failed.message ? failed.message : t.errors.generic}
+            </span>
+          ) : null}
+        </>
       }
       answer={
         <Answer
@@ -412,12 +542,82 @@ function ItemRow({
       menu={
         isOwner ? (
           <>
-            <RowMenu onMove={() => setMoving(true)} />
+            <RowMenu
+              onMove={() => setMoving(true)}
+              trucks={trucks}
+              current={link.shipment_id}
+              onTruck={(shipmentId) => place.mutate(shipmentId)}
+              // Any file on a truck may be its proof, typed or not: the question asks only of a CMR
+              // or a delivery photo, the menu of the rest.
+              onProve={isFile && truck && !proven ? () => prove.mutate() : undefined}
+            />
             <MoveItemDialog link={link} open={moving} onOpenChange={setMoving} />
           </>
         ) : null
       }
     />
+  );
+}
+
+/** What the job still lacks: uploaded here and put on its truck, or, for the books' records, said
+ * to come from there. */
+function GapRow({ item, trucks }: { item: ChecklistItem; trucks: Shipment[] }) {
+  const { t } = useI18n();
+  const isOwner = useIsOwner();
+  const invalidate = useInvalidatePlacements();
+  const queryClient = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const docType = UPLOADED_AS[item.key];
+  const truck = trucks.find((each) => each.id === item.shipment_id);
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const uploaded = await uploadDocument(file, { docType });
+      await createLink({
+        item_kind: "document",
+        item_id: uploaded.document.id,
+        project_id: item.project_id,
+        shipment_id: item.shipment_id,
+        proof_of_delivery: false,
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+  const name = t.project.checklist[item.key] ?? item.key;
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
+      <span className="text-danger-foreground min-w-0 flex-1 text-sm">
+        {name}
+        {truck ? <span className="text-muted-foreground font-mono"> · {plateOf(truck)}</span> : null}
+      </span>
+      {docType && isOwner ? (
+        <>
+          <input
+            ref={input}
+            type="file"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) upload.mutate(file);
+              event.target.value = "";
+            }}
+          />
+          <Button size="xs" variant="outline" disabled={upload.isPending} onClick={() => input.current?.click()}>
+            <HugeiconsIcon icon={Upload01Icon} strokeWidth={1.75} aria-hidden />
+            {t.project.upload}
+          </Button>
+        </>
+      ) : !docType ? (
+        <span className="text-muted-foreground text-xs">{t.project.fromBooks}</span>
+      ) : null}
+      {upload.isError ? (
+        <span className="text-danger-foreground w-full text-xs" role="alert">
+          {t.errors.generic}
+        </span>
+      ) : null}
+    </li>
   );
 }
 
@@ -451,7 +651,19 @@ function Answer({
   );
 }
 
-function RowMenu({ onMove }: { onMove: () => void }) {
+function RowMenu({
+  onMove,
+  trucks = [],
+  current = null,
+  onTruck,
+  onProve,
+}: {
+  onMove: () => void;
+  trucks?: Shipment[];
+  current?: string | null;
+  onTruck?: (shipmentId: string | null) => void;
+  onProve?: () => void;
+}) {
   const { t } = useI18n();
   return (
     <DropdownMenu modal={false}>
@@ -463,6 +675,33 @@ function RowMenu({ onMove }: { onMove: () => void }) {
         </DropdownMenuTrigger>
       </Hint>
       <DropdownMenuContent align="end">
+        {onTruck && trucks.length > 0 ? (
+          <>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>{t.project.putOnTruck}</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {trucks.map((truck) => (
+                  <DropdownMenuItem
+                    key={truck.id}
+                    className="font-mono"
+                    disabled={truck.id === current}
+                    onSelect={() => onTruck(truck.id)}
+                  >
+                    {plateOf(truck)}
+                  </DropdownMenuItem>
+                ))}
+                {current ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => onTruck(null)}>{t.project.noTruck}</DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        {onProve ? <DropdownMenuItem onSelect={onProve}>{t.project.proof}</DropdownMenuItem> : null}
         <DropdownMenuItem onSelect={onMove}>{t.project.move}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

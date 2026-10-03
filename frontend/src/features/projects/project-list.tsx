@@ -50,8 +50,9 @@ export function ProjectList() {
     enabled: ids.length > 0,
   });
   const trucks = new Map<string, number>();
+  // A truck the owner said is not the job's is no truck of it.
   for (const shipment of shipments.data ?? [])
-    trucks.set(shipment.project_id, (trucks.get(shipment.project_id) ?? 0) + 1);
+    if (shipment.state !== "rejected") trucks.set(shipment.project_id, (trucks.get(shipment.project_id) ?? 0) + 1);
 
   return (
     <div className="grid gap-4">

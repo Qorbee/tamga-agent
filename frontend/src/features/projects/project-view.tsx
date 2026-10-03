@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { InlineText } from "@/components/inline-text";
 import { T } from "@/components/translated";
@@ -12,6 +13,7 @@ import { useCanEditProjects } from "@/lib/use-role";
 import { ProjectMenu } from "./project-actions";
 import { partiesKey, ProjectProperties, useProjectUpdate } from "./project-properties";
 import { linksKey, placementsKey, ProjectTimeline, readLinks, readPlacements } from "./project-timeline";
+import { TruckBoard } from "./truck-board";
 
 // How long a project read ahead of its opening is fresh enough not to be read again for it.
 const READ_AHEAD = 30_000;
@@ -63,12 +65,14 @@ export function ProjectTitleMenu({ id }: { id: string }) {
 }
 
 /**
- * A project in the canvas: its name and its properties, each edited where it is shown, and its
- * file: every mail, file and invoice tied to it, a day at a time.
+ * A project in the canvas: its name and its properties, each edited where it is shown, its trucks
+ * with what each still lacks, and its file: every mail, file and invoice tied to it, a day at a
+ * time. A truck tapped on the board narrows the file to what is on it.
  */
 export function ProjectView({ id }: { id: string }) {
   const { t } = useI18n();
   const project = useProject(id);
+  const [truck, setTruck] = useState<string | null>(null);
 
   if (project.isError)
     return (
@@ -86,7 +90,8 @@ export function ProjectView({ id }: { id: string }) {
         <ProjectProperties project={project.data} />
       </header>
 
-      <ProjectTimeline id={id} />
+      <TruckBoard id={id} selected={truck} onSelect={setTruck} />
+      <ProjectTimeline id={id} truck={truck} onTruck={setTruck} />
     </div>
   );
 }

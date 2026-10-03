@@ -138,6 +138,19 @@ export const listParties = (params: { q?: string; kind?: Party["kind"]; limit?: 
 export type Shipment = Schemas["ShipmentOut"];
 export const listShipments = (projectIds: readonly string[]) =>
   request<Shipment[]>(`/shipments${query({ project_id: projectIds })}`);
+/** The owner's edit of a truck, and their yes or no to one Tamga proposed (`state`). */
+export const updateShipment = (id: string, body: Schemas["ShipmentUpdate"]) =>
+  request<Shipment>(`/shipments/${id}`, json("PATCH", body));
+
+// What a job and each of its trucks still lack, and the owner's marks over it.
+export type ChecklistItem = Schemas["ChecklistItemOut"];
+export type ChecklistMark = Schemas["ChecklistMarkOut"];
+export const listChecklistItems = (projectIds: readonly string[]) =>
+  request<ChecklistItem[]>(`/checklist-items${query({ project_id: projectIds })}`);
+/** A second mark on the same item replaces the first. */
+export const setChecklistMark = (body: Schemas["ChecklistMarkSet"]) =>
+  request<ChecklistMark>("/checklist-marks", json("PUT", body));
+export const deleteChecklistMark = (id: string) => request<void>(`/checklist-marks/${id}`, { method: "DELETE" });
 
 // Links and proposals: what waits on the owner.
 export type ProjectLink = Schemas["LinkOut"];
