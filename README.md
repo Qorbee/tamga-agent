@@ -45,8 +45,8 @@ Arc testnet; nothing touches a company's bank or real money.
 ## Where it stands
 
 "How it works" is the whole design. Built and running today:
-- **Sign-in and tenancy:** companies, owners by invite, and guest sandboxes that expire after a day;
-  every row belongs to one company.
+- **Sign-in and tenancy:** companies, owners by invite, and guest sandboxes, seeded with a freight
+  job and its simulated books, that expire after a day; every row belongs to one company.
 - **Company modes:** shadow, replay and live, checked where an effect would happen, and each
   company's own business time.
 - **Mail, read-only:** mailboxes read over IMAP every two minutes, grouped into conversations, shown
@@ -66,7 +66,12 @@ Arc testnet; nothing touches a company's bank or real money.
 - **Sorting:** code and a small model sort each conversation into work, automated mail and noise,
   so only work is read further.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
-- **Projects and shipments:** the data model and the projects board.
+- **The project file:** each job holds its mail, files and invoices on one timeline. A file
+  follows the mail that carried it, code types the truck papers it recognises, and bills are
+  placed in their job by the numbers and plates they share with it. Code proposes the job's
+  trucks from its papers, and each truck shows what it still lacks: a loading photo, the CMR, the
+  proof of delivery, the subcontractor's invoice. Only the owner marks a file as a truck's proof
+  of delivery, in one tap; the owner edits a project where it is shown.
 - **Linking:** each work conversation is placed among the projects, by code where a shared number
   or its thread decides, else by an agent with read-only search tools, a small model first and a
   larger one for the hard cases. It links, proposes a new project, asks between two, or leaves the
@@ -74,7 +79,10 @@ Arc testnet; nothing touches a company's bank or real money.
   confirms, rejects, moves a conversation or merges two projects in the Inbox, and reads the
   reason in either language.
 - **The chat:** chats are kept on the server, and the assistant answers in them from the
-  company's own mail, projects and invoices with read-only tools, streamed over AG-UI. The
+  company's own mail, projects, files, invoices and firms, streamed over AG-UI. When the owner
+  asks, it changes Tamga's own records through the services the pages use: it confirms or
+  rejects what Tamga tied to a job, puts a paper on a truck, adds a truck, opens or edits a
+  project. It never moves money, sends anything or marks a proof of delivery. The
   history a run reads is the server's, never the browser's; an answer is finished and kept when
   the page that asked is closed; unread is per person. A ring beside Send shows how full a chat
   is, and before it fills its earlier part is written into notes; a model names each chat from
@@ -84,10 +92,16 @@ Arc testnet; nothing touches a company's bank or real money.
   writes to the owner in the chat that already holds that record, or opens a new one, and code
   puts a card under its message, on which the owner answers. Such a turn acts for the company
   as an actor with no user, which every service that writes refuses.
+- **Live:** what the background work writes shows without a reload, through the company's event
+  stream, and a note says when Tamga writes, also as the browser's notification.
 - **Budgets:** each use of a model has a daily budget per company that is zero until the owner
   sets it, so nothing a company holds is read by a model before that.
 - **The books:** a read-only accounting sync, through a country pack.
-- **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled.
+- **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled. Each
+  company gets an account on the vault, with an owner key and a receive-only wallet for each
+  subcontractor it pays. A judge's sandbox is opened on the vault with test USDC, and what is
+  left of it goes back to the treasury when it expires, sent by the executor, Circle's Agent
+  Wallet.
 - **PolicyVault:** the contract that caps the executor, written, tested, and deployed on Arc
   testnet through Circle: [`0x6354dbccc4f5063fd10b9b1e4ff66d65d4224d0a`](https://testnet.arcscan.app/address/0x6354dbccc4f5063fd10b9b1e4ff66d65d4224d0a),
   its source verified there, with Tamga's
@@ -95,9 +109,9 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, in this order: the policy engine, its decisions and their log, with the approval in the
-chat; the executor that pays from the vault; the company's event stream and the assistant's
-draft tools; the replay of past projects with its score, and the playground's scenarios.
+Next, in this order: the daily digest, the draft cards and a page of the books; the policy
+engine, its decisions and their log, with the approval in the chat; the executor paying bills
+from the vault; the replay of past projects with its score, and the playground's scenarios.
 
 ## This repository
 
