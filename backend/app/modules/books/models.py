@@ -60,9 +60,8 @@ class Invoice(CompanyScoped, Base):
     party_name: Mapped[str | None] = mapped_column(String(300))
     issue_date: Mapped[date | None]
     due_date: Mapped[date | None]
-    # The source's payment date. The pilot's product documents it as the date due, not the date
-    # paid; checked on real records before the replay's decision score relies on it (pilot-ingest
-    # plan).
+    # The date it was paid, where the source records one; a paid invoice is otherwise told by
+    # ``remaining_amount``.
     payment_date: Mapped[date | None]
     currency: Mapped[str | None] = mapped_column(String(3))
     net_amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
