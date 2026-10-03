@@ -202,6 +202,17 @@ export const en = {
       search_mail: "Searched the mail",
       open_conversation: "Read a conversation",
       search_invoices: "Searched the invoices",
+      search_parties: "Searched the firms",
+      project_file: "Opened a project's file",
+      open_file: "Opened a file",
+      answer_link: "Answered an item of a project",
+      put_on_truck: "Put an item on a truck",
+      answer_conversation: "Answered where a conversation is",
+      move_conversation: "Moved a conversation",
+      create_project: "Started a project",
+      update_project: "Changed a project",
+      answer_truck: "Answered a truck",
+      add_truck: "Added a truck",
     } as Record<string, string>,
     /** The cards Tamga leaves under what it writes. */
     cards: {

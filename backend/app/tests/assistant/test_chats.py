@@ -607,6 +607,17 @@ async def test_a_chat_holds_the_records_its_runs_open(
         "search_projects",
         "open_project",
         "search_invoices",
+        "project_file",
+        "open_file",
+        "search_parties",
+        "answer_link",
+        "put_on_truck",
+        "answer_conversation",
+        "move_conversation",
+        "create_project",
+        "update_project",
+        "answer_truck",
+        "add_truck",
     }
 
 

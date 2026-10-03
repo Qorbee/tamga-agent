@@ -35,6 +35,9 @@ READ_ONLY = {
     "search_projects",
     "open_project",
     "search_invoices",
+    "project_file",
+    "open_file",
+    "search_parties",
 }
 
 

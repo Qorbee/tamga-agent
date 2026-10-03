@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { useInvalidatePlacements } from "@/lib/use-invalidate-placements";
 import {
   CHATS_KEY,
   chatMessagesKey,
@@ -342,6 +343,7 @@ function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
   // This page's own answer ended: the list has a new time, and the stored copy now holds it.
   // An answer that ended on screen is read, and is marked so before the list is read again, so
   // it never shows as new for the moment in between.
+  const invalidateRecords = useInvalidatePlacements();
   const wasAnswering = useRef(false);
   useEffect(() => {
     if (wasAnswering.current && !answering) {
@@ -352,10 +354,14 @@ function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
         .then(() => {
           invalidateChats();
           void queryClient.invalidateQueries({ queryKey: chatMessagesKey(chatId) });
+          // Its draft tools may have changed what the pages show: projects, their links, trucks
+          // and checklists.
+          invalidateRecords();
+          void queryClient.invalidateQueries({ queryKey: ["shipments"] });
         });
     }
     wasAnswering.current = answering;
-  }, [answering, chatId, session, invalidateChats, queryClient]);
+  }, [answering, chatId, session, invalidateChats, invalidateRecords, queryClient]);
 
   // The list says the chat changed on the server (a message was written, a run there ended):
   // the stored copy is read again. Without this a run that ends between two polls of the

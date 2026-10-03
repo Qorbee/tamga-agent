@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.modules.assistant import agents, context, repository, service
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
+from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
 from app.modules.companies.models import Company, CompanyMode
 from app.modules.linking import service as linking
@@ -286,7 +287,7 @@ async def _speak(company: Company, finding: Finding) -> int:
         chat_id = chat.id
         await db.commit()
 
-    seat = agents.Seat(
+    seat = Seat(
         company_id=company.id, thread_id=None, actor=Actor.of_tamga(company.id), chat_id=chat_id
     )
     usage = RunUsage()

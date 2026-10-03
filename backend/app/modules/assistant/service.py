@@ -41,6 +41,7 @@ from app.modules.assistant.schemas import (
     CompactionMessage,
     RunChoice,
 )
+from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
 from app.modules.projects import service as projects
 from app.platform import llm
@@ -302,7 +303,7 @@ async def run_chat(
         ),
         accept=request.headers.get("accept"),
     )
-    seat = agents.Seat(company_id=actor.company_id, thread_id=None, actor=actor, chat_id=chat_id)
+    seat = Seat(company_id=actor.company_id, thread_id=None, actor=actor, chat_id=chat_id)
     usage = RunUsage()
     reader = _Reader()
 
@@ -515,7 +516,7 @@ async def _read(reader: _Reader) -> AsyncIterator[BaseEvent]:
 async def _keep(
     actor: Actor,
     chat_id: uuid.UUID,
-    seat: agents.Seat,
+    seat: Seat,
     written: list[ModelMessage],
     run_id: uuid.UUID,
     began: datetime,

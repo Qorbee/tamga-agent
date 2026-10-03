@@ -62,6 +62,8 @@ logger = logging.getLogger(__name__)
 # what a run was shown on.
 Desk = agents.Desk
 reading_tools = agents.reading_tools
+# A project's number as a run's desk keys it.
+bare = agents.bare
 # The kinds of record such a run opens (``Desk.opened``).
 PROJECT = agents.PROJECT
 CONVERSATION = agents.CONVERSATION
@@ -1072,6 +1074,14 @@ async def list_placements(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+async def placement_of(
+    db: AsyncSession, company_id: uuid.UUID, thread_id: uuid.UUID
+) -> tuple[uuid.UUID, uuid.UUID | None] | None:
+    """A conversation's placement and the project it is in, if the linker placed it."""
+    placement = await repository.get(db, company_id, thread_id)
+    return (placement.id, placement.project_id) if placement is not None else None
 
 
 async def get_placement(db: AsyncSession, actor: Actor, placement_id: uuid.UUID) -> PlacementOut:
