@@ -236,6 +236,9 @@ export const deleteChat = (id: string) => request<void>(`/chats/${id}`, { method
 export const markChatRead = (id: string) => request<void>(`/chats/${id}/read`, { method: "PUT" });
 /** Has the chat's earlier part written into notes, which its runs are then sent in its place. */
 export const compactChat = (id: string) => request<Chat>(`/chats/${id}/compact`, { method: "POST" });
+/** The model and reasoning effort a chat's answers are given, and the others a question may be sent with. */
+export type Assistant = Schemas["AssistantOut"];
+export const getAssistant = () => request<Assistant>("/assistant");
 /** The cards Tamga leaves under what it writes, and the record each shows. */
 export type CardKind = Schemas["CardKind"];
 export type CardContent = Schemas["CardContent"];

@@ -31,11 +31,13 @@ import {
   ApiError,
   createChat,
   deleteChat,
+  getAssistant,
   getChatMessages,
   markChatRead,
   runChat,
   stopChatRun,
   updateChat,
+  type Assistant,
 } from "@/lib/api";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -48,6 +50,7 @@ import {
 } from "@/lib/use-chats";
 
 import { ChatCards } from "./cards";
+import { ASSISTANT_KEY, chosen, readChoice } from "./run-choice";
 
 /** How often a chat's messages are read again while Tamga answers in it for someone else. */
 const WHILE_ANSWERING = 3_000;
@@ -71,11 +74,19 @@ class Session {
   private readonly stored = new Set<string>();
   private failures: Failures;
   private readonly asked: () => void;
+  /** What the server offers to ask with; `fresh` reads it again instead of the copy at hand. */
+  private readonly offered: (fresh: boolean) => Promise<Assistant>;
 
-  constructor(chatId: string, failures: Failures, asked: () => void) {
+  constructor(
+    chatId: string,
+    failures: Failures,
+    asked: () => void,
+    offered: (fresh: boolean) => Promise<Assistant>,
+  ) {
     this.chatId = chatId;
     this.failures = failures;
     this.asked = asked;
+    this.offered = offered;
     // The url is not used: `ask` sends to the open chat.
     this.agent = new HttpAgent({ url: "/chats", fetch: (_url, init) => this.ask(init) });
   }
@@ -87,7 +98,23 @@ class Session {
         await createChat({ id: chatId, title: "" });
         this.stored.add(chatId);
       }
-      const response = await runChat(chatId, init);
+      // The question goes with the model and effort the picker shows: what the viewer chose,
+      // where the server still offers it. The protocol carries what a client adds in
+      // `forwardedProps`; the server checks it against its own settings.
+      const send = async (fresh: boolean) => {
+        const choice = chosen(await this.offered(fresh), readChoice());
+        const body = typeof init.body === "string" ? { ...JSON.parse(init.body), forwardedProps: choice } : null;
+        return runChat(chatId, body ? { ...init, body: JSON.stringify(body) } : init);
+      };
+      let response: Response;
+      try {
+        response = await send(false);
+      } catch (error) {
+        // The server's settings changed since the offer was read, and it refused the choice
+        // before storing anything: the offer is read again, and the question sent once more.
+        if (!(error instanceof ApiError && error.field === "forwardedProps")) throw error;
+        response = await send(true);
+      }
       // The question is stored and names a new chat: the list shows it while Tamga answers.
       this.asked();
       return response;
@@ -149,8 +176,14 @@ export function ChatRuntime({ children }: { children: ReactNode }) {
   const archived = useArchivedChats();
   const [session] = useState(
     () =>
-      new Session(newChatId(), t.assistant.errors, () =>
-        void queryClient.invalidateQueries({ queryKey: CHATS_KEY }),
+      new Session(
+        newChatId(),
+        t.assistant.errors,
+        () => void queryClient.invalidateQueries({ queryKey: CHATS_KEY }),
+        (fresh) =>
+          fresh
+            ? queryClient.fetchQuery({ queryKey: ASSISTANT_KEY, queryFn: getAssistant, staleTime: 0 })
+            : queryClient.ensureQueryData({ queryKey: ASSISTANT_KEY, queryFn: getAssistant }),
       ),
   );
   const [chatId, setChatId] = useState(() => session.chatId);

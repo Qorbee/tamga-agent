@@ -112,6 +112,12 @@ def model_for(agent_name: str) -> Model:
     return _model(model_name(agent_name))
 
 
+def model_named(model: str) -> Model:
+    """A model by its name in settings, for a run whose caller chose it among those settings
+    offer (the assistant's, CHAT_MODELS)."""
+    return _model(model)
+
+
 def second_model_for(agent_name: str) -> Model:
     name = second_model_name(agent_name)
     if name is None:
@@ -180,14 +186,21 @@ def _traced(trace_content: bool) -> list[Instrumentation]:
 
 
 def stream_arguments(
-    agent_name: str, *, language: Language | None, trace_content: bool = False
+    agent_name: str,
+    *,
+    language: Language | None,
+    trace_content: bool = False,
+    chosen_model: str | None = None,
+    chosen_effort: Effort | None = None,
 ) -> dict[str, Any]:
     """What ``run`` gives an agent, for a run this module does not make itself: one whose
     events a UI adapter streams to a reader as they come (the assistant's). The model settings
-    name for the agent, its effort, the line on the language of its own words, and tracing."""
+    name for the agent, its effort, the line on the language of its own words, and tracing.
+    ``chosen_model`` and ``chosen_effort`` stand in for what settings name for the agent: the
+    caller has checked them against what settings offer."""
     return {
-        "model": model_for(agent_name),
-        "model_settings": ModelSettings(thinking=effort(agent_name)),
+        "model": model_for(agent_name) if chosen_model is None else model_named(chosen_model),
+        "model_settings": ModelSettings(thinking=chosen_effort or effort(agent_name)),
         "instructions": None if language is None else _written_in(language),
         "capabilities": _traced(trace_content),
     }

@@ -117,6 +117,13 @@ export const en = {
       gone: "This is no longer here.",
     },
     /** How full a chat is, and compacting it. */
+    choice: {
+      label: "Model and reasoning",
+      model: "Model",
+      effort: "Reasoning",
+      efforts: { low: "Low", medium: "Medium", high: "High", xhigh: "Highest" },
+      what: "More reasoning is slower and costs more, and makes fewer mistakes. It holds from your next question.",
+    },
     context: {
       used: (percent: number) => `${percent}% of this chat's context is used`,
       what: "Tamga is sent the whole chat with every question. Before it fills, the earlier part is written into notes by itself.",

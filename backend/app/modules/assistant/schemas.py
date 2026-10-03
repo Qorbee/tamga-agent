@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.config import Effort
 from app.modules.assistant.models import CardKind, Origin
 
 
@@ -78,3 +79,22 @@ class ChatMessages(BaseModel):
 
     # The protocol's own messages, as its client library types them, and Tamga's cards.
     messages: list[CardMessage | CompactionMessage | dict[str, Any]]
+
+
+class AssistantOut(BaseModel):
+    """What whoever asks in a chat may choose for an answer, and what an answer is given when
+    nothing is chosen."""
+
+    model: str
+    effort: Effort
+    # Each as settings name it, ``provider:name``; the configured one first.
+    models: list[str]
+    efforts: list[Effort]
+
+
+class RunChoice(BaseModel):
+    """What a run's sender chose for it, of what ``AssistantOut`` offers: carried in the chat
+    protocol's ``forwardedProps``. What is left out is as configured."""
+
+    model: str | None = None
+    effort: Effort | None = None

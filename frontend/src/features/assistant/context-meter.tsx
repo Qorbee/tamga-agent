@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuiState } from "@assistant-ui/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Hint } from "@/components/hint";
 import {
@@ -10,9 +10,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { compactChat, getMe, type Chat } from "@/lib/api";
+import { compactChat, type Chat } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 import { chatMessagesKey, useArchivedChats, useChats, useInvalidateChats } from "@/lib/use-chats";
+import { useAsks } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 /** The ring's radius and the length of its whole stroke, in the units of its 20 by 20 box. */
@@ -42,8 +43,7 @@ function Meter({ chat }: { chat: Chat }) {
   const invalidateChats = useInvalidateChats();
   const answering = useAuiState((s) => s.thread.isRunning);
   // Compacting asks a model, which a member who only reads may not do.
-  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
-  const asks = me.data?.role === "owner" || me.data?.role === "ops";
+  const asks = useAsks();
   const compact = useMutation({
     // With how full the chat was, to tell afterwards whether anything was written.
     mutationFn: async () => ({ before: chat.context_tokens, after: await compactChat(chat.id) }),

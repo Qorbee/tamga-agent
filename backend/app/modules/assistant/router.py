@@ -5,12 +5,27 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import Response
 
 from app.modules.assistant import service
-from app.modules.assistant.schemas import ChatCreate, ChatMessages, ChatOut, ChatPage, ChatUpdate
+from app.modules.assistant.schemas import (
+    AssistantOut,
+    ChatCreate,
+    ChatMessages,
+    ChatOut,
+    ChatPage,
+    ChatUpdate,
+)
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
 from app.platform.pagination import PageDep
 
 chats = APIRouter(tags=["chats"])
+
+
+@chats.get("/assistant")
+async def get_assistant(actor: ActorDep) -> AssistantOut:
+    """The model and reasoning effort a chat's answers are given, and the others a question
+    may be sent with: a run takes the choice in the protocol's `forwardedProps`, as
+    `{"model": …, "effort": …}`."""
+    return service.get_assistant()
 
 
 @chats.get("/chats")

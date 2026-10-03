@@ -12,6 +12,7 @@ import { useChats, useInvalidateChats } from "@/lib/use-chats";
 import { useChatShown } from "./chat-runtime";
 import { ChatTitle } from "./chat-title";
 import { ContextMeter } from "./context-meter";
+import { ModelPicker } from "./model-picker";
 import { Welcome } from "./welcome";
 
 /**
@@ -28,9 +29,19 @@ export function AssistantHome() {
       <ReadWhenShown />
       <PageHeader title={started ? <ChatTitle /> : undefined} />
       <div className="min-h-0 flex-1">
-        <Thread components={{ Welcome, ComposerMeter: ContextMeter }} placeholder={t.assistant.placeholder} />
+        <Thread components={{ Welcome, ComposerTools }} placeholder={t.assistant.placeholder} />
       </div>
     </div>
+  );
+}
+
+/** What the app puts in the composer beside Send. */
+function ComposerTools() {
+  return (
+    <>
+      <ModelPicker />
+      <ContextMeter />
+    </>
   );
 }
 

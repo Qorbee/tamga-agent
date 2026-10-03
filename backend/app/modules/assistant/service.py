@@ -28,16 +28,18 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
+from app.config import Effort, get_settings
 from app.modules.assistant import agents, context, repository
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.schemas import (
+    AssistantOut,
     CardContent,
     CardMessage,
     ChatMessages,
     ChatOut,
     ChatPage,
     CompactionMessage,
+    RunChoice,
 )
 from app.modules.companies import service as companies
 from app.modules.projects import service as projects
@@ -82,6 +84,20 @@ _runs: Final[dict[uuid.UUID, asyncio.Task[None]]] = {}
 _ID_TAKEN: Final = "chats_pkey"
 # Who may ask: a run costs money and reads everything the company holds.
 _ASKERS: Final = (Role.OWNER, Role.OPS)
+# The efforts a question may be asked at, whatever the assistant is configured with.
+_EFFORTS: Final[tuple[Effort, ...]] = ("low", "medium", "high")
+
+
+def get_assistant() -> AssistantOut:
+    """What a question may be asked with: the model and effort the assistant is configured
+    with, and the others settings offer (CHAT_MODELS, and the efforts every model takes)."""
+    model, effort = llm.model_name(agents.ASSISTANT), llm.effort(agents.ASSISTANT)
+    return AssistantOut(
+        model=model,
+        effort=effort,
+        models=list(dict.fromkeys([model, *get_settings().chat_models])),
+        efforts=list(dict.fromkeys([*_EFFORTS, effort])),
+    )
 
 
 async def list_chats(
@@ -239,6 +255,7 @@ async def run_chat(
         raise BadRequest("A run answers a message in words: send one", field="messages")
     if not said.content.strip() or len(said.content) > MESSAGE_LENGTH:
         raise BadRequest("A message is 1 to 20,000 characters", field="messages")
+    chosen = _chosen(asked.forwarded_props)
     question = ModelRequest(parts=[UserPromptPart(content=said.content)])
     run_id = uuid.uuid7()
     now = utcnow()
@@ -307,6 +324,8 @@ async def run_chat(
             # The assistant answers in the language it is written to.
             language=None,
             trace_content=traces,
+            chosen_model=chosen.model,
+            chosen_effort=chosen.effort,
         ),
     )
     await repository.lock_budget(db, actor.company_id)
@@ -592,6 +611,22 @@ async def _name(
             if chat is not None and chat.title == held:
                 chat.title = name
         await db.commit()
+
+
+def _chosen(sent: Any) -> RunChoice:
+    """The model and effort a run's sender chose for it. One that settings do not offer is
+    refused, never replaced: nobody is answered by a model they did not choose, and a browser
+    cannot name a model the company's settings leave out."""
+    try:
+        choice = RunChoice.model_validate(sent or {})
+    except ValidationError as error:
+        raise BadRequest("Not a choice of model and effort", field="forwardedProps") from error
+    offered = get_assistant()
+    if choice.model is not None and choice.model not in offered.models:
+        raise BadRequest("This model is not offered here", field="forwardedProps")
+    if choice.effort is not None and choice.effort not in offered.efforts:
+        raise BadRequest("This effort is not offered here", field="forwardedProps")
+    return choice
 
 
 async def _chat(

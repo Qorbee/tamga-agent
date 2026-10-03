@@ -158,6 +158,10 @@ class Settings(BaseSettings):
     # The tokens a chat may hold before it is compacted: well under the model's own window, past
     # which the provider charges a long prompt at a higher rate.
     chat_context_tokens: int = Field(default=120_000, ge=10_000)
+    # The models whoever asks in a chat may choose for the answer, besides the one the assistant
+    # is configured with. Empty: a chat has no choice of model. The choice is made per question,
+    # so a small model can take the easy ones.
+    chat_models: list[str] = []
 
     # Traces of agent runs, to Langfuse Cloud's EU region (ADR-0007). Unset: nothing is exported.
     langfuse_public_key: str | None = None
@@ -254,6 +258,7 @@ class Settings(BaseSettings):
             self.default_model,
             *self.agent_models.values(),
             *self.agent_second_models.values(),
+            *self.chat_models,
         }
 
     @model_validator(mode="after")

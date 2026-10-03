@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import (
     AgentInfo,
     DeltaThinkingCalls,
@@ -24,6 +25,7 @@ from pydantic_ai.models.function import (
     DeltaToolCalls,
     FunctionModel,
 )
+from pydantic_ai.profiles import ModelProfile
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -270,6 +272,59 @@ async def test_a_name_somebody_gave_a_chat_is_not_replaced_by_a_models(
     await ask(client, chat_id, user("What waits for me today?"))
     assert len(script.named) == 1
     assert (await client.get(f"/chats/{chat_id}")).json()["title"] == "Mine"
+
+
+async def test_a_question_is_answered_by_the_model_and_effort_its_sender_chose(
+    client: httpx.AsyncClient, model: Callable[..., Script], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await guest_client(client)
+    configured, effort = llm.model_name("assistant"), llm.effort("assistant")
+    monkeypatch.setattr(get_settings(), "chat_models", ["openai:small", configured])
+    script = model("Nothing waits.", "Still nothing.")
+    # A model that reasons: the library sends an effort to no other.
+    reasons = FunctionModel(
+        script.answer, stream_function=script.respond, profile=ModelProfile(supports_thinking=True)
+    )
+    named: list[str] = []
+
+    def by_name(name: str) -> Model:
+        named.append(name)
+        return reasons
+
+    # The assistant's own model reasons too; the one that names the chat stays as installed.
+    installed = llm.model_for
+    monkeypatch.setattr(
+        llm, "model_for", lambda agent: reasons if agent == agents.ASSISTANT else installed(agent)
+    )
+    monkeypatch.setattr(llm, "model_named", by_name)
+
+    # What is offered: the configured model first and once, and the efforts any model takes.
+    offered = (await client.get("/assistant")).json()
+    assert offered["model"] == configured and offered["effort"] == effort
+    assert offered["models"] == [configured, "openai:small"]
+    assert offered["efforts"][:3] == ["low", "medium", "high"] and effort in offered["efforts"]
+
+    chat_id = await new_chat(client)
+    chosen = {"model": "openai:small", "effort": "low"}
+    assert words(await ask(client, chat_id, user("What waits?"), forwardedProps=chosen))
+    assert named == ["openai:small"]
+    assert script.infos[0].model_request_parameters.thinking == "low"
+    # With nothing chosen the answer is given as configured.
+    assert words(await ask(client, chat_id, user("And now?", "m2"))) == "Still nothing."
+    assert named == ["openai:small"]
+    assert script.infos[1].model_request_parameters.thinking == effort
+
+    # A model or an effort that is not offered is refused, and nothing is asked or kept.
+    for refused in ({"model": "openai:another"}, {"effort": "most"}, {"model": 5}, "small"):
+        answered = await ask(client, chat_id, user("Again?", "m3"), forwardedProps=refused)
+        assert answered.status_code == 400, refused
+        assert answered.json()["error"]["field"] == "forwardedProps"
+    assert len(script.requests) == 2
+    kept = (await client.get(f"/chats/{chat_id}/messages")).json()["messages"]
+    assert [message["content"] for message in kept if message["role"] == "user"] == [
+        "What waits?",
+        "And now?",
+    ]
 
 
 async def test_a_run_is_given_the_stored_history_and_never_the_clients(

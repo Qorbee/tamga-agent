@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Assistant
+         * @description The model and reasoning effort a chat's answers are given, and the others a question
+         *     may be sent with: a run takes the choice in the protocol's `forwardedProps`, as
+         *     `{"model": …, "effort": …}`.
+         */
+        get: operations["chats.get_assistant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chats": {
         parameters: {
             query?: never;
@@ -901,6 +923,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AssistantOut
+         * @description What whoever asks in a chat may choose for an answer, and what an answer is given when
+         *     nothing is chosen.
+         */
+        AssistantOut: {
+            /**
+             * Effort
+             * @enum {string}
+             */
+            effort: "low" | "medium" | "high" | "xhigh";
+            /** Efforts */
+            efforts: ("low" | "medium" | "high" | "xhigh")[];
+            /** Model */
+            model: string;
+            /** Models */
+            models: string[];
+        };
         /** AttachmentOut */
         AttachmentOut: {
             /** Content Type */
@@ -2322,6 +2362,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "chats.get_assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantOut"];
+                };
+            };
+        };
+    };
     "chats.list_chats": {
         parameters: {
             query?: {

@@ -1,6 +1,53 @@
 {
   "components": {
     "schemas": {
+      "AssistantOut": {
+        "description": "What whoever asks in a chat may choose for an answer, and what an answer is given when\nnothing is chosen.",
+        "properties": {
+          "effort": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "title": "Effort",
+            "type": "string"
+          },
+          "efforts": {
+            "items": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh"
+              ],
+              "type": "string"
+            },
+            "title": "Efforts",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "model",
+          "effort",
+          "models",
+          "efforts"
+        ],
+        "title": "AssistantOut",
+        "type": "object"
+      },
       "AttachmentOut": {
         "properties": {
           "content_type": {
@@ -4198,6 +4245,33 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/assistant": {
+      "get": {
+        "description": "The model and reasoning effort a chat's answers are given, and the others a question\nmay be sent with: a run takes the choice in the protocol's `forwardedProps`, as\n`{\"model\": …, \"effort\": …}`.",
+        "operationId": "chats.get_assistant",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Assistant",
+        "tags": [
+          "chats"
+        ]
+      }
+    },
     "/chats": {
       "get": {
         "description": "The company's chats: those this user has not read first, then the most recent.",

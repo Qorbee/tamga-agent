@@ -115,6 +115,13 @@ export const tr: Dictionary = {
     cards: {
       gone: "Bu artık burada değil.",
     },
+    choice: {
+      label: "Model ve akıl yürütme",
+      model: "Model",
+      effort: "Akıl yürütme",
+      efforts: { low: "Düşük", medium: "Orta", high: "Yüksek", xhigh: "En yüksek" },
+      what: "Daha fazla akıl yürütme daha yavaş ve daha pahalıdır, daha az hata yapar. Bir sonraki sorunuzdan itibaren geçerlidir.",
+    },
     context: {
       used: (percent: number) => `Bu sohbetin bağlamı %${percent} dolu`,
       what: "Tamga her soruda sohbetin tamamını okur. Dolmadan önce eski kısmı kendiliğinden notlara yazılır.",
