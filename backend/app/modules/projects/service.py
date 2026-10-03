@@ -49,6 +49,7 @@ from app.modules.projects.schemas import (
     LinkOut,
     LinkPage,
     NumberingOut,
+    ProjectJob,
     ProjectOut,
     ProjectPage,
     ProjectPartyOut,
@@ -96,6 +97,12 @@ _PROJECT_FIELDS: Final = frozenset({"name", "number", *_DATES})
 type MergeHook = Callable[[AsyncSession, uuid.UUID, uuid.UUID, uuid.UUID], Awaitable[None]]
 _merge_guards: list[MergeHook] = []
 _merge_listeners: list[MergeHook] = []
+# Reads what a module knows of each project's job, for the projects shown: the session, the
+# company and the projects. The linker registers the one that reads conversations.
+type JobReader = Callable[
+    [AsyncSession, uuid.UUID, Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, ProjectJob]]
+]
+_job_readers: list[JobReader] = []
 # Which of two links to one item says more: the owner's yes, then a suggestion, then a no.
 _LINK_RANK: Final = {LinkStatus.REJECTED: 0, LinkStatus.SUGGESTED: 1, LinkStatus.CONFIRMED: 2}
 _CONFIRMED_BY_OWNER: Final = (ProjectStatus.ACTIVE, ProjectStatus.CLOSED)
@@ -111,6 +118,11 @@ def on_merge(listener: MergeHook) -> None:
     """A module that keeps rows naming a project moves them when it is merged into another: the
     project that goes is deleted next, and what still names it goes with it."""
     _merge_listeners.append(listener)
+
+
+def read_jobs_with(reader: JobReader) -> None:
+    """A module that reads what a project's job is fills the project's ``job`` for every read."""
+    _job_readers.append(reader)
 
 
 class NumberTaken(Conflict):
@@ -935,6 +947,9 @@ async def _describe(
 ) -> list[ProjectOut]:
     numbers = await repository.numbers_of(db, company_id, [p.id for p in projects])
     links = await repository.count_links(db, company_id, [p.id for p in projects])
+    jobs: dict[uuid.UUID, ProjectJob] = {}
+    for reader in _job_readers:
+        jobs |= await reader(db, company_id, [p.id for p in projects])
     aliases: dict[uuid.UUID, list[str]] = {}
     for number in numbers:
         aliases.setdefault(number.project_id, []).append(number.number)
@@ -951,6 +966,7 @@ async def _describe(
             field_sources={k: FieldSource(v) for k, v in project.field_sources.items()},
             confirmed_links=links.get((project.id, LinkStatus.CONFIRMED), 0),
             suggested_links=links.get((project.id, LinkStatus.SUGGESTED), 0),
+            job=jobs.get(project.id),
             created_at=project.created_at,
             updated_at=project.updated_at,
         )

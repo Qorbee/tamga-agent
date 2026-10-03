@@ -53,18 +53,6 @@ export function Count({ icon, count, label }: { icon: IconSvgElement; count: num
 
 type Reading = NonNullable<Placement["reading"]>;
 
-/** Names as they were read, one of each however it was capitalised: mail writes a firm in
- * capitals as often as not, and a Turkish İ or ı is its own letter. */
-function distinct(names: (string | null | undefined)[]): string[] {
-  const seen = new Map<string, string>();
-  for (const name of names) {
-    if (!name) continue;
-    const folded = name.replace(/[İIı]/g, "i").toLowerCase();
-    if (!seen.has(folded)) seen.set(folded, name);
-  }
-  return [...seen.values()];
-}
-
 function Fact({ icon, label, children }: { icon: IconSvgElement; label: string; children: ReactNode }) {
   return (
     <span className="flex max-w-full min-w-0 items-start gap-1.5">
@@ -80,31 +68,26 @@ function Fact({ icon, label, children }: { icon: IconSvgElement; label: string; 
 
 /**
  * What is known of a project's job: who gave it and who it was given on to, where it goes and to
- * whom, the load, and its days. The firms, the route and the load are read across the project's
- * conversations; the days are the project's own. A long value wraps; nothing is cut at the edge.
+ * whom, the load, and its days. The server works the job out across the project's conversations
+ * (what most of them say, each firm in one role); the days are the project's own. A long value
+ * wraps; nothing is cut at the edge.
  */
 export function JobFacts({
-  placements,
   project,
   className,
 }: {
-  placements: Placement[];
-  project?: Pick<Project, "starts_on" | "ends_on">;
+  project: Pick<Project, "job" | "starts_on" | "ends_on">;
   className?: string;
 }) {
   const { t, locale } = useI18n();
-  const readings = placements.flatMap((placement) => (placement.reading ? [placement.reading] : []));
-  const first = <K extends "client" | "consignee" | "origin" | "destination" | "cargo" | "trucks">(key: K) =>
-    readings.find((reading) => reading[key])?.[key] ?? undefined;
-  const dealtWith = (role: Reading["party_role"]) =>
-    readings.filter((reading) => reading.party_role === role).map((reading) => reading.party);
-  const client = first("client") ?? distinct(dealtWith("client"))[0];
-  const subcontractors = distinct([...readings.map((reading) => reading.subcontractor), ...dealtWith("subcontractor")]);
-  const consignee = first("consignee");
-  const route = [first("origin"), first("destination")].filter(Boolean).join(" → ");
-  const cargo = first("cargo");
-  const trucks = first("trucks");
-  const days = project ? formatDays(project.starts_on, project.ends_on, locale) : "";
+  const job = project.job;
+  const client = job?.client;
+  const subcontractors = job?.subcontractors ?? [];
+  const consignee = job?.consignee;
+  const route = [job?.origin, job?.destination].filter(Boolean).join(" → ");
+  const cargo = job?.cargo;
+  const trucks = job?.trucks;
+  const days = formatDays(project.starts_on, project.ends_on, locale);
   if (!client && subcontractors.length === 0 && !consignee && !route && !cargo && !trucks && !days) return null;
   return (
     <ul className={cn("text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-sm", className)}>

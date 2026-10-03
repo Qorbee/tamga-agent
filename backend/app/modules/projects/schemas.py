@@ -31,6 +31,20 @@ ProjectSort = Literal[
 ]
 
 
+class ProjectJob(BaseModel):
+    """The job as the project's conversations describe it together, worked out by code from what
+    a model read in each: for each field what most of them say, and each firm in one role only.
+    Firms go by their short names; the parties keep their full ones."""
+
+    client: str | None = None
+    subcontractors: list[str] = []
+    consignee: str | None = None
+    origin: str | None = None
+    destination: str | None = None
+    cargo: str | None = None
+    trucks: int | None = None
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -48,6 +62,8 @@ class ProjectOut(BaseModel):
     # Links to it the owner confirmed, and those that still wait for the owner.
     confirmed_links: int
     suggested_links: int
+    # Null while nothing was read of its job.
+    job: ProjectJob | None
     created_at: datetime
     updated_at: datetime
 

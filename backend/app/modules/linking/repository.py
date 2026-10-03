@@ -40,22 +40,42 @@ async def note_changed(
     )
 
 
-async def readings_of_project(
-    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
-) -> list[tuple[uuid.UUID, dict[str, Any]]]:
-    """What was read in each conversation placed in the project, by placement, in the order the
-    conversations were first noted: the one a project was proposed for comes first."""
+async def readings_of_projects(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """What was read in each conversation placed in each project, in the order the conversations
+    were first noted: the one a project was proposed for comes first. A project nothing was read
+    for is left out."""
+    if not project_ids:
+        return {}
     rows = await db.execute(
-        select(Placement.id, Placement.reading)
+        select(Placement.project_id, Placement.reading)
         .where(
             Placement.company_id == company_id,
-            Placement.project_id == project_id,
+            Placement.project_id.in_(project_ids),
             Placement.outcome.in_((Outcome.LINKED, Outcome.PROPOSED)),
             Placement.reading.is_not(None),
         )
         .order_by(Placement.created_at, Placement.id)
     )
-    return [(placement_id, reading) for placement_id, reading in rows.all()]
+    readings: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for project_id, reading in rows.all():
+        readings.setdefault(project_id, []).append(reading)
+    return readings
+
+
+async def placed_projects(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
+    """The projects a conversation was read into."""
+    rows = await db.scalars(
+        select(Placement.project_id)
+        .where(
+            Placement.company_id == company_id,
+            Placement.project_id.is_not(None),
+            Placement.reading.is_not(None),
+        )
+        .distinct()
+    )
+    return [project_id for project_id in rows if project_id is not None]
 
 
 async def naming(

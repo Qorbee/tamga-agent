@@ -15,7 +15,7 @@ again.
 import logging
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
@@ -37,8 +37,10 @@ from app.modules.facts import service as facts
 from app.modules.linking import agents, repository
 from app.modules.linking.models import Outcome, Placement
 from app.modules.linking.schemas import JobReading, PlacementOut, PlacementPage
+from app.modules.parties import service as parties
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProjectStatus
+from app.modules.projects.schemas import ProjectJob
 from app.platform import llm
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
@@ -100,6 +102,8 @@ _DAYS: Final = ("starts_on", "ends_on")
 # The fields of a reading that name a firm, and what is no firm's name: a mail address, or a
 # web domain standing alone.
 _FIRMS: Final = ("client", "subcontractor", "consignee", "party")
+# The roles a reading gives a firm in a job; a firm holds one of them in a project.
+_ROLES: Final = ("client", "subcontractor")
 _ADDRESS: Final = re.compile(r"\S+@\S+|(?:www\.)?[\w-]+(?:\.[\w-]+)*\.[^\W\d_]{2,}")
 
 
@@ -628,7 +632,7 @@ def _title(job: Mapping[str, Any]) -> str | None:
     """A project's name from what is known of its job: the client, the route and the first day,
     the same way for every project ("Stone GmbH · Izmir → Hamburg · 05.10.2026"). None when
     neither the client nor both ends of the route are known: the model's few words name it."""
-    client = " ".join(str(job.get("client") or "").split())[:120]
+    client = parties.short_name(str(job.get("client") or ""))[:120]
     origin, destination = _town(job.get("origin")), _town(job.get("destination"))
     if not client and not (origin and destination):
         return None
@@ -639,13 +643,27 @@ def _title(job: Mapping[str, Any]) -> str | None:
 
 
 def _known(readings: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """What a project's conversations say of its job, together: for each field the first
-    conversation that names it, and for the days the earliest start and the latest end."""
+    """What a project's conversations say of its job, together. Each field is what most of them
+    say, a tie going to the one noted last, so one conversation that misread the job does not
+    name it. A firm read as the client in some and as the subcontractor in others holds only the
+    role most of them give it. The days are the earliest start and the latest end."""
     known: dict[str, Any] = {}
-    for reading in readings:
-        for field, value in reading.items():
-            if field not in ("party", "party_role", "starts_on", "ends_on"):
-                known.setdefault(field, value)
+    for field in ("consignee", "cargo", "trucks"):
+        if found := _ranked([reading.get(field) for reading in readings], _same):
+            known[field] = found[0]
+    for field in ("origin", "destination"):
+        places = [reading.get(field) for reading in readings]
+        if found := _ranked(places, lambda place: _same(_town(place))):
+            known[field] = found[0]
+    votes, held = _firms(readings)
+    firms = {
+        role: _ranked([f for f, said in votes if said == role and held[_same(f)] == role], _same)
+        for role in _ROLES
+    }
+    if firms["client"]:
+        known["client"] = firms["client"][0]
+    if firms["subcontractor"]:
+        known["subcontractors"] = firms["subcontractor"]
     starts = [day for reading in readings if (day := _day(reading, "starts_on"))]
     ends = [day for reading in readings if (day := _day(reading, "ends_on"))]
     if starts:
@@ -653,6 +671,84 @@ def _known(readings: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     if ends and (not starts or max(ends) >= min(starts)):
         known["ends_on"] = max(ends).isoformat()
     return known
+
+
+def _firms(readings: Sequence[Mapping[str, Any]]) -> tuple[list[tuple[str, str]], dict[str, str]]:
+    """Each firm the readings name as the client or the subcontractor, once per reading and role,
+    in order; and the one role each firm holds, by its name's key: the one most readings give it,
+    a tie going to the reading noted last. The firm a conversation deals with (``party``) counts
+    in the role the reading gives it."""
+    votes: list[tuple[str, str]] = []
+    for reading in readings:
+        named = [(reading.get(role), role) for role in _ROLES]
+        if reading.get("party_role") in _ROLES:
+            named.append((reading.get("party"), reading["party_role"]))
+        seen: set[tuple[str, str]] = set()
+        for firm, role in named:
+            if firm and _same(firm) and (_same(firm), role) not in seen:
+                seen.add((_same(firm), role))
+                votes.append((str(firm), role))
+    roles: dict[str, list[str]] = {}
+    for firm, role in votes:
+        roles.setdefault(_same(firm), []).append(role)
+    return votes, {firm: _ranked(said, str)[0] for firm, said in roles.items()}
+
+
+def _ranked(values: Sequence[Any], key: Callable[[Any], str]) -> list[Any]:
+    """The distinct values by ``key``, the one said most first, a tie going to the one said
+    last. Each is given in the spelling said most among its own, a tie again going to the last:
+    "London, UK" twice and "London, Canada" once are one town, and it is London, UK."""
+    said: dict[str, dict[Any, tuple[int, int]]] = {}
+    for at, value in enumerate(values):
+        if value is None or not (same := key(value)):
+            continue
+        spellings = said.setdefault(same, {})
+        count, _ = spellings.get(value, (0, at))
+        spellings[value] = (count + 1, at)
+
+    def weight(spellings: dict[Any, tuple[int, int]]) -> tuple[int, int]:
+        return sum(count for count, _ in spellings.values()), max(
+            at for _, at in spellings.values()
+        )
+
+    order = sorted(said.values(), key=weight, reverse=True)
+    return [max(spellings, key=lambda value: spellings[value]) for spellings in order]
+
+
+def _same(value: Any) -> str:
+    """The form two spellings of one value share: "ATLAS NAKLİYAT LTD. ŞTİ." and "Atlas
+    Nakliyat" are one firm."""
+    return parties.name_key(str(value))
+
+
+def _job(known: Mapping[str, Any]) -> ProjectJob | None:
+    """What is known of a project's job, as the project shows it; None when nothing is."""
+    trucks = str(known.get("trucks") or "")
+    job = ProjectJob(
+        client=parties.short_name(known["client"]) if known.get("client") else None,
+        subcontractors=[parties.short_name(firm) for firm in known.get("subcontractors", [])],
+        consignee=parties.short_name(known["consignee"]) if known.get("consignee") else None,
+        origin=known.get("origin"),
+        destination=known.get("destination"),
+        cargo=known.get("cargo"),
+        trucks=int(trucks) if trucks.isdigit() else None,
+    )
+    return None if job == ProjectJob() else job
+
+
+async def _jobs(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, ProjectJob]:
+    """Each project's job as its conversations describe it together, for the projects shown."""
+    readings = await repository.readings_of_projects(db, company_id, project_ids)
+    return {
+        project_id: job
+        for project_id, read in readings.items()
+        if (job := _job(_known(read))) is not None
+    }
+
+
+projects.read_jobs_with(_jobs)
 
 
 def _as_read(read: dict[str, Any]) -> dict[str, str] | None:
@@ -766,10 +862,8 @@ async def _tell_project(
     proof. With ``said`` None a conversation has left the project (the owner's answer): what
     Tamga derived is worked out again from those that remain, and nothing the owner set is
     touched or proposed over."""
-    readings = [
-        reading for _, reading in await repository.readings_of_project(db, company_id, project_id)
-    ]
-    known = _known(readings)
+    readings = await repository.readings_of_projects(db, company_id, [project_id])
+    known = _known(readings.get(project_id, []))
     values: dict[str, Any] = {}
     name = _title(known)
     if name:
@@ -789,6 +883,27 @@ async def _tell_project(
             evidence=evidence,
             leave_owner=("name",) if said is not None else ("name", *_DAYS),
         )
+
+
+async def tell_projects_again(
+    db: AsyncSession, company_id: uuid.UUID
+) -> list[tuple[str, str, str]]:
+    """Works out again, from what its conversations say, the name and days Tamga gave each of the
+    company's projects: for when the way they are worked out changed. The owner's own are left
+    as they are. Returns the number, the old name and the new one of each project renamed. Does
+    not commit."""
+    placed = await repository.placed_projects(db, company_id)
+    before = await projects.get_projects(db, company_id, placed)
+    names = {project_id: project.name for project_id, project in before.items()}
+    for project_id in placed:
+        await _tell_project(db, company_id, project_id, said=None, evidence=())
+    await db.flush()
+    after = await projects.get_projects(db, company_id, placed)
+    return sorted(
+        (project.number, names[project_id], project.name)
+        for project_id, project in after.items()
+        if project.name != names[project_id]
+    )
 
 
 # What the owner sees and answers

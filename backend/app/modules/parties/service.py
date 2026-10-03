@@ -7,6 +7,8 @@ These operations run inside the caller's transaction (a books sync, a linking jo
 and never commit.
 """
 
+import re
+import unicodedata
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -16,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import service as companies
 from app.modules.parties import repository
-from app.modules.parties.identifiers import normalise
+from app.modules.parties.identifiers import normalise, normalise_name
 from app.modules.parties.models import (
     IdentifierKind,
     IdentifierSource,
@@ -26,6 +28,10 @@ from app.modules.parties.models import (
 )
 
 _CONFIRMING: Final = frozenset({IdentifierSource.BOOKS, IdentifierSource.OWNER})
+# The words a firm's name may end with that say what kind of firm it is ("LTD. ŞTİ.", "A.Ş."), in
+# the form names are compared in, longest first: each country's pack registers its own.
+_LEGAL_FORMS: list[tuple[str, ...]] = []
+_WORD: Final = re.compile(r"[^\W_]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,3 +157,45 @@ async def get_synced_party(
 ) -> Party | None:
     """The party synced from this accounting card, if it has been."""
     return await repository.get_by_source(db, company_id, source, source_id)
+
+
+# Names
+
+
+def register_legal_forms(forms: Iterable[str]) -> None:
+    """A pack's legal-form tails, written as firms write them ("LTD. ŞTİ."); they are compared
+    without case, accents or punctuation."""
+    for form in forms:
+        words = tuple(normalise_name(form).split())
+        if words and words not in _LEGAL_FORMS:
+            _LEGAL_FORMS.append(words)
+    _LEGAL_FORMS.sort(key=len, reverse=True)
+
+
+def short_name(name: str) -> str:
+    """A firm's name without its legal-form tail: "ATLAS NAKLİYAT SAN. VE TİC. LTD. ŞTİ." is
+    "ATLAS NAKLİYAT". For a project's name and a chip; the party keeps its full name. The first
+    word always stays, so no name is emptied."""
+    text = " ".join(unicodedata.normalize("NFC", name).split())
+    words = [(match.end(), normalise_name(match.group())) for match in _WORD.finditer(text)]
+    kept = len(words)
+    while kept > 1:
+        tail = next(
+            (
+                form
+                for form in _LEGAL_FORMS
+                if len(form) < kept
+                and tuple(word for _, word in words[kept - len(form) : kept]) == form
+            ),
+            None,
+        )
+        if tail is None:
+            break
+        kept -= len(tail)
+    return text[: words[kept - 1][0]] if 0 < kept < len(words) else text
+
+
+def name_key(name: str) -> str:
+    """The form two spellings of one firm's name share: its short name without case, accents or
+    punctuation."""
+    return normalise_name(short_name(name))

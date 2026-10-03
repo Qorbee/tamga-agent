@@ -1050,3 +1050,60 @@ async def test_a_conversation_the_owner_rejects_no_longer_names_or_dates_the_pro
     [project] = await the_projects(company_id)
     assert project.name == "Stone GmbH · Istanbul → Munich · 10.08.2026"
     assert (project.starts_on, project.ends_on) == (date(2026, 8, 10), None)
+
+
+@pytest.mark.integration
+async def test_a_project_shows_its_job_as_its_conversations_say_it_together(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    model(
+        answer(
+            "new_project",
+            new_project={
+                "name": "coils",
+                "client": "Stone GmbH",
+                "subcontractor": "Hauler Transport",
+                "origin": "Istanbul",
+                "destination": "Munich",
+                "trucks": 2,
+            },
+        )
+    )
+    assert await service.place_pending() == 1
+    [project] = await the_projects(company_id)
+
+    # The carrier's own conversation: it reads as the client, the firm the mail deals with as
+    # the subcontractor. Most conversations call it the subcontractor, so it is that alone.
+    await arrive(
+        company_id,
+        2,
+        mail("<truck@x>", subject="Truck for Munich", body="Our truck loads on the 8th."),
+        category=ThreadCategory.WORK,
+    )
+    model(
+        tool("open_project", number=project.number),
+        answer(
+            "link",
+            project=project.number,
+            job={"client": "Hauler Transport"},
+            party="Hauler Transport",
+            party_role="subcontractor",
+        ),
+    )
+    assert await service.place_pending() == 1
+
+    shown = (await client.get(f"/projects/{project.id}")).json()
+    assert shown["name"] == "Stone GmbH · Istanbul → Munich"
+    assert shown["job"] == {
+        "client": "Stone GmbH",
+        "subcontractors": ["Hauler Transport"],
+        "consignee": None,
+        "origin": "Istanbul",
+        "destination": "Munich",
+        "cargo": None,
+        "trucks": 2,
+    }
+    listed = (await client.get("/projects")).json()["items"]
+    assert [item["job"] for item in listed] == [shown["job"]]

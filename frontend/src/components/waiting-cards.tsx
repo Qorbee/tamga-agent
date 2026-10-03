@@ -143,7 +143,7 @@ export function ProjectCard({ project, waiting }: { project: Project; waiting: P
           >
             <T>{project.name}</T>
           </CanvasLink>
-          <JobFacts placements={waiting} project={project} className="mt-1.5" />
+          <JobFacts project={project} className="mt-1.5" />
         </div>
       </header>
       {answer.isError ? (

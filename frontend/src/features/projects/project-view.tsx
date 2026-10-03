@@ -103,7 +103,7 @@ export function ProjectView({ id }: { id: string }) {
           <ProjectActions project={project.data} pencil />
           <TranslateToggle className="text-muted-foreground" />
         </div>
-        <JobFacts placements={held} project={project.data} className="mt-1" />
+        <JobFacts project={project.data} className="mt-1" />
       </header>
 
       <section className="grid grid-cols-1 gap-2">

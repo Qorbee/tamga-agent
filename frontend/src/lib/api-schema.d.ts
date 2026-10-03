@@ -1880,6 +1880,31 @@ export interface components {
             number?: string | null;
         };
         /**
+         * ProjectJob
+         * @description The job as the project's conversations describe it together, worked out by code from what
+         *     a model read in each: for each field what most of them say, and each firm in one role only.
+         *     Firms go by their short names; the parties keep their full ones.
+         */
+        ProjectJob: {
+            /** Cargo */
+            cargo?: string | null;
+            /** Client */
+            client?: string | null;
+            /** Consignee */
+            consignee?: string | null;
+            /** Destination */
+            destination?: string | null;
+            /** Origin */
+            origin?: string | null;
+            /**
+             * Subcontractors
+             * @default []
+             */
+            subcontractors: string[];
+            /** Trucks */
+            trucks?: number | null;
+        };
+        /**
          * ProjectMerge
          * @description The owner saying this project and ``into`` are one job: ``into`` stays.
          */
@@ -1912,6 +1937,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            job: components["schemas"]["ProjectJob"] | null;
             /** Name */
             name: string;
             /** Number */

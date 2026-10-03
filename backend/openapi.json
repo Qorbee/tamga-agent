@@ -2798,6 +2798,87 @@
         "title": "ProjectCreate",
         "type": "object"
       },
+      "ProjectJob": {
+        "description": "The job as the project's conversations describe it together, worked out by code from what\na model read in each: for each field what most of them say, and each firm in one role only.\nFirms go by their short names; the parties keep their full ones.",
+        "properties": {
+          "cargo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cargo"
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "consignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consignee"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "subcontractors": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Subcontractors",
+            "type": "array"
+          },
+          "trucks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trucks"
+          }
+        },
+        "title": "ProjectJob",
+        "type": "object"
+      },
       "ProjectMerge": {
         "description": "The owner saying this project and ``into`` are one job: ``into`` stays.",
         "properties": {
@@ -2855,6 +2936,16 @@
             "title": "Id",
             "type": "string"
           },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -2903,6 +2994,7 @@
           "field_sources",
           "confirmed_links",
           "suggested_links",
+          "job",
           "created_at",
           "updated_at"
         ],
