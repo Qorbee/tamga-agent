@@ -476,14 +476,16 @@ async def test_an_answer_is_finished_and_kept_though_its_reader_left(
 ) -> None:
     company_id = await guest_client(client)
     chat_id = await new_chat(client)
-    script = model("It is at the border.")
+    # A name the model gives counts the request it took up front, so the count below holds
+    # whether or not the chat is named yet.
+    script = model("It is at the border.", name="Truck at the border")
     script.gate = asyncio.Event()
     reading = asyncio.create_task(ask(client, chat_id, user("Where is the truck?")))
     await until(lambda: script.requests)
 
     # While Tamga answers, the most it may ask is already taken from the day's budget, and
     # the chat says it is running and takes no second question.
-    assert await requests_counted(company_id) == service.RUN_REQUESTS
+    assert await requests_counted(company_id) == service.RUN_REQUESTS + 1
     assert (await client.get(f"/chats/{chat_id}")).json()["running"] is True
     assert (await ask(client, chat_id, user("And now?", "m2"))).status_code == 409
 
@@ -504,7 +506,7 @@ async def test_an_answer_is_finished_and_kept_though_its_reader_left(
         "Where is the truck?",
         "It is at the border.",
     ]
-    assert await requests_counted(company_id) == 1
+    assert await requests_counted(company_id) == 2
 
 
 async def test_a_run_given_up_for_dead_keeps_nothing_when_it_ends_late(
