@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, exists, func, or_, select, update
+from sqlalchemy import ColumnElement, Select, case, exists, func, or_, select, text, tuple_, update
 from sqlalchemy import delete as delete_rows
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.modules.projects.models import (
     FieldProposal,
     FieldSource,
+    LinkMethod,
     LinkStatus,
     Project,
     ProjectLink,
@@ -63,6 +64,7 @@ def _project_filters(
                 ProjectLink.company_id == company_id,
                 ProjectLink.project_id == Project.id,
                 ProjectLink.status == LinkStatus.SUGGESTED,
+                ProjectLink.method != LinkMethod.MAIL,
             )
         )
         filters.append(waits if suggested else ~waits)
@@ -218,13 +220,123 @@ async def get_links(
 async def count_links(
     db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
 ) -> dict[tuple[uuid.UUID, LinkStatus], int]:
-    """How many links each of these projects holds, by status."""
+    """How many links each of these projects holds, by status: those the owner answers, not the
+    files that follow their mail."""
     rows = await db.execute(
         select(ProjectLink.project_id, ProjectLink.status, func.count())
-        .where(ProjectLink.company_id == company_id, ProjectLink.project_id.in_(project_ids))
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.project_id.in_(project_ids),
+            ProjectLink.method != LinkMethod.MAIL,
+        )
         .group_by(ProjectLink.project_id, ProjectLink.status)
     )
     return {(project_id, status): count for project_id, status, count in rows.tuples()}
+
+
+async def linked_items(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind
+) -> list[uuid.UUID]:
+    """Every item of a kind that some project links."""
+    rows = await db.scalars(
+        select(ProjectLink.item_id)
+        .where(ProjectLink.company_id == company_id, ProjectLink.item_kind == item_kind)
+        .distinct()
+        .order_by(ProjectLink.item_id)
+    )
+    return list(rows.all())
+
+
+async def mail_link_counts(db: AsyncSession, company_id: uuid.UUID) -> dict[LinkStatus, int]:
+    """How many files' mail links there are, by status."""
+    rows = await db.execute(
+        select(ProjectLink.status, func.count())
+        .where(ProjectLink.company_id == company_id, ProjectLink.method == LinkMethod.MAIL)
+        .group_by(ProjectLink.status)
+    )
+    return dict(rows.tuples().all())
+
+
+async def upsert_mail_links(db: AsyncSession, rows: Sequence[dict[str, Any]]) -> None:
+    """Writes files' mail links: a new one is added, and one already there is brought to the
+    status given only while it is still a mail link. A link of any other method is left as it is.
+    Concurrent writers of one file's link meet in the unique key, not in a second row."""
+    if not rows:
+        return
+    statement = insert(ProjectLink).values(list(rows))
+    new = statement.excluded
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=[ProjectLink.project_id, ProjectLink.item_kind, ProjectLink.item_id],
+            set_={
+                "status": new.status,
+                "confidence": new.confidence,
+                "decided_by": None,
+                # The time it was decided stays while its answer does.
+                "decided_at": case(
+                    (ProjectLink.status == new.status, ProjectLink.decided_at),
+                    else_=new.decided_at,
+                ),
+            },
+            where=ProjectLink.method == LinkMethod.MAIL,
+        ),
+        execution_options={"synchronize_session": False},
+    )
+
+
+async def lock_files(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> None:
+    """Until the transaction ends, no one else works out these files' mail links: two answers to
+    two mails that carried one file each see the other's. Taken in one order, so two callers
+    never wait on each other."""
+    keys = sorted(f"carry:{company_id}:{document_id}" for document_id in document_ids)
+    if keys:
+        await db.execute(
+            text(
+                "SELECT pg_advisory_xact_lock(hashtextextended(key, 0))"
+                " FROM unnest(CAST(:keys AS text[])) AS key"
+            ),
+            {"keys": keys},
+        )
+
+
+async def drop_mail_links(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    document_ids: Sequence[uuid.UUID],
+    keep: Sequence[tuple[uuid.UUID, uuid.UUID]],
+) -> None:
+    """Removes these files' mail links to every project not in ``keep`` (file, project): those no
+    mail that carried the file is linked to now."""
+    if not document_ids:
+        return
+    statement = delete_rows(ProjectLink).where(
+        ProjectLink.company_id == company_id,
+        ProjectLink.item_kind == ItemKind.DOCUMENT,
+        ProjectLink.item_id.in_(document_ids),
+        ProjectLink.method == LinkMethod.MAIL,
+    )
+    if keep:
+        statement = statement.where(
+            tuple_(ProjectLink.item_id, ProjectLink.project_id).not_in(keep)
+        )
+    await db.execute(statement.execution_options(synchronize_session=False))
+
+
+async def drop_project_mail_links(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID
+) -> None:
+    """Removes the files a rejected project held only because its mails carried them."""
+    await db.execute(
+        delete_rows(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.project_id == project_id,
+            ProjectLink.method == LinkMethod.MAIL,
+        )
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def get_link_for_item(

@@ -69,7 +69,11 @@ class LinkMethod(StrEnum):
     # The same party within a date window, scored by route and amount.
     SCORED = "scored"
     AGENT = "agent"
+    # The owner's answer, or the owner's own link: code never changes it again (ADR-0021).
     OWNER = "owner"
+    # A file that came in a mail of the project: its status follows that mail's links
+    # (`projects.carry_files`, ADR-0021).
+    MAIL = "mail"
 
 
 class LinkStatus(StrEnum):

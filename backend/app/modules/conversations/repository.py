@@ -431,6 +431,31 @@ async def thread_messages(
     return rows.tuples().all()
 
 
+async def carriers_of(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, uuid.UUID, bool, bool]]:
+    """Every mail of the company that carried each of these files: the file, the mail, whether
+    the mail's body showed it, and whether the mail is bulk mail."""
+    if not document_ids:
+        return []
+    rows = await db.execute(
+        select(
+            MessageAttachment.document_id,
+            MessageAttachment.message_id,
+            MessageAttachment.inline,
+            Message.bulk,
+        )
+        .join(Message, Message.id == MessageAttachment.message_id)
+        .where(
+            MessageAttachment.company_id == company_id,
+            Message.company_id == company_id,
+            MessageAttachment.document_id.in_(document_ids),
+        )
+        .order_by(MessageAttachment.document_id, MessageAttachment.message_id)
+    )
+    return list(rows.tuples().all())
+
+
 async def get_message(
     db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID
 ) -> Message | None:

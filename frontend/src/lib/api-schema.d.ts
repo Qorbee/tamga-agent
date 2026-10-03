@@ -1527,7 +1527,7 @@ export interface components {
          * LinkMethod
          * @enum {string}
          */
-        LinkMethod: "key" | "scored" | "agent" | "owner";
+        LinkMethod: "key" | "scored" | "agent" | "owner" | "mail";
         /** LinkOut */
         LinkOut: {
             /** Confidence */

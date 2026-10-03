@@ -1722,7 +1722,8 @@
           "key",
           "scored",
           "agent",
-          "owner"
+          "owner",
+          "mail"
         ],
         "title": "LinkMethod",
         "type": "string"

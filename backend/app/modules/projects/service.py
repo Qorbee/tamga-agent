@@ -106,6 +106,8 @@ _job_readers: list[JobReader] = []
 # Which of two links to one item says more: the owner's yes, then a suggestion, then a no.
 _LINK_RANK: Final = {LinkStatus.REJECTED: 0, LinkStatus.SUGGESTED: 1, LinkStatus.CONFIRMED: 2}
 _CONFIRMED_BY_OWNER: Final = (ProjectStatus.ACTIVE, ProjectStatus.CLOSED)
+# How many mails' files are carried in one step of a backfill.
+_CARRY_BATCH: Final = 200
 
 
 def guard_merge(guard: MergeHook) -> None:
@@ -240,6 +242,9 @@ async def update_project(
         if status not in _TRANSITIONS.get(project.status, frozenset()):
             raise BadRequest(f"A {project.status} project cannot become {status}", field="status")
         project.status = status
+        if status is ProjectStatus.REJECTED:
+            # Its mails stay as answered, but a rejected project takes no files (ADR-0021).
+            await repository.drop_project_mail_links(db, actor.company_id, project.id)
     values: dict[str, Any] = {}
     if name is not None:
         values["name"] = name
@@ -287,6 +292,12 @@ async def merge_project(
     await db.flush()
     for listener in _merge_listeners:
         await listener(db, actor.company_id, source.id, target.id)
+    mails = [
+        link.item_id
+        for link in await repository.all_links_of_project(db, actor.company_id, target.id)
+        if link.item_kind is ItemKind.MESSAGE
+    ]
+    await carry_files(db, actor.company_id, mails)
     await repository.delete(db, source)
     await db.commit()
     return (await _describe(db, actor.company_id, [target]))[0]
@@ -323,9 +334,10 @@ async def _move_links(
     db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
 ) -> None:
     """A project's links to the one that stays. Where both tie the same item one link stays:
-    the one that says more, whole, with the truck it names and whether it is that truck's proof
-    of delivery. A truck never comes from the project that goes (its guard refuses one with
-    trucks), and what the owner did not confirm of a truck is not confirmed by a merge."""
+    the owner's (ADR-0021), else the one that says more, whole, with the truck it names and
+    whether it is that truck's proof of delivery. A truck never comes from the project that goes
+    (its guard refuses one with trucks), and what the owner did not confirm of a truck is not
+    confirmed by a merge."""
     held = {
         (link.item_kind, link.item_id): link
         for link in await repository.all_links_of_project(db, company_id, target_id)
@@ -335,7 +347,7 @@ async def _move_links(
         if other is None:
             link.project_id = target_id
             continue
-        if _LINK_RANK[link.status] > _LINK_RANK[other.status]:
+        if _weight(link) > _weight(other):
             other.status, other.method = link.status, link.method
             other.decided_by, other.decided_at = link.decided_by, link.decided_at
             other.shipment_id, other.proof_of_delivery = None, False
@@ -343,6 +355,11 @@ async def _move_links(
         other.evidence = sorted(set(other.evidence) | set(link.evidence))
         await db.delete(link)
     await db.flush()
+
+
+def _weight(link: ProjectLink) -> tuple[bool, int]:
+    """Which of two links to one item stays in a merge: the owner's, then the one that says more."""
+    return link.method is LinkMethod.OWNER, _LINK_RANK[link.status]
 
 
 async def project_exists(db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID) -> bool:
@@ -794,6 +811,8 @@ async def create_link(
         confirmed_by=actor.user_id,
         confirm=True,
     )
+    if item_kind is ItemKind.MESSAGE:
+        await carry_files(db, actor.company_id, [item_id])
     await db.commit()
     return LinkOut.model_validate(link)
 
@@ -808,6 +827,11 @@ async def update_link(
     if link is None:
         raise NotFound("No such link")
     company = await _company(db, actor.company_id)
+    if not changes:
+        # Nothing was answered: the link stays whoever's it is.
+        return LinkOut.model_validate(link)
+    # The owner's answer: code never changes this link again (ADR-0021).
+    link.method = LinkMethod.OWNER
     if "shipment_id" in changes:
         link.shipment_id = changes["shipment_id"]
     if changes.get("proof_of_delivery") is not None:
@@ -820,6 +844,8 @@ async def update_link(
     await _flush_link(db, link)
     if link.status is LinkStatus.CONFIRMED:
         await repository.activate_if_draft(db, actor.company_id, link.project_id)
+    if link.item_kind is ItemKind.MESSAGE:
+        await carry_files(db, actor.company_id, [link.item_id])
     await db.commit()
     return LinkOut.model_validate(link)
 
@@ -844,6 +870,7 @@ async def decide_links(
         if link.status not in open_to:
             continue
         link.status = LinkStatus.CONFIRMED if confirm else LinkStatus.REJECTED
+        link.method = LinkMethod.OWNER
         link.decided_by = actor.user_id
         link.decided_at = clock.now(company)
         decided.append(link)
@@ -853,7 +880,87 @@ async def decide_links(
     if confirm:
         for project_id in {link.project_id for link in decided}:
             await repository.activate_if_draft(db, actor.company_id, project_id)
+    mails = [link.item_id for link in decided if link.item_kind is ItemKind.MESSAGE]
+    await carry_files(db, actor.company_id, mails)
     return len(decided)
+
+
+async def carry_all_files(db: AsyncSession, company_id: uuid.UUID) -> dict[LinkStatus, int]:
+    """Brings every linked mail's files into its projects: for links made before files followed
+    their mail. Returns the files' mail links by status. Does not commit."""
+    mails = await repository.linked_items(db, company_id, ItemKind.MESSAGE)
+    for start in range(0, len(mails), _CARRY_BATCH):
+        await carry_files(db, company_id, mails[start : start + _CARRY_BATCH])
+    return await repository.mail_link_counts(db, company_id)
+
+
+async def carry_files(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
+) -> None:
+    """Brings the links of the files these mails carried up to the mails' own links (ADR-0021).
+    A file is in each project a mail that carried it is linked to: confirmed if one of those
+    mails' links there is confirmed, else suggested, else rejected. Only `mail` links are
+    written, so a file the owner or code linked another way keeps its link; and a file leaves a
+    project no mail that carried it is linked to any more. Rejected projects take no files. Does
+    not commit."""
+    carried = await conversations.carried_files(db, company_id, message_ids)
+    if not carried:
+        return
+    await repository.lock_files(db, company_id, list(carried))
+    mails = sorted({mail for carriers in carried.values() for mail in carriers})
+    by_mail: dict[uuid.UUID, list[ProjectLink]] = {}
+    for link in await repository.links_of_items(db, company_id, ItemKind.MESSAGE, mails):
+        by_mail.setdefault(link.item_id, []).append(link)
+    named = {link.project_id for links in by_mail.values() for link in links}
+    open_projects = {
+        project_id
+        for project_id, project in (await get_projects(db, company_id, sorted(named))).items()
+        if project.status is not ProjectStatus.REJECTED
+    }
+    now = clock.now(await _company(db, company_id))
+    rows: list[dict[str, Any]] = []
+    keep: list[tuple[uuid.UUID, uuid.UUID]] = []
+    for document_id, carriers in carried.items():
+        held: dict[uuid.UUID, tuple[LinkStatus, float]] = {}
+        for link in (link for mail in carriers for link in by_mail.get(mail, [])):
+            if link.project_id not in open_projects:
+                continue
+            status, confidence = held.get(link.project_id, (LinkStatus.REJECTED, 0.0))
+            if _LINK_RANK[link.status] > _LINK_RANK[status]:
+                status = link.status
+            held[link.project_id] = (status, max(confidence, link.confidence))
+        keep.extend((document_id, project_id) for project_id in sorted(held))
+        rows.extend(
+            {
+                "id": uuid.uuid7(),
+                "company_id": company_id,
+                "item_kind": ItemKind.DOCUMENT,
+                "item_id": document_id,
+                "project_id": project_id,
+                "method": LinkMethod.MAIL,
+                "confidence": confidence,
+                "evidence": [],
+                "status": status,
+                "proof_of_delivery": False,
+                "decided_at": None if status is LinkStatus.SUGGESTED else now,
+            }
+            for project_id, (status, confidence) in sorted(held.items())
+        )
+    await repository.drop_mail_links(db, company_id, sorted(carried), keep=keep)
+    await repository.upsert_mail_links(db, rows)
+
+
+async def _carry_unpacked(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """An archive's files were taken out after its mail was linked: they join the mail's
+    projects, as the archive did."""
+    archives = [document_id, *await documents.containers_of(db, company_id, document_id)]
+    carriers = await conversations.messages_attaching(db, company_id, archives)
+    await carry_files(
+        db, company_id, sorted({mail for mails in carriers.values() for mail in mails})
+    )
+
+
+documents.on_unpacked(_carry_unpacked)
 
 
 async def list_links(

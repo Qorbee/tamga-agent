@@ -93,6 +93,7 @@ _holders: dict[Holder, HoldsCheck] = {}
 # Told when a document was read: the database session, the company and the document.
 type ReadListener = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
 _read_listeners: list[ReadListener] = []
+_unpack_listeners: list[ReadListener] = []
 # The DOS code page a country's Windows writes a zip's names in, when not as UTF-8 (ADR-0012).
 _codepages: dict[str, str] = {}
 
@@ -101,6 +102,13 @@ def register_holder(holder: Holder, holds: HoldsCheck) -> None:
     """A module that keeps documents says, through ``holds``, whether it keeps one. Only a file no
     holder keeps can be deleted."""
     _holders[holder] = holds
+
+
+def on_unpacked(listener: ReadListener) -> None:
+    """A module that keeps files with what carried them is told, in the unpacking's own
+    transaction, when an archive's files were taken out: they ride with the archive. Not the read
+    listeners: an archive holds no text of its own to look at again."""
+    _unpack_listeners.append(listener)
 
 
 def on_read(listener: ReadListener) -> None:
@@ -1001,6 +1009,8 @@ async def _unpack(db: AsyncSession, document: Document, data: bytes) -> None:
         return
     document.parts, document.truncated = count, omitted > 0
     document.read_state, document.read_at = ReadState.READ, utcnow()
+    for listener in _unpack_listeners:
+        await listener(db, company_id, document.id)
 
 
 async def _take_out(
@@ -1114,6 +1124,35 @@ async def document_exists(db: AsyncSession, company_id: uuid.UUID, document_id: 
     """Whether it exists, held so until the caller's transaction ends: a link made to it cannot
     name a file a concurrent delete removes."""
     return await repository.lock_document(db, company_id, document_id, share=True) is not None
+
+
+async def containers_of(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """The archives a file was taken out of, the archive around one of them too."""
+    found: list[uuid.UUID] = []
+    waiting = [document_id]
+    while waiting:
+        outer = await repository.containers_of(db, company_id, waiting)
+        waiting = [each for each in outer if each not in found and each != document_id]
+        found.extend(waiting)
+    return found
+
+
+async def members_of(
+    db: AsyncSession, company_id: uuid.UUID, container_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """What each of these archives held, an archive inside one included: the files that could be
+    taken out, by container."""
+    members: dict[uuid.UUID, list[uuid.UUID]] = {}
+    asked = set(container_ids)
+    found = await repository.members_of(db, company_id, container_ids)
+    while found:
+        members |= found
+        nested = {part for parts in found.values() for part in parts} - asked
+        asked |= nested
+        found = await repository.members_of(db, company_id, sorted(nested))
+    return members
 
 
 async def for_the_vision_model(

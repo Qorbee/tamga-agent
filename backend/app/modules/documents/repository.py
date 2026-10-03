@@ -251,6 +251,40 @@ async def parts_of(
     return rows.all()
 
 
+async def containers_of(
+    db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
+) -> list[uuid.UUID]:
+    """The archives these files were taken out of."""
+    rows = await db.scalars(
+        select(DocumentPart.container_id)
+        .where(DocumentPart.company_id == company_id, DocumentPart.document_id.in_(document_ids))
+        .distinct()
+    )
+    return list(rows.all())
+
+
+async def members_of(
+    db: AsyncSession, company_id: uuid.UUID, container_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """The files taken out of each of these containers, those that could be."""
+    if not container_ids:
+        return {}
+    rows = await db.execute(
+        select(DocumentPart.container_id, DocumentPart.document_id)
+        .where(
+            DocumentPart.company_id == company_id,
+            DocumentPart.container_id.in_(container_ids),
+            DocumentPart.document_id.is_not(None),
+        )
+        .order_by(DocumentPart.container_id, DocumentPart.position)
+    )
+    members: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for container_id, document_id in rows.tuples():
+        if document_id is not None:
+            members.setdefault(container_id, []).append(document_id)
+    return members
+
+
 async def is_part(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
     """Whether the file was taken out of an archive."""
     found = await db.scalar(

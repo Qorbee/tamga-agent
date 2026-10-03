@@ -821,6 +821,8 @@ async def _apply(
                 confidence=decision.confidence or 0.0,
                 evidence=sorted(decision.evidence),
             )
+        # The files its mails carried are suggested with them.
+        await projects.carry_files(db, company_id, sorted(ties.untied))
     # Read again and left in its project, a conversation keeps what was read of the job before.
     stays = project_id is not None and project_id == placement.project_id
     reading = (
@@ -1024,6 +1026,9 @@ async def decide_placement(
         await projects.decide_links(db, actor, to_decide, confirm=bool(confirm))
         if not confirm:
             _answered(placement, Outcome.UNPLACED, None)
+    # Its files follow the answer: decide_links carried those of the mails it decided, and the
+    # mails tied here now carry theirs.
+    await projects.carry_files(db, actor.company_id, mail_ids)
     if was != placement.project_id:
         # It left one project, joined another, or both: what was read in it no longer names or
         # dates the first, and does the second.

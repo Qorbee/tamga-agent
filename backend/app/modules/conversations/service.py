@@ -17,7 +17,7 @@ import hashlib
 import imaplib
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Final
@@ -81,6 +81,9 @@ _SORT_LIMITS: Final = UsageLimits(request_limit=2)
 # A picture this many of a company's conversations show in their text is a sender's furniture (a
 # signature's banner), not part of any one of them.
 _FURNITURE_CONVERSATIONS: Final = 3
+# A file more conversations than this carry is a sender's standing paper (terms, a rate sheet),
+# no one job's. A job's own paper is sent on to a few: the client, the carrier, the accountant.
+_STANDING_CONVERSATIONS: Final = 3
 # A file more conversations carry than this says nothing new of any one of them when it is read:
 # the terms sent with every offer, a logo attached to every mail.
 _COMMON_CONVERSATIONS: Final = 10
@@ -539,6 +542,48 @@ async def _furniture(
     return {
         document_id for document_id, count in carried.items() if count >= _FURNITURE_CONVERSATIONS
     }
+
+
+async def carried_files(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """The files these mails carried, each with every mail of the company that carried it as part
+    of a job (ADR-0021): a file beside a mail's text, or a picture its body shows unless the mail
+    is bulk mail or the picture a sender's furniture. A file so many conversations carry that it
+    is standing paper comes back with no mail, so it leaves the projects it was in. What an
+    archive among them held rides with the archive."""
+    if not message_ids:
+        return {}
+    attached = await repository.attachments_of_each(db, company_id, message_ids)
+    files = sorted({file.document_id for each in attached.values() for file in each})
+    spread = await repository.conversations_carrying(db, company_id, files)
+    # Every file is answered, with no mail when none carries it as part of a job any more.
+    carried: dict[uuid.UUID, list[uuid.UUID]] = {file: [] for file in files}
+    kept = [file for file in files if spread.get(file, 0) <= _STANDING_CONVERSATIONS]
+    rows = await repository.carriers_of(db, company_id, kept)
+    furniture = await _furniture(db, company_id, sorted({row[0] for row in rows if row[2]}))
+    for document_id, message_id, inline, bulk in rows:
+        if not inline or not (bulk or document_id in furniture):
+            carried[document_id].append(message_id)
+    members = await documents.members_of(db, company_id, kept)
+    for container_id in kept:
+        for inside in _within(container_id, members):
+            carried[inside] = sorted({*carried.get(inside, []), *carried.get(container_id, [])})
+    return carried
+
+
+def _within(
+    container_id: uuid.UUID, members: Mapping[uuid.UUID, list[uuid.UUID]]
+) -> set[uuid.UUID]:
+    """Every file an archive holds, those of an archive inside it too."""
+    found: set[uuid.UUID] = set()
+    waiting = list(members.get(container_id, []))
+    while waiting:
+        member = waiting.pop()
+        if member not in found:
+            found.add(member)
+            waiting.extend(members.get(member, []))
+    return found
 
 
 async def _processed_copy(db: AsyncSession, message: Message) -> Message | None:
