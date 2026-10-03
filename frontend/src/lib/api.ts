@@ -120,6 +120,21 @@ export const updateProject = (id: string, body: ProjectUpdate) =>
 export const mergeProject = (id: string, body: Schemas["ProjectMerge"]) =>
   request<Project>(`/projects/${id}/merge`, json("POST", body));
 
+// A project's parties, chosen by the owner: they stand over what was read of the job.
+export type ProjectParty = Schemas["ProjectPartyOut"];
+export type ProjectRole = ProjectParty["role"];
+export const listProjectParties = (projectId: string) =>
+  request<ProjectParty[]>(`/project-parties${query({ project_id: projectId })}`);
+export const addProjectParty = (body: Schemas["ProjectPartyCreate"]) =>
+  request<ProjectParty>("/project-parties", json("POST", body));
+export const removeProjectParty = (id: string) => request<void>(`/project-parties/${id}`, { method: "DELETE" });
+
+// Parties: everyone the company deals with, to choose a project's firms from.
+export type Party = Schemas["PartyOut"];
+export type PartyPage = Schemas["PartyPage"];
+export const listParties = (params: { q?: string; kind?: Party["kind"]; limit?: number }) =>
+  request<PartyPage>(`/parties${query({ ...params, limit: params.limit ?? 20 })}`);
+
 export type Shipment = Schemas["ShipmentOut"];
 export const listShipments = (projectIds: readonly string[]) =>
   request<Shipment[]>(`/shipments${query({ project_id: projectIds })}`);

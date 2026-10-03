@@ -1,7 +1,8 @@
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.modules.parties.models import (
     PartyIdentifier,
     PartyKind,
 )
+from app.platform.pagination import PageParams, escape_like
 
 
 async def add(db: AsyncSession, party: Party) -> Party:
@@ -126,3 +128,45 @@ async def get_by_source(
         )
     )
     return party
+
+
+async def list_parties(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    kind: PartyKind | None,
+    q: str | None,
+    normalised: str | None,
+    order_by: Sequence[ColumnElement[Any]],
+    page: PageParams,
+) -> tuple[Sequence[Party], int]:
+    """The company's parties in the order given. ``q`` matches the name as written, and
+    ``normalised`` a name identifier in its compared form, so "ozdemir" finds "ÖZDEMİR"."""
+    filters: list[ColumnElement[bool]] = [Party.company_id == company_id]
+    if kind is not None:
+        filters.append(Party.kind == kind)
+    if q:
+        matches: list[ColumnElement[bool]] = [Party.name.ilike(f"%{escape_like(q)}%", escape="\\")]
+        if normalised:
+            matches.append(
+                exists(
+                    select(PartyIdentifier.id).where(
+                        PartyIdentifier.company_id == company_id,
+                        PartyIdentifier.party_id == Party.id,
+                        PartyIdentifier.kind == IdentifierKind.NAME,
+                        PartyIdentifier.normalised.like(
+                            f"%{escape_like(normalised)}%", escape="\\"
+                        ),
+                    )
+                )
+            )
+        filters.append(or_(*matches))
+    total = await db.scalar(select(func.count()).select_from(Party).where(*filters))
+    rows = await db.scalars(
+        select(Party)
+        .where(*filters)
+        .order_by(*order_by, Party.id)
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return rows.all(), total or 0

@@ -1,15 +1,17 @@
 "use client";
 
-import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { JobFacts, PlacementRows } from "@/components/placement-rows";
-import { T, TranslateToggle } from "@/components/translated";
+import { InlineText } from "@/components/inline-text";
+import { PlacementRows } from "@/components/placement-rows";
+import { T } from "@/components/translated";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, getProject, listAllPlacements } from "@/lib/api";
+import { ApiError, getProject, listAllPlacements, listProjectParties } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
+import { useCanEditProjects } from "@/lib/use-role";
 
-import { ProjectActions, STATUS_ICONS } from "./project-actions";
+import { ProjectMenu } from "./project-actions";
+import { partiesKey, ProjectProperties, useProjectUpdate } from "./project-properties";
 
 // How long a project read ahead of its opening is fresh enough not to be read again for it.
 const READ_AHEAD = 30_000;
@@ -22,9 +24,9 @@ function useProject(id: string) {
 }
 
 /**
- * Reads a project and its conversations before it is opened, while the pointer or focus is on its
- * row, so the canvas opens on them instead of on a placeholder that leaves and takes the
- * scrollbar with it.
+ * Reads a project, its parties and its conversations before it is opened, while the pointer or
+ * focus is on its row, so the canvas opens on them instead of on a placeholder that leaves and
+ * takes the scrollbar with it.
  */
 export function useReadProjectAhead() {
   const queryClient = useQueryClient();
@@ -35,6 +37,11 @@ export function useReadProjectAhead() {
       staleTime: READ_AHEAD,
     });
     void queryClient.prefetchQuery({
+      queryKey: partiesKey(id),
+      queryFn: () => listProjectParties(id),
+      staleTime: READ_AHEAD,
+    });
+    void queryClient.prefetchQuery({
       queryKey: placementsKey(id),
       queryFn: () => listAllPlacements({ project_id: [id] }),
       staleTime: READ_AHEAD,
@@ -42,22 +49,21 @@ export function useReadProjectAhead() {
   };
 }
 
-/** The project's number and name, for the canvas's title bar. */
+/** The project's number, for the canvas's title bar: its name heads the panel itself. */
 export function ProjectTitle({ id }: { id: string }) {
   const project = useProject(id);
-  if (!project.data) return <Skeleton className="h-4 w-48" />;
-  return (
-    <>
-      <span className="text-muted-foreground shrink-0 font-mono text-xs">{project.data.number}</span>
-      <span className="truncate">
-        <T>{project.data.name}</T>
-      </span>
-    </>
-  );
+  if (!project.data) return <Skeleton className="h-4 w-20" />;
+  return <span className="truncate font-mono">{project.data.number}</span>;
+}
+
+/** The project's one menu, for the canvas's title bar. */
+export function ProjectTitleMenu({ id }: { id: string }) {
+  const project = useProject(id);
+  return project.data ? <ProjectMenu project={project.data} /> : null;
 }
 
 /**
- * A project in the canvas: what it is, where it stands, what was read of the job, and the
+ * A project in the canvas: its name and its properties, each edited where it is shown, and the
  * conversations tied to it, those that still wait for the owner first, each with why it is here.
  */
 export function ProjectView({ id }: { id: string }) {
@@ -76,7 +82,6 @@ export function ProjectView({ id }: { id: string }) {
     );
   if (!project.data) return <Skeleton className="m-5 h-32 rounded-2xl" />;
 
-  const { number, name, status, aliases } = project.data;
   const held = (placements.data ?? []).filter((placement) => placement.conversation);
   const waitingFirst = [...held].sort(
     (a, b) => Number(b.suggested_links > 0) - Number(a.suggested_links > 0),
@@ -85,25 +90,9 @@ export function ProjectView({ id }: { id: string }) {
   return (
     // One column no wider than the canvas: a long word wraps instead of widening the grid.
     <div className="grid grid-cols-1 gap-6 p-4 sm:p-5">
-      <header className="grid grid-cols-1 gap-2">
-        <p className="text-muted-foreground flex flex-wrap items-baseline gap-x-2 font-mono text-xs">
-          <span className="text-foreground">{number}</span>
-          {aliases.length > 0 ? <span>{t.board.aliases(aliases.join(", "))}</span> : null}
-        </p>
-        <h3 className="text-xl font-medium tracking-tight text-pretty [overflow-wrap:anywhere]">
-          <T>{name}</T>
-        </h3>
-        <div className="flex items-center gap-2">
-          {status !== "rejected" ? (
-            <span className="bg-secondary text-secondary-foreground inline-flex items-center gap-1.5 rounded-full py-1 ps-2 pe-2.5 text-xs font-medium">
-              <HugeiconsIcon icon={STATUS_ICONS[status]} strokeWidth={1.75} className="size-3.5" aria-hidden />
-              {t.board.columns[status]}
-            </span>
-          ) : null}
-          <ProjectActions project={project.data} pencil />
-          <TranslateToggle className="text-muted-foreground" />
-        </div>
-        <JobFacts project={project.data} className="mt-1" />
+      <header className="grid grid-cols-1 gap-4">
+        <ProjectName project={project.data} />
+        <ProjectProperties project={project.data} />
       </header>
 
       <section className="grid grid-cols-1 gap-2">
@@ -123,6 +112,33 @@ export function ProjectView({ id }: { id: string }) {
           <PlacementRows placements={waitingFirst} className="border-border overflow-hidden rounded-2xl border" />
         )}
       </section>
+    </div>
+  );
+}
+
+/** The project's name, large, renamed where it is: what the owner names it, later mail never
+ * renames. */
+function ProjectName({ project }: { project: NonNullable<ReturnType<typeof useProject>["data"]> }) {
+  const { t } = useI18n();
+  const canEdit = useCanEditProjects();
+  const { save, fieldError } = useProjectUpdate(project);
+  return (
+    <div className="grid gap-1">
+      <h3 className="text-xl font-medium tracking-tight text-pretty">
+        <InlineText
+          value={project.name}
+          label={t.project.rename}
+          maxLength={300}
+          pending={save.isPending}
+          error={fieldError("name")}
+          onSave={canEdit ? (name) => save.mutate({ name }) : undefined}
+        >
+          <T>{project.name}</T>
+        </InlineText>
+      </h3>
+      {project.field_sources.name === "owner" ? (
+        <span className="text-muted-foreground text-xs">{t.board.ownerEdited}</span>
+      ) : null}
     </div>
   );
 }

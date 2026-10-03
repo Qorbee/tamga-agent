@@ -3,7 +3,7 @@
 import { useCanvasView, useForgetOpenedByLink } from "@/components/canvas-link";
 import { DocumentDownload, DocumentTitle, DocumentView } from "@/features/documents/document-view";
 import { MailSubject, MailThread } from "@/features/mail/mail-thread";
-import { ProjectTitle, ProjectView } from "@/features/projects/project-view";
+import { ProjectTitle, ProjectTitleMenu, ProjectView } from "@/features/projects/project-view";
 import { CanvasFrame, CanvasPanel } from "@/features/shell/canvas";
 import { formatView, type CanvasView } from "@/lib/canvas-view";
 import { useI18n } from "@/lib/i18n/client";
@@ -37,7 +37,7 @@ function CanvasRecord({ view }: { view: CanvasView }) {
       );
     case "project":
       return (
-        <CanvasPanel label={t.project.title} title={<ProjectTitle id={view.id} />}>
+        <CanvasPanel label={t.project.title} title={<ProjectTitle id={view.id} />} actions={<ProjectTitleMenu id={view.id} />}>
           <ProjectView id={view.id} />
         </CanvasPanel>
       );

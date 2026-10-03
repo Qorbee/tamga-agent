@@ -20,7 +20,8 @@ export function TranslateProvider({ initial, children }: { initial: boolean; chi
   return <TranslateContext.Provider value={{ on, toggle }}>{children}</TranslateContext.Provider>;
 }
 
-function useTranslate() {
+/** Whether what Tamga wrote is shown in the reader's language, and the switch for it. */
+export function useTranslate() {
   const value = useContext(TranslateContext);
   if (!value) throw new Error("useTranslate() outside <TranslateProvider>");
   return value;

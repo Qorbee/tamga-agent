@@ -578,6 +578,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Parties */
+        get: operations["parties.list_parties"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/placements": {
         parameters: {
             query?: never;
@@ -1804,6 +1821,40 @@ export interface components {
          * @enum {string}
          */
         Outcome: "linked" | "proposed" | "asked" | "unplaced";
+        /**
+         * PartyKind
+         * @enum {string}
+         */
+        PartyKind: "organisation" | "person";
+        /** PartyOut */
+        PartyOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["PartyKind"];
+            /** Name */
+            name: string;
+            /** Source */
+            source: string | null;
+        };
+        /** PartyPage */
+        PartyPage: {
+            /** Items */
+            items: components["schemas"]["PartyOut"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
         /**
          * PlacementDecision
          * @description The owner's answer, one of two. ``links``: every link that waits between the conversation's
@@ -3491,6 +3542,41 @@ export interface operations {
                 };
                 content: {
                     "message/rfc822": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.list_parties": {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["PartyKind"] | null;
+                q?: string | null;
+                sort?: "source" | "name" | "-name" | "created_at" | "-created_at";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyPage"];
                 };
             };
             /** @description Validation Error */

@@ -12,8 +12,9 @@ import unicodedata
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
+from sqlalchemy import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import service as companies
@@ -26,12 +27,22 @@ from app.modules.parties.models import (
     PartyIdentifier,
     PartyKind,
 )
+from app.modules.parties.schemas import PartyOut, PartyPage, PartySort
+from app.platform.auth import Actor
+from app.platform.pagination import PageParams
 
 _CONFIRMING: Final = frozenset({IdentifierSource.BOOKS, IdentifierSource.OWNER})
 # The words a firm's name may end with that say what kind of firm it is ("LTD. ŞTİ.", "A.Ş."), in
 # the form names are compared in, longest first: each country's pack registers its own.
 _LEGAL_FORMS: list[tuple[str, ...]] = []
 _WORD: Final = re.compile(r"[^\W_]+")
+_PARTY_SORTS: Final[dict[str, list[ColumnElement[Any]]]] = {
+    "source": [Party.source.is_(None), Party.name.asc()],
+    "name": [Party.name.asc()],
+    "-name": [Party.name.desc()],
+    "created_at": [Party.created_at.asc()],
+    "-created_at": [Party.created_at.desc()],
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,3 +210,31 @@ def name_key(name: str) -> str:
     """The form two spellings of one firm's name share: its short name without case, accents or
     punctuation."""
     return normalise_name(short_name(name))
+
+
+async def list_parties(
+    db: AsyncSession,
+    actor: Actor,
+    *,
+    kind: PartyKind | None,
+    q: str | None,
+    sort: PartySort,
+    page: PageParams,
+) -> PartyPage:
+    """The company's parties, by default those from the books first."""
+    words = q.strip() if q else None
+    rows, total = await repository.list_parties(
+        db,
+        actor.company_id,
+        kind=kind,
+        q=words,
+        normalised=normalise_name(words) if words else None,
+        order_by=_PARTY_SORTS[sort],
+        page=page,
+    )
+    return PartyPage(
+        items=[PartyOut.model_validate(row) for row in rows],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )

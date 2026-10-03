@@ -13,7 +13,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
-import { EditProjectDialog, useCanEditProjects, useIsOwner } from "@/components/edit-project-dialog";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { MergeProjectDialog } from "@/components/merge-project-dialog";
@@ -37,6 +36,7 @@ import {
 import { useI18n } from "@/lib/i18n/client";
 import { conversationName } from "@/lib/mail-text";
 import { useInvalidatePlacements } from "@/lib/use-invalidate-placements";
+import { useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 /** Projects an item can still be placed in. */
@@ -53,9 +53,7 @@ export function ProjectCard({ project, waiting }: { project: Project; waiting: P
   const { t } = useI18n();
   const invalidate = useInvalidatePlacements();
   const [all, setAll] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [merging, setMerging] = useState(false);
-  const canEdit = useCanEditProjects();
   const isOwner = useIsOwner();
   const proposed = project.status === "proposed";
   const rejected = project.status === "rejected";
@@ -107,7 +105,7 @@ export function ProjectCard({ project, waiting }: { project: Project; waiting: P
             <Answered rejected={rejected} />
           ) : null}
           {/* Rejecting a whole card is not undone, so it sits a tap further away than the tick. */}
-          {!rejected && (waits || canEdit || isOwner) ? (
+          {!rejected && (waits || isOwner) ? (
             <DropdownMenu modal={false}>
               <Hint label={t.board.actions}>
                 <DropdownMenuTrigger asChild>
@@ -123,7 +121,6 @@ export function ProjectCard({ project, waiting }: { project: Project; waiting: P
                 </DropdownMenuTrigger>
               </Hint>
               <DropdownMenuContent align="end">
-                {canEdit ? <DropdownMenuItem onSelect={() => setEditing(true)}>{t.project.edit}</DropdownMenuItem> : null}
                 {isOwner ? <DropdownMenuItem onSelect={() => setMerging(true)}>{t.project.merge}</DropdownMenuItem> : null}
                 {waits ? (
                   <DropdownMenuItem onSelect={() => answer.mutate(false)}>
@@ -133,7 +130,6 @@ export function ProjectCard({ project, waiting }: { project: Project; waiting: P
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
-          {canEdit ? <EditProjectDialog project={project} open={editing} onOpenChange={setEditing} /> : null}
           {isOwner ? <MergeProjectDialog project={project} open={merging} onOpenChange={setMerging} /> : null}
         </div>
         <div className="col-span-3 min-w-0 sm:col-span-2 sm:col-start-2 sm:-mt-3">

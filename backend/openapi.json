@@ -2543,6 +2543,86 @@
         "title": "Outcome",
         "type": "string"
       },
+      "PartyKind": {
+        "enum": [
+          "organisation",
+          "person"
+        ],
+        "title": "PartyKind",
+        "type": "string"
+      },
+      "PartyOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/PartyKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "source",
+          "created_at"
+        ],
+        "title": "PartyOut",
+        "type": "object"
+      },
+      "PartyPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PartyOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PartyPage",
+        "type": "object"
+      },
       "PlacementDecision": {
         "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested; with ``from_project_id`` it is moved there.",
         "properties": {
@@ -6278,6 +6358,117 @@
         "summary": "Get Message Raw",
         "tags": [
           "messages"
+        ]
+      }
+    },
+    "/parties": {
+      "get": {
+        "operationId": "parties.list_parties",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PartyKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "source",
+              "enum": [
+                "source",
+                "name",
+                "-name",
+                "created_at",
+                "-created_at"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Parties",
+        "tags": [
+          "parties"
         ]
       }
     },

@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +9,8 @@ from app.modules.companies.models import CompanyKind
 from app.modules.parties import service
 from app.modules.parties.models import IdentifierKind, IdentifierSource, PartyKind
 from app.modules.parties.service import Identifier
+from app.platform.db import open_session
+from app.tests.conftest import guest_client
 
 pytestmark = pytest.mark.integration
 
@@ -153,3 +156,55 @@ async def test_an_identifier_cannot_join_another_companys_party(db: AsyncSession
             identifiers=[EMAIL],
             source=IdentifierSource.OWNER,
         )
+
+
+async def test_parties_are_listed_for_choosing_one_those_from_the_books_first(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    async with open_session() as db:
+        await service.create_party(
+            db,
+            company_id=company_id,
+            name="Atlas Haulage",
+            kind=PartyKind.ORGANISATION,
+            source=IdentifierSource.EXTRACTION,
+        )
+        await service.sync_party(
+            db,
+            company_id=company_id,
+            source="books",
+            source_id="7",
+            name="ÖZDEMİR Nakliyat",
+            kind=PartyKind.ORGANISATION,
+        )
+        await service.create_party(
+            db,
+            company_id=company_id,
+            name="Ada Driver",
+            kind=PartyKind.PERSON,
+            source=IdentifierSource.EXTRACTION,
+        )
+        await db.commit()
+
+    listed = (await client.get("/parties")).json()
+    assert [party["name"] for party in listed["items"]] == [
+        "ÖZDEMİR Nakliyat",
+        "Ada Driver",
+        "Atlas Haulage",
+    ]
+    assert listed["items"][0]["source"] == "books"
+    by_name = (await client.get("/parties", params={"sort": "-name"})).json()
+    assert [party["name"] for party in by_name["items"]] == [
+        "ÖZDEMİR Nakliyat",
+        "Atlas Haulage",
+        "Ada Driver",
+    ]
+    # Typed without the Turkish letters, the name is still found.
+    found = (await client.get("/parties", params={"q": "ozdemir"})).json()
+    assert [party["name"] for party in found["items"]] == ["ÖZDEMİR Nakliyat"]
+    firms = (await client.get("/parties", params={"kind": "organisation"})).json()
+    assert firms["total"] == 2
+    # Another company sees none of them.
+    await guest_client(client)
+    assert (await client.get("/parties")).json()["total"] == 0

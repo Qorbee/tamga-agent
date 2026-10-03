@@ -19,7 +19,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
-import { useIsOwner } from "@/components/edit-project-dialog";
+import { useIsOwner } from "@/lib/use-role";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { MoveConversationDialog } from "@/components/move-conversation-dialog";
