@@ -216,7 +216,7 @@ function PlacementRow({ placement }: { placement: Placement }) {
             </time>
           </span>
           {placement.reason || byCode ? (
-            <span className="text-muted-foreground mt-1 line-clamp-2 block text-sm text-pretty">
+            <span className="text-muted-foreground mt-1 line-clamp-2 text-sm text-pretty">
               {placement.reason ? <T>{placement.reason}</T> : byCode}
             </span>
           ) : null}

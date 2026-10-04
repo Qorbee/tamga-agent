@@ -492,6 +492,12 @@ export const en = {
       e_fatura: "e-Invoice",
       e_arsiv: "e-Archive invoice",
       e_irsaliye: "e-Dispatch note",
+      signature: "Signature or logo",
+      weighbridge_ticket: "Weighbridge slip",
+      customs_declaration: "Customs declaration",
+      commercial_invoice: "Commercial invoice",
+      packing_list: "Packing list",
+      driver_papers: "Driver's papers",
     } as Record<string, string>,
     kinds: {
       image: "Image",

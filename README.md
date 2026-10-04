@@ -67,7 +67,9 @@ Arc testnet; nothing touches a company's bank or real money.
   so only work is read further.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
 - **The project file:** each job holds its mail, files and invoices on one timeline. A file
-  follows the mail that carried it, code types the truck papers it recognises, and bills are
+  follows the mail that carried it, unless it is only a signature's picture or a logo. Code
+  types the truck papers it recognises and a small model the rest (a weighbridge slip, a customs
+  declaration, a packing list), so each row says what the paper is. Bills are
   placed in their job by the numbers and plates they share with it. Code proposes the job's
   trucks from its papers, and each truck shows what it still lacks: a loading photo, the CMR, the
   proof of delivery, the subcontractor's invoice. Only the owner marks a file as a truck's proof

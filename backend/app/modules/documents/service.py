@@ -81,6 +81,11 @@ MAX_TEXT_FILE: Final = 10 * 1024 * 1024
 VISION_BATCH: Final = 10
 # The budget of pictures (VISION_PAGES_PER_DAY) counts those read in this long.
 VISION_WINDOW: Final = timedelta(days=1)
+# Files the typist is asked about in one run for one company, and the window its budget counts.
+TYPING_BATCH: Final = 50
+TYPING_WINDOW: Final = timedelta(days=1)
+# One answer, and one more request when it names a type it was not offered.
+_TYPING_LIMITS: Final = UsageLimits(request_limit=2)
 # The largest photo sent to the vision model.
 MAX_PICTURE: Final = 20 * 1024 * 1024
 # The picture types the vision model takes as they are; a BMP it does not.
@@ -105,6 +110,7 @@ _holders: dict[Holder, HoldsCheck] = {}
 type ReadListener = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[None]]
 _read_listeners: list[ReadListener] = []
 _unpack_listeners: list[ReadListener] = []
+_known_listeners: list[ReadListener] = []
 # The DOS code page a country's Windows writes a zip's names in, when not as UTF-8 (ADR-0012).
 _codepages: dict[str, str] = {}
 
@@ -128,11 +134,24 @@ def on_read(listener: ReadListener) -> None:
     _read_listeners.append(listener)
 
 
+def on_known(listener: ReadListener) -> None:
+    """A module that keeps files by what they hold asks to be told, in the same transaction,
+    when more is known of one after it came: it was read, found unreadable, or typed by the
+    typist or the owner."""
+    _known_listeners.append(listener)
+
+
+async def _became_known(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    for listener in _known_listeners:
+        await listener(db, company_id, document_id)
+
+
 async def _was_read(db: AsyncSession, document: Document) -> None:
     document.read_state, document.read_at = ReadState.READ, utcnow()
     await _classify(db, document)
     for listener in _read_listeners:
         await listener(db, document.company_id, document.id)
+    await _became_known(db, document.company_id, document.id)
 
 
 async def _classify(db: AsyncSession, document: Document) -> None:
@@ -477,6 +496,8 @@ async def update_document(
         document.doc_type = body.doc_type
         # Cleared, the type is unknown again, and code may tell it next time the file is read.
         document.doc_type_source = TypeSource.OWNER if body.doc_type is not None else None
+        await db.flush()
+        await _became_known(db, actor.company_id, document.id)
     if body.filename is not None:
         name = _new_name(document.filename, body.filename)
         await _check_renamable(db, actor.company_id, document)
@@ -669,6 +690,7 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         read = isolated.Reason.UNSUPPORTED
     if isinstance(read, isolated.Reason):
         _unreadable(document, read)
+        await _became_known(db, company_id, document.id)
         return
     document.text = read.text[:MAX_TEXT]
     document.truncated = read.cut or len(read.text) > MAX_TEXT
@@ -683,6 +705,128 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
     )
     if not read.scanned:
         await _was_read(db, document)
+
+
+# Typing what code could not
+
+
+async def type_pending() -> int:
+    """Has the typist type the read files code could not, newest first, within each company's
+    budget for a day (TYPED_FILES_PER_DAY; at zero no file's text leaves for the model's provider
+    for it). Returns how many files were asked about."""
+    budget = get_settings().typed_files_per_day
+    if budget == 0:
+        return 0
+    async with open_session() as db:
+        company_ids = await repository.companies_with_untyped(db)
+    asked = 0
+    for company_id in company_ids:
+        async with open_session() as db:
+            spent = await repository.typed_since(db, company_id, utcnow() - TYPING_WINDOW)
+        asked += len(await type_files(company_id, limit=min(TYPING_BATCH, budget - spent)))
+    return asked
+
+
+async def type_files(
+    company_id: uuid.UUID, *, limit: int, write: bool = True, usage: RunUsage | None = None
+) -> list[tuple[str, str | None]]:
+    """Asks the typist about up to ``limit`` of the company's read files that wait for it, newest
+    first, and returns each file's name with its answer. A file is asked about once, whatever
+    the answer; a type the owner or code gave it meanwhile stands. ``write`` false asks and
+    writes nothing (a measured trial). A failure outside the answer (the provider, the network)
+    leaves the file and the rest for the next run."""
+    if limit <= 0:
+        return []
+    async with open_session() as db:
+        waiting = await repository.untyped(db, company_id, chars=agents.TYPIST_TEXT, limit=limit)
+        company = (await companies.get_companies(db, [company_id])).get(company_id)
+    trace_content = company is not None and companies.traces_content(company.kind)
+    offered = [(each.key, each.label, each.hint) for each in registry.all_types()]
+    answered: list[tuple[str, str | None]] = []
+    for file in waiting:
+        # Taken before the model is asked, so a second run never sends it again.
+        if write and not await _reserve(company_id, file.id):
+            continue
+        try:
+            key = await _typed(file, offered, trace_content=trace_content, usage=usage)
+        except Exception as error:
+            # The error's type only: its text can carry what the file holds.
+            logger.warning("typing document %s failed: %s", file.id, type(error).__name__)
+            if write:
+                async with open_session() as db:
+                    await repository.release_typing(db, company_id, file.id)
+                    await db.commit()
+            break
+        answered.append((file.filename, key))
+        if not write or key is None:
+            continue
+        async with open_session() as db:
+            if await repository.type_if_untyped(db, company_id, file.id, key, TypeSource.MODEL):
+                await _became_known(db, company_id, file.id)
+                await events.publish(db, company_id, events.EventKind.DOCUMENTS)
+            await db.commit()
+    return answered
+
+
+async def _reserve(company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
+    """Marks a file as asked about, if no run has taken it: what the day's budget counts."""
+    async with open_session() as db:
+        taken = await repository.reserve_typing(db, company_id, document_id, utcnow())
+        await db.commit()
+    return taken
+
+
+async def _typed(
+    file: repository.Untyped,
+    offered: Sequence[tuple[str, str, str]],
+    *,
+    trace_content: bool,
+    usage: RunUsage | None,
+) -> str | None:
+    """The typist's answer for one file: a type it was offered, or None, also when its answer
+    could not be used. What the run used is added to ``usage``."""
+    # Its own count: the limits hold for one file, not for every file a caller adds up.
+    spent = RunUsage()
+    try:
+        run = await llm.run(
+            agents.typist,
+            agents.typed(offered, file.filename, file.description, file.text),
+            deps=frozenset(key for key, _, _ in offered),
+            limits=_TYPING_LIMITS,
+            language=None,
+            trace_content=trace_content,
+            usage=spent,
+        )
+    except llm.NoAnswer as error:
+        logger.warning("the typist gave no type for %s: %s", file.id, error)
+        return None
+    finally:
+        if usage is not None:
+            usage.incr(spent)
+    return run.output.type
+
+
+async def holding_nothing(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these files hold nothing of a job, so no mail brings them into a project: one
+    typed a signature or logo, and a picture not read yet or read with nothing on it that a model
+    could read or say it shows (an icon, a logo, a line of a signature), unless someone typed it.
+    A picture that could not be read stays: what it holds is not known."""
+    return {
+        reading.id
+        for reading in await repository.readings(db, company_id, ids)
+        if reading.doc_type == registry.SIGNATURE
+        or (
+            # A type someone gave says what it holds.
+            reading.doc_type is None
+            and filetypes.media_type(reading.content_type, reading.filename) in filetypes.IMAGES
+            and (
+                reading.read_state in (None, ReadState.PENDING)
+                or (reading.read_state == ReadState.READ and reading.blank)
+            )
+        )
+    }
 
 
 # Reading what only a vision model can
@@ -843,6 +987,7 @@ async def read_with_vision(
                 await _classify(db, document)
             elif isinstance(seen, isolated.Reason):
                 _unreadable(document, seen)
+                await _became_known(db, company_id, document_id)
             else:
                 await _keep_reading(
                     db, document, seen, shown if is_pdf else None, more=len(scanned) > len(shown)
@@ -1279,4 +1424,5 @@ def _out(document: Document) -> DocumentOut:
         unreadable_reason=document.unreadable_reason,
         truncated=document.truncated,
         converted=document.rendition_key is not None,
+        description=document.description,
     )

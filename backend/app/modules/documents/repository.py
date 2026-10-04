@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import ColumnElement, delete, func, or_, select, text, update
@@ -89,6 +90,115 @@ async def type_if_untyped(
         .execution_options(synchronize_session=False)
     )
     return bool(getattr(typed, "rowcount", 0))
+
+
+@dataclass(frozen=True, slots=True)
+class Reading:
+    """What is known of a file's reading, without its text."""
+
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    doc_type: str | None
+    read_state: ReadState | None
+    # Neither code nor a model found anything written on it, nor a model anything it shows.
+    blank: bool
+
+
+async def readings(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> list[Reading]:
+    if not ids:
+        return []
+    rows = await db.execute(
+        select(
+            Document.id,
+            Document.filename,
+            Document.content_type,
+            Document.doc_type,
+            Document.read_state,
+            (Document.text == "") & (Document.description == ""),
+        ).where(Document.company_id == company_id, Document.id.in_(ids))
+    )
+    return [Reading(*row) for row in rows.tuples()]
+
+
+def _untyped() -> ColumnElement[bool]:
+    """Read, with something to tell its type by, untyped, and the typist not asked yet."""
+    return (
+        (Document.read_state == ReadState.READ)
+        & Document.doc_type.is_(None)
+        & Document.typed_at.is_(None)
+        & ((Document.text != "") | (Document.description != ""))
+    )
+
+
+async def companies_with_untyped(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone: each company's files are then typed
+    under its own."""
+    rows = await db.scalars(select(Document.company_id).where(_untyped()).distinct())
+    return list(rows)
+
+
+@dataclass(frozen=True, slots=True)
+class Untyped:
+    id: uuid.UUID
+    filename: str
+    description: str
+    # As much of its text as the typist is shown.
+    text: str
+
+
+async def untyped(
+    db: AsyncSession, company_id: uuid.UUID, *, chars: int, limit: int
+) -> list[Untyped]:
+    """Files waiting for the typist, newest first: what the owner looks at now comes first."""
+    rows = await db.execute(
+        select(
+            Document.id, Document.filename, Document.description, func.left(Document.text, chars)
+        )
+        .where(Document.company_id == company_id, _untyped())
+        .order_by(Document.created_at.desc(), Document.id)
+        .limit(limit)
+    )
+    return [Untyped(*row) for row in rows.tuples()]
+
+
+async def typed_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
+    """Files the typist was asked about for this company since then: what its budget counts."""
+    count = await db.scalar(
+        select(func.count()).where(Document.company_id == company_id, Document.typed_at >= since)
+    )
+    return int(count or 0)
+
+
+async def reserve_typing(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, at: datetime
+) -> bool:
+    """Marks a file as asked about, in one statement, unless a run already took it or it was
+    typed meanwhile."""
+    taken = await db.execute(
+        update(Document)
+        .where(
+            Document.company_id == company_id,
+            Document.id == document_id,
+            Document.typed_at.is_(None),
+            Document.doc_type.is_(None),
+        )
+        .values(typed_at=at)
+        .execution_options(synchronize_session=False)
+    )
+    return bool(getattr(taken, "rowcount", 0))
+
+
+async def release_typing(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """Gives a file back to the next run: its model was not reached."""
+    await db.execute(
+        update(Document)
+        .where(Document.company_id == company_id, Document.id == document_id)
+        .values(typed_at=None)
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def untyped_read(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Document]:

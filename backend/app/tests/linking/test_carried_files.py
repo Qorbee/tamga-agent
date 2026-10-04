@@ -2,21 +2,28 @@
 confirmed or rejected with it, moved and merged with it, and left alone once the owner answered
 it."""
 
+import email
+import email.policy
 import uuid
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 import pytest
+from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.modules.conversations.models import MessageAttachment, ThreadCategory
 from app.modules.documents import service as documents
 from app.modules.linking import service
+from app.platform import llm
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
 from app.tests.documents import pdfs
 from app.tests.documents.archives import zip_of
+from app.tests.documents.test_vision import sized_png
 from app.tests.linking.test_placing import (
     NEW_PROJECT,
     Script,
@@ -257,3 +264,97 @@ async def test_an_archive_read_after_its_mail_was_placed_brings_its_files(
     held = page.json()["items"]
     assert len(held) == 2
     assert {link["status"] for link in held} == {"suggested"}
+
+
+def with_pictures(message_id: str, pictures: dict[str, bytes]) -> bytes:
+    """``mail``'s mail with the CMR, carrying these pictures too."""
+    message = email.message_from_bytes(mail(message_id, attach=CMR), policy=email.policy.default)
+    assert isinstance(message, email.message.EmailMessage)
+    for name, data in pictures.items():
+        message.add_attachment(data, maintype="image", subtype="png", filename=name)
+    return message.as_bytes()
+
+
+async def test_a_picture_joins_its_mails_project_once_read_with_something_on_it(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id = await guest_client(client)
+    pictures = {"image001.png": sized_png(40, 40), "slip.png": sized_png(1200, 1600)}
+    await arrive(company_id, 1, with_pictures(ORDER, pictures), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    [placement] = (await client.get("/placements")).json()["items"]
+    project_id = placement["project_id"]
+    # Neither picture is read yet: what either holds is not known.
+    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}
+
+    await documents.read_pending()
+    # The icon is too small to hold anything; the photo waits for the vision model.
+    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}
+
+    async with open_session() as db:
+        found = await db.scalars(
+            select(MessageAttachment.document_id).where(MessageAttachment.filename == "slip.png")
+        )
+        slip_id = found.one()
+        slip = (await documents.get_documents(db, company_id, [slip_id]))[slip_id]
+        slip.text, slip.description = "Plaka No: 34 ABC 12  1.KG: 25860", "A weighbridge slip"
+        await documents._was_read(db, slip)  # noqa: SLF001  (what the vision model's reading ends in)
+        await db.commit()
+    files = await files_of(client, project_id)
+    assert set(files) == {"CMR 4471.pdf", "slip.png"}
+    assert (files["slip.png"]["method"], files["slip.png"]["status"]) == ("mail", "suggested")
+
+    # A type someone gave says what a picture holds, though nothing could be read off it.
+    async with open_session() as db:
+        found = await db.scalars(
+            select(MessageAttachment.document_id).where(
+                MessageAttachment.filename == "image001.png"
+            )
+        )
+        icon_id = found.one()
+    typed = await client.patch(f"/documents/{icon_id}", json={"doc_type": "loading_photo"})
+    assert typed.status_code == 200, typed.text
+    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf", "slip.png", "image001.png"}
+
+
+async def test_a_picture_the_vision_model_cannot_read_joins_its_mails_project(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = await guest_client(client)
+    pictures = {"slip.png": sized_png(1200, 1600)}
+    await arrive(company_id, 1, with_pictures(ORDER, pictures), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    [placement] = (await client.get("/placements")).json()["items"]
+    await documents.read_pending()
+    assert set(await files_of(client, placement["project_id"])) == {"CMR 4471.pdf"}
+
+    # The vision model answers nothing it can use: what the picture holds is not known.
+    monkeypatch.setattr(get_settings(), "vision_pages_per_day", 40)
+    monkeypatch.setattr(get_settings(), "agent_second_models", {})
+    refusing = FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("No.")]))
+    monkeypatch.setattr(llm, "model_for", lambda name: refusing)
+    assert await documents.read_pending_with_vision() == 1
+
+    assert set(await files_of(client, placement["project_id"])) == {"CMR 4471.pdf", "slip.png"}
+
+
+async def test_a_file_typed_a_signature_leaves_its_project_and_comes_back_typed_again(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model)
+    project_id = placement["project_id"]
+    [cmr] = (await files_of(client, project_id)).values()
+
+    typed = await client.patch(f"/documents/{cmr['item_id']}", json={"doc_type": "signature"})
+
+    assert typed.status_code == 200, typed.text
+    assert await files_of(client, project_id) == {}
+    retyped = await client.patch(f"/documents/{cmr['item_id']}", json={"doc_type": "cmr"})
+    assert retyped.status_code == 200, retyped.text
+    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}

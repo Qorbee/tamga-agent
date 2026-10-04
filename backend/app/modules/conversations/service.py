@@ -551,8 +551,10 @@ async def carried_files(
     """The files these mails carried, each with every mail of the company that carried it as part
     of a job (ADR-0021): a file beside a mail's text, or a picture its body shows unless the mail
     is bulk mail or the picture a sender's furniture. A file so many conversations carry that it
-    is standing paper comes back with no mail, so it leaves the projects it was in. What an
-    archive among them held rides with the archive."""
+    is standing paper comes back with no mail, so it leaves the projects it was in, and so does
+    one that holds nothing of a job: a signature's picture, a logo, a picture not read yet (it
+    joins once it is read with something on it). What an archive among them held rides with the
+    archive."""
     if not message_ids:
         return {}
     attached = await repository.attachments_of_each(db, company_id, message_ids)
@@ -561,15 +563,20 @@ async def carried_files(
     # Every file is answered, with no mail when none carries it as part of a job any more.
     carried: dict[uuid.UUID, list[uuid.UUID]] = {file: [] for file in files}
     kept = [file for file in files if spread.get(file, 0) <= _STANDING_CONVERSATIONS]
+    members = await documents.members_of(db, company_id, kept)
+    inside = {container_id: _within(container_id, members) for container_id in kept}
+    nothing = await documents.holding_nothing(
+        db, company_id, sorted({*kept, *(member for each in inside.values() for member in each)})
+    )
     rows = await repository.carriers_of(db, company_id, kept)
     furniture = await _furniture(db, company_id, sorted({row[0] for row in rows if row[2]}))
     for document_id, message_id, inline, bulk in rows:
-        if not inline or not (bulk or document_id in furniture):
+        if document_id not in nothing and (not inline or not (bulk or document_id in furniture)):
             carried[document_id].append(message_id)
-    members = await documents.members_of(db, company_id, kept)
     for container_id in kept:
-        for inside in _within(container_id, members):
-            carried[inside] = sorted({*carried.get(inside, []), *carried.get(container_id, [])})
+        for member in inside[container_id]:
+            ridden = [] if member in nothing else carried.get(container_id, [])
+            carried[member] = sorted({*carried.get(member, []), *ridden})
     return carried
 
 

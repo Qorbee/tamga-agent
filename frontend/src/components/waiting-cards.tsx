@@ -235,7 +235,7 @@ function Question({ placement, projects }: { placement: Placement; projects: Map
           {conversation.subject ? conversationName(conversation.subject) : t.inbox.noSubject}
         </span>
         {placement.reason ? (
-          <span className="text-muted-foreground line-clamp-2 block text-sm text-pretty">
+          <span className="text-muted-foreground line-clamp-2 text-sm text-pretty">
             <T>{placement.reason}</T>
           </span>
         ) : null}

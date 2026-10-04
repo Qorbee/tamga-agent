@@ -69,6 +69,56 @@ class PositionSheet(BaseModel):
     rows: list[PositionRow] = []
 
 
+class WeighbridgeTicket(BaseModel):
+    """A weighbridge's slip: a truck weighed at a border, a port or a site."""
+
+    truck_plate: str | None = None
+    trailer_plate: str | None = None
+    weight_kg: Decimal | None = None
+    weighed_at: datetime | None = None
+    place: str | None = None
+    ticket_number: str | None = None
+
+
+class CustomsDeclaration(BaseModel):
+    """An export, import or transit declaration: its number (an MRN), office and state."""
+
+    declaration_number: str | None = None
+    customs_office: str | None = None
+    registered_on: date | None = None
+    status: str | None = None
+    sender: str | None = None
+    consignee: str | None = None
+    truck_plate: str | None = None
+
+
+class CommercialInvoice(BaseModel):
+    """The shipper's invoice for the goods a truck carries, made for customs."""
+
+    number: str | None = None
+    issue_date: date | None = None
+    seller: str | None = None
+    buyer: str | None = None
+    total_amount: Decimal | None = None
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+
+
+class PackingList(BaseModel):
+    """What a load holds: packages, pallets, weight and volume."""
+
+    packages: int | None = None
+    gross_weight_kg: Decimal | None = None
+    volume_m3: Decimal | None = None
+
+
+class DriverPapers(BaseModel):
+    """A driver's identity, licence, visa or permit, sent for a border crossing."""
+
+    driver_name: str | None = None
+    document_number: str | None = None
+    valid_until: date | None = None
+
+
 TYPES: Final = (
     DocumentType(
         key="cmr",
@@ -76,6 +126,7 @@ TYPES: Final = (
         pack="logistics",
         schema=Cmr,
         proof_of_delivery=True,
+        hint="The international consignment note with its numbered boxes, often stamped.",
     ),
     DocumentType(
         key="pod_photo",
@@ -83,16 +134,66 @@ TYPES: Final = (
         pack="logistics",
         schema=ProofOfDeliveryPhoto,
         proof_of_delivery=True,
+        hint="A photo of goods unloaded or a delivery note signed at the destination.",
     ),
     DocumentType(
         key="position_sheet",
         label="Dispatcher's position sheet",
         pack="logistics",
         schema=PositionSheet,
+        hint="A list of trucks with where each is now, or a screenshot of one.",
     ),
-    DocumentType(key="loading_photo", label="Loading photo", pack="logistics", schema=LoadingPhoto),
     DocumentType(
-        key="transport_order", label="Transport order", pack="logistics", schema=TransportOrder
+        key="loading_photo",
+        label="Loading photo",
+        pack="logistics",
+        schema=LoadingPhoto,
+        hint="A photo of a truck, its trailer or its load being loaded.",
+    ),
+    DocumentType(
+        key="transport_order",
+        label="Transport order",
+        pack="logistics",
+        schema=TransportOrder,
+        hint="A client's order or loading instructions for a job: what, from where, to where.",
+    ),
+    DocumentType(
+        key="weighbridge_ticket",
+        label="Weighbridge slip",
+        pack="logistics",
+        schema=WeighbridgeTicket,
+        hint="A printed slip of a truck's weight at a weighbridge, with its plate.",
+    ),
+    DocumentType(
+        key="customs_declaration",
+        label="Customs declaration",
+        pack="logistics",
+        schema=CustomsDeclaration,
+        hint=(
+            "An export, import or transit declaration, an MRN, a T1, a TIR carnet, or a "
+            "screenshot of a customs system showing one."
+        ),
+    ),
+    DocumentType(
+        key="commercial_invoice",
+        label="Commercial invoice",
+        pack="logistics",
+        schema=CommercialInvoice,
+        hint="The shipper's invoice for the goods carried, made for customs: not a freight bill.",
+    ),
+    DocumentType(
+        key="packing_list",
+        label="Packing list",
+        pack="logistics",
+        schema=PackingList,
+        hint="A list of the packages, pallets, weights and volumes of a load.",
+    ),
+    DocumentType(
+        key="driver_papers",
+        label="Driver's papers",
+        pack="logistics",
+        schema=DriverPapers,
+        hint="A driver's passport, identity card, licence, visa or permit.",
     ),
 )
 

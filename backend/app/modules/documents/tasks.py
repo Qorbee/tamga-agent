@@ -23,6 +23,14 @@ async def read_with_vision(timestamp: int) -> None:
         logger.info("the vision model read %d documents", read)
 
 
+@jobs.periodic("documents.type", cron="* * * * *")
+async def type_documents(timestamp: int) -> None:
+    """Files code could not type, typed by a small model within each company's daily budget."""
+    asked = await service.type_pending()
+    if asked:
+        logger.info("the typist was asked about %d documents", asked)
+
+
 @jobs.task("documents.forget_file", retry=5)
 async def forget_file(company_id: str, sha256: str, storage_key: str) -> None:
     """A deleted document's stored bytes, removed once its deletion has committed."""

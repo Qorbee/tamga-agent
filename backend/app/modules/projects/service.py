@@ -62,7 +62,7 @@ from app.modules.projects.schemas import (
     ProposalOut,
     ProposalPage,
 )
-from app.platform import clock
+from app.platform import clock, events
 from app.platform.auth import Actor, Role
 from app.platform.db import violated_constraint
 from app.platform.errors import BadRequest, Conflict, NotFound
@@ -1058,17 +1058,22 @@ async def carry_files(
     await repository.upsert_mail_links(db, rows)
 
 
-async def _carry_unpacked(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
-    """An archive's files were taken out after its mail was linked: they join the mail's
-    projects, as the archive did."""
+async def _carry_again(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """More is known of a file after its mail was linked: an archive's files were taken out and
+    join the mail's projects, as the archive did; a picture was read with something on it, or
+    could not be read, and joins them; a file was typed a signature or logo and leaves them. The
+    projects shown are told to read their files again."""
     archives = [document_id, *await documents.containers_of(db, company_id, document_id)]
     carriers = await conversations.messages_attaching(db, company_id, archives)
-    await carry_files(
-        db, company_id, sorted({mail for mails in carriers.values() for mail in mails})
-    )
+    mails = sorted({mail for each in carriers.values() for mail in each})
+    if not mails:
+        return
+    await carry_files(db, company_id, mails)
+    await events.publish(db, company_id, events.EventKind.PROJECTS)
 
 
-documents.on_unpacked(_carry_unpacked)
+documents.on_unpacked(_carry_again)
+documents.on_known(_carry_again)
 
 
 async def list_links(

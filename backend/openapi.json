@@ -973,6 +973,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
           "doc_type": {
             "anyOf": [
               {
@@ -1071,6 +1075,7 @@
           "unreadable_reason",
           "truncated",
           "converted",
+          "description",
           "download_url",
           "held_by"
         ],
@@ -1090,6 +1095,10 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
             "type": "string"
           },
           "doc_type": {
@@ -1178,7 +1187,8 @@
           "read_state",
           "unreadable_reason",
           "truncated",
-          "converted"
+          "converted",
+          "description"
         ],
         "title": "DocumentOut",
         "type": "object"

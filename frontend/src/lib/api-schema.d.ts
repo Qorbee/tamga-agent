@@ -1407,6 +1407,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Description */
+            description: string;
             /** Doc Type */
             doc_type: string | null;
             doc_type_source: components["schemas"]["TypeSource"] | null;
@@ -1442,6 +1444,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Description */
+            description: string;
             /** Doc Type */
             doc_type: string | null;
             doc_type_source: components["schemas"]["TypeSource"] | null;

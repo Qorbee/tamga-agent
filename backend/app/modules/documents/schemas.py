@@ -32,6 +32,9 @@ class DocumentOut(BaseModel):
     truncated: bool
     # An office file's PDF is made (GET /documents/{id}/rendition), shown in its place.
     converted: bool
+    # What the vision model said the file is, in a line, in the company's language; empty unless
+    # it read it.
+    description: str
 
 
 class Holder(StrEnum):

@@ -59,6 +59,13 @@ class Document(CompanyScoped, Base):
         CheckConstraint(
             "(doc_type IS NULL) = (doc_type_source IS NULL)", name="documents_doc_type_source_set"
         ),
+        # What waits for the typist, newest first.
+        Index(
+            "ix_documents_untyped",
+            "company_id",
+            "created_at",
+            postgresql_where=text("read_state = 'read' AND doc_type IS NULL AND typed_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -76,6 +83,9 @@ class Document(CompanyScoped, Base):
     doc_type_source: Mapped[TypeSource | None] = mapped_column(
         text_enum(TypeSource, "documents_doc_type_source_check")
     )
+    # When the typist was asked what the file is: once, whatever it answered. What a company's
+    # budget for a day counts (TYPED_FILES_PER_DAY).
+    typed_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Reading it (documents/service.py, read_pending): asked for when it arrives as an attachment

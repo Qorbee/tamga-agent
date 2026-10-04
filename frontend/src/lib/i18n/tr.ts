@@ -479,6 +479,12 @@ export const tr: Dictionary = {
       e_fatura: "e-Fatura",
       e_arsiv: "e-Arşiv fatura",
       e_irsaliye: "e-İrsaliye",
+      signature: "İmza veya logo",
+      weighbridge_ticket: "Kantar fişi",
+      customs_declaration: "Gümrük beyannamesi",
+      commercial_invoice: "Ticari fatura",
+      packing_list: "Çeki listesi",
+      driver_papers: "Şoför evrakı",
     } as Record<string, string>,
     kinds: {
       image: "Görsel",

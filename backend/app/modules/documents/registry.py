@@ -25,6 +25,8 @@ class DocumentType:
     schema: type[BaseModel]
     # A CMR or a signed delivery note: proof that a truck delivered, confirmed for one truck only.
     proof_of_delivery: bool = False
+    # What tells a file of this type from the others, for the model that types files: one line.
+    hint: str = ""
 
 
 _types: dict[str, DocumentType] = {}
@@ -88,6 +90,10 @@ class Invoice(BaseModel):
     total_amount: Decimal | None = None
 
 
+class Nothing(BaseModel):
+    """A file that holds nothing to read off it."""
+
+
 class BankReceipt(BaseModel):
     """A payment's date and amount, as the bank printed it."""
 
@@ -99,9 +105,35 @@ class BankReceipt(BaseModel):
     reference: str | None = None
 
 
+# A picture that is only part of how a mail looks. A file of this type is in no project: a mail
+# that carries it brings it to none (conversations, ``carried_files``).
+SIGNATURE: Final = "signature"
+
 CORE_TYPES: Final = (
-    DocumentType(key="invoice", label="Invoice", pack="core", schema=Invoice),
-    DocumentType(key="bank_receipt", label="Bank receipt", pack="core", schema=BankReceipt),
+    DocumentType(
+        key="invoice",
+        label="Invoice",
+        pack="core",
+        schema=Invoice,
+        hint="A bill the company sends or is sent for its own work or purchases.",
+    ),
+    DocumentType(
+        key="bank_receipt",
+        label="Bank receipt",
+        pack="core",
+        schema=BankReceipt,
+        hint="A bank's record of one payment made or received: a transfer slip or advice.",
+    ),
+    DocumentType(
+        key=SIGNATURE,
+        label="Signature or logo",
+        pack="core",
+        schema=Nothing,
+        hint=(
+            "A picture that is only part of how a mail looks: a signature or business card, a "
+            "logo, a banner, a social icon, a certificate badge, a disclaimer."
+        ),
+    ),
 )
 
 for _core in CORE_TYPES:

@@ -279,6 +279,7 @@ function TimelineRow({
   view,
   icon,
   title,
+  wrapTitle = false,
   detail,
   note,
   answer,
@@ -287,6 +288,8 @@ function TimelineRow({
   view: Parameters<typeof CanvasLink>[0]["view"];
   icon: ReactNode;
   title: ReactNode;
+  /** A title that is a sentence (what a model said a file is) wraps to a second line. */
+  wrapTitle?: boolean;
   detail: ReactNode;
   note?: ReactNode;
   answer: ReactNode;
@@ -300,7 +303,9 @@ function TimelineRow({
       >
         {icon}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{title}</span>
+          <span className={cn("text-sm font-medium", wrapTitle ? "line-clamp-2 break-words" : "block truncate")}>
+            {title}
+          </span>
           <span className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">{detail}</span>
           {note}
         </span>
@@ -353,7 +358,7 @@ function MailRow({ row }: { row: Extract<Row, { kind: "mail" }> }) {
       }
       note={
         waiting.length > 0 && row.placement?.reason ? (
-          <span className="text-muted-foreground mt-1 line-clamp-2 block text-sm text-pretty">
+          <span className="text-muted-foreground mt-1 line-clamp-2 text-sm text-pretty">
             <T>{row.placement.reason}</T>
           </span>
         ) : decide.isError ? (
@@ -382,6 +387,10 @@ function MailRow({ row }: { row: Extract<Row, { kind: "mail" }> }) {
   );
 }
 
+/**
+ * A file's row says what the file is: its type, else the vision model's line on it, else its
+ * name. The line stays under a typed file's row, and the name moves to the details.
+ */
 function FileRow({ link, item, trucks }: { link: ProjectLink; item: FileItem; trucks: Shipment[] }) {
   const { t, locale } = useI18n();
   const types = useQuery({ queryKey: ["document-types"], queryFn: listDocumentTypes, staleTime: Infinity });
@@ -390,6 +399,7 @@ function FileRow({ link, item, trucks }: { link: ProjectLink; item: FileItem; tr
   const typeLabel = typeKey
     ? (t.files.types[typeKey] ?? types.data?.find((type) => type.key === typeKey)?.label ?? typeKey)
     : null;
+  const shows = file.description.trim();
   return (
     <ItemRow
       link={link}
@@ -398,10 +408,18 @@ function FileRow({ link, item, trucks }: { link: ProjectLink; item: FileItem; tr
       isFile
       view={{ kind: "document", id: file.id }}
       icon={<RowIcon icon={fileIcon(file.preview)} />}
-      title={file.filename}
+      title={typeLabel ?? (shows ? <T>{shows}</T> : file.filename)}
+      wrapTitle={!typeLabel && Boolean(shows)}
+      about={
+        typeLabel && shows ? (
+          <span className="text-muted-foreground mt-0.5 line-clamp-2 text-sm text-pretty">
+            <T>{shows}</T>
+          </span>
+        ) : null
+      }
       detail={
         <>
-          {typeLabel ? <span className="text-foreground/80">{typeLabel}</span> : null}
+          {typeLabel || shows ? <span className="max-w-full truncate">{file.filename}</span> : null}
           <span>{item.message_id ? t.project.cameByMail : t.project.uploaded}</span>
           <time dateTime={item.at} className="tabular-nums">
             {formatListDate(new Date(item.at), locale)}
@@ -452,6 +470,8 @@ function ItemRow({
   view,
   icon,
   title,
+  wrapTitle,
+  about,
   detail,
 }: {
   link: ProjectLink;
@@ -461,6 +481,9 @@ function ItemRow({
   view: Parameters<typeof CanvasLink>[0]["view"];
   icon: ReactNode;
   title: ReactNode;
+  wrapTitle?: boolean;
+  /** What the item is, in a line under its title. */
+  about?: ReactNode;
   detail: ReactNode;
 }) {
   const { t } = useI18n();
@@ -487,6 +510,7 @@ function ItemRow({
       view={view}
       icon={icon}
       title={title}
+      wrapTitle={wrapTitle}
       detail={
         <>
           {detail}
@@ -506,6 +530,7 @@ function ItemRow({
       }
       note={
         <>
+          {about}
           {proofPaper && truck && !proven && isOwner ? (
             <span className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
               <span>{t.project.proofQuestion(plateOf(truck))}</span>

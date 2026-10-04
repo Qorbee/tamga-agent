@@ -145,6 +145,10 @@ class Settings(BaseSettings):
     # Pictures (a photo, a scanned page) the vision model may read for one company in 24 hours.
     # Zero: photos and scans wait, and no file goes to the model's provider.
     vision_pages_per_day: int = Field(default=0, ge=0)
+    # Read files a small model may be asked the type of for one company in 24 hours, when code
+    # could not tell it. Zero: a file code cannot type stays untyped, and no file's text goes to
+    # the model's provider for it.
+    typed_files_per_day: int = Field(default=0, ge=0)
     # Characters a model may write for one company in 24 hours when what Tamga wrote is asked for
     # in another language. Zero: nothing is translated, and no text goes to the model's provider.
     translated_chars_per_day: int = Field(default=0, ge=0)

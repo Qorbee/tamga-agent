@@ -4,6 +4,10 @@
 no text layer. It is shown pictures, as a person sees them, in a call with no tools, and answers
 with what is written on them (ADR-0013). What it wrote is text a model read, kept apart from what
 code read (``documents.vision_pages``), and the facts found in it say so (``MODEL_READ``).
+
+``typist`` says what kind of paper a read file is, when code could not: from its name, the
+reader's line on it and the start of its text, in a call with no tools. It answers one of the
+types it was offered or none, so a file's text can choose nothing else.
 """
 
 from collections.abc import Sequence
@@ -18,6 +22,9 @@ from app.modules.documents import reading
 from app.platform import llm
 
 READER: Final = "reader"
+TYPIST: Final = "typist"
+# How much of a file's text the typist is shown: its first page, near enough.
+TYPIST_TEXT: Final = 1500
 # The extractor a fact carries when it was found in text the reader wrote.
 MODEL_READ: Final = f"model:{READER}"
 # What the reader writes in place of what it cannot read.
@@ -92,3 +99,61 @@ def pictures(filename: str, images: Sequence[tuple[bytes, str]]) -> list[UserCon
         f"file: {filename} ({count})",
         [BinaryContent(data=data, media_type=media) for data, media in images],
     )
+
+
+class Typing(BaseModel):
+    # The key of the one type the file is; null when none fits or it cannot be told.
+    type: str | None
+
+
+_TYPIST_INSTRUCTIONS: Final = """\
+You say what kind of paper a file is, for a freight company's records. You are given the types \
+it can be, each as `key: label — what tells it apart`, then the file: its name, a line on what it \
+shows when a model has seen it, and the start of its text, in any language.
+
+Answer with the key of the one type the file is. Answer null when none fits, when it could be \
+several, or when there is too little to tell: a wrong type is worse than none. A file is the type \
+of what it is, not of what it mentions: a mail about an invoice is not an invoice.
+
+"""
+
+typist: Agent[frozenset[str], Typing] = Agent(
+    name=TYPIST,
+    # The keys it was offered: its answer is one of them.
+    deps_type=frozenset,
+    output_type=Typing,
+    instructions=_TYPIST_INSTRUCTIONS + llm.OUTSIDE_DATA,
+    retries=1,
+    model_settings=ModelSettings(timeout=60),
+)
+
+
+# What a small model writes for "none" when it writes a word in place of null.
+_NONE: Final = frozenset({"", "null", "none"})
+
+
+@typist.output_validator
+def _an_offered_type(context: RunContext[frozenset[str]], typing: Typing) -> Typing:
+    if typing.type is None:
+        return typing
+    key = typing.type.strip().lower()
+    if key in _NONE:
+        return Typing(type=None)
+    if key not in context.deps:
+        raise ModelRetry("Answer one of the keys listed, or null.")
+    return Typing(type=key)
+
+
+def typed(
+    types: Sequence[tuple[str, str, str]], filename: str, shows: str, text: str
+) -> list[UserContent]:
+    """The user turn for ``typist``: the types it may answer, as ``(key, label, hint)``, then the
+    file fenced as data from outside."""
+    offered = "\n".join(
+        f"- {key}: {label}" + (f" — {hint}" if hint else "") for key, label, hint in types
+    )
+    seen = f"shows: {shows}\n" if shows else ""
+    return [
+        f"Types:\n{offered}\n\n",
+        *llm.fenced(f"file: {filename}", [f"{seen}text:\n{text[:TYPIST_TEXT]}"]),
+    ]
