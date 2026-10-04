@@ -26,6 +26,8 @@ ASSISTANT: Final = "assistant"
 # The kinds of record a chat holds, as the reading tools name what a run opened.
 PROJECT: Final = linking.PROJECT
 CONVERSATION: Final = linking.CONVERSATION
+# A bill's decision, which Tamga writes about when it waits for the owner's approval.
+DECISION: Final = "decision"
 # What `waiting` lists of each kind: enough to say what is there, few enough to read.
 _LISTED: Final = 20
 # The projects something can wait in. One the owner rejected keeps the links suggested to it,

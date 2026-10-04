@@ -4,13 +4,16 @@ import { makeAssistantDataUI, type AssistantDataUI, type DataMessagePartProps } 
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { DecisionRow } from "@/components/decision-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectCard, Questions } from "@/components/waiting-cards";
 import {
   ApiError,
+  getDecision,
   getPlacement,
   getProject,
   listAllPlacements,
+  listPayments,
   type CardContent,
   type CardKind,
 } from "@/lib/api";
@@ -57,6 +60,33 @@ function QuestionCard({ data }: DataMessagePartProps<CardContent>) {
   );
 }
 
+/** A bill that waits for the owner's approval, as its row on the Payments page shows it now. */
+function ApprovalCard({ data }: DataMessagePartProps<CardContent>) {
+  const decision = useQuery({
+    queryKey: ["decision", data.id],
+    queryFn: () => getDecision(data.id),
+    retry: false,
+  });
+  const settled = decision.data?.state === "settled";
+  const payments = useQuery({
+    queryKey: ["payments", { decisions: [data.id] }],
+    queryFn: () => listPayments({ decision_id: [data.id] }),
+    enabled: settled,
+  });
+  return (
+    <Card pending={decision.isPending} error={decision.error}>
+      {decision.data ? (
+        <div className="border-border bg-card rounded-2xl border py-1 ps-2 pe-3">
+          <DecisionRow
+            decision={decision.data}
+            payment={payments.data?.items.find((payment) => payment.state === "settled")}
+          />
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 /** A card while its record loads, and what is said when the record cannot be shown. */
 function Card({ pending, error, children }: { pending: boolean; error: unknown; children: ReactNode }) {
   const { t } = useI18n();
@@ -83,6 +113,7 @@ const card = (kind: CardKind, render: (props: DataMessagePartProps<CardContent>)
 const CARDS: Record<CardKind, AssistantDataUI> = {
   project_proposal: card("project_proposal", ProposalCard),
   conversation_question: card("conversation_question", QuestionCard),
+  decision_approval: card("decision_approval", ApprovalCard),
 };
 
 /** Where the chat was compacted: above it Tamga works from notes, and every message is still here. */

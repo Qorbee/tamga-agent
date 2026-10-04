@@ -41,8 +41,13 @@ async def list_decisions(
 
 
 @decisions.get("/decisions/{decision_id}")
-async def get_decision(decision_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> DecisionOut:
-    return await service.get_decision(db, actor, decision_id)
+async def get_decision(
+    decision_id: uuid.UUID,
+    actor: ActorDep,
+    db: SessionDep,
+    expand: Annotated[list[Literal["invoice"]], Query()] = [],  # noqa: B006
+) -> DecisionOut:
+    return await service.get_decision(db, actor, decision_id, with_invoice="invoice" in expand)
 
 
 @decisions.patch("/decisions/{decision_id}")

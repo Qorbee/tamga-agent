@@ -397,6 +397,48 @@ def _approvable(decision: Decision) -> bool:
     )
 
 
+# For the chat (assistant): what waits for the owner
+
+
+async def awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> list[DecisionOut]:
+    """The decisions that wait for the owner's approval, the earliest evaluated first, each with
+    its bill."""
+    rows = await repository.awaiting_owner(db, company_id)
+    bills = {
+        bill.id: bill
+        for bill in await books.get_invoices(db, company_id, [row.invoice_id for row in rows])
+    }
+    return [
+        DecisionOut.model_validate(row).model_copy(update={"invoice": bills.get(row.invoice_id)})
+        for row in rows
+    ]
+
+
+async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone."""
+    return await repository.companies_awaiting_owner(db)
+
+
+async def waits_for_owner(db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID) -> bool:
+    """Read under the company's lock, held until the caller commits: an owner's answer then
+    comes before what the caller keeps about it, or after, never between."""
+    await repository.lock_decisions(db, company_id)
+    decision = await repository.get(db, company_id, decision_id)
+    return decision is not None and decision.state is DecisionState.AWAITING_OWNER
+
+
+async def jobs_of(
+    db: AsyncSession, company_id: uuid.UUID, invoice_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[uuid.UUID]]:
+    """The projects that hold each bill as evidence: where a word about it has its context."""
+    links = await projects.links_of_items(db, company_id, ItemKind.INVOICE, invoice_ids)
+    jobs: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for link in links:
+        if projects.is_evidence(link):
+            jobs.setdefault(link.item_id, set()).add(link.project_id)
+    return {invoice_id: sorted(held) for invoice_id, held in jobs.items()}
+
+
 # The executor's results (settlement)
 
 
@@ -540,11 +582,17 @@ async def list_decisions(
     return DecisionPage(items=items, total=total)
 
 
-async def get_decision(db: AsyncSession, actor: Actor, decision_id: uuid.UUID) -> DecisionOut:
+async def get_decision(
+    db: AsyncSession, actor: Actor, decision_id: uuid.UUID, *, with_invoice: bool = False
+) -> DecisionOut:
     decision = await repository.get(db, actor.company_id, decision_id)
     if decision is None:
         raise NotFound("No such decision")
-    return DecisionOut.model_validate(decision)
+    out = DecisionOut.model_validate(decision)
+    if with_invoice:
+        bills = await books.get_invoices(db, actor.company_id, [decision.invoice_id])
+        out = out.model_copy(update={"invoice": bills[0] if bills else None})
+    return out
 
 
 async def list_events(

@@ -232,7 +232,7 @@ export const tr: Dictionary = {
     rules: {
       currency: "Para birimi için kur yok",
       amount: "Ödenecek tutar kalmamış ya da kalandan fazla",
-      duplicate: "Daha önce ödenmiş",
+      duplicate: "Daha önce ödenmiş ya da aynı faturanın başka bir kaydıyla onaylanmış",
       project: "Onaylı bir işte değil",
       proof_of_delivery: "Her tırın teslim kanıtı yok",
       client_paid: "Müşteri işi henüz ödemedi",

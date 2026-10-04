@@ -66,6 +66,22 @@ async def companies_with_movable(db: AsyncSession) -> list[uuid.UUID]:
     return list(rows)
 
 
+async def awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Decision]:
+    rows = await db.scalars(
+        select(Decision)
+        .where(Decision.company_id == company_id, Decision.state == DecisionState.AWAITING_OWNER)
+        .order_by(Decision.evaluated_at, Decision.id)
+    )
+    return rows.all()
+
+
+async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(Decision.company_id).where(Decision.state == DecisionState.AWAITING_OWNER).distinct()
+    )
+    return list(rows)
+
+
 async def approved(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Decision]:
     rows = await db.scalars(
         select(Decision)

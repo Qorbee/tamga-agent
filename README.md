@@ -106,8 +106,8 @@ Arc testnet; nothing touches a company's bank or real money.
   confirmed, whether the client paid, whether it was paid before, and the vault's caps and
   balance read from the chain, under the owner's versioned policy. A bill is mirrored as test
   USDC at a fixed rate for its currency. The owner approves, holds, rejects or changes the amount
-  of the evaluation in force on the Payments page, and every evaluation and answer is a row in a
-  hash-chained log.
+  of the evaluation in force on the Payments page, or on the card under what Tamga writes about
+  the bill in the chat, and every evaluation and answer is a row in a hash-chained log.
 - **Payments:** the executor pays each bill the owner approved from the company's vault to the
   subcontractor's wallet, under a key the vault pays once, and records the transaction's hash
   with its Arcscan link. A bill the vault refuses goes back to the owner.
@@ -123,7 +123,7 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, in this order: the approval in the chat; the draft cards; the replay
+Next, in this order: the decision log page with its Arcscan links; the draft cards; the replay
 of past projects with its score, and the playground's scenarios.
 
 ## This repository

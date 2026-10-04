@@ -1186,7 +1186,7 @@ export interface components {
          *     is about says which record its id names.
          * @enum {string}
          */
-        CardKind: "project_proposal" | "conversation_question";
+        CardKind: "project_proposal" | "conversation_question" | "decision_approval";
         /**
          * CardMessage
          * @description A card code put in a chat, carried as the chat protocol's activity message. A client
@@ -3531,7 +3531,9 @@ export interface operations {
     };
     "decisions.get_decision": {
         parameters: {
-            query?: never;
+            query?: {
+                expand?: "invoice"[];
+            };
             header?: never;
             path: {
                 decision_id: string;

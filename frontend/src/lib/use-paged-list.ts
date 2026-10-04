@@ -35,6 +35,8 @@ export function usePagedList<T>(
     /** Nothing could be read: rows already shown stay when a later page fails. */
     isError: query.isError && items === undefined,
     isPending: query.isPending,
+    /** The rows of the query before the key changed, kept while the new one is read. */
+    isPlaceholderData: query.isPlaceholderData,
     /** Reads the next page; null when every row is shown. */
     more: query.hasNextPage ? () => void query.fetchNextPage() : null,
     // Also while the shown pages are read again: asking for more then would cancel that.

@@ -3,13 +3,15 @@ needs the owner, it writes first, in the chat that already holds the finding's r
 new one, and code puts a card under what it wrote.
 
 What makes it speak is a list in code, never a prompt's choice: a project the linker proposes,
-and a conversation it cannot choose a project for. Each is read from where it stands (the
-placements that wait for the owner), so nothing is lost when a run fails or the worker stops:
-what was not written about yet is found again.
+a conversation it cannot choose a project for, and a bill that waits for the owner's approval.
+Each is read from where it stands (the placements and decisions that wait for the owner), so
+nothing is lost when a run fails or the worker stops: what was not written about yet is found
+again.
 
 Past the day's new chats, a finding goes into the day's digest instead (``_into_digest``): its
 card alone, written by code with no model run, so a busy day costs no more and nothing waits for
-the next day.
+the next day. A bill that waits for approval is never held back by the cap (ADR-0018, point 9):
+it opens its chat whatever the day's count.
 
 Such a turn acts for the company, not for a person. It runs as ``Actor.of_tamga``, which every
 role check refuses, on the assistant's tools, which only read. What it is told of the finding
@@ -33,12 +35,14 @@ from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
 from app.modules.companies.models import Company, CompanyMode
+from app.modules.decisions import service as decisions
+from app.modules.decisions.schemas import DecisionOut
 from app.modules.linking import service as linking
 from app.modules.linking.models import Outcome
 from app.modules.linking.schemas import PlacementOut
 from app.modules.projects import service as projects
 from app.modules.projects.models import ProjectStatus
-from app.platform import clock, events, llm
+from app.platform import chain, clock, events, llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -64,6 +68,12 @@ _PROPOSAL: Final = (
     "\nOpen the project and read its conversations. Then write the owner a short message: "
     "what the job is, why it looks like a job of its own, and what you need from them. A "
     "card under your message lets them confirm or reject the project, so do not say how."
+)
+_APPROVAL: Final = (
+    "\nOpen the project the bill belongs to and look at its trucks and their papers. Then write "
+    "the owner a short message: what the bill is for, what the rules found, and whether you "
+    "would pay it now. A card under your message lets them approve, hold or reject it, so do "
+    "not say how. Nothing is paid until they approve."
 )
 _QUESTION: Final = (
     "\nRead the conversation and open the projects it could belong to. Then write the owner "
@@ -95,7 +105,10 @@ async def speak_pending() -> int:
     if get_settings().tamga_requests_per_day == 0:
         return 0
     async with open_session() as db:
-        company_ids = await linking.companies_awaiting_owner(db)
+        company_ids = sorted(
+            set(await linking.companies_awaiting_owner(db))
+            | set(await decisions.companies_awaiting_owner(db))
+        )
     written = 0
     for company_id in company_ids:
         async with open_session() as db:
@@ -122,7 +135,9 @@ async def speak_pending() -> int:
 
 
 async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
-    """What waits for the owner and Tamga has not written about: the oldest first."""
+    """What waits for the owner and Tamga has not written about: bills to approve first, then
+    the oldest placements first."""
+    findings = await _approvals(db, company_id)
     waiting: list[PlacementOut] = []
     # Every page of them: the list comes newest first, and the oldest is written about first.
     while True:
@@ -151,7 +166,6 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     told_conversations = await repository.raised(
         db, company_id, agents.CONVERSATION, [item.thread_id for item in waiting]
     )
-    findings: list[Finding] = []
     for item in waiting:
         subject = (item.conversation.subject if item.conversation else None) or "(no subject)"
         if item.outcome is Outcome.PROPOSED:
@@ -204,10 +218,65 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     return findings
 
 
+async def _approvals(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
+    """The bills that wait for the owner's approval and Tamga has not written about."""
+    waiting = await decisions.awaiting_owner(db, company_id)
+    told = await repository.raised(db, company_id, agents.DECISION, [item.id for item in waiting])
+    waiting = [item for item in waiting if item.id not in told]
+    jobs = await decisions.jobs_of(db, company_id, [item.invoice_id for item in waiting])
+    known = await projects.get_projects(
+        db, company_id, sorted({job for held in jobs.values() for job in held})
+    )
+    findings: list[Finding] = []
+    for item in waiting:
+        bill = item.invoice
+        if bill is None:
+            continue
+        held = {job: known[job] for job in jobs.get(item.invoice_id, []) if job in known}
+        name = f"{bill.party_name or 'A subcontractor'} · {bill.number or 'a bill'}"
+        findings.append(
+            Finding(
+                record=(agents.DECISION, item.id),
+                related=tuple((agents.PROJECT, project_id) for project_id in held),
+                title=name,
+                prompt=_told(
+                    "a bill that waits for the owner's approval",
+                    [
+                        f"Bill {bill.number or '(no number)'} from "
+                        f"{bill.party_name or '(unknown)'}",
+                        f"Amount: {item.amount} {item.currency or ''}, due {bill.due_date or '?'}",
+                        *_mirrored(item),
+                        "Its jobs: "
+                        + (
+                            "; ".join(f"{p.number} ({p.name})" for p in held.values())
+                            or "none confirmed"
+                        ),
+                        *(
+                            f"Rule {rule.rule}: {rule.outcome.value}, {rule.reason}"
+                            for rule in item.rules
+                            if rule.reason
+                        ),
+                    ],
+                    _APPROVAL,
+                ),
+                card={"kind": CardKind.DECISION_APPROVAL.value, "id": str(item.id)},
+            )
+        )
+    return findings
+
+
+def _mirrored(item: DecisionOut) -> list[str]:
+    if item.usdc_units is None:
+        return []
+    return [f"It would be paid as {chain.usdc(item.usdc_units)} test USDC from the vault"]
+
+
 async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> bool:
     """Whether what was found still waits for the owner, who may have answered it on a page
     while the model wrote."""
     kind, record_id = finding.record
+    if kind == agents.DECISION:
+        return await decisions.waits_for_owner(db, company_id, record_id)
     if kind == agents.PROJECT:
         project = (await projects.get_projects(db, company_id, [record_id])).get(record_id)
         return project is not None and project.status is ProjectStatus.PROPOSED
@@ -245,7 +314,9 @@ async def _speak(company: Company, finding: Finding) -> int:
         if chat is None:
             since = now - service.RUN_WINDOW
             opened_today = await repository.opened_since(db, company.id, Origin.TAMGA, since)
-            if opened_today >= settings.tamga_chats_per_day:
+            # A bill to approve is never held back by the cap (ADR-0018, point 9).
+            capped = finding.record[0] != agents.DECISION
+            if capped and opened_today >= settings.tamga_chats_per_day:
                 return await _into_digest(db, company, finding)
             chat = Chat(company_id=company.id, origin=Origin.TAMGA, title=finding.title[:200])
             await repository.add(db, chat)

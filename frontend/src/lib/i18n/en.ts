@@ -239,7 +239,7 @@ export const en = {
     rules: {
       currency: "No rate for its currency",
       amount: "Nothing left to pay on it, or more than is left",
-      duplicate: "Paid already",
+      duplicate: "Paid already, or approved as another booking of the same bill",
       project: "Not in a confirmed job",
       proof_of_delivery: "No proof of delivery for every truck",
       client_paid: "The client has not paid the job",

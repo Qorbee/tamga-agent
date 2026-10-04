@@ -229,6 +229,7 @@ export type DecisionPage = Schemas["DecisionPage"];
 export type DecisionAction = Schemas["DecisionAction"];
 type DecisionQuery = NonNullable<operations["decisions.list_decisions"]["parameters"]["query"]>;
 export const listDecisions = (params: DecisionQuery) => request<DecisionPage>(`/decisions${query(params)}`);
+export const getDecision = (id: string) => request<Decision>(`/decisions/${id}${query({ expand: ["invoice"] })}`);
 /** The owner's answer to the evaluation it names; a 409 when it was evaluated again since. */
 export const answerDecision = (id: string, body: DecisionAction) =>
   request<Decision>(`/decisions/${id}`, json("PATCH", body));

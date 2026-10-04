@@ -111,7 +111,8 @@
         "description": "The cards code puts under a message of Tamga's, as a client knows them: what the card\nis about says which record its id names.",
         "enum": [
           "project_proposal",
-          "conversation_question"
+          "conversation_question",
+          "decision_approval"
         ],
         "title": "CardKind",
         "type": "string"
@@ -6373,6 +6374,20 @@
               "format": "uuid",
               "title": "Decision Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expand",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "const": "invoice",
+                "type": "string"
+              },
+              "title": "Expand",
+              "type": "array"
             }
           }
         ],
