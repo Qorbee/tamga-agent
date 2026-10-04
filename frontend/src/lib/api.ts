@@ -1,4 +1,4 @@
-import type { components } from "./api-schema";
+import type { components, operations } from "./api-schema";
 import { env } from "./env";
 
 /** Every schema the backend declares, generated from backend/openapi.json. */
@@ -110,6 +110,7 @@ export const listProjects = (params: {
   /** Only projects holding a link that waits for the owner. */
   suggested?: boolean;
   limit?: number;
+  offset?: number;
 }) => request<ProjectPage>(`/projects${query({ ...params, limit: params.limit ?? PAGE, sort: "-updated_at" })}`);
 export const getProject = (id: string) => request<Project>(`/projects/${id}`);
 export const createProject = (body: ProjectCreate) =>
@@ -132,7 +133,7 @@ export const removeProjectParty = (id: string) => request<void>(`/project-partie
 // Parties: everyone the company deals with, to choose a project's firms from.
 export type Party = Schemas["PartyOut"];
 export type PartyPage = Schemas["PartyPage"];
-export const listParties = (params: { q?: string; kind?: Party["kind"]; limit?: number }) =>
+export const listParties = (params: { q?: string; kind?: Party["kind"]; limit?: number; offset?: number }) =>
   request<PartyPage>(`/parties${query({ ...params, limit: params.limit ?? 20 })}`);
 
 export type Shipment = Schemas["ShipmentOut"];
@@ -217,6 +218,9 @@ export const openCompanyEvents = () =>
 
 // Books: invoices as the accounting system holds them, read only.
 export type Invoice = Schemas["InvoiceOut"];
+export type InvoicePage = Schemas["InvoicePage"];
+type InvoiceQuery = NonNullable<operations["invoices.list_invoices"]["parameters"]["query"]>;
+export const listInvoices = (params: InvoiceQuery) => request<InvoicePage>(`/invoices${query(params)}`);
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
 
 // Messages

@@ -3749,8 +3749,12 @@ export interface operations {
         parameters: {
             query?: {
                 direction?: components["schemas"]["InvoiceDirection"] | null;
+                kind?: components["schemas"]["InvoiceKind"][] | null;
                 party_id?: string | null;
+                /** @description True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither. */
+                outstanding?: boolean | null;
                 q?: string | null;
+                sort?: "-issue_date" | "issue_date" | "due_date" | "-due_date" | "-total_amount" | "-remaining_amount";
                 limit?: number;
                 offset?: number;
             };

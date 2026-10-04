@@ -2,7 +2,7 @@
 
 import { Attachment01Icon, Cancel01Icon, Search01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
@@ -16,6 +16,7 @@ import { formatDays, formatListDate } from "@/lib/format";
 import { conversationName, ownSnippet } from "@/lib/mail-text";
 import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
+import { usePagedList } from "@/lib/use-paged-list";
 
 import { Waiting } from "./waiting";
 
@@ -108,12 +109,12 @@ function Mail() {
   const { t, locale } = useI18n();
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
-  const [limit, setLimit] = useState(30);
-  const threads = useQuery({
-    queryKey: ["threads", { q, limit }],
-    queryFn: () => listThreads({ q, limit }),
-    placeholderData: keepPreviousData,
-  });
+  const threads = usePagedList(
+    ["threads", { q }],
+    (page) => listThreads({ q, ...page }),
+    30,
+    (thread) => thread.thread_key,
+  );
 
   return (
     <Section title={t.inbox.mail}>
@@ -132,16 +133,16 @@ function Mail() {
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
-      {threads.isPending ? (
-        <Skeleton className="h-64 rounded-2xl" />
-      ) : threads.isError ? (
+      {threads.isError ? (
         <p className="text-danger-foreground text-sm">{t.errors.load}</p>
-      ) : threads.data.items.length === 0 ? (
+      ) : !threads.items ? (
+        <Skeleton className="h-64 rounded-2xl" />
+      ) : threads.items.length === 0 ? (
         <p className="text-muted-foreground text-sm">{t.inbox.mailEmpty}</p>
       ) : (
         <>
           <ul className="divide-border border-border divide-y overflow-hidden rounded-2xl border">
-            {threads.data.items.map((thread) => {
+            {threads.items.map((thread) => {
               const who = thread.participants.slice(0, 3).join(", ") || thread.latest.sender || "—";
               return (
                 <li key={thread.thread_key}>
@@ -187,8 +188,14 @@ function Mail() {
               );
             })}
           </ul>
-          {threads.data.total > threads.data.items.length ? (
-            <Button variant="ghost" size="sm" className="justify-self-center" onClick={() => setLimit(limit + 30)}>
+          {threads.more ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-self-center"
+              disabled={threads.loadingMore}
+              onClick={threads.more}
+            >
               {t.inbox.showMore}
             </Button>
           ) : null}

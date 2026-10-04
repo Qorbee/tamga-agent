@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,15 +157,24 @@ async def list_invoices(
     company_id: uuid.UUID,
     *,
     direction: InvoiceDirection | None,
+    kinds: Sequence[InvoiceKind] | None = None,
     party_id: uuid.UUID | None,
+    outstanding: bool | None = None,
     q: str | None,
+    sort: str = "-issue_date",
     page: PageParams,
 ) -> tuple[Sequence[Invoice], int]:
     filters: list[ColumnElement[bool]] = [Invoice.company_id == company_id]
     if direction is not None:
         filters.append(Invoice.direction == direction)
+    if kinds:
+        filters.append(Invoice.kind.in_(kinds))
     if party_id is not None:
         filters.append(Invoice.party_id == party_id)
+    if outstanding is True:
+        filters.append(and_(Invoice.cancelled.is_(False), Invoice.remaining_amount > 0))
+    elif outstanding is False:
+        filters.append(or_(Invoice.cancelled.is_(True), Invoice.remaining_amount <= 0))
     if q:
         pattern = f"%{escape_like(q)}%"
         filters.append(
@@ -179,11 +188,21 @@ async def list_invoices(
     rows = await db.scalars(
         select(Invoice)
         .where(*filters)
-        .order_by(Invoice.issue_date.desc().nulls_last(), Invoice.id)
+        .order_by(*_INVOICE_SORTS[sort], Invoice.id)
         .limit(page.limit)
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+_INVOICE_SORTS: dict[str, list[ColumnElement[Any]]] = {
+    "-issue_date": [Invoice.issue_date.desc().nulls_last()],
+    "issue_date": [Invoice.issue_date.asc().nulls_last()],
+    "due_date": [Invoice.due_date.asc().nulls_last()],
+    "-due_date": [Invoice.due_date.desc().nulls_last()],
+    "-total_amount": [Invoice.total_amount.desc().nulls_last()],
+    "-remaining_amount": [Invoice.remaining_amount.desc().nulls_last()],
+}
 
 
 async def find_invoices(

@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.books import repository, sources
-from app.modules.books.models import InvoiceDirection
-from app.modules.books.schemas import InvoiceOut, InvoicePage
+from app.modules.books.models import InvoiceDirection, InvoiceKind
+from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort
 from app.modules.books.sources import (
     BooksSource,
     BudgetSpent,
@@ -352,16 +352,22 @@ async def list_invoices(
     actor: Actor,
     *,
     direction: InvoiceDirection | None,
+    kinds: Sequence[InvoiceKind] | None = None,
     party_id: uuid.UUID | None,
+    outstanding: bool | None = None,
     q: str | None,
+    sort: InvoiceSort = "-issue_date",
     page: PageParams,
 ) -> InvoicePage:
     rows, total = await repository.list_invoices(
         db,
         actor.company_id,
         direction=direction,
+        kinds=kinds,
         party_id=party_id,
+        outstanding=outstanding,
         q=q.strip() if q else None,
+        sort=sort,
         page=page,
     )
     return InvoicePage(

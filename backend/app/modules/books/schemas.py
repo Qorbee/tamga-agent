@@ -1,10 +1,15 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from app.modules.books.models import InvoiceDirection, InvoiceKind
+
+InvoiceSort = Literal[
+    "-issue_date", "issue_date", "due_date", "-due_date", "-total_amount", "-remaining_amount"
+]
 
 
 class InvoiceOut(BaseModel):

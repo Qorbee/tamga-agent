@@ -1,13 +1,13 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OPEN_PROJECTS, ProjectCard, Questions } from "@/components/waiting-cards";
 import { listAllPlacements, listProjects } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
+import { usePagedList } from "@/lib/use-paged-list";
 
 /** Project cards shown before "Show more". */
 const CARDS = 20;
@@ -21,13 +21,13 @@ const NAMED = 100;
  */
 export function Waiting() {
   const { t } = useI18n();
-  const [limit, setLimit] = useState(CARDS);
-  const projects = useQuery({
-    queryKey: ["projects", { suggested: true, limit }],
-    queryFn: () => listProjects({ status: [...OPEN_PROJECTS], suggested: true, limit }),
-    placeholderData: keepPreviousData,
-  });
-  const ids = projects.data?.items.map((project) => project.id) ?? [];
+  const projects = usePagedList(
+    ["projects", { suggested: true }],
+    (page) => listProjects({ status: [...OPEN_PROJECTS], suggested: true, ...page }),
+    CARDS,
+    (project) => project.id,
+  );
+  const ids = projects.items?.map((project) => project.id) ?? [];
   // Every placement of the cards shown, however many: a card's tick answers for all it lists.
   const placements = useQuery({
     queryKey: ["placements", { projects: ids }],
@@ -46,7 +46,7 @@ export function Waiting() {
   });
 
   const failed = projects.isError || placements.isError || asked.isError;
-  const cards = (projects.data?.items ?? [])
+  const cards = (projects.items ?? [])
     .map((project) => ({
       project,
       waiting: (placements.data ?? []).filter(
@@ -74,12 +74,13 @@ export function Waiting() {
           {cards.map(({ project, waiting }) => (
             <ProjectCard key={project.id} project={project} waiting={waiting} />
           ))}
-          {projects.data.total > projects.data.items.length ? (
+          {projects.more ? (
             <Button
               variant="ghost"
               size="sm"
               className="justify-self-center"
-              onClick={() => setLimit(limit + CARDS)}
+              disabled={projects.loadingMore}
+              onClick={projects.more}
             >
               {t.inbox.showMore}
             </Button>

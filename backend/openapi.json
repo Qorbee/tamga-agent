@@ -6645,6 +6645,25 @@
           },
           {
             "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceKind"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
             "name": "party_id",
             "required": false,
             "schema": {
@@ -6658,6 +6677,24 @@
                 }
               ],
               "title": "Party Id"
+            }
+          },
+          {
+            "description": "True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither.",
+            "in": "query",
+            "name": "outstanding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither.",
+              "title": "Outstanding"
             }
           },
           {
@@ -6675,6 +6712,24 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-issue_date",
+              "enum": [
+                "-issue_date",
+                "issue_date",
+                "due_date",
+                "-due_date",
+                "-total_amount",
+                "-remaining_amount"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           },
           {
