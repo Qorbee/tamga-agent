@@ -361,16 +361,31 @@ async def proofs(
     return found
 
 
+async def delivered(db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID) -> list[bool]:
+    """For the payment rules: each truck a bill pays for, and whether its delivery is proven by
+    proof that counts for money (ADR-0021, decision 4). Empty when the bill names no truck."""
+    trucks = await trucks_billed(db, company_id, invoice_id)
+    if not trucks:
+        return []
+    jobs = {
+        link.project_id
+        for link in await projects.links_of_items(db, company_id, ItemKind.INVOICE, [invoice_id])
+        if projects.is_evidence(link)
+    }
+    proven = await proofs(db, company_id, sorted(jobs))
+    return [truck in proven for truck in trucks]
+
+
 async def trucks_billed(
     db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
 ) -> list[uuid.UUID]:
-    """The confirmed trucks a bill pays for, in the projects that hold it confirmed: the truck its
-    link names, else those whose plates the bill names. None when it names none, and the payment
-    rules then hold the bill."""
+    """The confirmed trucks a bill pays for, in the projects that hold it as evidence (confirmed,
+    or named by a key surely enough, ADR-0010): the truck its link names, else those whose plates
+    the bill names. None when it names none, and the payment rules then hold the bill."""
     links = [
         link
         for link in await projects.links_of_items(db, company_id, ItemKind.INVOICE, [invoice_id])
-        if link.status is LinkStatus.CONFIRMED
+        if projects.is_evidence(link)
     ]
     trucks = {
         truck.id: truck

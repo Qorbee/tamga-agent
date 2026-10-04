@@ -18,10 +18,12 @@ from app.config import get_settings
 from app.modules.assistant import router as assistant
 from app.modules.books import router as books
 from app.modules.conversations import router as conversations
+from app.modules.decisions import router as decisions
 from app.modules.documents import router as documents
 from app.modules.identity import router as identity
 from app.modules.linking import router as linking
 from app.modules.parties import router as parties
+from app.modules.policy import router as policy
 from app.modules.projects import router as projects
 from app.modules.translations import router as translations
 from app.packs.logistics import router as logistics
@@ -98,6 +100,8 @@ def create_app() -> FastAPI:
     app.include_router(conversations.threads)
     app.include_router(documents.documents)
     app.include_router(books.invoices)
+    app.include_router(policy.policy)
+    app.include_router(decisions.decisions)
     app.include_router(assistant.chats)
     # Packs' routers: the core never imports a pack, the app factory does.
     app.include_router(logistics.shipments)

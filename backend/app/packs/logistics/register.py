@@ -1,9 +1,10 @@
 """What the logistics pack plugs into the core: its document types, the facts its text holds,
 how an accepted field proposal is written onto a shipment, which project cannot be merged into
-another, a freight job's checklist, its trucks in the chat, and the freight scenario a judge's
-sandbox opens with."""
+another, a freight job's checklist, its trucks in the chat, what delivering means for paying a
+bill, and the freight scenario a judge's sandbox opens with."""
 
 from app.modules.assistant import tools
+from app.modules.decisions import service as decisions
 from app.modules.documents import registry
 from app.modules.facts import extractors
 from app.modules.playground import service as playground
@@ -23,6 +24,7 @@ projects.guard_merge(service.refuse_merge)
 checklists.register(checklist.ITEMS, checklist.read)
 # Its trucks' tools are added to the assistant's when `assistant` is imported, above.
 tools.name_trucks_with(assistant.name_trucks)
+decisions.register_delivery(service.delivered)
 playground.register_seed(sandbox.seed)
 
 extractors.register("logistics.cmr_number", facts.cmr_numbers)

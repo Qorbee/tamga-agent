@@ -32,6 +32,7 @@ LOCAL_WEB_URL = "http://localhost:3000"
 # Arc testnet's public node: enough for a laptop and CI, never what a deployment reads the vault by.
 PUBLIC_ARC_RPC = "https://rpc.testnet.arc.network"
 EvmAddress = Annotated[str, StringConstraints(pattern=r"^0x[0-9a-fA-F]{40}$")]
+Currency = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 # The most pictures of one file a call shows the vision model (ADR-0013): the documents module
 # draws no more (reading.MAX_PICTURED), and a budget of pictures is never smaller.
 VISION_PAGES_PER_FILE = 20
@@ -206,6 +207,15 @@ class Settings(BaseSettings):
     sandbox_per_payment_cap_usdc: Decimal = Field(default=Decimal("0.3"), gt=0, decimal_places=6)
     sandbox_daily_cap_usdc: Decimal = Field(default=Decimal("0.5"), gt=0, decimal_places=6)
     sandbox_timelock_seconds: int = Field(default=120, ge=60)
+    # How much test USDC one unit of a currency is paid as (ADR-0019): about a ten-thousandth of
+    # its dollar value, so a bill keeps its proportions and the faucet can fund a week of them.
+    # A country pack adds its own currency's default; a rate named here wins over it. A bill in
+    # a currency with no rate is held, never paid at a guessed rate.
+    mirror_rates: dict[Currency, Annotated[Decimal, Field(gt=0)]] = {
+        "USD": Decimal("0.0001"),
+        "EUR": Decimal("0.000116"),
+        "GBP": Decimal("0.000133"),
+    }
 
     # Guest sandboxes for judges: their lifetime, a per-client limit, and a global cap.
     guest_hours: int = 24

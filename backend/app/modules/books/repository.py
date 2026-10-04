@@ -145,6 +145,50 @@ async def payable_parties(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.
     return [party_id for party_id in rows if party_id is not None]
 
 
+def _open_payable() -> ColumnElement[bool]:
+    return (
+        (Invoice.kind == InvoiceKind.PURCHASE)
+        & Invoice.cancelled.is_(False)
+        & Invoice.party_id.is_not(None)
+        & (Invoice.remaining_amount > 0)
+    )
+
+
+async def open_payables(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Invoice]:
+    rows = await db.scalars(
+        select(Invoice)
+        .where(Invoice.company_id == company_id, _open_payable())
+        .order_by(Invoice.due_date.asc().nulls_last(), Invoice.id)
+    )
+    return rows.all()
+
+
+async def companies_with_payables(db: AsyncSession) -> list[uuid.UUID]:
+    rows = await db.scalars(select(Invoice.company_id).where(_open_payable()).distinct())
+    return list(rows)
+
+
+async def namesakes(db: AsyncSession, company_id: uuid.UUID, invoice: Invoice) -> list[uuid.UUID]:
+    """Other purchases booked with the same e-document id, or with the same number from the same
+    party: the same bill booked twice."""
+    same = []
+    if invoice.e_document_id:
+        same.append(Invoice.e_document_id == invoice.e_document_id)
+    if invoice.number and invoice.party_id is not None:
+        same.append((Invoice.number == invoice.number) & (Invoice.party_id == invoice.party_id))
+    if not same:
+        return []
+    rows = await db.scalars(
+        select(Invoice.id).where(
+            Invoice.company_id == company_id,
+            Invoice.kind == InvoiceKind.PURCHASE,
+            Invoice.id != invoice.id,
+            or_(*same),
+        )
+    )
+    return list(rows)
+
+
 async def invoice_exists(db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
     found = await db.scalar(
         select(Invoice.id).where(Invoice.company_id == company_id, Invoice.id == invoice_id)

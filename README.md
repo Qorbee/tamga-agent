@@ -93,12 +93,20 @@ Arc testnet; nothing touches a company's bank or real money.
 - **Tamga writes first:** when it proposes a project or cannot choose one for a conversation, it
   writes to the owner in the chat that already holds that record, or opens a new one, and code
   puts a card under its message, on which the owner answers. Such a turn acts for the company
-  as an actor with no user, which every service that writes refuses.
+  as an actor with no user, which every service that writes refuses. Past a set number of new
+  chats a day, what it finds goes into the day's digest as its card, with no model run.
 - **Live:** what the background work writes shows without a reload, through the company's event
   stream, and a note says when Tamga writes, also as the browser's notification.
 - **Budgets:** each use of a model has a daily budget per company that is zero until the owner
   sets it, so nothing a company holds is read by a model before that.
-- **The books:** a read-only accounting sync, through a country pack.
+- **The books:** a read-only accounting sync, through a country pack, and a page of the invoices
+  and firms as read.
+- **Decisions:** each bill the company has to pay is evaluated by code, with no model: whether a
+  confirmed job holds it, whether each truck it pays for has a proof of delivery the owner
+  confirmed, whether the client paid, whether it was paid before, and the vault's caps and
+  balance read from the chain, under the owner's versioned policy. A bill is mirrored as test
+  USDC at a fixed rate for its currency. The owner approves, holds, rejects or changes the amount
+  of the evaluation in force, and every evaluation and answer is a row in a hash-chained log.
 - **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled. Each
   company gets an account on the vault, with an owner key and a receive-only wallet for each
   subcontractor it pays. A judge's sandbox is opened on the vault with test USDC, and what is
@@ -111,9 +119,9 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, in this order: the daily digest, the draft cards and a page of the books; the policy
-engine, its decisions and their log, with the approval in the chat; the executor paying bills
-from the vault; the replay of past projects with its score, and the playground's scenarios.
+Next, in this order: the executor paying approved bills from the vault; the approval in the chat
+and the Payments page; the draft cards; the replay of past projects with its score, and the
+playground's scenarios.
 
 ## This repository
 

@@ -16,7 +16,7 @@ import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Final
@@ -225,6 +225,20 @@ async def release_remainder(company_id: uuid.UUID) -> bool:
         logger.warning("the remainder of %s stays on the vault for now: %s", company_id, error)
         return False
     return amount == state.balance
+
+
+async def account_open(db: AsyncSession, company_id: uuid.UUID) -> bool:
+    """Whether the company is registered on the vault and funded, so it can pay."""
+    account = await repository.get_account(db, company_id)
+    return account is not None and account.state is AccountState.OPEN
+
+
+async def payee_addresses(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """The wallet Tamga holds for each of these parties, where it has one."""
+    held = await repository.payee_wallets_of(db, company_id, party_ids)
+    return {party_id: wallet.address for party_id, wallet in held.items()}
 
 
 def _treasury_for(kind: CompanyKind, address: str) -> list[str]:

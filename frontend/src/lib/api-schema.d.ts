@@ -216,6 +216,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/decision-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Decision Events
+         * @description The company's decision log in its chain's order, each row with its hash and the one
+         *     before it.
+         */
+        get: operations["decisions.list_decision_events"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Decisions
+         * @description Decisions about the company's payables, the latest evaluated first.
+         */
+        get: operations["decisions.list_decisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/decisions/{decision_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Decision */
+        get: operations["decisions.get_decision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Act On Decision
+         * @description The owner's answer to the evaluation it names: 409 when it was evaluated again since, or
+         *     when a rule does not allow it.
+         */
+        patch: operations["decisions.act_on_decision"];
+        trace?: never;
+    };
     "/document-types": {
         parameters: {
             query?: never;
@@ -717,6 +780,30 @@ export interface paths {
         head?: never;
         /** Decide Placement */
         patch: operations["placements.decide_placement"];
+        trace?: never;
+    };
+    "/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Policy
+         * @description The company's policy in force; version 0 is the defaults, while the owner has set none.
+         */
+        get: operations["policy.get_policy"];
+        /**
+         * Set Policy
+         * @description A new version of the policy, in force from now: the owner's only.
+         */
+        put: operations["policy.set_policy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/project-links": {
@@ -1374,6 +1461,117 @@ export interface components {
             language: components["schemas"]["Language"];
         };
         /**
+         * DecisionAction
+         * @description The owner's answer to the evaluation it names: one for an evaluation since replaced is
+         *     refused. ``edit`` changes the amount, which is a new proposal: every rule runs again, and it
+         *     comes back to the owner.
+         */
+        DecisionAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "approve" | "hold" | "reject" | "edit";
+            /** Amount */
+            amount?: number | string | null;
+            /** Evaluation */
+            evaluation: number;
+        };
+        /** DecisionEventOut */
+        DecisionEventOut: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Body */
+            body: {
+                [key: string]: unknown;
+            };
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            event: components["schemas"]["LogEvent"];
+            /** Hash */
+            hash: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Previous Hash */
+            previous_hash: string;
+            /** Seq */
+            seq: number;
+            /** User Id */
+            user_id: string | null;
+        };
+        /** DecisionEventPage */
+        DecisionEventPage: {
+            /** Items */
+            items: components["schemas"]["DecisionEventOut"][];
+            /** Total */
+            total: number;
+        };
+        /** DecisionOut */
+        DecisionOut: {
+            /** Amount */
+            amount: string;
+            /** Amount Edited */
+            amount_edited: boolean;
+            /** Currency */
+            currency: string | null;
+            /** Decided At */
+            decided_at: string | null;
+            /** Decided By */
+            decided_by: string | null;
+            /**
+             * Evaluated At
+             * Format: date-time
+             */
+            evaluated_at: string;
+            /** Evaluation */
+            evaluation: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Invoice Id
+             * Format: uuid
+             */
+            invoice_id: string;
+            /**
+             * Party Id
+             * Format: uuid
+             */
+            party_id: string;
+            /** Policy Version */
+            policy_version: number;
+            /** Rate */
+            rate: string | null;
+            /** Rules */
+            rules: components["schemas"]["RuleResult"][];
+            state: components["schemas"]["DecisionState"];
+            /** Usdc Units */
+            usdc_units: number | null;
+        };
+        /** DecisionPage */
+        DecisionPage: {
+            /** Items */
+            items: components["schemas"]["DecisionOut"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * DecisionState
+         * @enum {string}
+         */
+        DecisionState: "awaiting_owner" | "held" | "rejected" | "approved";
+        /**
          * Direction
          * @enum {string}
          */
@@ -1912,6 +2110,11 @@ export interface components {
          */
         LocationSource: "link" | "message" | "sheet" | "owner";
         /**
+         * LogEvent
+         * @enum {string}
+         */
+        LogEvent: "proposed" | "edited" | "approved" | "held" | "rejected";
+        /**
          * Me
          * @description Who is signed in, the company this session acts for, and every company they belong to.
          */
@@ -2068,7 +2271,7 @@ export interface components {
          * @description What the linker made of a conversation (docs/architecture/09).
          * @enum {string}
          */
-        Outcome: "linked" | "proposed" | "asked" | "unplaced";
+        "Outcome-Input": "linked" | "proposed" | "asked" | "unplaced";
         /**
          * PartyKind
          * @enum {string}
@@ -2134,7 +2337,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            outcome: components["schemas"]["Outcome"] | null;
+            outcome: components["schemas"]["app__modules__linking__models__Outcome"] | null;
             /** Placed At */
             placed_at: string | null;
             /** Placed By */
@@ -2164,6 +2367,31 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /**
+         * PolicyIn
+         * @description A new version of the company's policy, replacing the one in force.
+         */
+        PolicyIn: {
+            /** Approval Limit */
+            approval_limit: number | string;
+            /** Currency */
+            currency: string;
+            /** Pay When Paid */
+            pay_when_paid: boolean;
+        };
+        /** PolicyOut */
+        PolicyOut: {
+            /** Approval Limit */
+            approval_limit: string;
+            /** Created At */
+            created_at: string | null;
+            /** Currency */
+            currency: string;
+            /** Pay When Paid */
+            pay_when_paid: boolean;
+            /** Version */
+            version: number;
         };
         /**
          * Preview
@@ -2440,6 +2668,14 @@ export interface components {
             /** Hidden */
             hidden: boolean;
         };
+        /** RuleResult */
+        RuleResult: {
+            outcome: components["schemas"]["app__modules__policy__schemas__Outcome"];
+            /** Reason */
+            reason: string;
+            /** Rule */
+            rule: string;
+        };
         /** SheetOut */
         SheetOut: {
             /** Columns */
@@ -2697,6 +2933,17 @@ export interface components {
             /** Sheets */
             sheets: components["schemas"]["SheetOut"][];
         };
+        /**
+         * Outcome
+         * @description What the linker made of a conversation (docs/architecture/09).
+         * @enum {string}
+         */
+        app__modules__linking__models__Outcome: "linked" | "proposed" | "asked" | "unplaced";
+        /**
+         * Outcome
+         * @enum {string}
+         */
+        app__modules__policy__schemas__Outcome: "ok" | "propose" | "hold" | "reject";
     };
     responses: never;
     parameters: never;
@@ -3127,6 +3374,140 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "decisions.list_decision_events": {
+        parameters: {
+            query?: {
+                decision_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionEventPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "decisions.list_decisions": {
+        parameters: {
+            query?: {
+                state?: components["schemas"]["DecisionState"][] | null;
+                invoice_id?: string | null;
+                party_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "decisions.get_decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "decisions.act_on_decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                decision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionOut"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -4010,7 +4391,7 @@ export interface operations {
     "placements.list_placements": {
         parameters: {
             query?: {
-                outcome?: components["schemas"]["Outcome"][];
+                outcome?: components["schemas"]["Outcome-Input"][];
                 project_id?: string[];
                 limit?: number;
                 offset?: number;
@@ -4094,6 +4475,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "policy.get_policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOut"];
+                };
+            };
+        };
+    };
+    "policy.set_policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOut"];
                 };
             };
             /** @description Validation Error */

@@ -343,6 +343,30 @@ async def payable_parties(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.
     return await repository.payable_parties(db, company_id)
 
 
+async def open_payables(db: AsyncSession, company_id: uuid.UUID) -> list[InvoiceOut]:
+    """The bills the company has to pay (05): booked purchases from a known party, not cancelled,
+    with something left to pay, the earliest due first. An incoming e-invoice is paid as the
+    purchase it is booked as; an expense is the company's own cost, never a payable here."""
+    rows = await repository.open_payables(db, company_id)
+    return [InvoiceOut.model_validate(row) for row in rows]
+
+
+async def companies_with_payables(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone."""
+    return await repository.companies_with_payables(db)
+
+
+async def namesakes(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """The other purchases that are the same bill booked again: the same e-document id, or the
+    same number from the same party."""
+    found = await repository.get_invoices(db, company_id, [invoice_id])
+    if not found:
+        return []
+    return await repository.namesakes(db, company_id, found[0])
+
+
 async def invoice_exists(db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
     return await repository.invoice_exists(db, company_id, invoice_id)
 

@@ -921,6 +921,292 @@
         "title": "CompanyUpdate",
         "type": "object"
       },
+      "DecisionAction": {
+        "description": "The owner's answer to the evaluation it names: one for an evaluation since replaced is\nrefused. ``edit`` changes the amount, which is a new proposal: every rule runs again, and it\ncomes back to the owner.",
+        "properties": {
+          "action": {
+            "enum": [
+              "approve",
+              "hold",
+              "reject",
+              "edit"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "evaluation": {
+            "minimum": 1.0,
+            "title": "Evaluation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "evaluation"
+        ],
+        "title": "DecisionAction",
+        "type": "object"
+      },
+      "DecisionEventOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "body": {
+            "additionalProperties": true,
+            "title": "Body",
+            "type": "object"
+          },
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/components/schemas/LogEvent"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "previous_hash": {
+            "title": "Previous Hash",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "decision_id",
+          "seq",
+          "event",
+          "body",
+          "user_id",
+          "at",
+          "previous_hash",
+          "hash"
+        ],
+        "title": "DecisionEventOut",
+        "type": "object"
+      },
+      "DecisionEventPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionEventOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "DecisionEventPage",
+        "type": "object"
+      },
+      "DecisionOut": {
+        "properties": {
+          "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "amount_edited": {
+            "title": "Amount Edited",
+            "type": "boolean"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "evaluated_at": {
+            "format": "date-time",
+            "title": "Evaluated At",
+            "type": "string"
+          },
+          "evaluation": {
+            "title": "Evaluation",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invoice_id": {
+            "format": "uuid",
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "party_id": {
+            "format": "uuid",
+            "title": "Party Id",
+            "type": "string"
+          },
+          "policy_version": {
+            "title": "Policy Version",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleResult"
+            },
+            "title": "Rules",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DecisionState"
+          },
+          "usdc_units": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usdc Units"
+          }
+        },
+        "required": [
+          "id",
+          "invoice_id",
+          "party_id",
+          "state",
+          "evaluation",
+          "policy_version",
+          "amount",
+          "currency",
+          "rate",
+          "usdc_units",
+          "amount_edited",
+          "rules",
+          "decided_by",
+          "decided_at",
+          "evaluated_at"
+        ],
+        "title": "DecisionOut",
+        "type": "object"
+      },
+      "DecisionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "DecisionPage",
+        "type": "object"
+      },
+      "DecisionState": {
+        "enum": [
+          "awaiting_owner",
+          "held",
+          "rejected",
+          "approved"
+        ],
+        "title": "DecisionState",
+        "type": "string"
+      },
       "Direction": {
         "enum": [
           "inbound",
@@ -2500,6 +2786,17 @@
         "title": "LocationSource",
         "type": "string"
       },
+      "LogEvent": {
+        "enum": [
+          "proposed",
+          "edited",
+          "approved",
+          "held",
+          "rejected"
+        ],
+        "title": "LogEvent",
+        "type": "string"
+      },
       "Me": {
         "description": "Who is signed in, the company this session acts for, and every company they belong to.",
         "properties": {
@@ -2937,7 +3234,7 @@
         "title": "Origin",
         "type": "string"
       },
-      "Outcome": {
+      "Outcome-Input": {
         "description": "What the linker made of a conversation (docs/architecture/09).",
         "enum": [
           "linked",
@@ -3122,7 +3419,7 @@
           "outcome": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Outcome"
+                "$ref": "#/components/schemas/app__modules__linking__models__Outcome"
               },
               {
                 "type": "null"
@@ -3240,6 +3537,82 @@
           "offset"
         ],
         "title": "PlacementPage",
+        "type": "object"
+      },
+      "PolicyIn": {
+        "description": "A new version of the company's policy, replacing the one in force.",
+        "properties": {
+          "approval_limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Approval Limit"
+          },
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "pay_when_paid": {
+            "title": "Pay When Paid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "currency",
+          "approval_limit",
+          "pay_when_paid"
+        ],
+        "title": "PolicyIn",
+        "type": "object"
+      },
+      "PolicyOut": {
+        "properties": {
+          "approval_limit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approval Limit",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "pay_when_paid": {
+            "title": "Pay When Paid",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "currency",
+          "approval_limit",
+          "pay_when_paid",
+          "created_at"
+        ],
+        "title": "PolicyOut",
         "type": "object"
       },
       "Preview": {
@@ -3980,6 +4353,28 @@
           "hidden"
         ],
         "title": "RowOut",
+        "type": "object"
+      },
+      "RuleResult": {
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/app__modules__policy__schemas__Outcome"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rule": {
+            "title": "Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "outcome",
+          "reason"
+        ],
+        "title": "RuleResult",
         "type": "object"
       },
       "SheetOut": {
@@ -4854,6 +5249,27 @@
         ],
         "title": "WorkbookOut",
         "type": "object"
+      },
+      "app__modules__linking__models__Outcome": {
+        "description": "What the linker made of a conversation (docs/architecture/09).",
+        "enum": [
+          "linked",
+          "proposed",
+          "asked",
+          "unplaced"
+        ],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "app__modules__policy__schemas__Outcome": {
+        "enum": [
+          "ok",
+          "propose",
+          "hold",
+          "reject"
+        ],
+        "title": "Outcome",
+        "type": "string"
       }
     },
     "securitySchemes": {
@@ -5582,6 +5998,305 @@
         "summary": "Delete Checklist Mark",
         "tags": [
           "checklists"
+        ]
+      }
+    },
+    "/decision-events": {
+      "get": {
+        "description": "The company's decision log in its chain's order, each row with its hash and the one\nbefore it.",
+        "operationId": "decisions.list_decision_events",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "decision_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionEventPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Decision Events",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/decisions": {
+      "get": {
+        "description": "Decisions about the company's payables, the latest evaluated first.",
+        "operationId": "decisions.list_decisions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/DecisionState"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "invoice_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoice Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "party_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Party Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Decisions",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
+    "/decisions/{decision_id}": {
+      "get": {
+        "operationId": "decisions.get_decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Decision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Decision",
+        "tags": [
+          "decisions"
+        ]
+      },
+      "patch": {
+        "description": "The owner's answer to the evaluation it names: 409 when it was evaluated again since, or\nwhen a rule does not allow it.",
+        "operationId": "decisions.act_on_decision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Decision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Act On Decision",
+        "tags": [
+          "decisions"
         ]
       }
     },
@@ -7274,7 +7989,7 @@
             "schema": {
               "default": [],
               "items": {
-                "$ref": "#/components/schemas/Outcome"
+                "$ref": "#/components/schemas/Outcome-Input"
               },
               "title": "Outcome",
               "type": "array"
@@ -7453,6 +8168,78 @@
         "summary": "Decide Placement",
         "tags": [
           "placements"
+        ]
+      }
+    },
+    "/policy": {
+      "get": {
+        "description": "The company's policy in force; version 0 is the defaults, while the owner has set none.",
+        "operationId": "policy.get_policy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Policy",
+        "tags": [
+          "policy"
+        ]
+      },
+      "put": {
+        "description": "A new version of the policy, in force from now: the owner's only.",
+        "operationId": "policy.set_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Set Policy",
+        "tags": [
+          "policy"
         ]
       }
     },
