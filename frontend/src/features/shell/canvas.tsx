@@ -4,7 +4,7 @@ import { ArrowLeft01Icon, Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { CanvasScope, useCanvasBack, useCloseCanvas } from "@/components/canvas-link";
+import { CanvasScope, useCanvasBack, useCloseCanvas, useKeptScroll } from "@/components/canvas-link";
 import { ResizeHandle } from "@/components/resize-handle";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n/client";
@@ -96,7 +96,8 @@ export function CanvasFrame({ initialWidth, content }: { initialWidth: number; c
 /**
  * A record open in the canvas: its title, its actions (a download), a close button and the record,
  * which scrolls on its own. Closing leaves the page under it as it was; a record opened from another
- * in the canvas (a mail's attachment) has a back button to it. `title` can load with the record, so
+ * in the canvas (a mail's attachment) has a back button to it, which returns to where that record
+ * was scrolled. `title` can load with the record, so
  * the panel is named by `label` until it has.
  */
 export function CanvasPanel({
@@ -113,6 +114,8 @@ export function CanvasPanel({
   const { t } = useI18n();
   const close = useCloseCanvas();
   const back = useCanvasBack();
+  const scroller = useRef<HTMLDivElement>(null);
+  useKeptScroll(scroller);
 
   return (
     <section
@@ -135,7 +138,7 @@ export function CanvasPanel({
         </Button>
       </header>
       {/* The scrollbar's room is kept, so what is shown never moves sideways as it comes and goes. */}
-      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <CanvasScope>{children}</CanvasScope>
       </div>
     </section>
