@@ -43,7 +43,7 @@ from app.modules.policy import service as policies
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 from app.modules.projects import service as projects
 from app.modules.settlement import service as settlement
-from app.platform import chain
+from app.platform import chain, events
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -517,6 +517,7 @@ async def list_decisions(
     states: Sequence[DecisionState] | None,
     invoice_id: uuid.UUID | None,
     party_id: uuid.UUID | None,
+    with_invoices: bool = False,
     page: PageParams,
 ) -> DecisionPage:
     rows, total = await repository.list_decisions(
@@ -527,7 +528,16 @@ async def list_decisions(
         party_id=party_id,
         page=page,
     )
-    return DecisionPage(items=[DecisionOut.model_validate(row) for row in rows], total=total)
+    items = [DecisionOut.model_validate(row) for row in rows]
+    if with_invoices:
+        bills = {
+            bill.id: bill
+            for bill in await books.get_invoices(
+                db, actor.company_id, [item.invoice_id for item in items]
+            )
+        }
+        items = [item.model_copy(update={"invoice": bills.get(item.invoice_id)}) for item in items]
+    return DecisionPage(items=items, total=total)
 
 
 async def get_decision(db: AsyncSession, actor: Actor, decision_id: uuid.UUID) -> DecisionOut:
@@ -576,6 +586,8 @@ async def _log(
     )
     row.hash = _hash(_content(row))
     await repository.add(db, row)
+    # Every change to a decision is a row here: the pages showing decisions read them again.
+    await events.publish(db, decision.company_id, events.EventKind.DECISIONS)
 
 
 def _content(row: DecisionEvent) -> dict[str, Any]:

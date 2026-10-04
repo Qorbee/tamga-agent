@@ -92,7 +92,9 @@ async def test_an_approved_bill_is_paid_once_and_settled_with_its_hash(
     assert units == 220_400 and payee.startswith("0x")
     settled = (await client.get(f"/decisions/{decision['id']}")).json()
     assert settled["state"] == "settled"
-    [payment] = (await client.get("/payments")).json()["items"]
+    [payment] = (await client.get("/payments", params={"decision_id": decision["id"]})).json()[
+        "items"
+    ]
     assert payment["state"] == "settled" and payment["tx_hash"] == "0x" + "b" * 64
     assert payment["explorer_url"].endswith("/tx/0x" + "b" * 64)
     events = (await client.get("/decision-events", params={"decision_id": decision["id"]})).json()

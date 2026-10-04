@@ -1,6 +1,7 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.modules.identity.deps import ActorDep
 from app.modules.settlement import service
@@ -16,11 +17,11 @@ async def list_payments(
     actor: ActorDep,
     db: SessionDep,
     page: PageDep,
-    decision_id: uuid.UUID | None = None,
+    decision_id: Annotated[list[uuid.UUID] | None, Query()] = None,
     invoice_id: uuid.UUID | None = None,
 ) -> PaymentPage:
     """The executor's releases from the company's vault, the latest first, each with its
     transaction on the explorer once final."""
     return await service.list_payments(
-        db, actor, decision_id=decision_id, invoice_id=invoice_id, page=page
+        db, actor, decision_ids=decision_id, invoice_id=invoice_id, page=page
     )

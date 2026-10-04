@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 
@@ -26,10 +26,17 @@ async def list_decisions(
     state: Annotated[list[DecisionState] | None, Query()] = None,
     invoice_id: uuid.UUID | None = None,
     party_id: uuid.UUID | None = None,
+    expand: Annotated[list[Literal["invoice"]], Query()] = [],  # noqa: B006
 ) -> DecisionPage:
     """Decisions about the company's payables, the latest evaluated first."""
     return await service.list_decisions(
-        db, actor, states=state, invoice_id=invoice_id, party_id=party_id, page=page
+        db,
+        actor,
+        states=state,
+        invoice_id=invoice_id,
+        party_id=party_id,
+        with_invoices="invoice" in expand,
+        page=page,
     )
 
 

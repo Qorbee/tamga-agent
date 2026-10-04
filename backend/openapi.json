@@ -1108,6 +1108,16 @@
             "title": "Id",
             "type": "string"
           },
+          "invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "invoice_id": {
             "format": "uuid",
             "title": "Invoice Id",
@@ -1643,7 +1653,8 @@
           "projects",
           "documents",
           "threads",
-          "invoices"
+          "invoices",
+          "decisions"
         ],
         "title": "EventKind",
         "type": "string"
@@ -6281,6 +6292,20 @@
           },
           {
             "in": "query",
+            "name": "expand",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "const": "invoice",
+                "type": "string"
+              },
+              "title": "Expand",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -8131,8 +8156,11 @@
             "schema": {
               "anyOf": [
                 {
-                  "format": "uuid",
-                  "type": "string"
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"

@@ -360,12 +360,12 @@ async def list_payments(
     db: AsyncSession,
     actor: Actor,
     *,
-    decision_id: uuid.UUID | None,
+    decision_ids: Sequence[uuid.UUID] | None,
     invoice_id: uuid.UUID | None,
     page: PageParams,
 ) -> PaymentPage:
     rows, total = await repository.list_payments(
-        db, actor.company_id, decision_id=decision_id, invoice_id=invoice_id, page=page
+        db, actor.company_id, decision_ids=decision_ids, invoice_id=invoice_id, page=page
     )
     return PaymentPage(items=[_payment_out(row) for row in rows], total=total)
 

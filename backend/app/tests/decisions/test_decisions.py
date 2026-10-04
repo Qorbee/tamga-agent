@@ -136,6 +136,12 @@ async def test_the_delivered_truck_waits_for_the_owner_and_the_one_on_the_road_i
     assert delivered["rate"] == "0.000116000000" and delivered["usdc_units"] == 220_400
     assert moving["state"] == "held"
     assert failing(moving) == {"proof_of_delivery": "hold", "approval_limit": "propose"}
+    # With its bill, for a page that lists them.
+    expanded = (await client.get("/decisions", params={"expand": "invoice"})).json()["items"]
+    assert {item["invoice"]["number"] for item in expanded} == {
+        sandbox.DELIVERED_BILL,
+        sandbox.MOVING_BILL,
+    }
 
     # Nothing changed: nothing is evaluated again, and the log does not grow.
     assert await service.evaluate_pending() == 0

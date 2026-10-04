@@ -18,7 +18,7 @@ export type Page = { href: string; label: keyof Dictionary["nav"]; icon: IconSvg
 /** The owner app's pages besides the chat, in the sidebar's order; Search lists them too. */
 export const pages: readonly Page[] = [
   { href: "/app/projects", label: "projects", icon: Folder01Icon },
-  { href: "/app/payment-run", label: "paymentRun", icon: Wallet01Icon },
+  { href: "/app/payments", label: "payments", icon: Wallet01Icon },
   { href: "/app/books", label: "books", icon: Invoice03Icon },
   { href: "/app/inbox", label: "inbox", icon: InboxIcon },
   { href: "/app/upload", label: "upload", icon: Upload01Icon },

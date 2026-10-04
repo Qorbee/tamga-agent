@@ -25,6 +25,15 @@ export function formatMoney(amount: number, currency: string, locale: Locale): s
   return new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency }).format(amount);
 }
 
+/** USDC from its smallest units (six decimals), every decimal a mirrored bill has kept. */
+export function formatUsdc(units: number, locale: Locale): string {
+  const figure = new Intl.NumberFormat(intlLocale[locale], {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(units / 1_000_000);
+  return `${figure} USDC`;
+}
+
 export function formatNumber(value: number, locale: Locale): string {
   return new Intl.NumberFormat(intlLocale[locale]).format(value);
 }

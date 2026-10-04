@@ -30,6 +30,7 @@ const READ_AGAIN: Record<CompanyEvent["kind"], QueryKey[]> = {
   documents: [["documents"], ["document"]],
   threads: [["threads"], ["thread"], ["placements"]],
   invoices: [["invoice"], ["invoices"], ["parties"]],
+  decisions: [["decisions"], ["payments"]],
 };
 
 const CHAT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

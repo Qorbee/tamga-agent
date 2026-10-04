@@ -64,13 +64,13 @@ async def list_payments(
     db: AsyncSession,
     company_id: uuid.UUID,
     *,
-    decision_id: uuid.UUID | None,
+    decision_ids: Sequence[uuid.UUID] | None,
     invoice_id: uuid.UUID | None,
     page: PageParams,
 ) -> tuple[Sequence[Payment], int]:
     filters = [Payment.company_id == company_id]
-    if decision_id is not None:
-        filters.append(Payment.decision_id == decision_id)
+    if decision_ids:
+        filters.append(Payment.decision_id.in_(decision_ids))
     if invoice_id is not None:
         filters.append(Payment.invoice_id == invoice_id)
     total = await db.scalar(select(func.count()).select_from(Payment).where(*filters))

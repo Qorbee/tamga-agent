@@ -5,6 +5,7 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.books.schemas import InvoiceOut
 from app.modules.decisions.models import DecisionState, LogEvent
 from app.modules.policy.schemas import Outcome
 
@@ -35,6 +36,8 @@ class DecisionOut(BaseModel):
     decided_by: uuid.UUID | None
     decided_at: datetime | None
     evaluated_at: datetime
+    # The bill, with ``expand=invoice``.
+    invoice: InvoiceOut | None = None
 
 
 class DecisionPage(BaseModel):

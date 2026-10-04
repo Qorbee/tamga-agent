@@ -49,6 +49,7 @@ class EventKind(StrEnum):
     DOCUMENTS = "documents"  # a file was read or typed
     THREADS = "threads"  # mail came in or was sorted
     INVOICES = "invoices"  # the accounting records were read
+    DECISIONS = "decisions"  # a payable was evaluated, answered or paid
 
 
 class CompanyEvent(BaseModel):

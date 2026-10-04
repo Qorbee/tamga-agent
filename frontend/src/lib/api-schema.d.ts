@@ -1560,6 +1560,7 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            invoice?: components["schemas"]["InvoiceOut"] | null;
             /**
              * Invoice Id
              * Format: uuid
@@ -1741,7 +1742,7 @@ export interface components {
          * EventKind
          * @enum {string}
          */
-        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices";
+        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices" | "decisions";
         /**
          * FieldSource
          * @description Where an editable field's value came from; the owner's always wins (ADR-0010).
@@ -3498,6 +3499,7 @@ export interface operations {
                 state?: components["schemas"]["DecisionState"][] | null;
                 invoice_id?: string | null;
                 party_id?: string | null;
+                expand?: "invoice"[];
                 limit?: number;
                 offset?: number;
             };
@@ -4464,7 +4466,7 @@ export interface operations {
     "payments.list_payments": {
         parameters: {
             query?: {
-                decision_id?: string | null;
+                decision_id?: string[] | null;
                 invoice_id?: string | null;
                 limit?: number;
                 offset?: number;

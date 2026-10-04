@@ -223,6 +223,20 @@ type InvoiceQuery = NonNullable<operations["invoices.list_invoices"]["parameters
 export const listInvoices = (params: InvoiceQuery) => request<InvoicePage>(`/invoices${query(params)}`);
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
 
+// Decisions and payments (docs/architecture/05)
+export type Decision = Schemas["DecisionOut"];
+export type DecisionPage = Schemas["DecisionPage"];
+export type DecisionAction = Schemas["DecisionAction"];
+type DecisionQuery = NonNullable<operations["decisions.list_decisions"]["parameters"]["query"]>;
+export const listDecisions = (params: DecisionQuery) => request<DecisionPage>(`/decisions${query(params)}`);
+/** The owner's answer to the evaluation it names; a 409 when it was evaluated again since. */
+export const answerDecision = (id: string, body: DecisionAction) =>
+  request<Decision>(`/decisions/${id}`, json("PATCH", body));
+export type Payment = Schemas["PaymentOut"];
+export type PaymentPage = Schemas["PaymentPage"];
+type PaymentQuery = NonNullable<operations["payments.list_payments"]["parameters"]["query"]>;
+export const listPayments = (params: PaymentQuery) => request<PaymentPage>(`/payments${query(params)}`);
+
 // Messages
 export type MessageSummary = Schemas["MessageSummary"];
 export type MessagePage = Schemas["MessagePage"];
