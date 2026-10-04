@@ -47,7 +47,10 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    `proxy_buffering off; proxy_read_timeout 3600s; client_max_body_size 30m;`.
 6. The first company and its owner:
    `deploy/tamga run --rm backend python scripts/create_company.py --name "…" --owner-email …`
-   prints the invite link where the owner sets a password.
+   prints the invite link where the owner sets a password. Once its books are synced, its
+   account on the vault: `deploy/tamga run --rm backend python scripts/open_vault_account.py
+   <company id> --deposit … --per-payment-cap … --daily-cap … --timelock …` prints what it would
+   register; the same with `--write` opens it, from the treasury's test USDC.
 7. The backups' folder, readable by root alone, and the daily dump (Backups, below):
    `sudo install -d -m 700 /var/backups/tamga`.
 

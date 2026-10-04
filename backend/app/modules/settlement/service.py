@@ -92,6 +92,16 @@ async def open_later(db: AsyncSession, company_id: uuid.UUID, terms: Terms) -> b
     has one. Returns whether an opening was queued."""
     from app.modules.settlement import tasks
 
+    if not await write_account(db, company_id, terms):
+        return False
+    await jobs.defer(db, tasks.open_account, args={"company_id": str(company_id)})
+    return True
+
+
+async def write_account(db: AsyncSession, company_id: uuid.UUID, terms: Terms) -> bool:
+    """Writes the company's account with ``terms``, to be opened, in the caller's transaction,
+    without queueing its opening: for a caller that runs ``open_account`` itself. Nothing happens
+    where accounts cannot be opened, or for a company that already has one."""
     if not configured() or await repository.get_account(db, company_id) is not None:
         return False
     await repository.add(
@@ -106,7 +116,6 @@ async def open_later(db: AsyncSession, company_id: uuid.UUID, terms: Terms) -> b
             transactions={},
         ),
     )
-    await jobs.defer(db, tasks.open_account, args={"company_id": str(company_id)})
     return True
 
 

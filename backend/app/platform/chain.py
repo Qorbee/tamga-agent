@@ -98,6 +98,14 @@ async def payee_active_from(company_id: uuid.UUID, payee: str) -> int | None:
     return active_from or None
 
 
+async def min_timelock() -> int:
+    """The shortest timelock the vault registers a company with, in seconds."""
+    words = _words(await _call("minTimelock()"))
+    if not words:
+        raise ChainError("minTimelock reverted")
+    return int.from_bytes(words[0])
+
+
 async def _call(signature: str, *arguments: bytes) -> bytes | None:
     """``eth_call`` on the vault; None when the contract reverted."""
     settings = get_settings()
