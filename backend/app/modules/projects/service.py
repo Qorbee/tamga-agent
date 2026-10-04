@@ -1062,13 +1062,15 @@ async def _carry_again(db: AsyncSession, company_id: uuid.UUID, document_id: uui
     """More is known of a file after its mail was linked: an archive's files were taken out and
     join the mail's projects, as the archive did; a picture was read with something on it, or
     could not be read, and joins them; a file was typed a signature or logo and leaves them. The
-    projects shown are told to read their files again."""
+    projects shown are told to read their files again, also those an upload no mail carried is
+    linked to, whose row now shows its type."""
     archives = [document_id, *await documents.containers_of(db, company_id, document_id)]
     carriers = await conversations.messages_attaching(db, company_id, archives)
     mails = sorted({mail for each in carriers.values() for mail in each})
-    if not mails:
+    if mails:
+        await carry_files(db, company_id, mails)
+    elif not await repository.links_item(db, company_id, ItemKind.DOCUMENT, document_id):
         return
-    await carry_files(db, company_id, mails)
     await events.publish(db, company_id, events.EventKind.PROJECTS)
 
 

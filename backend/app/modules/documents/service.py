@@ -679,6 +679,8 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
             # may still say what it is.
             document.read_state, document.read_at = ReadState.READ, utcnow()
             await _classify(db, document)
+            if document.doc_type is not None:
+                await _became_known(db, company_id, document.id)
         return
     elif media in filetypes.SHEETS:
         read = await _read_sheet(data, media)
@@ -753,10 +755,13 @@ async def type_files(
             # The error's type only: its text can carry what the file holds.
             logger.warning("typing document %s failed: %s", file.id, type(error).__name__)
             if write:
-                async with open_session() as db:
-                    await repository.release_typing(db, company_id, file.id)
-                    await db.commit()
+                await _release(company_id, file.id)
             break
+        except BaseException:
+            # The worker stopping (a deploy, the job's time up) gives the file back too.
+            if write:
+                await _release(company_id, file.id)
+            raise
         answered.append((file.filename, key))
         if not write or key is None:
             continue
@@ -774,6 +779,12 @@ async def _reserve(company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
         taken = await repository.reserve_typing(db, company_id, document_id, utcnow())
         await db.commit()
     return taken
+
+
+async def _release(company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    async with open_session() as db:
+        await repository.release_typing(db, company_id, document_id)
+        await db.commit()
 
 
 async def _typed(

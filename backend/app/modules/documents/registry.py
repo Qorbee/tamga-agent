@@ -23,10 +23,10 @@ class DocumentType:
     pack: str
     # The fields an extraction reads from a file of this type.
     schema: type[BaseModel]
+    # What tells a file of this type from the others, for the model that types files: one line.
+    hint: str
     # A CMR or a signed delivery note: proof that a truck delivered, confirmed for one truck only.
     proof_of_delivery: bool = False
-    # What tells a file of this type from the others, for the model that types files: one line.
-    hint: str = ""
 
 
 _types: dict[str, DocumentType] = {}

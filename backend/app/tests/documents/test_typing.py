@@ -2,8 +2,10 @@
 from its name, the vision model's line on it and the start of its text, fenced as outside data,
 answering only a type it was offered."""
 
+import asyncio
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 import httpx
 import pytest
@@ -180,6 +182,29 @@ async def test_a_typist_that_cannot_be_reached_gives_the_file_back(
     assert await typed(client, document_id) == (None, None)
 
     asked = typist("weighbridge_ticket")
+    assert await service.type_pending() == 1
+    assert await typed(client, document_id) == ("weighbridge_ticket", "model")
+    assert len(asked.prompts) == 1
+
+
+async def test_a_worker_stopped_while_the_typist_answers_gives_the_file_back(
+    client: httpx.AsyncClient,
+    typist: Callable[[str | None], Asked],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document_id = await a_read_file(client)
+    asked = typist("weighbridge_ticket")
+    answer = service._typed  # noqa: SLF001
+
+    async def stopped(*args: Any, **kwargs: Any) -> str | None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(service, "_typed", stopped)
+    with pytest.raises(asyncio.CancelledError):
+        await service.type_pending()
+    assert await typed(client, document_id) == (None, None)
+
+    monkeypatch.setattr(service, "_typed", answer)
     assert await service.type_pending() == 1
     assert await typed(client, document_id) == ("weighbridge_ticket", "model")
     assert len(asked.prompts) == 1

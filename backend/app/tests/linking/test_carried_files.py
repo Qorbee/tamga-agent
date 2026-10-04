@@ -18,11 +18,12 @@ from app.config import get_settings
 from app.modules.conversations.models import MessageAttachment, ThreadCategory
 from app.modules.documents import service as documents
 from app.modules.linking import service
-from app.platform import llm
+from app.platform import events, llm
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
 from app.tests.documents import pdfs
 from app.tests.documents.archives import zip_of
+from app.tests.documents.test_file_content import upload
 from app.tests.documents.test_vision import sized_png
 from app.tests.linking.test_placing import (
     NEW_PROJECT,
@@ -280,18 +281,23 @@ async def test_a_picture_joins_its_mails_project_once_read_with_something_on_it(
     model: Callable[..., Script],  # noqa: F811
 ) -> None:
     company_id = await guest_client(client)
-    pictures = {"image001.png": sized_png(40, 40), "slip.png": sized_png(1200, 1600)}
+    pictures = {
+        "image001.png": sized_png(40, 40),
+        "slip.png": sized_png(1200, 1600),
+        "CMR_back.png": sized_png(48, 32),
+    }
     await arrive(company_id, 1, with_pictures(ORDER, pictures), category=ThreadCategory.WORK)
     model(NEW_PROJECT)
     assert await service.place_pending() == 1
     [placement] = (await client.get("/placements")).json()["items"]
     project_id = placement["project_id"]
-    # Neither picture is read yet: what either holds is not known.
+    # No picture is read yet: what any holds is not known.
     assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}
 
     await documents.read_pending()
-    # The icon is too small to hold anything; the photo waits for the vision model.
-    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}
+    # The icon is too small to hold anything; the photo waits for the vision model. A small
+    # picture whose name says what it is joins once read.
+    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf", "CMR_back.png"}
 
     async with open_session() as db:
         found = await db.scalars(
@@ -303,7 +309,7 @@ async def test_a_picture_joins_its_mails_project_once_read_with_something_on_it(
         await documents._was_read(db, slip)  # noqa: SLF001  (what the vision model's reading ends in)
         await db.commit()
     files = await files_of(client, project_id)
-    assert set(files) == {"CMR 4471.pdf", "slip.png"}
+    assert set(files) == {"CMR 4471.pdf", "CMR_back.png", "slip.png"}
     assert (files["slip.png"]["method"], files["slip.png"]["status"]) == ("mail", "suggested")
 
     # A type someone gave says what a picture holds, though nothing could be read off it.
@@ -316,7 +322,12 @@ async def test_a_picture_joins_its_mails_project_once_read_with_something_on_it(
         icon_id = found.one()
     typed = await client.patch(f"/documents/{icon_id}", json={"doc_type": "loading_photo"})
     assert typed.status_code == 200, typed.text
-    assert set(await files_of(client, project_id)) == {"CMR 4471.pdf", "slip.png", "image001.png"}
+    assert set(await files_of(client, project_id)) == {
+        "CMR 4471.pdf",
+        "CMR_back.png",
+        "slip.png",
+        "image001.png",
+    }
 
 
 async def test_a_picture_the_vision_model_cannot_read_joins_its_mails_project(
@@ -358,3 +369,34 @@ async def test_a_file_typed_a_signature_leaves_its_project_and_comes_back_typed_
     retyped = await client.patch(f"/documents/{cmr['item_id']}", json={"doc_type": "cmr"})
     assert retyped.status_code == 200, retyped.text
     assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}
+
+
+async def test_an_upload_no_mail_carried_tells_its_projects_when_typed(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    placement = await proposed(client, model)
+    document_id = await upload(client, "slip.txt", b"Plaka No: 34 ABC 12", "text/plain")
+    linked = await client.post(
+        "/project-links",
+        json={
+            "item_kind": "document",
+            "item_id": document_id,
+            "project_id": placement["project_id"],
+        },
+    )
+    assert linked.status_code == 201, linked.text
+    told: list[events.EventKind] = []
+
+    async def heard(
+        db: Any, company_id: uuid.UUID, kind: events.EventKind, *_: Any, **__: Any
+    ) -> None:
+        told.append(kind)
+
+    monkeypatch.setattr(events, "publish", heard)
+    typed = await client.patch(f"/documents/{document_id}", json={"doc_type": "weighbridge_ticket"})
+
+    # Its row in the project's timeline shows the type: the project is read again.
+    assert typed.status_code == 200, typed.text
+    assert events.EventKind.PROJECTS in told
