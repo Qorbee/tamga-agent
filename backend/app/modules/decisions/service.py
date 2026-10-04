@@ -142,7 +142,11 @@ async def evaluate_company(company_id: uuid.UUID) -> int:
 
 
 def _movable(decision: Decision) -> bool:
-    return decision.decided_by is None and decision.state is not DecisionState.APPROVED
+    return decision.decided_by is None and decision.state not in _EXECUTORS
+
+
+# Approved, a decision is the executor's; paid, it is done.
+_EXECUTORS: Final = (DecisionState.APPROVED, DecisionState.SETTLED)
 
 
 async def _on_chain(company_id: uuid.UUID, bills: Sequence[InvoiceOut]) -> _OnChain:
@@ -328,8 +332,14 @@ async def act(
     await db.refresh(decision)
     if body.evaluation != decision.evaluation:
         raise Conflict("It was evaluated again since: answer the evaluation in force")
-    if decision.state is DecisionState.APPROVED:
+    if decision.state in _EXECUTORS:
         raise Conflict("It is approved already")
+    if (
+        body.action == "approve"
+        and decision.state is DecisionState.FAILED
+        and decision.decided_by is not None
+    ):
+        raise Conflict("The vault refused it for good: it waits for someone to look at it")
     now = utcnow()
     if body.action == "edit" and body.amount is not None:
         await _log(
@@ -385,6 +395,116 @@ def _approvable(decision: Decision) -> bool:
     return decision.usdc_units is not None and not any(
         result["outcome"] in held for result in decision.rules
     )
+
+
+# The executor's results (settlement)
+
+
+async def approved(db: AsyncSession, company_id: uuid.UUID) -> list[DecisionOut]:
+    """The decisions the owner approved and the executor has not paid, the earliest approved
+    first."""
+    return [DecisionOut.model_validate(row) for row in await repository.approved(db, company_id)]
+
+
+async def companies_with_approved(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone."""
+    return await repository.companies_with_approved(db)
+
+
+async def record_paid(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    evaluation: int,
+    *,
+    tx_hash: str,
+    transaction_id: str,
+) -> None:
+    """The vault paid the approved evaluation: settled, never without the transaction's hash.
+    Under the decisions' lock; no commit."""
+    decision = await _approved(db, company_id, decision_id, evaluation)
+    if decision is None:
+        return
+    decision.state = DecisionState.SETTLED
+    await _log(
+        db,
+        decision,
+        LogEvent.SETTLED,
+        {
+            "evaluation": evaluation,
+            "usdc_units": decision.usdc_units,
+            "tx_hash": tx_hash,
+            "transaction_id": transaction_id,
+        },
+        user_id=None,
+        at=utcnow(),
+    )
+
+
+async def record_would_release(
+    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID, evaluation: int, payee: str
+) -> None:
+    """A replay company's approval, recorded and never sent (ADR-0009): it stays approved. No
+    commit."""
+    decision = await _approved(db, company_id, decision_id, evaluation)
+    if decision is None:
+        return
+    await _log(
+        db,
+        decision,
+        LogEvent.WOULD_RELEASE,
+        {"evaluation": evaluation, "usdc_units": decision.usdc_units, "payee": payee},
+        user_id=None,
+        at=utcnow(),
+    )
+
+
+async def record_refused(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    evaluation: int,
+    reason: str,
+    *,
+    final: bool,
+) -> None:
+    """The vault refused the payment. ``final``: it had paid the key already, which another
+    evaluation will not change, so the decision fails for someone to look at. Otherwise (a cap,
+    the balance, a payee not active yet, changed on the chain since the evaluation) it is
+    evaluated again on the next pass and goes back to the owner. No commit."""
+    decision = await _approved(db, company_id, decision_id, evaluation)
+    if decision is None:
+        return
+    decision.state = DecisionState.FAILED
+    if not final:
+        decision.decided_by, decision.decided_at = None, None
+        # Whatever it was made from, it is evaluated again.
+        decision.picture_hash = ""
+    await _log(
+        db,
+        decision,
+        LogEvent.FAILED,
+        {"evaluation": evaluation, "reason": reason[:300], "evaluated_again": not final},
+        user_id=None,
+        at=utcnow(),
+    )
+
+
+async def _approved(
+    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID, evaluation: int
+) -> Decision | None:
+    """The decision, under the company's lock, if it is still approved for that evaluation."""
+    await repository.lock_decisions(db, company_id)
+    decision = await repository.get(db, company_id, decision_id)
+    if decision is not None:
+        await db.refresh(decision)
+    if (
+        decision is None
+        or decision.state is not DecisionState.APPROVED
+        or decision.evaluation != evaluation
+    ):
+        return None
+    return decision
 
 
 # Reading

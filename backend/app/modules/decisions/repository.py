@@ -38,9 +38,20 @@ async def for_invoice(
     return decision
 
 
+# Approved, a decision is the executor's; paid, it is done.
+_EXECUTORS = (DecisionState.APPROVED, DecisionState.SETTLED)
+
+
+def _refused_for_good() -> ColumnElement[bool]:
+    """Refused by the vault for a reason no evaluation changes (a key it had paid among them):
+    the owner's approval is kept, for someone to look at."""
+    return (Decision.state == DecisionState.FAILED) & Decision.decided_by.is_not(None)
+
+
 def _movable() -> ColumnElement[bool]:
-    """Decisions an evaluation may change: no owner answered them, and none is approved."""
-    return Decision.decided_by.is_(None) & (Decision.state != DecisionState.APPROVED)
+    """Decisions an evaluation may change: no owner answered them, and none is approved or
+    paid."""
+    return Decision.decided_by.is_(None) & Decision.state.not_in(_EXECUTORS)
 
 
 async def movable_invoices(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
@@ -55,6 +66,22 @@ async def companies_with_movable(db: AsyncSession) -> list[uuid.UUID]:
     return list(rows)
 
 
+async def approved(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Decision]:
+    rows = await db.scalars(
+        select(Decision)
+        .where(Decision.company_id == company_id, Decision.state == DecisionState.APPROVED)
+        .order_by(Decision.decided_at, Decision.id)
+    )
+    return rows.all()
+
+
+async def companies_with_approved(db: AsyncSession) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(Decision.company_id).where(Decision.state == DecisionState.APPROVED).distinct()
+    )
+    return list(rows)
+
+
 async def approved_among(
     db: AsyncSession, company_id: uuid.UUID, invoice_ids: Sequence[uuid.UUID]
 ) -> bool:
@@ -65,7 +92,7 @@ async def approved_among(
         .where(
             Decision.company_id == company_id,
             Decision.invoice_id.in_(invoice_ids),
-            Decision.state == DecisionState.APPROVED,
+            Decision.state.in_(_EXECUTORS) | _refused_for_good(),
         )
         .limit(1)
     )

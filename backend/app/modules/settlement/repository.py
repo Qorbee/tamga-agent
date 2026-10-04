@@ -1,10 +1,11 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.settlement.models import PayeeWallet, VaultAccount
+from app.modules.settlement.models import PayeeWallet, Payment, VaultAccount
+from app.platform.pagination import PageParams
 
 
 async def get_account(
@@ -17,7 +18,7 @@ async def get_account(
     return account
 
 
-async def add(db: AsyncSession, row: VaultAccount | PayeeWallet) -> None:
+async def add(db: AsyncSession, row: VaultAccount | PayeeWallet | Payment) -> None:
     db.add(row)
     await db.flush()
 
@@ -42,3 +43,42 @@ async def payee_wallets_of(
         )
     )
     return {row.party_id: row for row in rows}
+
+
+async def payment_for(
+    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID, evaluation: int
+) -> Payment | None:
+    payment: Payment | None = await db.scalar(
+        select(Payment)
+        .where(
+            Payment.company_id == company_id,
+            Payment.decision_id == decision_id,
+            Payment.evaluation == evaluation,
+        )
+        .with_for_update()
+    )
+    return payment
+
+
+async def list_payments(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    decision_id: uuid.UUID | None,
+    invoice_id: uuid.UUID | None,
+    page: PageParams,
+) -> tuple[Sequence[Payment], int]:
+    filters = [Payment.company_id == company_id]
+    if decision_id is not None:
+        filters.append(Payment.decision_id == decision_id)
+    if invoice_id is not None:
+        filters.append(Payment.invoice_id == invoice_id)
+    total = await db.scalar(select(func.count()).select_from(Payment).where(*filters))
+    rows = await db.scalars(
+        select(Payment)
+        .where(*filters)
+        .order_by(Payment.created_at.desc(), Payment.id.desc())
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return rows.all(), total or 0

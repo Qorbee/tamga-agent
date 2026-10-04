@@ -28,6 +28,11 @@ class DecisionState(StrEnum):
     REJECTED = "rejected"
     # The owner approved the evaluation it names; the executor pays it.
     APPROVED = "approved"
+    # Paid from the vault; its payment holds the transaction's hash.
+    SETTLED = "settled"
+    # The vault refused it for a reason another evaluation will not change (it had paid the key
+    # already); ``decision_log`` holds the reason.
+    FAILED = "failed"
 
 
 class Decision(CompanyScoped, Base):
@@ -77,6 +82,11 @@ class LogEvent(StrEnum):
     APPROVED = "approved"
     HELD = "held"
     REJECTED = "rejected"
+    # The executor's: paid, with the transaction's hash; refused, with the reason; and what a
+    # replay company would have released, never sent (ADR-0009).
+    SETTLED = "settled"
+    FAILED = "failed"
+    WOULD_RELEASE = "would_release"
 
 
 class DecisionEvent(CompanyScoped, Base):

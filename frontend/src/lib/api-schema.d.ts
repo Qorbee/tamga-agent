@@ -747,6 +747,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Payments
+         * @description The executor's releases from the company's vault, the latest first, each with its
+         *     transaction on the explorer once final.
+         */
+        get: operations["payments.list_payments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/placements": {
         parameters: {
             query?: never;
@@ -1570,7 +1591,7 @@ export interface components {
          * DecisionState
          * @enum {string}
          */
-        DecisionState: "awaiting_owner" | "held" | "rejected" | "approved";
+        DecisionState: "awaiting_owner" | "held" | "rejected" | "approved" | "settled" | "failed";
         /**
          * Direction
          * @enum {string}
@@ -2113,7 +2134,7 @@ export interface components {
          * LogEvent
          * @enum {string}
          */
-        LogEvent: "proposed" | "edited" | "approved" | "held" | "rejected";
+        LogEvent: "proposed" | "edited" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release";
         /**
          * Me
          * @description Who is signed in, the company this session acts for, and every company they belong to.
@@ -2306,6 +2327,58 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PaymentOut */
+        PaymentOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Evaluation */
+            evaluation: number;
+            /** Explorer Url */
+            explorer_url: string | null;
+            /** Failure */
+            failure: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Invoice Id
+             * Format: uuid
+             */
+            invoice_id: string;
+            /** Payee */
+            payee: string;
+            /** Payment Key */
+            payment_key: string;
+            state: components["schemas"]["PaymentState"];
+            /** Tx Hash */
+            tx_hash: string | null;
+            /** Usdc Units */
+            usdc_units: number;
+        };
+        /** PaymentPage */
+        PaymentPage: {
+            /** Items */
+            items: components["schemas"]["PaymentOut"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * PaymentState
+         * @enum {string}
+         */
+        PaymentState: "submitting" | "settled" | "failed" | "would_release";
         /**
          * PlacementDecision
          * @description The owner's answer, one of two. ``links``: every link that waits between the conversation's
@@ -4375,6 +4448,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartyPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "payments.list_payments": {
+        parameters: {
+            query?: {
+                decision_id?: string | null;
+                invoice_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentPage"];
                 };
             };
             /** @description Validation Error */

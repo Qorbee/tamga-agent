@@ -28,10 +28,13 @@ from app.modules.books import service as books
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind, CompanyMode
 from app.modules.settlement import repository
-from app.modules.settlement.models import AccountState, PayeeWallet, VaultAccount
+from app.modules.settlement.models import AccountState, PayeeWallet, Payment, VaultAccount
+from app.modules.settlement.schemas import PaymentOut, PaymentPage
 from app.platform import agent_wallet, chain, circle, jobs
+from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
+from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
 
@@ -351,3 +354,31 @@ async def _fail(company_id: uuid.UUID, reason: str) -> None:
             account.state = AccountState.FAILED
             account.failure = reason[:300]
             await db.commit()
+
+
+async def list_payments(
+    db: AsyncSession,
+    actor: Actor,
+    *,
+    decision_id: uuid.UUID | None,
+    invoice_id: uuid.UUID | None,
+    page: PageParams,
+) -> PaymentPage:
+    rows, total = await repository.list_payments(
+        db, actor.company_id, decision_id=decision_id, invoice_id=invoice_id, page=page
+    )
+    return PaymentPage(items=[_payment_out(row) for row in rows], total=total)
+
+
+def _payment_out(payment: Payment) -> PaymentOut:
+    explorer = get_settings().arc_explorer_url.rstrip("/")
+    return PaymentOut.model_validate(
+        {
+            **{
+                name: getattr(payment, name)
+                for name in PaymentOut.model_fields
+                if name != "explorer_url"
+            },
+            "explorer_url": f"{explorer}/tx/{payment.tx_hash}" if payment.tx_hash else None,
+        }
+    )

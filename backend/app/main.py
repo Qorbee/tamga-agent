@@ -25,6 +25,7 @@ from app.modules.linking import router as linking
 from app.modules.parties import router as parties
 from app.modules.policy import router as policy
 from app.modules.projects import router as projects
+from app.modules.settlement import router as settlement
 from app.modules.translations import router as translations
 from app.packs.logistics import router as logistics
 from app.platform import events, isolated, tracing
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(books.invoices)
     app.include_router(policy.policy)
     app.include_router(decisions.decisions)
+    app.include_router(settlement.payments)
     app.include_router(assistant.chats)
     # Packs' routers: the core never imports a pack, the app factory does.
     app.include_router(logistics.shipments)

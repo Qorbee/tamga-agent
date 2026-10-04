@@ -1202,7 +1202,9 @@
           "awaiting_owner",
           "held",
           "rejected",
-          "approved"
+          "approved",
+          "settled",
+          "failed"
         ],
         "title": "DecisionState",
         "type": "string"
@@ -2792,7 +2794,10 @@
           "edited",
           "approved",
           "held",
-          "rejected"
+          "rejected",
+          "settled",
+          "failed",
+          "would_release"
         ],
         "title": "LogEvent",
         "type": "string"
@@ -3324,6 +3329,142 @@
         ],
         "title": "PartyPage",
         "type": "object"
+      },
+      "PaymentOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "evaluation": {
+            "title": "Evaluation",
+            "type": "integer"
+          },
+          "explorer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explorer Url"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invoice_id": {
+            "format": "uuid",
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "payee": {
+            "title": "Payee",
+            "type": "string"
+          },
+          "payment_key": {
+            "title": "Payment Key",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PaymentState"
+          },
+          "tx_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tx Hash"
+          },
+          "usdc_units": {
+            "title": "Usdc Units",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "decision_id",
+          "evaluation",
+          "invoice_id",
+          "payee",
+          "usdc_units",
+          "payment_key",
+          "state",
+          "tx_hash",
+          "explorer_url",
+          "failure",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "PaymentOut",
+        "type": "object"
+      },
+      "PaymentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "PaymentPage",
+        "type": "object"
+      },
+      "PaymentState": {
+        "enum": [
+          "submitting",
+          "settled",
+          "failed",
+          "would_release"
+        ],
+        "title": "PaymentState",
+        "type": "string"
       },
       "PlacementDecision": {
         "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested; with ``from_project_id`` it is moved there.",
@@ -7975,6 +8116,102 @@
         "summary": "List Parties",
         "tags": [
           "parties"
+        ]
+      }
+    },
+    "/payments": {
+      "get": {
+        "description": "The executor's releases from the company's vault, the latest first, each with its\ntransaction on the explorer once final.",
+        "operationId": "payments.list_payments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "decision_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "invoice_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoice Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Payments",
+        "tags": [
+          "payments"
         ]
       }
     },
