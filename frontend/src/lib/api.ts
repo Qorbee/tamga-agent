@@ -237,6 +237,13 @@ export type Payment = Schemas["PaymentOut"];
 export type PaymentPage = Schemas["PaymentPage"];
 type PaymentQuery = NonNullable<operations["payments.list_payments"]["parameters"]["query"]>;
 export const listPayments = (params: PaymentQuery) => request<PaymentPage>(`/payments${query(params)}`);
+export type DecisionEvent = Schemas["DecisionEventOut"];
+export type DecisionEventPage = Schemas["DecisionEventPage"];
+type DecisionEventQuery = NonNullable<operations["decisions.list_decision_events"]["parameters"]["query"]>;
+export const listDecisionEvents = (params: DecisionEventQuery) =>
+  request<DecisionEventPage>(`/decision-events${query(params)}`);
+export type DecisionChain = Schemas["DecisionChainOut"];
+export const getDecisionChain = () => request<DecisionChain>("/decision-chain");
 
 // Messages
 export type MessageSummary = Schemas["MessageSummary"];

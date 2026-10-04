@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from sqlalchemy import ColumnElement, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.decisions.models import Decision, DecisionEvent, DecisionState
+from app.modules.decisions.models import Decision, DecisionEvent, DecisionState, LogEvent
 from app.platform.pagination import PageParams
 
 
@@ -157,6 +157,7 @@ async def list_events(
     company_id: uuid.UUID,
     *,
     decision_id: uuid.UUID | None,
+    newest_first: bool,
     page: PageParams,
 ) -> tuple[Sequence[DecisionEvent], int]:
     filters = [DecisionEvent.company_id == company_id]
@@ -166,11 +167,41 @@ async def list_events(
     rows = await db.scalars(
         select(DecisionEvent)
         .where(*filters)
-        .order_by(DecisionEvent.seq)
+        .order_by(DecisionEvent.seq.desc() if newest_first else DecisionEvent.seq)
         .limit(page.limit)
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def invoices_of(
+    db: AsyncSession, company_id: uuid.UUID, decision_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Each decision's bill."""
+    if not decision_ids:
+        return {}
+    rows = await db.execute(
+        select(Decision.id, Decision.invoice_id).where(
+            Decision.company_id == company_id, Decision.id.in_(decision_ids)
+        )
+    )
+    return {decision_id: invoice_id for decision_id, invoice_id in rows.tuples()}
+
+
+async def proposals_of(
+    db: AsyncSession, company_id: uuid.UUID, decision_ids: Sequence[uuid.UUID]
+) -> Sequence[DecisionEvent]:
+    """Every evaluation logged for these decisions."""
+    if not decision_ids:
+        return []
+    rows = await db.scalars(
+        select(DecisionEvent).where(
+            DecisionEvent.company_id == company_id,
+            DecisionEvent.decision_id.in_(decision_ids),
+            DecisionEvent.event == LogEvent.PROPOSED,
+        )
+    )
+    return rows.all()
 
 
 async def chain_of(db: AsyncSession, company_id: uuid.UUID) -> Sequence[DecisionEvent]:

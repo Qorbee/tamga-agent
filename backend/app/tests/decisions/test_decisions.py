@@ -318,6 +318,9 @@ async def test_the_logs_chain_breaks_where_a_row_was_changed(
     await service.evaluate_pending()
     delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
     await answer(client, delivered, "approve")
+    [newest, *_] = (await client.get("/decision-events", params={"sort": "-seq"})).json()["items"]
+    holds = (await client.get("/decision-chain")).json()
+    assert holds == {"length": 3, "head": newest["hash"], "broken_at": None}
 
     async with open_session() as db:
         await db.execute(
@@ -329,6 +332,7 @@ async def test_the_logs_chain_breaks_where_a_row_was_changed(
         )
         await db.commit()
         assert await service.broken_link(db, company_id) == 3
+    assert (await client.get("/decision-chain")).json()["broken_at"] == 3
 
 
 async def test_only_the_owner_answers_and_a_sandbox_goes_with_its_decisions(
@@ -452,3 +456,40 @@ async def test_a_held_bill_is_read_again_before_it_is_approved_and_one_with_no_p
     orphan = (await client.get(f"/decisions/{moving['id']}")).json()
     assert orphan["evaluation"] == moving["evaluation"] + 1
     assert failing(orphan)["vault_account"] == "hold"
+
+
+async def test_the_log_names_the_firm_each_entry_was_made_for(
+    client: httpx.AsyncClient, vault: Vault
+) -> None:
+    await a_sandbox(client)
+    await service.evaluate_pending()
+    decisions = await by_bill(client)
+    delivered, moving = decisions[sandbox.DELIVERED_BILL], decisions[sandbox.MOVING_BILL]
+    await answer(client, delivered, "approve")
+    before = (await client.get(f"/invoices/{delivered['invoice_id']}")).json()["party_name"]
+
+    # The books correct the bill to the other subcontractor after the approval.
+    async with open_session() as db:
+        await db.execute(
+            text(
+                "UPDATE invoices SET (party_id, party_name) = "
+                "(SELECT party_id, party_name FROM invoices WHERE id = :other) WHERE id = :bill"
+            ),
+            {"other": moving["invoice_id"], "bill": delivered["invoice_id"]},
+        )
+        await db.commit()
+    await service.evaluate_pending()
+
+    log = (
+        await client.get(
+            "/decision-events",
+            params={"decision_id": delivered["id"], "expand": "invoice"},
+        )
+    ).json()["items"]
+    # The bill reads as the books hold it now; each entry keeps the firm it was made for.
+    now = log[0]["invoice"]["party_name"]
+    assert now != before and all(event["invoice"]["party_name"] == now for event in log)
+    assert [(event["event"], event["party_name"]) for event in log] == [
+        ("proposed", before),
+        ("approved", before),
+    ]

@@ -964,6 +964,44 @@
         "title": "DecisionAction",
         "type": "object"
       },
+      "DecisionChainOut": {
+        "description": "The company's decision log as a whole: how many rows it holds, the hash its newest row\nends on, and the first row whose hash does not hold, if any.",
+        "properties": {
+          "broken_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broken At"
+          },
+          "head": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head"
+          },
+          "length": {
+            "title": "Length",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "length",
+          "head",
+          "broken_at"
+        ],
+        "title": "DecisionChainOut",
+        "type": "object"
+      },
       "DecisionEventOut": {
         "properties": {
           "at": {
@@ -984,6 +1022,17 @@
           "event": {
             "$ref": "#/components/schemas/LogEvent"
           },
+          "explorer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explorer Url"
+          },
           "hash": {
             "title": "Hash",
             "type": "string"
@@ -992,6 +1041,27 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "party_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Name"
           },
           "previous_hash": {
             "title": "Previous Hash",
@@ -6154,9 +6224,36 @@
         ]
       }
     },
+    "/decision-chain": {
+      "get": {
+        "description": "Whether the company's decision log still holds: each row's hash checked against what the\nrow says and the row before it.",
+        "operationId": "decisions.get_decision_chain",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionChainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Decision Chain",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
     "/decision-events": {
       "get": {
-        "description": "The company's decision log in its chain's order, each row with its hash and the one\nbefore it.",
+        "description": "The company's decision log, by its place in the chain, each row with its hash and the one\nbefore it.",
         "operationId": "decisions.list_decision_events",
         "parameters": [
           {
@@ -6174,6 +6271,34 @@
                 }
               ],
               "title": "Decision Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "seq",
+              "enum": [
+                "seq",
+                "-seq"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expand",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "const": "invoice",
+                "type": "string"
+              },
+              "title": "Expand",
+              "type": "array"
             }
           },
           {

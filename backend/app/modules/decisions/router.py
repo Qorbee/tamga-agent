@@ -7,9 +7,11 @@ from app.modules.decisions import service
 from app.modules.decisions.models import DecisionState
 from app.modules.decisions.schemas import (
     DecisionAction,
+    DecisionChainOut,
     DecisionEventPage,
     DecisionOut,
     DecisionPage,
+    EventSort,
 )
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
@@ -61,8 +63,27 @@ async def act_on_decision(
 
 @decisions.get("/decision-events")
 async def list_decision_events(
-    actor: ActorDep, db: SessionDep, page: PageDep, decision_id: uuid.UUID | None = None
+    actor: ActorDep,
+    db: SessionDep,
+    page: PageDep,
+    decision_id: uuid.UUID | None = None,
+    sort: EventSort = "seq",
+    expand: Annotated[list[Literal["invoice"]], Query()] = [],  # noqa: B006
 ) -> DecisionEventPage:
-    """The company's decision log in its chain's order, each row with its hash and the one
+    """The company's decision log, by its place in the chain, each row with its hash and the one
     before it."""
-    return await service.list_events(db, actor, decision_id=decision_id, page=page)
+    return await service.list_events(
+        db,
+        actor,
+        decision_id=decision_id,
+        newest_first=sort == "-seq",
+        with_invoices="invoice" in expand,
+        page=page,
+    )
+
+
+@decisions.get("/decision-chain")
+async def get_decision_chain(actor: ActorDep, db: SessionDep) -> DecisionChainOut:
+    """Whether the company's decision log still holds: each row's hash checked against what the
+    row says and the row before it."""
+    return await service.chain_state(db, actor)

@@ -249,6 +249,32 @@ export const en = {
       approval_limit: "Above your approval limit",
     } as Record<string, string>,
   },
+  log: {
+    /** What each entry records, as the owner reads it. */
+    events: {
+      waits: "Evaluated: waits for your approval",
+      ruleHeld: "Evaluated: held by a rule",
+      ruleRejected: "Evaluated: rejected by a rule",
+      ruleApproved: "Evaluated: within your rules",
+      edited: (from: string, to: string) => `Amount changed from ${from} to ${to}`,
+      approved: "Approved by you",
+      held: "Held by you",
+      rejected: "Rejected by you",
+      approvedByOwner: "Approved by the owner",
+      heldByOwner: "Held by the owner",
+      rejectedByOwner: "Rejected by the owner",
+      settled: "Paid from the vault",
+      failed: "The vault refused it",
+      sentBack: "The vault refused it: back to you",
+      wouldRelease: "Would have been paid (replay)",
+    },
+    holds: "The log holds",
+    holdsBody: (count: string) => `${count} entries, each sealed with the hash of the one before it.`,
+    broken: (entry: string) => `The log was changed at entry ${entry}`,
+    brokenBody: "From that entry on, what is shown is not what was written.",
+    head: "Latest seal",
+    unchecked: "The log could not be checked: its entries below are shown unchecked.",
+  },
   assistant: {
     greeting: "What should we look at?",
     placeholder: "Ask anything, or tell Tamga what to do…",
@@ -632,7 +658,7 @@ export const en = {
     },
     log: {
       title: "No decisions yet",
-      body: "Every payment decision is recorded here with its evidence, the agents' opinions and the rules applied.",
+      body: "Each bill Tamga evaluates, your answers and every payment are written here, each entry sealed with the one before it.",
     },
   },
   landing: {

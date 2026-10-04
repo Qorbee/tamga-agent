@@ -34,11 +34,13 @@ from app.modules.decisions import repository
 from app.modules.decisions.models import Decision, DecisionEvent, DecisionState, LogEvent
 from app.modules.decisions.schemas import (
     DecisionAction,
+    DecisionChainOut,
     DecisionEventOut,
     DecisionEventPage,
     DecisionOut,
     DecisionPage,
 )
+from app.modules.parties import service as parties
 from app.modules.policy import service as policies
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 from app.modules.projects import service as projects
@@ -596,13 +598,68 @@ async def get_decision(
 
 
 async def list_events(
-    db: AsyncSession, actor: Actor, *, decision_id: uuid.UUID | None, page: PageParams
+    db: AsyncSession,
+    actor: Actor,
+    *,
+    decision_id: uuid.UUID | None,
+    newest_first: bool = False,
+    with_invoices: bool = False,
+    page: PageParams,
 ) -> DecisionEventPage:
     rows, total = await repository.list_events(
-        db, actor.company_id, decision_id=decision_id, page=page
+        db, actor.company_id, decision_id=decision_id, newest_first=newest_first, page=page
     )
-    return DecisionEventPage(
-        items=[DecisionEventOut.model_validate(row) for row in rows], total=total
+    items = [
+        DecisionEventOut.model_validate(row).model_copy(
+            update={
+                "explorer_url": settlement.explorer_url(tx)
+                if (tx := row.body.get("tx_hash"))
+                else None
+            }
+        )
+        for row in rows
+    ]
+    if with_invoices:
+        bill_of = await repository.invoices_of(
+            db, actor.company_id, list({item.decision_id for item in items})
+        )
+        bills = {
+            bill.id: bill
+            for bill in await books.get_invoices(db, actor.company_id, list(set(bill_of.values())))
+        }
+        # The firm of each event's evaluation, as it was logged then.
+        party_of = {
+            (row.decision_id, row.body.get("evaluation")): row.body.get("party")
+            for row in await repository.proposals_of(db, actor.company_id, list(bill_of))
+        }
+        at_the_time = {
+            item.id: party_of.get((item.decision_id, item.body.get("evaluation"))) for item in items
+        }
+        names = await parties.get_parties(
+            db,
+            actor.company_id,
+            list({uuid.UUID(party) for party in at_the_time.values() if party}),
+        )
+        items = [
+            item.model_copy(
+                update={
+                    "invoice": bills.get(bill_of[item.decision_id]),
+                    "party_name": (
+                        names[uuid.UUID(party)].name
+                        if (party := at_the_time[item.id]) and uuid.UUID(party) in names
+                        else None
+                    ),
+                }
+            )
+            for item in items
+        ]
+    return DecisionEventPage(items=items, total=total)
+
+
+async def chain_state(db: AsyncSession, actor: Actor) -> DecisionChainOut:
+    rows = await repository.chain_of(db, actor.company_id)
+    return DecisionChainOut(
+        length=len(rows), head=rows[-1].hash if rows else None, broken_at=_broken(rows)
     )
 
 
@@ -653,8 +710,12 @@ def _content(row: DecisionEvent) -> dict[str, Any]:
 async def broken_link(db: AsyncSession, company_id: uuid.UUID) -> int | None:
     """The first row of the company's chain whose hash does not hold, or None when every one
     does: a row changed, removed or put in breaks the chain from there."""
+    return _broken(await repository.chain_of(db, company_id))
+
+
+def _broken(rows: Sequence[DecisionEvent]) -> int | None:
     previous = GENESIS
-    for expected, row in enumerate(await repository.chain_of(db, company_id), start=1):
+    for expected, row in enumerate(rows, start=1):
         if row.seq != expected or row.previous_hash != previous or row.hash != _hash(_content(row)):
             return expected
         previous = row.hash

@@ -216,6 +216,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/decision-chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Decision Chain
+         * @description Whether the company's decision log still holds: each row's hash checked against what the
+         *     row says and the row before it.
+         */
+        get: operations["decisions.get_decision_chain"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/decision-events": {
         parameters: {
             query?: never;
@@ -225,7 +246,7 @@ export interface paths {
         };
         /**
          * List Decision Events
-         * @description The company's decision log in its chain's order, each row with its hash and the one
+         * @description The company's decision log, by its place in the chain, each row with its hash and the one
          *     before it.
          */
         get: operations["decisions.list_decision_events"];
@@ -1498,6 +1519,19 @@ export interface components {
             /** Evaluation */
             evaluation: number;
         };
+        /**
+         * DecisionChainOut
+         * @description The company's decision log as a whole: how many rows it holds, the hash its newest row
+         *     ends on, and the first row whose hash does not hold, if any.
+         */
+        DecisionChainOut: {
+            /** Broken At */
+            broken_at: number | null;
+            /** Head */
+            head: string | null;
+            /** Length */
+            length: number;
+        };
         /** DecisionEventOut */
         DecisionEventOut: {
             /**
@@ -1515,6 +1549,8 @@ export interface components {
              */
             decision_id: string;
             event: components["schemas"]["LogEvent"];
+            /** Explorer Url */
+            explorer_url?: string | null;
             /** Hash */
             hash: string;
             /**
@@ -1522,6 +1558,9 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            invoice?: components["schemas"]["InvoiceOut"] | null;
+            /** Party Name */
+            party_name?: string | null;
             /** Previous Hash */
             previous_hash: string;
             /** Seq */
@@ -3460,10 +3499,32 @@ export interface operations {
             };
         };
     };
+    "decisions.get_decision_chain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionChainOut"];
+                };
+            };
+        };
+    };
     "decisions.list_decision_events": {
         parameters: {
             query?: {
                 decision_id?: string | null;
+                sort?: "seq" | "-seq";
+                expand?: "invoice"[];
                 limit?: number;
                 offset?: number;
             };

@@ -73,8 +73,27 @@ class DecisionEventOut(BaseModel):
     at: datetime
     previous_hash: str
     hash: str
+    # The transaction on the chain's explorer, on an event that names one (a payment settled).
+    explorer_url: str | None = None
+    # The bill the event's decision is about, with ``expand=invoice``, as the books hold it now;
+    # and the firm it was owed to when this event's evaluation was made, which a later correction
+    # of the books does not change.
+    invoice: InvoiceOut | None = None
+    party_name: str | None = None
+
+
+EventSort = Literal["seq", "-seq"]
 
 
 class DecisionEventPage(BaseModel):
     items: list[DecisionEventOut]
     total: int
+
+
+class DecisionChainOut(BaseModel):
+    """The company's decision log as a whole: how many rows it holds, the hash its newest row
+    ends on, and the first row whose hash does not hold, if any."""
+
+    length: int
+    head: str | None
+    broken_at: int | None

@@ -100,6 +100,13 @@ async def test_an_approved_bill_is_paid_once_and_settled_with_its_hash(
     events = (await client.get("/decision-events", params={"decision_id": decision["id"]})).json()
     assert [event["event"] for event in events["items"]] == ["proposed", "approved", "settled"]
     assert events["items"][-1]["body"]["tx_hash"] == "0x" + "b" * 64
+    # The log, newest first with its bills: the payment one tap from its transaction.
+    log = (
+        await client.get("/decision-events", params={"sort": "-seq", "expand": "invoice"})
+    ).json()["items"]
+    assert log[0]["event"] == "settled" and log[0]["explorer_url"] == payment["explorer_url"]
+    assert {event["invoice"]["number"] for event in log} >= {sandbox.DELIVERED_BILL}
+    assert all(event["explorer_url"] is None for event in log[1:])
 
     # Paid, it is never sent again, nor evaluated again.
     assert await executor.pay_approved() == 0

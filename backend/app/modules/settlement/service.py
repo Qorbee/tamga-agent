@@ -379,8 +379,12 @@ async def list_payments(
     return PaymentPage(items=[_payment_out(row) for row in rows], total=total)
 
 
+def explorer_url(tx_hash: str) -> str:
+    """The transaction's page on the chain's explorer."""
+    return f"{get_settings().arc_explorer_url.rstrip('/')}/tx/{tx_hash}"
+
+
 def _payment_out(payment: Payment) -> PaymentOut:
-    explorer = get_settings().arc_explorer_url.rstrip("/")
     return PaymentOut.model_validate(
         {
             **{
@@ -388,6 +392,6 @@ def _payment_out(payment: Payment) -> PaymentOut:
                 for name in PaymentOut.model_fields
                 if name != "explorer_url"
             },
-            "explorer_url": f"{explorer}/tx/{payment.tx_hash}" if payment.tx_hash else None,
+            "explorer_url": explorer_url(payment.tx_hash) if payment.tx_hash else None,
         }
     )
