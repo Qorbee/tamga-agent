@@ -48,7 +48,11 @@ export function LogPage() {
   );
 }
 
-/** Whether every entry's hash still matches what it says and the entry before it. */
+/**
+ * Whether every entry's hash still matches what it says and the entry before it, and whether the
+ * log still has the entry last anchored on Arc: entries removed from the end leave a chain that
+ * holds, and only the anchor shows them gone.
+ */
 function ChainState() {
   const { t, locale } = useI18n();
   const chain = useQuery({ queryKey: ["decision-chain"], queryFn: getDecisionChain });
@@ -59,30 +63,56 @@ function ChainState() {
         {t.log.unchecked}
       </p>
     );
-  if (!chain.data?.length) return null;
-  const { broken_at: broken, head, length } = chain.data;
+  // An empty log with an anchor is the whole log removed: never shown as nothing to check.
+  if (!chain.data || (chain.data.length === 0 && !chain.data.anchor)) return null;
+  const { broken_at: broken, head, length, anchor } = chain.data;
+  const lost = anchor && !anchor.holds ? anchor : null;
+  const forged = anchor?.on_arc === false;
+  const alarm = broken !== null || lost !== null || forged;
+  const [title, body] =
+    broken !== null
+      ? [t.log.broken(formatNumber(broken, locale)), t.log.brokenBody]
+      : lost
+        ? [t.log.anchorLost(formatNumber(lost.seq, locale)), t.log.anchorLostBody]
+        : forged
+          ? [t.log.notOnArc, t.log.notOnArcBody]
+          : [t.log.holds, t.log.holdsBody(formatNumber(length, locale))];
   return (
     <div
-      role={broken ? "alert" : undefined}
+      role={alarm ? "alert" : undefined}
       className={cn(
         "flex items-start gap-3 rounded-2xl border px-4 py-3",
-        broken ? "border-danger/40 bg-danger-soft" : "border-border bg-card",
+        alarm ? "border-danger/40 bg-danger-soft" : "border-border bg-card",
       )}
     >
       <HugeiconsIcon
-        icon={broken ? Alert02Icon : SecurityCheckIcon}
+        icon={alarm ? Alert02Icon : SecurityCheckIcon}
         strokeWidth={1.75}
-        className={cn("mt-0.5 size-5 shrink-0", broken ? "text-danger-foreground" : "text-success-foreground")}
+        className={cn("mt-0.5 size-5 shrink-0", alarm ? "text-danger-foreground" : "text-success-foreground")}
         aria-hidden
       />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{broken ? t.log.broken(formatNumber(broken, locale)) : t.log.holds}</p>
-        <p className="text-muted-foreground text-xs text-pretty">
-          {broken ? t.log.brokenBody : t.log.holdsBody(formatNumber(length, locale))}
-        </p>
-        {head && !broken ? (
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-muted-foreground text-xs text-pretty">{body}</p>
+        {head && !alarm ? (
           <p className="text-muted-foreground mt-1 text-xs">
             {t.log.head} <span className="font-mono break-all">{head}</span>
+          </p>
+        ) : null}
+        {!alarm ? (
+          <p className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 text-xs">
+            <span>{anchor ? t.log.anchored(formatNumber(anchor.seq, locale)) : t.log.notAnchored}</span>
+            {anchor?.explorer_url ? (
+              <a
+                href={anchor.explorer_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground inline-flex items-center gap-1 underline-offset-4 hover:underline"
+              >
+                {t.payments.viewTx}
+                <HugeiconsIcon icon={LinkSquare02Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+              </a>
+            ) : null}
           </p>
         ) : null}
       </div>

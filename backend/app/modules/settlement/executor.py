@@ -110,7 +110,7 @@ async def _pay(company_id: uuid.UUID, mode: CompanyMode, decision: DecisionOut) 
             idempotency_key=idempotency_key,
         )
     except agent_wallet.WalletError as error:
-        if not error.reverted:
+        if not error.ended:
             # Signed out, not final yet, or the CLI not reached: the same key goes again on the
             # next run, which Circle answers with the same transaction.
             logger.warning("paying decision %s waits: %s", decision.id, error.code)

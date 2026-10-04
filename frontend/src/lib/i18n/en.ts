@@ -274,6 +274,12 @@ export const en = {
     brokenBody: "From that entry on, what is shown is not what was written.",
     head: "Latest seal",
     unchecked: "The log could not be checked: its entries below are shown unchecked.",
+    anchored: (entry: string) => `Sealed on Arc up to entry ${entry}`,
+    notAnchored: "Not sealed on Arc yet.",
+    anchorLost: (entry: string) => `The log no longer has entry ${entry} as it was sealed on Arc`,
+    anchorLostBody: "Entries were removed or changed after the seal was put on the chain.",
+    notOnArc: "The seal kept here is not the one on Arc",
+    notOnArcBody: "Tamga's record of the seal was changed: what Arc holds is the record.",
   },
   assistant: {
     greeting: "What should we look at?",

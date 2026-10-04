@@ -258,3 +258,18 @@ async def test_nothing_is_sent_where_no_executor_is_named(
     assert await executor.pay_approved() == 0
 
     assert wallet.calls == [] and (await client.get("/payments")).json()["items"] == []
+
+
+async def test_a_transaction_circle_ended_is_not_sent_again_under_its_key(
+    client: httpx.AsyncClient, vault: Vault, wallet: Executor
+) -> None:
+    await a_sandbox(client)
+    decision = await approved(client)
+    wallet.answer = agent_wallet.WalletError("CANCELLED", code="CANCELLED", ended=True)
+
+    await executor.pay_approved()
+
+    [payment] = (await client.get("/payments")).json()["items"]
+    assert payment["state"] == "failed"
+    assert (await client.get(f"/decisions/{decision['id']}")).json()["state"] == "failed"
+    assert await executor.pay_approved() == 0 and len(wallet.calls) == 1

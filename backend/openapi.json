@@ -389,6 +389,67 @@
         "title": "CellStyleOut",
         "type": "object"
       },
+      "ChainAnchorOut": {
+        "description": "The newest anchor on the chain that holds the company's head: the row it anchored, and\nwhether the log still has that row as it was.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "explorer_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explorer Url"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "holds": {
+            "title": "Holds",
+            "type": "boolean"
+          },
+          "on_arc": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Arc"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "hash",
+          "at",
+          "explorer_url",
+          "holds",
+          "on_arc"
+        ],
+        "title": "ChainAnchorOut",
+        "type": "object"
+      },
       "Channel": {
         "description": "Where an item came from (docs/architecture/06).",
         "enum": [
@@ -965,8 +1026,18 @@
         "type": "object"
       },
       "DecisionChainOut": {
-        "description": "The company's decision log as a whole: how many rows it holds, the hash its newest row\nends on, and the first row whose hash does not hold, if any.",
+        "description": "The company's decision log as a whole: how many rows it holds, the hash its newest row\nends on, the first row whose hash does not hold, if any, and its last anchor.",
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChainAnchorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "broken_at": {
             "anyOf": [
               {

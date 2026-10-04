@@ -26,12 +26,16 @@ _FAILED: Final = frozenset({"FAILED", "CANCELLED", "DENIED"})
 
 class WalletError(Exception):
     """The call was not made, or its transaction failed; ``code`` is the CLI's, ``reverted``
-    whether the chain refused it."""
+    whether the chain refused it, ``ended`` whether the transaction reached an end (failed,
+    cancelled, denied) that sending its key again only repeats."""
 
-    def __init__(self, message: str, *, code: str, reverted: bool = False) -> None:
+    def __init__(
+        self, message: str, *, code: str, reverted: bool = False, ended: bool = False
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.reverted = reverted
+        self.ended = ended or reverted
 
 
 class SignedOut(WalletError):
@@ -77,7 +81,7 @@ async def execute(
     state = str(transaction.get("state", ""))
     if state in _FAILED:
         reason = str(transaction.get("errorReason") or state)
-        raise WalletError(reason, code=state, reverted="revert" in reason.lower())
+        raise WalletError(reason, code=state, reverted="revert" in reason.lower(), ended=True)
     tx_hash = transaction.get("txHash")
     if not tx_hash:
         raise WalletError(

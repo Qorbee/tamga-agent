@@ -320,7 +320,7 @@ async def test_the_logs_chain_breaks_where_a_row_was_changed(
     await answer(client, delivered, "approve")
     [newest, *_] = (await client.get("/decision-events", params={"sort": "-seq"})).json()["items"]
     holds = (await client.get("/decision-chain")).json()
-    assert holds == {"length": 3, "head": newest["hash"], "broken_at": None}
+    assert holds == {"length": 3, "head": newest["hash"], "broken_at": None, "anchor": None}
 
     async with open_session() as db:
         await db.execute(

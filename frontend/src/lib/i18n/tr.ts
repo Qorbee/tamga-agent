@@ -266,6 +266,12 @@ export const tr: Dictionary = {
     brokenBody: "O girdiden sonra gösterilen, yazılanla aynı değil.",
     head: "Son mühür",
     unchecked: "Kayıt denetlenemedi: aşağıdaki girdiler denetlenmeden gösteriliyor.",
+    anchored: (entry: string) => `${entry}. girdiye kadar Arc'ta mühürlü`,
+    notAnchored: "Henüz Arc'ta mühürlenmedi.",
+    anchorLost: (entry: string) => `Kayıtta ${entry}. girdi Arc'ta mühürlendiği gibi değil`,
+    anchorLostBody: "Mühür zincire yazıldıktan sonra girdiler silinmiş ya da değiştirilmiş.",
+    notOnArc: "Burada tutulan mühür Arc'takiyle aynı değil",
+    notOnArcBody: "Tamga'daki mühür kaydı değiştirilmiş: geçerli kayıt Arc'ta olandır.",
   },
   assistant: {
     greeting: "Neye bakalım?",

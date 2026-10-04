@@ -27,6 +27,8 @@ USDC_UNIT: Final = Decimal(10) ** 6
 # A JSON-RPC error a node gives for a call the contract reverted.
 _REVERTED: Final = 3
 _TIMEOUT: Final = 15.0
+# The topic of the vault's `Anchored(uint256,bytes32)` event: `cast keccak` of that signature.
+_ANCHORED: Final = "0x2946f6d79e30b36612401c9600819a1e622cf156a41e314844f4d582f06d242a"
 
 
 class ChainError(Exception):
@@ -104,6 +106,34 @@ async def min_timelock() -> int:
     if not words:
         raise ChainError("minTimelock reverted")
     return int.from_bytes(words[0])
+
+
+async def anchored_root(tx_hash: str) -> str | None:
+    """The root the vault recorded in this transaction's ``Anchored`` event, as 64 hex digits;
+    None when the transaction holds no such event, or is not known yet."""
+    vault = get_settings().policy_vault_address
+    if vault is None:
+        raise ChainError("set POLICY_VAULT_ADDRESS: the vault is not deployed here")
+    answer = await _post(
+        {"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionReceipt", "params": [tx_hash]}
+    )
+    if "error" in answer:
+        raise ChainError(f"the node refused the call: {str(answer['error'])[:200]}")
+    receipt = answer.get("result")
+    if not isinstance(receipt, dict):
+        return None
+    for log in receipt.get("logs") or []:
+        topics = log.get("topics") or []
+        data = log.get("data")
+        if (
+            str(log.get("address", "")).lower() == vault.lower()
+            and topics
+            and str(topics[0]).lower() == _ANCHORED
+            and isinstance(data, str)
+            and len(data) == 2 + 2 * _WORD
+        ):
+            return data[2:].lower()
+    return None
 
 
 async def _call(signature: str, *arguments: bytes) -> bytes | None:

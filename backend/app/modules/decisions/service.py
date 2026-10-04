@@ -30,9 +30,16 @@ from app.modules.books.models import InvoiceDirection
 from app.modules.books.schemas import InvoiceOut
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
-from app.modules.decisions import repository
-from app.modules.decisions.models import Decision, DecisionEvent, DecisionState, LogEvent
+from app.modules.decisions import anchoring, repository
+from app.modules.decisions.models import (
+    Decision,
+    DecisionAnchor,
+    DecisionEvent,
+    DecisionState,
+    LogEvent,
+)
 from app.modules.decisions.schemas import (
+    ChainAnchorOut,
     DecisionAction,
     DecisionChainOut,
     DecisionEventOut,
@@ -658,8 +665,26 @@ async def list_events(
 
 async def chain_state(db: AsyncSession, actor: Actor) -> DecisionChainOut:
     rows = await repository.chain_of(db, actor.company_id)
+    anchor = await repository.last_anchor(db, covering=actor.company_id)
+    anchored = None
+    if anchor is not None:
+        head = anchor.heads[str(actor.company_id)]
+        seq, hash_ = int(head["seq"]), str(head["hash"])
+        # Rows removed from the end leave a chain that holds: only the anchor shows them gone.
+        holds = len(rows) >= seq and rows[seq - 1].seq == seq and rows[seq - 1].hash == hash_
+        anchored = ChainAnchorOut(
+            seq=seq,
+            hash=hash_,
+            at=anchor.finished_at,
+            explorer_url=settlement.explorer_url(anchor.tx_hash) if anchor.tx_hash else None,
+            holds=holds,
+            on_arc=await _on_arc(anchor),
+        )
     return DecisionChainOut(
-        length=len(rows), head=rows[-1].hash if rows else None, broken_at=_broken(rows)
+        length=len(rows),
+        head=rows[-1].hash if rows else None,
+        broken_at=_broken(rows),
+        anchor=anchored,
     )
 
 
@@ -711,6 +736,27 @@ async def broken_link(db: AsyncSession, company_id: uuid.UUID) -> int | None:
     """The first row of the company's chain whose hash does not hold, or None when every one
     does: a row changed, removed or put in breaks the chain from there."""
     return _broken(await repository.chain_of(db, company_id))
+
+
+# What the vault recorded in each anchor's transaction: it never changes once read.
+_ROOTS_ON_ARC: dict[str, str] = {}
+
+
+async def _on_arc(anchor: DecisionAnchor) -> bool | None:
+    """Whether the anchor's root, computed again from the heads it keeps, is the root its
+    transaction recorded on the vault: a row of this database rewritten along with the log
+    would not be. None when the chain cannot be read now."""
+    if anchor.tx_hash is None or anchoring.root_of(anchor.heads) != anchor.root:
+        return False
+    if anchor.tx_hash not in _ROOTS_ON_ARC:
+        try:
+            recorded = await chain.anchored_root(anchor.tx_hash)
+        except chain.ChainError:
+            return None
+        if recorded is None:
+            return False
+        _ROOTS_ON_ARC[anchor.tx_hash] = recorded
+    return _ROOTS_ON_ARC[anchor.tx_hash] == anchor.root
 
 
 def _broken(rows: Sequence[DecisionEvent]) -> int | None:

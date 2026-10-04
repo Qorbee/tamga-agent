@@ -30,8 +30,8 @@ class DecisionState(StrEnum):
     APPROVED = "approved"
     # Paid from the vault; its payment holds the transaction's hash.
     SETTLED = "settled"
-    # The vault refused it for a reason another evaluation will not change (it had paid the key
-    # already); ``decision_log`` holds the reason.
+    # The vault refused it; ``decision_log`` holds the reason. With ``decided_by`` kept, for a
+    # reason another evaluation will not change; without, it is evaluated again.
     FAILED = "failed"
 
 
@@ -116,3 +116,35 @@ class DecisionEvent(CompanyScoped, Base):
     at: Mapped[datetime]
     previous_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
+
+
+class AnchorState(StrEnum):
+    # Its idempotency key is written; the executor's call is on its way, or is sent again with
+    # the same key.
+    SUBMITTING = "submitting"
+    SETTLED = "settled"
+    # The vault refused it; ``failure`` says why. The next batch anchors the heads again.
+    FAILED = "failed"
+
+
+class DecisionAnchor(Base):
+    """One root over the companies' decision-log heads, put on the chain by the executor
+    (05, The log; ADR-0015). Global (ADR-0003): it keeps every head it covers, so a company's
+    log is checked against it and the root can be computed again from it."""
+
+    __tablename__ = "decision_anchors"
+    __mapper_args__ = {"eager_defaults": True}
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    root: Mapped[str] = mapped_column(String(64))
+    # Each company's head as anchored: ``{company_id: {"seq": n, "hash": "…"}}``.
+    heads: Mapped[dict[str, dict[str, Any]]] = mapped_column(JSONB)
+    state: Mapped[AnchorState] = mapped_column(
+        text_enum(AnchorState, "decision_anchors_state_check", length=20)
+    )
+    idempotency_key: Mapped[uuid.UUID] = mapped_column(unique=True)
+    circle_transaction_id: Mapped[str | None] = mapped_column(String(100))
+    tx_hash: Mapped[str | None] = mapped_column(String(66))
+    failure: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    finished_at: Mapped[datetime | None]

@@ -1,10 +1,17 @@
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import ColumnElement, func, select, text
+from sqlalchemy import ColumnElement, func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.decisions.models import Decision, DecisionEvent, DecisionState, LogEvent
+from app.modules.decisions.models import (
+    AnchorState,
+    Decision,
+    DecisionAnchor,
+    DecisionEvent,
+    DecisionState,
+    LogEvent,
+)
 from app.platform.pagination import PageParams
 
 
@@ -211,3 +218,59 @@ async def chain_of(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Decision
         .order_by(DecisionEvent.seq)
     )
     return rows.all()
+
+
+# The anchors: read across companies, by the anchor job and to check one company's log.
+
+
+async def heads(db: AsyncSession) -> dict[uuid.UUID, tuple[int, str]]:
+    """Each company's newest log row: its place in the chain and its hash."""
+    rows = await db.execute(
+        select(DecisionEvent.company_id, DecisionEvent.seq, DecisionEvent.hash)
+        .distinct(DecisionEvent.company_id)
+        .order_by(DecisionEvent.company_id, DecisionEvent.seq.desc())
+    )
+    return {company_id: (seq, hash_) for company_id, seq, hash_ in rows.tuples()}
+
+
+async def hashes_at(
+    db: AsyncSession, places: Sequence[tuple[uuid.UUID, tuple[int, str]]]
+) -> dict[tuple[uuid.UUID, int], str]:
+    """The hash each company's log holds now at the given places in its chain."""
+    if not places:
+        return {}
+    rows = await db.execute(
+        select(DecisionEvent.company_id, DecisionEvent.seq, DecisionEvent.hash).where(
+            tuple_(DecisionEvent.company_id, DecisionEvent.seq).in_(
+                [(company_id, seq) for company_id, (seq, _) in places]
+            )
+        )
+    )
+    return {(company_id, seq): hash_ for company_id, seq, hash_ in rows.tuples()}
+
+
+async def unfinished_anchor(db: AsyncSession) -> DecisionAnchor | None:
+    found: DecisionAnchor | None = await db.scalar(
+        select(DecisionAnchor)
+        .where(DecisionAnchor.state == AnchorState.SUBMITTING)
+        .order_by(DecisionAnchor.created_at)
+        .limit(1)
+    )
+    return found
+
+
+async def last_anchor(
+    db: AsyncSession, *, covering: uuid.UUID | None = None
+) -> DecisionAnchor | None:
+    """The newest anchor on the chain, or the newest that holds ``covering``'s head."""
+    query = select(DecisionAnchor).where(DecisionAnchor.state == AnchorState.SETTLED)
+    if covering is not None:
+        query = query.where(DecisionAnchor.heads.has_key(str(covering)))
+    found: DecisionAnchor | None = await db.scalar(
+        query.order_by(DecisionAnchor.created_at.desc()).limit(1)
+    )
+    return found
+
+
+async def get_anchor(db: AsyncSession, anchor_id: uuid.UUID) -> DecisionAnchor | None:
+    return await db.get(DecisionAnchor, anchor_id)

@@ -1275,6 +1275,25 @@ export interface components {
             wrap: boolean;
         };
         /**
+         * ChainAnchorOut
+         * @description The newest anchor on the chain that holds the company's head: the row it anchored, and
+         *     whether the log still has that row as it was.
+         */
+        ChainAnchorOut: {
+            /** At */
+            at: string | null;
+            /** Explorer Url */
+            explorer_url: string | null;
+            /** Hash */
+            hash: string;
+            /** Holds */
+            holds: boolean;
+            /** On Arc */
+            on_arc: boolean | null;
+            /** Seq */
+            seq: number;
+        };
+        /**
          * Channel
          * @description Where an item came from (docs/architecture/06).
          * @enum {string}
@@ -1522,9 +1541,10 @@ export interface components {
         /**
          * DecisionChainOut
          * @description The company's decision log as a whole: how many rows it holds, the hash its newest row
-         *     ends on, and the first row whose hash does not hold, if any.
+         *     ends on, the first row whose hash does not hold, if any, and its last anchor.
          */
         DecisionChainOut: {
+            anchor?: components["schemas"]["ChainAnchorOut"] | null;
             /** Broken At */
             broken_at: number | null;
             /** Head */
