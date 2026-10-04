@@ -7,6 +7,10 @@ and a conversation it cannot choose a project for. Each is read from where it st
 placements that wait for the owner), so nothing is lost when a run fails or the worker stops:
 what was not written about yet is found again.
 
+Past the day's new chats, a finding goes into the day's digest instead (``_into_digest``): its
+card alone, written by code with no model run, so a busy day costs no more and nothing waits for
+the next day.
+
 Such a turn acts for the company, not for a person. It runs as ``Actor.of_tamga``, which every
 role check refuses, on the assistant's tools, which only read. What it is told of the finding
 is outside text and reaches it fenced. It is one job that never overlaps with itself
@@ -34,7 +38,7 @@ from app.modules.linking.models import Outcome
 from app.modules.linking.schemas import PlacementOut
 from app.modules.projects import service as projects
 from app.modules.projects.models import ProjectStatus
-from app.platform import events, llm
+from app.platform import clock, events, llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -88,8 +92,7 @@ class Finding:
 async def speak_pending() -> int:
     """Writes to the owners about what waits for them and was not written about yet, within
     each company's budget and its day's chats. Returns how many messages were written."""
-    budget = get_settings().tamga_requests_per_day
-    if budget == 0:
+    if get_settings().tamga_requests_per_day == 0:
         return 0
     async with open_session() as db:
         company_ids = await linking.companies_awaiting_owner(db)
@@ -104,12 +107,8 @@ async def speak_pending() -> int:
             # A chat opened for a turn whose worker then stopped holds nothing and never will.
             await repository.drop_abandoned(db, company_id, Origin.TAMGA, now - service.RUN_STALE)
             await db.commit()
-            # Nothing is looked for once the day's requests are spent.
-            spent = await repository.requests_since(
-                db, company_id, Origin.TAMGA, now - service.RUN_WINDOW
-            )
-            if spent >= budget:
-                continue
+            # Looked for even once the day's requests are spent: a finding past the day's
+            # chats goes into the digest, which costs none.
             findings = await _findings(db, company_id)
         for finding in findings[:TURNS_A_PASS]:
             try:
@@ -247,7 +246,7 @@ async def _speak(company: Company, finding: Finding) -> int:
             since = now - service.RUN_WINDOW
             opened_today = await repository.opened_since(db, company.id, Origin.TAMGA, since)
             if opened_today >= settings.tamga_chats_per_day:
-                return 0
+                return await _into_digest(db, company, finding)
             chat = Chat(company_id=company.id, origin=Origin.TAMGA, title=finding.title[:200])
             await repository.add(db, chat)
         elif service.is_running(chat, now):  # the owner is being answered there: next pass
@@ -359,6 +358,41 @@ async def _speak(company: Company, finding: Finding) -> int:
     if not stored and opened:
         await _discard(company.id, chat_id)
     return int(stored)
+
+
+async def _into_digest(db: AsyncSession, company: Company, finding: Finding) -> int:
+    """Puts a finding into the day's digest (ADR-0018, points 8 and 9): its card, with no model
+    run. The digest then holds its record, so what is found about it later goes there. Returns
+    1, 0 while the owner is being answered in the digest (the finding waits a pass) or once the
+    owner answered it elsewhere. Commits."""
+    now = utcnow()
+    if not await _stands(db, company.id, finding):
+        return 0
+    day = clock.now(company).date()
+    chat = await repository.digest_of(db, company.id, day)
+    if chat is None:
+        chat = Chat(company_id=company.id, origin=Origin.TAMGA, digest_on=day)
+        await repository.add(db, chat)
+    elif service.is_running(chat, now):
+        return 0
+    # A run given up for dead may still end: its answer, to the history before this card, is
+    # not kept. And a digest the owner archived comes back with what is new in it.
+    chat.running_since = None
+    chat.archived_at = None
+    await repository.add_messages(
+        db,
+        chat,
+        [finding.card],
+        run_id=uuid.uuid7(),
+        began_by=Origin.TAMGA,
+        user_id=None,
+        kind=MessageKind.CARD,
+    )
+    chat.last_message_at = now
+    await repository.touch_record(db, chat, *finding.record, now, raised=True)
+    await events.publish(db, company.id, events.EventKind.CHAT, chat.id, by_tamga=True)
+    await db.commit()
+    return 1
 
 
 async def _discard(company_id: uuid.UUID, chat_id: uuid.UUID) -> None:

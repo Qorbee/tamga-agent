@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, delete, func, select, text, tuple_, update
@@ -289,14 +289,28 @@ async def holding(
     return chat
 
 
+async def digest_of(db: AsyncSession, company_id: uuid.UUID, day: date) -> Chat | None:
+    """The company's digest of that day, locked for the caller."""
+    chat: Chat | None = await db.scalar(
+        select(Chat).where(Chat.company_id == company_id, Chat.digest_on == day).with_for_update()
+    )
+    return chat
+
+
 async def opened_since(
     db: AsyncSession, company_id: uuid.UUID, origin: Origin, since: datetime
 ) -> int:
-    """Chats of this origin opened for the company since then."""
+    """Chats of this origin opened for the company since then, its digests aside: those are
+    what the day's chats overflow into."""
     count = await db.scalar(
         select(func.count())
         .select_from(Chat)
-        .where(Chat.company_id == company_id, Chat.origin == origin, Chat.created_at > since)
+        .where(
+            Chat.company_id == company_id,
+            Chat.origin == origin,
+            Chat.created_at > since,
+            Chat.digest_on.is_(None),
+        )
     )
     return count or 0
 

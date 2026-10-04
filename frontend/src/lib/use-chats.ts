@@ -2,7 +2,9 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getChatMessages, listChats } from "./api";
+import { getChatMessages, listChats, type Chat } from "./api";
+import { formatDays } from "./format";
+import type { Dictionary, Locale } from "./i18n";
 
 export const CHATS_KEY = ["chats"] as const;
 export const chatMessagesKey = (id: string) => ["chat-messages", id] as const;
@@ -25,6 +27,11 @@ export function useChats() {
     refetchInterval: (query) =>
       query.state.data?.items.some((chat) => chat.running) ? WHILE_ANSWERING : false,
   });
+}
+
+/** A chat's name: its own, else a digest's by its day; empty while a chat has none. */
+export function chatTitle(chat: Pick<Chat, "title" | "digest_on">, t: Dictionary, locale: Locale): string {
+  return chat.title || (chat.digest_on ? t.chat.digest(formatDays(chat.digest_on, null, locale)) : "");
 }
 
 /** The chats put away: off the list, kept, and brought back from the sidebar's Archived group. */

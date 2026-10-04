@@ -10,7 +10,7 @@ import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
 import { openCompanyEvents, type ChatPage, type CompanyEvent } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
-import { CHATS_KEY } from "@/lib/use-chats";
+import { CHATS_KEY, chatTitle } from "@/lib/use-chats";
 
 import { notifyAbout, onNotificationClick } from "./notify";
 import { CHAT_PATH } from "./pages";
@@ -48,7 +48,7 @@ const REOPEN_LAST = 60_000;
  * read again whole.
  */
 export function CompanyEvents() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const aui = useAui();
   const router = useRouter();
@@ -67,7 +67,7 @@ export function CompanyEvents() {
     // The chat is already open in front of the owner: they are reading it.
     if (looking && pathname === CHAT_PATH && onScreen === id) return;
     const chat = queryClient.getQueryData<ChatPage>(CHATS_KEY)?.items.find((item) => item.id === id);
-    const title = chat?.title || t.chat.newChat;
+    const title = (chat && chatTitle(chat, t, locale)) || t.chat.newChat;
     setWrote({ id, title });
     if (!looking) void notifyAbout(id, t.events.tamgaWrote, title).catch(() => undefined);
   });

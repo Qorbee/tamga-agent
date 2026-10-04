@@ -319,6 +319,7 @@ export const tr: Dictionary = {
     threadsEarlier: "Daha önce",
     noThreadsFound: "Sohbet bulunamadı",
     newChat: "Yeni sohbet",
+    digest: (day: string) => `Özet · ${day}`,
     loadingThreads: "Sohbetler yükleniyor",
     running: "Çalışıyor",
     rename: "Yeniden adlandır",

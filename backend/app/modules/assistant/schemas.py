@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -23,6 +23,9 @@ class ChatOut(BaseModel):
     context_window: int
     # Whether Tamga is answering in it now.
     running: bool
+    # The day whose digest it is: what Tamga found past that day's new chats. The app names a
+    # digest the owner has not renamed by its day.
+    digest_on: date | None
     created_at: datetime
 
 

@@ -1186,6 +1186,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Digest On */
+            digest_on: string | null;
             /**
              * Id
              * Format: uuid

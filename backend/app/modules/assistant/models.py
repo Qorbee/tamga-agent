@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -53,12 +54,23 @@ class Chat(CompanyScoped, Base):
     __table_args__ = (
         UniqueConstraint("company_id", "id"),
         Index(None, "company_id", "last_message_at"),
+        # One digest a company a day.
+        Index(
+            "ix_chats_digest_on",
+            "company_id",
+            "digest_on",
+            unique=True,
+            postgresql_where=text("digest_on IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     origin: Mapped[Origin] = mapped_column(text_enum(Origin, "chats_origin_check"))
     # Empty until its first message names it.
     title: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    # The day whose digest it is (ADR-0018, points 8 and 9): what Tamga found past the day's new
+    # chats, as cards with no model run. Null for every other chat.
+    digest_on: Mapped[date | None]
     opened_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     archived_at: Mapped[datetime | None]
     # What its next run would be sent, as the model counted its last one: the last request's

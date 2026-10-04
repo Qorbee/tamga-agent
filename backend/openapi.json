@@ -472,6 +472,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "digest_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digest On"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -515,6 +527,7 @@
           "context_tokens",
           "context_window",
           "running",
+          "digest_on",
           "created_at"
         ],
         "title": "ChatOut",

@@ -345,7 +345,8 @@ async def run_chat(
         user_id=actor.user_id,
     )
     naming = None
-    if not chat.title:
+    # A digest the owner did not rename is named by its day, in the app.
+    if not chat.title and chat.digest_on is None:
         chat.title = _title(said.content)
         # The name's one request is taken from the day's budget with the run's own, before
         # either model is called.
@@ -652,5 +653,6 @@ def _describe(chat: Chat, *, unread: bool) -> ChatOut:
         context_tokens=chat.context_tokens,
         context_window=get_settings().chat_context_tokens,
         running=is_running(chat, utcnow()),
+        digest_on=chat.digest_on,
         created_at=chat.created_at,
     )

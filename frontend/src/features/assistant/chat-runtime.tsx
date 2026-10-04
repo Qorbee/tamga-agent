@@ -47,6 +47,7 @@ import { useInvalidatePlacements } from "@/lib/use-invalidate-placements";
 import {
   CHATS_KEY,
   chatMessagesKey,
+  chatTitle,
   useArchivedChats,
   useChats,
   useInvalidateChats,
@@ -172,7 +173,7 @@ export function useChatShown() {
  * opens it with its first message.
  */
 export function ChatRuntime({ children }: { children: ReactNode }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const invalidateChats = useInvalidateChats();
   const chats = useChats();
@@ -201,19 +202,19 @@ export function ChatRuntime({ children }: { children: ReactNode }) {
       (chats.data?.items ?? []).map((chat) => ({
         id: chat.id,
         status: "regular" as const,
-        title: chat.title || undefined,
+        title: chatTitle(chat, t, locale) || undefined,
         lastMessageAt: new Date(chat.last_message_at ?? chat.created_at),
       })),
-    [chats.data],
+    [chats.data, t, locale],
   );
   const archivedThreads = useMemo(
     () =>
       (archived.data?.items ?? []).map((chat) => ({
         id: chat.id,
         status: "archived" as const,
-        title: chat.title || undefined,
+        title: chatTitle(chat, t, locale) || undefined,
       })),
-    [archived.data],
+    [archived.data, t, locale],
   );
 
   const threadList = useMemo<UseAgUiThreadListAdapter>(() => {

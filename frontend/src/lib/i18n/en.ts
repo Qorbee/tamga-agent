@@ -329,6 +329,7 @@ export const en = {
     threadsEarlier: "Earlier",
     noThreadsFound: "No threads found",
     newChat: "New chat",
+    digest: (day: string) => `Digest · ${day}`,
     loadingThreads: "Loading threads",
     running: "Running",
     rename: "Rename",

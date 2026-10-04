@@ -298,27 +298,94 @@ async def test_the_days_chats_and_the_budget_bound_what_tamga_opens(
     )
     script = tamga("unused")
 
-    # Zero is off: nothing is asked of the model, and nothing is opened.
+    # Zero is off: nothing is asked of the model, and nothing is opened, not even the digest.
     monkeypatch.setattr(get_settings(), "tamga_requests_per_day", 0)
-    assert await turns.speak_pending() == 0
-    monkeypatch.setattr(get_settings(), "tamga_requests_per_day", 40)
-    monkeypatch.setattr(get_settings(), "tamga_chats_per_day", 0)
     assert await turns.speak_pending() == 0
     assert script.requests == [] and await chats_of(client) == []
 
-    # One chat a day: the older finding gets it, the other waits.
+    # One chat a day: the older finding gets it, and the other goes into the day's digest.
+    monkeypatch.setattr(get_settings(), "tamga_requests_per_day", 40)
     monkeypatch.setattr(get_settings(), "tamga_chats_per_day", 1)
-    tamga("The first.", "unused")
-    assert await turns.speak_pending() == 1
-    assert len(await chats_of(client)) == 1
-
-    # The requests the owner's own questions take are another budget.
-    monkeypatch.setattr(get_settings(), "tamga_chats_per_day", 5)
-    monkeypatch.setattr(get_settings(), "tamga_requests_per_day", 1)
-    tamga("unused")
-    assert await turns.speak_pending() == 0
+    tamga("The first.")
+    assert await turns.speak_pending() == 2
+    chats = await chats_of(client)
+    assert sorted(chat["digest_on"] is not None for chat in chats) == [False, True]
     assert await spent(company_id, Origin.TAMGA) == 1
-    assert len(await chats_of(client)) == 1
+
+
+async def test_past_the_days_chats_a_finding_waits_in_the_digest_as_its_card(
+    client: httpx.AsyncClient,
+    linker: Callable[..., Any],  # noqa: F811
+    tamga: Callable[..., Script],
+    owner_asks: Callable[..., Script],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = await a_proposal(client, linker)
+    await a_proposal(
+        client, linker, company_id=company_id, message_id="<second@x>", uid=2, subject="Lyon load"
+    )
+    monkeypatch.setattr(get_settings(), "tamga_chats_per_day", 0)
+    script = tamga("unused")
+
+    assert await turns.speak_pending() == 2
+
+    # One digest for the day, its cards made by code: no model run, nothing spent.
+    [digest] = await chats_of(client)
+    assert digest["origin"] == "tamga" and digest["unread"] is True
+    assert digest["title"] == "" and digest["digest_on"] is not None
+    messages = await shown(client, digest["id"])
+    assert [message["activityType"] for message in messages] == [CardKind.PROJECT_PROPOSAL] * 2
+    assert script.requests == [] and await spent(company_id, Origin.TAMGA) == 0
+    # Each is written about once.
+    assert await turns.speak_pending() == 0
+    assert len(await shown(client, digest["id"])) == 2
+
+    # A question asked in it does not name it: it keeps its day's name.
+    owner_asks("Both are new jobs.")
+    assert words(await ask(client, digest["id"], user("What are these?"))) == "Both are new jobs."
+    [digest] = await chats_of(client)
+    assert digest["title"] == ""
+
+
+async def test_the_digest_counts_for_no_chat_costs_nothing_and_comes_back_from_the_archive(
+    client: httpx.AsyncClient,
+    linker: Callable[..., Any],  # noqa: F811
+    tamga: Callable[..., Script],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = await a_proposal(client, linker)
+    monkeypatch.setattr(get_settings(), "tamga_chats_per_day", 0)
+    assert await turns.speak_pending() == 1
+    [digest] = await chats_of(client)
+    archived = await client.patch(f"/chats/{digest['id']}", json={"archived": True})
+    assert archived.status_code == 200, archived.text
+
+    # What is new in an archived digest brings it back to the list.
+    await a_proposal(
+        client, linker, company_id=company_id, message_id="<second@x>", uid=2, subject="Lyon load"
+    )
+    assert await turns.speak_pending() == 1
+    assert [chat["id"] for chat in await chats_of(client)] == [digest["id"]]
+    assert len(await shown(client, digest["id"])) == 2
+
+    # The digest is not one of the day's chats: with one allowed, the next finding opens it.
+    monkeypatch.setattr(get_settings(), "tamga_chats_per_day", 1)
+    monkeypatch.setattr(get_settings(), "tamga_requests_per_day", 1)
+    await a_proposal(
+        client, linker, company_id=company_id, message_id="<third@x>", uid=3, subject="Pisa load"
+    )
+    tamga("The third.")
+    assert await turns.speak_pending() == 1
+    assert sorted(chat["digest_on"] is not None for chat in await chats_of(client)) == [False, True]
+    assert await spent(company_id, Origin.TAMGA) == 1
+
+    # The day's requests spent and its chat taken, a finding still reaches the digest, free.
+    await a_proposal(
+        client, linker, company_id=company_id, message_id="<fourth@x>", uid=4, subject="Bari load"
+    )
+    assert await turns.speak_pending() == 1
+    assert len(await shown(client, digest["id"])) == 3
+    assert await spent(company_id, Origin.TAMGA) == 1
 
 
 async def test_a_project_answered_before_tamga_spoke_is_not_written_about(
