@@ -1,6 +1,6 @@
 "use client";
 
-import { LinkSquare02Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { AiIdeaIcon, LinkSquare02Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { T } from "@/components/translated";
 import { ApiError, answerDecision, type Decision, type DecisionAction, type Payment } from "@/lib/api";
 import { formatDate, formatDays, formatMoney, formatUsdc } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -89,6 +90,13 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
           : decision.state === "failed"
             ? t.payments.refused
             : null;
+  // The controller's opinion on the evaluation shown: it moves nothing, the owner answers.
+  const advice = answered ? null : (decision.advice ?? null);
+  const advised = advice
+    ? advice.proposal === "pay_part"
+      ? t.payments.advice.payPart(money(advice.amount) ?? "")
+      : t.payments.advice[advice.proposal]
+    : null;
 
   return (
     <>
@@ -157,6 +165,20 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
           </DropdownMenu>
         ) : null}
       </div>
+
+      {/* Under the row, the width of the card: a sentence or two beside the amounts is a column. */}
+      {advice && advised ? (
+        <p className="flex items-start gap-1.5 px-2 pb-2 text-xs">
+          <HugeiconsIcon icon={AiIdeaIcon} strokeWidth={1.75} className="text-primary mt-px size-3.5 shrink-0" aria-hidden />
+          <span className="min-w-0 text-pretty">
+            <span className="font-medium">{advised}</span>
+            <span className="text-muted-foreground">
+              {" · "}
+              <T>{advice.reason}</T>
+            </span>
+          </span>
+        </p>
+      ) : null}
 
       {payment?.explorer_url ? (
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 px-2 pb-2 text-xs">

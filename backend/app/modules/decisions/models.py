@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     ForeignKeyConstraint,
+    Index,
     Numeric,
     String,
     UniqueConstraint,
@@ -69,6 +70,10 @@ class Decision(CompanyScoped, Base):
     amount_edited: Mapped[bool] = mapped_column(default=False)
     # Each rule's result: ``{"rule", "outcome", "reason"}``, in the rules' order.
     rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    # The controller's latest proposal for this evaluation (``agents.Advice`` with its
+    # evaluation, inputs, model and trace), an opinion that moves nothing; None until one is in,
+    # and again on the next evaluation.
+    advice: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # The owner who approved, held or rejected it; None while a rule's result stands.
     decided_by: Mapped[uuid.UUID | None]
     decided_at: Mapped[datetime | None]
@@ -78,6 +83,8 @@ class Decision(CompanyScoped, Base):
 
 class LogEvent(StrEnum):
     PROPOSED = "proposed"
+    # The controller's opinion on a proposal that waits for the owner.
+    ADVISED = "advised"
     EDITED = "edited"
     APPROVED = "approved"
     HELD = "held"
@@ -116,6 +123,31 @@ class DecisionEvent(CompanyScoped, Base):
     at: Mapped[datetime]
     previous_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
+
+
+class AdviceRequest(CompanyScoped, Base):
+    """One time the controller was asked about an evaluation, written before the call is sent: what
+    the day's budget counts, whatever came back, and what keeps a call that failed from being
+    sent again for the same inputs."""
+
+    __tablename__ = "advice_requests"
+    __mapper_args__ = {"eager_defaults": True}
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["company_id", "decision_id"],
+            ["decisions.company_id", "decisions.id"],
+            ondelete="CASCADE",
+        ),
+        Index(None, "company_id", "at"),
+        Index(None, "company_id", "decision_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    decision_id: Mapped[uuid.UUID]
+    evaluation: Mapped[int]
+    # The SHA-256 of what the controller was shown, but the day.
+    inputs: Mapped[str] = mapped_column(String(64))
+    at: Mapped[datetime]
 
 
 class AnchorState(StrEnum):

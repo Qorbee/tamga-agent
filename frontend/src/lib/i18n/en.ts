@@ -220,6 +220,13 @@ export const en = {
     /** The figure the vault pays, a fixed fraction of the bill (ADR-0019). */
     testUsdc: "test USDC",
     mirror: "Test USDC mirrors each bill at a fixed rate on Arc testnet; the real payment still goes by bank.",
+    /** The controller's opinion on the evaluation shown (ADR-0002): it moves nothing. */
+    advice: {
+      pay: "Tamga would pay it now",
+      payPart: (amount: string) => `Tamga would pay ${amount} now`,
+      hold: "Tamga would wait",
+      ask: "Tamga asks",
+    },
     partOf: (total: string) => `Part of ${total}`,
     beingPaid: "Being paid from the vault",
     heldByYou: "Held by you",
@@ -267,6 +274,13 @@ export const en = {
       failed: "The vault refused it",
       sentBack: "The vault refused it: back to you",
       wouldRelease: "Would have been paid (replay)",
+      advised: {
+        pay: "Tamga's opinion: pay it now",
+        pay_part: "Tamga's opinion: pay part of it now",
+        hold: "Tamga's opinion: wait",
+        ask: "Tamga's opinion: ask you first",
+      } as Record<string, string>,
+      advisedPart: (amount: string) => `Tamga's opinion: pay ${amount} of it now`,
     },
     holds: "The log holds",
     holdsBody: (count: string) => `${count} entries, each sealed with the hash of the one before it.`,

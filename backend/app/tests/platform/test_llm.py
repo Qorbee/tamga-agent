@@ -129,7 +129,7 @@ def test_an_agent_runs_on_its_own_model_else_the_default(monkeypatch: pytest.Mon
     monkeypatch.setitem(settings.agent_models, "linker", "openai:a-faster-model")
 
     assert llm.model_name("linker") == "openai:a-faster-model"
-    assert llm.model_name("controller") == settings.default_model
+    assert llm.model_name("an-agent-no-setting-names") == settings.default_model
     # A provider named in settings whose client is not installed fails with a reason.
     with pytest.raises(llm.ModelUnavailable):
         llm._model("anthropic:any")

@@ -1159,6 +1159,26 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AdviceOut
+         * @description The controller's opinion on one evaluation: it moves nothing. The rules decide what can
+         *     be approved, and the owner approves.
+         */
+        AdviceOut: {
+            /** Amount */
+            amount: string | null;
+            /** Evaluation */
+            evaluation: number;
+            /** Model */
+            model: string;
+            /**
+             * Proposal
+             * @enum {string}
+             */
+            proposal: "pay" | "pay_part" | "hold" | "ask";
+            /** Reason */
+            reason: string;
+        };
+        /**
          * AssistantOut
          * @description What whoever asks in a chat may choose for an answer, and what an answer is given when
          *     nothing is chosen.
@@ -1597,6 +1617,7 @@ export interface components {
         };
         /** DecisionOut */
         DecisionOut: {
+            advice?: components["schemas"]["AdviceOut"] | null;
             /** Amount */
             amount: string;
             /** Amount Edited */
@@ -2194,7 +2215,7 @@ export interface components {
          * LogEvent
          * @enum {string}
          */
-        LogEvent: "proposed" | "edited" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release";
+        LogEvent: "proposed" | "advised" | "edited" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release";
         /**
          * Me
          * @description Who is signed in, the company this session acts for, and every company they belong to.

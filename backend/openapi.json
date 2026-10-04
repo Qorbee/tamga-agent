@@ -1,6 +1,54 @@
 {
   "components": {
     "schemas": {
+      "AdviceOut": {
+        "description": "The controller's opinion on one evaluation: it moves nothing. The rules decide what can\nbe approved, and the owner approves.",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "evaluation": {
+            "title": "Evaluation",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "proposal": {
+            "enum": [
+              "pay",
+              "pay_part",
+              "hold",
+              "ask"
+            ],
+            "title": "Proposal",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluation",
+          "proposal",
+          "amount",
+          "reason",
+          "model"
+        ],
+        "title": "AdviceOut",
+        "type": "object"
+      },
       "AssistantOut": {
         "description": "What whoever asks in a chat may choose for an answer, and what an answer is given when\nnothing is chosen.",
         "properties": {
@@ -1192,6 +1240,16 @@
       },
       "DecisionOut": {
         "properties": {
+          "advice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdviceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "amount": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount",
@@ -2944,6 +3002,7 @@
       "LogEvent": {
         "enum": [
           "proposed",
+          "advised",
           "edited",
           "approved",
           "held",

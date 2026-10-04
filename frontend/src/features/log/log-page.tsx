@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { EmptyState } from "@/components/empty-state";
+import { T } from "@/components/translated";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getDecisionChain, getMe, listDecisionEvents, type DecisionEvent } from "@/lib/api";
@@ -165,6 +166,8 @@ function Entry({ event }: { event: DecisionEvent }) {
   const firm = event.party_name ?? bill?.party_name ?? null;
   const yours = event.user_id !== null && event.user_id === me.data?.user.id;
   const reason = event.event === "failed" && typeof event.body.reason === "string" ? event.body.reason : null;
+  // The controller's reason, in the company's language as it wrote it.
+  const weighed = event.event === "advised" && typeof event.body.reason === "string" ? event.body.reason : null;
   const units = typeof event.body.usdc_units === "number" ? event.body.usdc_units : null;
   const money = (amount: unknown) =>
     typeof amount === "string" && bill?.currency ? formatMoney(Number(amount), bill.currency, locale) : String(amount);
@@ -182,6 +185,11 @@ function Entry({ event }: { event: DecisionEvent }) {
         {/* The vault's own words, for whoever looks into it. */}
         {reason ? (
           <span className="text-muted-foreground mt-0.5 block font-mono text-xs break-words">{reason}</span>
+        ) : null}
+        {weighed ? (
+          <span className="text-muted-foreground mt-0.5 block text-xs text-pretty">
+            <T>{weighed}</T>
+          </span>
         ) : null}
         {/* The entry's place in the chain and the start of its hash: the next entry is sealed with it. */}
         <span className="text-muted-foreground/80 mt-0.5 block font-mono text-[11px]">
@@ -254,5 +262,12 @@ function described(
       return [body.evaluated_again ? words.sentBack : words.failed, "stopped"];
     case "would_release":
       return [words.wouldRelease, "quiet"];
+    case "advised":
+      return [
+        body.proposal === "pay_part" && typeof body.amount === "string"
+          ? words.advisedPart(money(body.amount))
+          : (words.advised[String(body.proposal)] ?? words.advised.ask),
+        "quiet",
+      ];
   }
 }

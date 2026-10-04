@@ -17,7 +17,8 @@ an agent whose instructions end with ``OUTSIDE_DATA`` (ADR-0013).
 """
 
 import secrets
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from functools import cache
 from typing import Any, Final
 
@@ -169,6 +170,18 @@ def _written_in(language: Language) -> str:
         "owner to read: a reason, a description, a name you give. A name, a number or a word "
         "taken from the content stays as it is written there."
     )
+
+
+@contextmanager
+def traced(name: str) -> Iterator[str | None]:
+    """One span around agent runs whose result a record keeps (ADR-0007, point 3): yields its
+    trace id, which the record stores so it leads to the trace; None while tracing is off."""
+    provider = tracing.tracer_provider()
+    if provider is None:
+        yield None
+        return
+    with provider.get_tracer("tamga").start_as_current_span(name) as span:
+        yield format(span.get_span_context().trace_id, "032x")
 
 
 def _traced(trace_content: bool) -> list[Instrumentation]:

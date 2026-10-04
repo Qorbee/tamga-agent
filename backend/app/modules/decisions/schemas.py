@@ -16,6 +16,24 @@ class RuleResult(BaseModel):
     reason: str
 
 
+# The controller's proposals (ADR-0002): pay the whole amount now, pay part of it now, not now,
+# or a question for the owner.
+Proposal = Literal["pay", "pay_part", "hold", "ask"]
+
+
+class AdviceOut(BaseModel):
+    """The controller's opinion on one evaluation: it moves nothing. The rules decide what can
+    be approved, and the owner approves."""
+
+    evaluation: int
+    proposal: Proposal
+    # With ``pay_part``: what to pay now, in the bill's currency.
+    amount: Decimal | None
+    # For the owner, in the company's language.
+    reason: str
+    model: str
+
+
 class DecisionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,6 +54,8 @@ class DecisionOut(BaseModel):
     decided_by: uuid.UUID | None
     decided_at: datetime | None
     evaluated_at: datetime
+    # The controller's latest opinion on the evaluation in force; None until one is in.
+    advice: AdviceOut | None = None
     # The bill, with ``expand=invoice``.
     invoice: InvoiceOut | None = None
 

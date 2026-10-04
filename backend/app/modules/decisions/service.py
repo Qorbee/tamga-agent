@@ -19,12 +19,13 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.modules.books import service as books
 from app.modules.books.models import InvoiceDirection
 from app.modules.books.schemas import InvoiceOut
@@ -32,6 +33,7 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.decisions import anchoring, repository
 from app.modules.decisions.models import (
+    AdviceRequest,
     Decision,
     DecisionAnchor,
     DecisionEvent,
@@ -64,6 +66,8 @@ logger = logging.getLogger(__name__)
 
 # The first row of a company's chain follows this.
 GENESIS: Final = "0" * 64
+# What ADVICE_PER_DAY counts the controller's requests over.
+ADVICE_WINDOW: Final = timedelta(hours=24)
 
 # For a bill: each truck it pays for, and whether its delivery is proven.
 DeliveryCheck = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[list[bool]]]
@@ -241,6 +245,8 @@ async def _decide(
     decision.usdc_units = mirrored.units if mirrored is not None else None
     decision.rules = [asdict(result) | {"outcome": result.outcome.value} for result in results]
     decision.decided_by, decision.decided_at = None, None
+    # An opinion on the evaluation before is no opinion on this one.
+    decision.advice = None
     decision.evaluated_at = now
     await repository.add(db, decision)
     await _log(
@@ -426,6 +432,56 @@ async def awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> list[Decisi
 async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
     """The one read across companies, of their ids alone."""
     return await repository.companies_awaiting_owner(db)
+
+
+async def advice_left(db: AsyncSession, company_id: uuid.UUID) -> int:
+    """How many more times the controller may be asked for the company today (ADVICE_PER_DAY,
+    over the last 24 hours)."""
+    spent = await repository.advice_requests_since(db, company_id, utcnow() - ADVICE_WINDOW)
+    return max(0, get_settings().advice_per_day - spent)
+
+
+async def ask_advice(
+    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID, evaluation: int, inputs: str
+) -> None:
+    """Records that the controller is about to be asked, before the call is sent. Commits."""
+    await repository.add(
+        db,
+        AdviceRequest(
+            company_id=company_id,
+            decision_id=decision_id,
+            evaluation=evaluation,
+            inputs=inputs,
+            at=utcnow(),
+        ),
+    )
+    await db.commit()
+
+
+async def keep_advice(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    evaluation: int,
+    advice: dict[str, Any],
+) -> bool:
+    """Keeps the controller's opinion on an evaluation, in place of any before it, and as a row
+    in the log, if that evaluation still waits for the owner: one evaluated again or answered
+    meanwhile is not what it weighed. Returns whether it was kept. Commits."""
+    await repository.lock_decisions(db, company_id)
+    decision = await repository.get(db, company_id, decision_id)
+    if (
+        decision is None
+        or decision.evaluation != evaluation
+        or decision.state is not DecisionState.AWAITING_OWNER
+    ):
+        return False
+    decision.advice = advice
+    await _log(db, decision, LogEvent.ADVISED, advice, user_id=None, at=utcnow())
+    # An open Payments page or chat card shows the opinion without waiting for a reload.
+    await events.publish(db, company_id, events.EventKind.DECISIONS)
+    await db.commit()
+    return True
 
 
 async def waits_for_owner(db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID) -> bool:

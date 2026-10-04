@@ -1,10 +1,12 @@
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import ColumnElement, func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.decisions.models import (
+    AdviceRequest,
     AnchorState,
     Decision,
     DecisionAnchor,
@@ -24,7 +26,7 @@ async def lock_decisions(db: AsyncSession, company_id: uuid.UUID) -> None:
     )
 
 
-async def add(db: AsyncSession, row: Decision | DecisionEvent) -> None:
+async def add(db: AsyncSession, row: Decision | DecisionEvent | AdviceRequest) -> None:
     db.add(row)
     await db.flush()
 
@@ -80,6 +82,32 @@ async def awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> Sequence[De
         .order_by(Decision.evaluated_at, Decision.id)
     )
     return rows.all()
+
+
+async def advice_requests_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
+    """The times the controller was asked for the company since then: what its day's budget
+    counts."""
+    count = await db.scalar(
+        select(func.count()).where(
+            AdviceRequest.company_id == company_id, AdviceRequest.at >= since
+        )
+    )
+    return int(count or 0)
+
+
+async def advice_asked(
+    db: AsyncSession, company_id: uuid.UUID, decision_ids: Sequence[uuid.UUID], since: datetime
+) -> set[tuple[uuid.UUID, int, str]]:
+    """What the controller was asked about these decisions since then: each request's decision,
+    evaluation and inputs."""
+    rows = await db.execute(
+        select(AdviceRequest.decision_id, AdviceRequest.evaluation, AdviceRequest.inputs).where(
+            AdviceRequest.company_id == company_id,
+            AdviceRequest.decision_id.in_(decision_ids),
+            AdviceRequest.at >= since,
+        )
+    )
+    return {(decision_id, evaluation, inputs) for decision_id, evaluation, inputs in rows}
 
 
 async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:

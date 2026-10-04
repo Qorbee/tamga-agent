@@ -22,6 +22,7 @@ is outside text and reaches it fenced. It is one job that never overlaps with it
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Final
 
 from pydantic_ai import UsageLimits
@@ -71,10 +72,13 @@ _PROPOSAL: Final = (
 )
 _APPROVAL: Final = (
     "\nOpen the project the bill belongs to and look at its trucks and their papers. Then write "
-    "the owner a short message: what the bill is for, what the rules found, and whether you "
-    "would pay it now. A card under your message lets them approve, hold or reject it, so do "
-    "not say how. Nothing is paid until they approve."
+    "the owner a short message: what the bill is for, what the rules found, what the controller "
+    "proposes if it did, and whether you would pay it now. A card under your message lets them "
+    "approve, hold or reject it, so do not say how. Nothing is paid until they approve."
 )
+# A bill is written about once the controller weighed it, or once this has passed since its
+# evaluation: an opinion that does not come never holds the owner's approval back.
+ADVICE_WAIT: Final = timedelta(minutes=15)
 _QUESTION: Final = (
     "\nRead the conversation and open the projects it could belong to. Then write the owner "
     "a short message: what the conversation is about, what speaks for each project, and "
@@ -222,7 +226,15 @@ async def _approvals(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     """The bills that wait for the owner's approval and Tamga has not written about."""
     waiting = await decisions.awaiting_owner(db, company_id)
     told = await repository.raised(db, company_id, agents.DECISION, [item.id for item in waiting])
-    waiting = [item for item in waiting if item.id not in told]
+    # The controller weighs each evaluation within minutes, while the company's budget lasts.
+    weighing = await decisions.advice_left(db, company_id) > 0
+    now = utcnow()
+    waiting = [
+        item
+        for item in waiting
+        if item.id not in told
+        and (item.advice is not None or not weighing or now - item.evaluated_at >= ADVICE_WAIT)
+    ]
     jobs = await decisions.jobs_of(db, company_id, [item.invoice_id for item in waiting])
     known = await projects.get_projects(
         db, company_id, sorted({job for held in jobs.values() for job in held})
@@ -246,6 +258,7 @@ async def _approvals(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
                         f"{bill.party_name or '(unknown)'}",
                         f"Amount: {item.amount} {item.currency or ''}, due {bill.due_date or '?'}",
                         *_mirrored(item),
+                        *_advised(item),
                         "Its jobs: "
                         + (
                             "; ".join(f"{p.number} ({p.name})" for p in held.values())
@@ -263,6 +276,14 @@ async def _approvals(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
             )
         )
     return findings
+
+
+def _advised(item: DecisionOut) -> list[str]:
+    advice = item.advice
+    if advice is None:
+        return []
+    part = f" ({advice.amount} {item.currency or ''} now)" if advice.amount is not None else ""
+    return [f"The controller proposes: {advice.proposal}{part}. Its reason: {advice.reason}"]
 
 
 def _mirrored(item: DecisionOut) -> list[str]:

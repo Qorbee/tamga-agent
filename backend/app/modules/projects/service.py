@@ -414,6 +414,14 @@ async def get_projects(
     return {p.id: p for p in await repository.get_projects(db, company_id, ids)}
 
 
+async def describe_projects(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, ProjectOut]:
+    """The projects as the API shows them, each with what is read of its job."""
+    rows = await repository.get_projects(db, company_id, ids)
+    return {project.id: project for project in await _describe(db, company_id, rows)}
+
+
 async def find_projects(
     db: AsyncSession, company_id: uuid.UUID, *, q: str | None, limit: int
 ) -> Sequence[Project]:
