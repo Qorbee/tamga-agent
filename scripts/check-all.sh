@@ -96,6 +96,10 @@ contracts() {
   git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r key path; do
     url="$(git config -f .gitmodules --get "${key%.path}.url")"
     sha="$(git rev-parse "HEAD:$path")"
+    # A new worktree has none checked out; CI checks each out, and so does this.
+    if [ ! -e "$path/.git" ]; then
+      git submodule update --init -- "$path"
+    fi
     if [ "$(git -C "$path" rev-parse HEAD)" != "$sha" ]; then
       echo "$path is checked out at another commit than HEAD pins: commit the bump, or run" \
         "git submodule update" >&2
