@@ -32,3 +32,5 @@ extractors.register("logistics.plate", facts.labelled_plates)
 extractors.register("logistics.order_number", facts.order_numbers)
 extractors.register_key_kind("cmr_number")
 extractors.register_key_kind("order_number")
+# A truck the job has not had, named in a reply, may be the next load.
+extractors.register_load_kind("plate")

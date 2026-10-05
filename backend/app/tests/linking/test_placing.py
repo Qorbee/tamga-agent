@@ -1107,3 +1107,198 @@ async def test_a_project_shows_its_job_as_its_conversations_say_it_together(
     }
     listed = (await client.get("/projects")).json()["items"]
     assert [item["job"] for item in listed] == [shown["job"]]
+
+
+@pytest.mark.integration
+async def test_a_reply_naming_a_truck_its_job_has_not_had_is_read_as_maybe_the_next_load(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    order = mail("<order@x>", body="We confirm the load for Monday. Truck: AB 123 CD")
+    await arrive(company_id, 1, order, category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    await service.place_pending()
+    [project] = await the_projects(company_id)
+    # The same truck, two days on: the same job, followed without a model.
+    script = model()
+    same = mail(
+        "<same@x>",
+        date="Wed, 05 Aug 2026 09:00:00 +0300",
+        references="<order@x>",
+        body="Truck: AB 123 CD is on its way.",
+    )
+    await arrive(company_id, 2, same, category=None)
+    assert await service.place_pending() == 1
+    assert script.requests == []
+
+    # Another truck in the same thread three days on: the next load, which a model reads.
+    script = model(
+        answer("new_project", new_project={"name": "Stone, the next load"}, cited_mails=[3])
+    )
+    other = mail(
+        "<next@x>",
+        date="Sat, 08 Aug 2026 09:00:00 +0300",
+        references="<order@x>",
+        body="Next one: Truck: XY 987 ZW loads Monday.",
+    )
+    await arrive(company_id, 3, other, category=None)
+    assert await service.place_pending() == 1
+
+    assert "plate XY 987 ZW" in script.prompt() and "next load" in script.prompt()
+    first, second, third = await links(company_id, "<order@x>")
+    assert first.project_id == second.project_id == project.id
+    assert third.project_id != project.id
+    # The first project keeps what its mails said of the job.
+    job = (await client.get(f"/projects/{project.id}")).json()["job"]
+    assert (job["origin"], job["cargo"]) == ("Istanbul", "steel coils")
+
+
+@pytest.mark.integration
+async def test_a_reply_waits_for_its_files_before_it_follows(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    order = mail("<order@x>", body="We confirm the load for Monday. Truck: AB 123 CD")
+    await arrive(company_id, 1, order, category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    await service.place_pending()
+    note = pdfs.pdf(pdfs.text("CMR consignment note. Truck: XY 987 ZW"))
+    reply = mail(
+        "<cmr@x>",
+        date="Wed, 05 Aug 2026 09:00:00 +0300",
+        references="<order@x>",
+        body="The note attached.",
+        attach={"CMR.pdf": note},
+    )
+    await arrive(company_id, 2, reply, category=None)
+
+    # Its file is not read yet: it waits rather than follow.
+    script = model()
+    assert await service.place_pending() == 0
+    assert len(await links(company_id, "<order@x>")) == 1
+
+    # Read, the file names another truck: a model reads the reply.
+    await documents.read_pending()
+    script = model(answer("new_project", new_project={"name": "The next load"}, cited_mails=[2]))
+    assert await service.place_pending() == 1
+    assert "plate XY 987 ZW" in script.prompt()
+
+
+@pytest.mark.integration
+async def test_a_reply_whose_file_stays_unread_is_placed_once_the_wait_is_over(
+    client: httpx.AsyncClient, model: Callable[..., Script], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    order = mail("<order@x>", body="We confirm the load for Monday. Truck: AB 123 CD")
+    await arrive(company_id, 1, order, category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    await service.place_pending()
+    reply = mail(
+        "<cmr@x>",
+        date="Wed, 05 Aug 2026 09:00:00 +0300",
+        references="<order@x>",
+        body="The note attached.",
+        attach={"CMR.pdf": pdfs.pdf(pdfs.text("CMR consignment note."))},
+    )
+    await arrive(company_id, 2, reply, category=None)
+    script = model()
+    assert await service.place_pending() == 0
+
+    # Nothing reads the file, and nothing changes in the conversation: a day on, it follows.
+    later = utcnow() + service.FILES_WAIT + timedelta(minutes=1)
+    monkeypatch.setattr(service, "utcnow", lambda: later)
+    assert await service.place_pending() == 1
+    assert script.requests == []
+    assert len(await links(company_id, "<order@x>")) == 2
+
+
+@pytest.mark.integration
+async def test_a_split_conversation_keeps_its_place_among_the_project_readings(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    early = mail("<early@x>", subject="Izmir load", body="Steel coils, truck AB 123 CD.")
+    await arrive(company_id, 1, early, category=ThreadCategory.WORK)
+    model(answer("new_project", new_project={"name": "coils", "origin": "Izmir"}))
+    await service.place_pending()
+    [project] = await the_projects(company_id)
+    order = mail("<order@x>", body="We confirm the load for Monday. Truck: AB 123 CD")
+    await arrive(company_id, 2, order, category=ThreadCategory.WORK)
+    model(
+        tool("open_project", number=project.number),
+        answer("link", project=project.number, job={"origin": "Istanbul"}),
+    )
+    assert await service.place_pending() == 1
+    # The two conversations say two origins: the one noted last names it.
+    assert (await client.get(f"/projects/{project.id}")).json()["job"]["origin"] == "Istanbul"
+
+    model(answer("new_project", new_project={"name": "The next load"}, cited_mails=[2]))
+    other = mail(
+        "<next@x>",
+        date="Sat, 08 Aug 2026 09:00:00 +0300",
+        references="<order@x>",
+        body="Next one: Truck: XY 987 ZW loads Monday.",
+    )
+    await arrive(company_id, 3, other, category=None)
+    assert await service.place_pending() == 1
+
+    # Its later mails went to the next load; what it read before keeps its place in the order.
+    assert len(await the_projects(company_id)) == 2
+    assert (await client.get(f"/projects/{project.id}")).json()["job"]["origin"] == "Istanbul"
+
+
+@pytest.mark.integration
+async def test_a_merge_keeps_what_either_project_kept_of_one_conversation(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    first = await owner_project(company_id, "<order@x>", name="First")
+    second = await owner_project(company_id, "<order@x>", name="Second")
+    await service.note_changes(company_id)
+    async with open_session() as db:
+        thread_id = await db.scalar(
+            select(Thread.id).where(
+                Thread.company_id == company_id, Thread.thread_key == "<order@x>"
+            )
+        )
+        assert thread_id is not None
+        await repository.keep_reading(db, company_id, thread_id, first.id, {"origin": "Istanbul"})
+        await repository.keep_reading(
+            db, company_id, thread_id, second.id, {"origin": "Izmir", "cargo": "steel coils"}
+        )
+        await repository.move_kept_readings(db, company_id, second.id, first.id)
+        await db.commit()
+        kept = await repository.kept_readings(db, company_id, [first.id, second.id])
+
+    # The merged project's own row goes when the project does.
+    assert {row.project_id: row.reading for row in kept} == {
+        first.id: {"origin": "Istanbul", "cargo": "steel coils"},
+        second.id: {"origin": "Izmir", "cargo": "steel coils"},
+    }
+
+
+@pytest.mark.integration
+async def test_a_number_quoted_over_more_than_a_month_names_no_one_job(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    blanket = "Under our standing order no 4500123."
+    await arrive(
+        company_id,
+        1,
+        mail("<july@x>", subject="July load", body=blanket, date="Wed, 01 Jul 2026 09:00:00 +0300"),
+        category=ThreadCategory.WORK,
+    )
+    await owner_project(company_id, "<july@x>", name="July")
+    script = model(answer("unplaced"))
+
+    august = mail(
+        "<aug@x>", subject="August load", body=blanket, date="Sat, 15 Aug 2026 09:00:00 +0300"
+    )
+    await arrive(company_id, 2, august, category=ThreadCategory.WORK)
+    await service.place_pending()
+
+    # The order is on mail six weeks apart: a model reads it rather than code tying it by number.
+    assert len(script.requests) == 1
+    assert await links(company_id, "<aug@x>") == []

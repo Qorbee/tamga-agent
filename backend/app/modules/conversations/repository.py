@@ -888,6 +888,20 @@ async def threads_of_messages(
     return rows.all()
 
 
+async def thread_ids_of(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    rows = await db.execute(
+        select(Message.id, Thread.id)
+        .join(
+            Thread,
+            (Thread.company_id == Message.company_id) & (Thread.thread_key == Message.thread_key),
+        )
+        .where(Message.company_id == company_id, Message.id.in_(message_ids))
+    )
+    return {message_id: thread_id for message_id, thread_id in rows.all()}
+
+
 async def messages_attaching(
     db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
 ) -> Sequence[MessageAttachment]:

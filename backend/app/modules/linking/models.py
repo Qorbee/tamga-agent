@@ -104,4 +104,28 @@ class Placement(CompanyScoped, Base):
     # tried once an hour.
     failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     failed_at: Mapped[datetime | None]
+    # When a reply that waits for its files to be read is looked at again, read or not: a file
+    # can stay unread, and nothing else would wake the conversation.
+    look_again_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class KeptReading(CompanyScoped, Base):
+    """What a conversation read of a job, kept for its project when the conversation's later mails
+    went to another project (the next load): the project still holds its earlier mails, and what
+    they said of the job. It counts only while a mail of the conversation is in the project."""
+
+    __tablename__ = "kept_readings"
+    __table_args__ = (
+        UniqueConstraint("company_id", "thread_id", "project_id"),
+        # The projects module's table, named in the database only.
+        ForeignKeyConstraint(
+            ["company_id", "project_id"], ["projects.company_id", "projects.id"], ondelete="CASCADE"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    thread_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("threads.id", ondelete="CASCADE"))
+    project_id: Mapped[uuid.UUID]
+    reading: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

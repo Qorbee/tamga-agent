@@ -45,6 +45,7 @@ from app.modules.projects.models import (
     FieldSource,
     LinkMethod,
     LinkStatus,
+    Project,
     ProjectLink,
     ProjectStatus,
 )
@@ -89,9 +90,18 @@ KEY_MAX_ITEMS: Final = 25
 # Numbers of one conversation looked up; a statement listing a hundred invoices is not searched
 # by each.
 _KEYS_LOOKED_UP: Final = 20
-# New mail follows its conversation's project when it comes this soon after the last one. Later,
-# it is read afresh: a client may answer an old thread with a new order.
+# New mail follows its conversation's project when it comes this soon after the last one, names
+# nothing the project does not hold, and the project began no longer before it than
+# FOLLOW_JOB_WITHIN. Else it is read afresh: a client often answers an old thread with the next
+# order.
 FOLLOW_WITHIN: Final = timedelta(days=14)
+FOLLOW_JOB_WITHIN: Final = timedelta(days=21)
+# A number the items sharing it carry over more days than this is a standing one: a client's
+# blanket order, quoted on every load. It names no one job.
+STANDING_OVER: Final = timedelta(days=30)
+# A reply waits this long at most for its own files to be read before it may follow its
+# conversation's project: a plate or a number may be only in them.
+FILES_WAIT: Final = timedelta(days=1)
 # The answer, the searches before it, and a retry when it fails the output's checks. A run that
 # starts within the day's budget finishes, so a day can end this many reads past it.
 _LIMITS: Final = UsageLimits(request_limit=12)
@@ -143,6 +153,12 @@ class _Found:
     numbers: dict[uuid.UUID, str]
     # How many of its files have been read.
     files_read: int
+    # What its mails not tied yet say that the one project its others are tied to does not
+    # hold, each in a few words: a number or a plate new to the job, or a first day long before
+    # them. Each says they may be the next load.
+    news: tuple[str, ...] = ()
+    # When the oldest of those mails' files still to be read was stored; None when none waits.
+    unread_since: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,10 +304,18 @@ async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced
         pairs=sorted(set().union(*keys.values())),
         per_pair=KEY_MAX_ITEMS + 1 + max((len(ids) for ids in loose.values()), default=0),
     )
+    standing = await _standing(
+        db,
+        company_id,
+        {
+            pair: {(fact.item_kind, fact.item_id) for fact in same[pair]}
+            for pair in set().union(*keys.values())
+        },
+    )
     sharing: dict[uuid.UUID, dict[tuple[ItemKind, uuid.UUID], set[uuid.UUID]]] = {}
     for target, pairs in keys.items():
         mine = set(loose[target])
-        for pair in pairs:
+        for pair in pairs - standing:
             others = [
                 fact
                 for fact in same[pair]
@@ -381,7 +405,8 @@ def _as_compared_id(document_id: str) -> str:
 
 
 async def note_changes(company_id: uuid.UUID) -> None:
-    """Marks as waiting every conversation that got mail or was sorted since the last look."""
+    """Marks as waiting every conversation that got mail or was sorted since the last look, and
+    every one whose wait for its files is over."""
     async with open_session() as db:
         seen = await repository.latest_seen(db, company_id)
         since = seen - _OVERLAP if seen is not None else _EPOCH
@@ -395,6 +420,7 @@ async def note_changes(company_id: uuid.UUID) -> None:
             if len(page) < _PAGE:
                 break
             after = (page[-1][1], page[-1][0])
+        await repository.wake_due(db, company_id, utcnow())
         await db.commit()
 
 
@@ -414,6 +440,7 @@ async def place_thread(
         if placement is None:
             return False
         seen_at = placement.placed_at
+        placement.look_again_at = None
         thread = await conversations.read_thread(db, company_id, thread_id)
         if thread is None or thread.category not in _READ or not thread.mails:
             # Sent back to be sorted, or sorted as noise since: nothing reads it until it changes.
@@ -421,6 +448,14 @@ async def place_thread(
             await db.commit()
             return False
         found = await _look(db, company_id, thread)
+        if found.unread_since and utcnow() - found.unread_since < FILES_WAIT:
+            # Its new mails' files are read first: one can hold what its job does not. Reading
+            # one notes the conversation changed, and it is looked at again then, or once the
+            # wait is over if a file stays unread.
+            placement.waiting = False
+            placement.look_again_at = found.unread_since + FILES_WAIT
+            await db.commit()
+            return False
         if (
             placement.outcome is not None
             and placement.mails == len(thread.mails)
@@ -441,6 +476,7 @@ async def place_thread(
                 [found.named[project_id] for project_id in sorted(ties.held)],
                 [found.named[project_id] for project_id in found.keys],
                 [found.named[project_id] for project_id in sorted(ties.refused)],
+                found.news,
             )
             desk = _desk(company_id, thread_id, found)
             # Counted before it is made: a call that fails once the provider has the mail counts.
@@ -559,7 +595,18 @@ async def _look(db: AsyncSession, company_id: uuid.UUID, thread: ThreadRead) -> 
     keys = await _key_candidates(db, company_id, mail_ids, file_ids)
     known = await projects.get_projects(db, company_id, [*ties.held, *ties.refused, *keys])
     files = await documents.get_documents(db, company_id, file_ids)
+    following = len(ties.held) == 1 and bool(ties.untied)
+    news = await _news(db, company_id, thread, ties, known) if following else ()
+    unread = [
+        files[file.document_id].created_at
+        for mail in thread.mails
+        if mail.id in ties.untied
+        for file in mail.files
+        if file.document_id in files and files[file.document_id].read_state is ReadState.PENDING
+    ]
     return _Found(
+        news=news,
+        unread_since=min(unread) if following and unread else None,
         ties=ties,
         keys={
             project_id: frozenset(fact_ids)
@@ -574,6 +621,60 @@ async def _look(db: AsyncSession, company_id: uuid.UUID, thread: ThreadRead) -> 
         numbers={project_id: project.number for project_id, project in known.items()},
         files_read=sum(file.read_state is ReadState.READ for file in files.values()),
     )
+
+
+async def _news(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    thread: ThreadRead,
+    ties: _Ties,
+    known: Mapping[uuid.UUID, Project],
+) -> tuple[str, ...]:
+    """What the conversation's mails not tied yet name that the one project its other mails are
+    tied to does not hold (a key number, a plate), and whether that project began long before
+    them."""
+    [project_id] = ties.held
+    kinds = extractors.load_kinds()
+    untied = [mail for mail in thread.mails if mail.id in ties.untied]
+    said = [
+        *await facts.facts_of_items(
+            db, company_id=company_id, item_kind=ItemKind.MESSAGE, item_ids=[m.id for m in untied]
+        ),
+        *await facts.facts_of_items(
+            db,
+            company_id=company_id,
+            item_kind=ItemKind.DOCUMENT,
+            item_ids=[file.document_id for mail in untied for file in mail.files],
+        ),
+    ]
+    links = [
+        link
+        for link in await projects.links_of_project(db, company_id, project_id)
+        if link.status is not LinkStatus.REJECTED
+    ]
+    held: set[tuple[str, str]] = set()
+    for item_kind in (ItemKind.MESSAGE, ItemKind.DOCUMENT, ItemKind.INVOICE):
+        ids = [link.item_id for link in links if link.item_kind is item_kind]
+        held |= {
+            (fact.kind, fact.normalised)
+            for fact in await facts.facts_of_items(
+                db, company_id=company_id, item_kind=item_kind, item_ids=ids
+            )
+            if fact.kind in kinds
+        }
+    new: dict[tuple[str, str], str] = {}
+    for fact in said:
+        if fact.kind in kinds and (fact.kind, fact.normalised) not in held:
+            new.setdefault(
+                (fact.kind, fact.normalised), f"{fact.kind.replace('_', ' ')} {fact.value}"
+            )
+    news = sorted(new.values())
+    first, since = known[project_id].starts_on, min(mail.sent_at for mail in untied).date()
+    if first is not None and since - first > FOLLOW_JOB_WITHIN:
+        news.append(
+            f"the project's first day, {first.isoformat()}, {(since - first).days} days before them"
+        )
+    return tuple(news)
 
 
 async def _ties(db: AsyncSession, company_id: uuid.UUID, thread: ThreadRead) -> _Ties:
@@ -623,6 +724,7 @@ async def _key_candidates(
     own |= {(ItemKind.DOCUMENT, file_id) for file_id in file_ids}
     kinds = extractors.key_kinds()
     carried: dict[tuple[str, str], set[uuid.UUID]] = {}
+    carrying: dict[tuple[str, str], set[_Item]] = {}
     # A file's own key facts: the same file in another mail is the same paper of the same job.
     on_file: dict[uuid.UUID, set[uuid.UUID]] = {}
     for item_kind, ids in ((ItemKind.MESSAGE, mail_ids), (ItemKind.DOCUMENT, file_ids)):
@@ -631,6 +733,9 @@ async def _key_candidates(
         ):
             if fact.kind in kinds:
                 carried.setdefault((fact.kind, fact.normalised), set()).add(fact.id)
+                carrying.setdefault((fact.kind, fact.normalised), set()).add(
+                    (item_kind, fact.item_id)
+                )
                 if item_kind is ItemKind.DOCUMENT:
                     on_file.setdefault(fact.item_id, set()).add(fact.id)
     looked_up = dict(list(carried.items())[:_KEYS_LOOKED_UP])
@@ -643,9 +748,17 @@ async def _key_candidates(
         # Enough to tell whether too many others share one, however often this one repeats it.
         per_pair=KEY_MAX_ITEMS + 1 + len(own),
     )
+    standing = await _standing(
+        db,
+        company_id,
+        {
+            pair: carrying[pair] | {(fact.item_kind, fact.item_id) for fact in same[pair]}
+            for pair in looked_up
+        },
+    )
     for pair, fact_ids in looked_up.items():
         others = [fact for fact in same[pair] if (fact.item_kind, fact.item_id) not in own]
-        if len(others) > KEY_MAX_ITEMS:
+        if len(others) > KEY_MAX_ITEMS or pair in standing:
             continue
         for other in others:
             sharing.setdefault((other.item_kind, other.item_id), set()).update(fact_ids)
@@ -654,14 +767,15 @@ async def _key_candidates(
     for file_id, fact_ids in on_file.items():
         sharing.setdefault((ItemKind.DOCUMENT, file_id), set()).update(fact_ids)
     # The books hold an invoice under its number or its e-document id, not as a fact.
+    keys = {pair: fact_ids for pair, fact_ids in looked_up.items() if pair not in standing}
     for invoice in await books.invoices_named(
         db,
         company_id,
-        numbers=[value for kind, value in looked_up if kind == extractors.INVOICE_NUMBER],
-        e_document_ids=[value.lower() for _, value in looked_up],
+        numbers=[value for kind, value in keys if kind == extractors.INVOICE_NUMBER],
+        e_document_ids=[value.lower() for _, value in keys],
     ):
         names = {extractors.reference(invoice.number or ""), (invoice.e_document_id or "").lower()}
-        for (_, normalised), fact_ids in looked_up.items():
+        for (_, normalised), fact_ids in keys.items():
             if normalised in names or normalised.lower() in names:
                 sharing.setdefault((ItemKind.INVOICE, invoice.id), set()).update(fact_ids)
     # A file is tied to a project through the mail that carried it. One that more mails carry
@@ -688,14 +802,46 @@ async def _key_candidates(
     return candidates
 
 
+type _Item = tuple[ItemKind, uuid.UUID]
+
+
+async def _standing(
+    db: AsyncSession, company_id: uuid.UUID, carried: Mapping[tuple[str, str], set[_Item]]
+) -> set[tuple[str, str]]:
+    """The numbers among these that their mails and files carry over more than STANDING_OVER: a
+    client's blanket order, quoted on every load, names no one job. A file is dated by the first
+    mail that brought it."""
+    items = set().union(*carried.values()) if carried else set()
+    mails = [item_id for kind, item_id in items if kind is ItemKind.MESSAGE]
+    files = [item_id for kind, item_id in items if kind is ItemKind.DOCUMENT]
+    days: dict[_Item, date] = {
+        (ItemKind.MESSAGE, mail_id): mail.sent_at.date()
+        for mail_id, mail in (await conversations.message_summaries(db, company_id, mails)).items()
+    }
+    days |= {
+        (ItemKind.DOCUMENT, file_id): carrier.sent_at.date()
+        for file_id, carrier in (await conversations.first_carriers(db, company_id, files)).items()
+    }
+    standing = set()
+    for pair, carriers in carried.items():
+        dated = [days[item] for item in carriers if item in days]
+        if dated and max(dated) - min(dated) > STANDING_OVER:
+            standing.add(pair)
+    return standing
+
+
 def _by_code(thread: ThreadRead, placement: Placement, found: _Found) -> _Decision | None:
     """What code can decide without a model, or None when a model has to read it."""
     ties = found.ties
     only_held = next(iter(ties.held)) if len(ties.held) == 1 else None
     # Nothing of it is unplaced (the owner, or an earlier run, tied every mail), or every mail
-    # that is came soon before or after one that is tied.
+    # that is came soon before or after one that is tied and names nothing new to its job. A
+    # system's notice says nothing of a next load.
     if only_held is not None and (ties.gap is None or ties.gap <= FOLLOW_WITHIN):
-        return _follows(only_held, found, placement)
+        if not found.news or thread.category is ThreadCategory.AUTOMATED:
+            return _follows(only_held, found, placement)
+        # The new mails may be the next load: a model reads them.
+        return None
     fits = ties.held | found.keys.keys()
     if len(found.keys) == 1 and len(fits) == 1:
         project_id = next(iter(found.keys))
@@ -917,11 +1063,38 @@ def _job(known: Mapping[str, Any]) -> ProjectJob | None:
     return None if job == ProjectJob() else job
 
 
+async def _readings(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """What was read in each conversation placed in each project, with what a conversation whose
+    later mails went to another project read there while it still has mail in it, in the order
+    the conversations were first noted."""
+    readings = await repository.readings_of_projects(db, company_id, project_ids)
+    kept = await repository.kept_readings(db, company_id, project_ids)
+    if kept:
+        links = await projects.links_of_projects(
+            db, company_id, list({row.project_id for row in kept})
+        )
+        threads = await conversations.thread_ids_of(
+            db, company_id, [link.item_id for link in links if link.item_kind is ItemKind.MESSAGE]
+        )
+        holding = {
+            (link.project_id, threads[link.item_id]) for link in links if link.item_id in threads
+        }
+        for row in kept:
+            if (row.project_id, row.thread_id) in holding:
+                readings.setdefault(row.project_id, []).append((row.noted, row.reading))
+    return {
+        project_id: [reading for _, reading in sorted(read, key=lambda each: each[0])]
+        for project_id, read in readings.items()
+    }
+
+
 async def _jobs(
     db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, ProjectJob]:
     """Each project's job as its conversations describe it together, for the projects shown."""
-    readings = await repository.readings_of_projects(db, company_id, project_ids)
+    readings = await _readings(db, company_id, project_ids)
     return {
         project_id: job
         for project_id, read in readings.items()
@@ -1004,6 +1177,17 @@ async def _apply(
             )
         # The files its mails carried are suggested with them.
         await projects.carry_files(db, company_id, sorted(ties.untied))
+    # Its later mails gone to another project, the conversation's earlier ones stay in the one it
+    # was in, and so does what they said of the job there.
+    if (
+        placement.project_id is not None
+        and project_id not in (None, placement.project_id)
+        and placement.project_id in ties.held
+        and placement.reading
+    ):
+        await repository.keep_reading(
+            db, company_id, thread.id, placement.project_id, placement.reading
+        )
     # Read again and left in its project, a conversation keeps what was read of the job before.
     stays = project_id is not None and project_id == placement.project_id
     reading = (
@@ -1045,7 +1229,7 @@ async def _tell_project(
     proof. With ``said`` None a conversation has left the project (the owner's answer): what
     Tamga derived is worked out again from those that remain, and nothing the owner set is
     touched or proposed over."""
-    readings = await repository.readings_of_projects(db, company_id, [project_id])
+    readings = await _readings(db, company_id, [project_id])
     known = _known(readings.get(project_id, []))
     values: dict[str, Any] = {}
     name = _title(known)
@@ -1075,7 +1259,7 @@ async def tell_projects_again(
     company's projects: for when the way they are worked out changed. The owner's own are left
     as they are. Returns the number, the old name and the new one of each project renamed. Does
     not commit."""
-    placed = await repository.placed_projects(db, company_id)
+    placed = await repository.read_projects(db, company_id)
     before = await projects.get_projects(db, company_id, placed)
     names = {project_id: project.name for project_id, project in before.items()}
     for project_id in placed:
@@ -1236,6 +1420,7 @@ async def _merged(
     the first are in the second, a question between the two is answered, and the name and days
     Tamga derived for the one that stays are worked out again from all its conversations. Runs
     in the merge's transaction and does not commit."""
+    await repository.move_kept_readings(db, company_id, source_id, target_id)
     for placement in await repository.naming(db, company_id, source_id):
         # A run that read the conversation before the merge decided on what is gone: stamped
         # anew, its decision is dropped and the conversation looked at afresh (``_apply``).

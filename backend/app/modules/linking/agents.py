@@ -149,6 +149,11 @@ conversation or a project before you rely on it.
 - The same party with two jobs is two projects. A party alone never ties a conversation to a \
 project: something of the job itself must match, such as a number, a plate with dates that fit, \
 or the route together with the dates and the cargo.
+- One conversation can carry more than one load: a client often answers an old conversation \
+with the next order. When you are told its newer mails name what their project does not hold, \
+decide for those mails: link to that project when they are the same job (a truck swapped, a \
+paper sent late), new_project when they are another load. The mails already tied stay where \
+they are.
 
 Answer with one decision:
 - link: it belongs to one project you were shown. Give that project's number.
@@ -246,14 +251,24 @@ def _names_only_what_it_was_shown(context: RunContext[Desk], placing: Placing) -
 
 
 def case(
-    conversation: str, held: Sequence[str], sharing: Sequence[str], refused: Sequence[str]
+    conversation: str,
+    held: Sequence[str],
+    sharing: Sequence[str],
+    refused: Sequence[str],
+    news: Sequence[str] = (),
 ) -> list[UserContent]:
     """The user turn for ``linker``: the conversation to place, the projects its earlier mails
-    are tied to, those code found sharing a number with it, and those the owner already said it
-    does not belong to; all of it fenced, since a project's name comes from mail too."""
+    are tied to and what its newer mails name that such a project does not hold, those code found
+    sharing a number with it, and those the owner already said it does not belong to; all of it
+    fenced, since a project's name comes from mail too."""
     parts = [conversation]
     if held:
         parts.append("Earlier mails of this conversation are tied to:\n" + "\n".join(held))
+    if news:
+        parts.append(
+            "Its mails not tied yet name what that project does not hold, so they may be the next "
+            "load:\n" + "\n".join(news)
+        )
     if sharing:
         parts.append(
             "Projects that share a number with this conversation, to start from:\n"

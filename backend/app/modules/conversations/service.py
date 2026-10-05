@@ -878,6 +878,15 @@ async def search_threads(
     return await _as_read_threads(db, company_id, threads)
 
 
+async def thread_ids_of(
+    db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """The conversation each of these mails is in."""
+    if not message_ids:
+        return {}
+    return await repository.thread_ids_of(db, company_id, message_ids)
+
+
 async def threads_holding(
     db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID], *, limit: int
 ) -> list[ThreadRead]:

@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -7,7 +8,7 @@ from sqlalchemy import any_, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.linking.models import Outcome, Placement
+from app.modules.linking.models import KeptReading, Outcome, Placement
 from app.platform.pagination import PageParams
 
 
@@ -40,16 +41,38 @@ async def note_changed(
     )
 
 
+async def wake_due(db: AsyncSession, company_id: uuid.UUID, now: datetime) -> None:
+    """Marks as waiting the conversations whose wait for their files is over."""
+    await db.execute(
+        update(Placement)
+        .where(Placement.company_id == company_id, Placement.look_again_at <= now)
+        .values(waiting=True, look_again_at=None)
+        .execution_options(synchronize_session=False)
+    )
+
+
+# When a conversation was first noted, the order its readings are told in.
+type Noted = tuple[datetime, uuid.UUID]
+
+
+@dataclass(frozen=True, slots=True)
+class Kept:
+    project_id: uuid.UUID
+    thread_id: uuid.UUID
+    reading: dict[str, Any]
+    noted: Noted
+
+
 async def readings_of_projects(
     db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, list[dict[str, Any]]]:
-    """What was read in each conversation placed in each project, in the order the conversations
-    were first noted: the one a project was proposed for comes first. A project nothing was read
-    for is left out."""
+) -> dict[uuid.UUID, list[tuple[Noted, dict[str, Any]]]]:
+    """What was read in each conversation placed in each project, with when the conversation was
+    first noted: the one a project was proposed for comes first. A project nothing was read for
+    is left out."""
     if not project_ids:
         return {}
     rows = await db.execute(
-        select(Placement.project_id, Placement.reading)
+        select(Placement.project_id, Placement.reading, Placement.created_at, Placement.id)
         .where(
             Placement.company_id == company_id,
             Placement.project_id.in_(project_ids),
@@ -58,23 +81,90 @@ async def readings_of_projects(
         )
         .order_by(Placement.created_at, Placement.id)
     )
-    readings: dict[uuid.UUID, list[dict[str, Any]]] = {}
-    for project_id, reading in rows.all():
-        readings.setdefault(project_id, []).append(reading)
+    readings: dict[uuid.UUID, list[tuple[Noted, dict[str, Any]]]] = {}
+    for project_id, reading, created_at, placement_id in rows.all():
+        readings.setdefault(project_id, []).append(((created_at, placement_id), reading))
     return readings
 
 
-async def placed_projects(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
-    """The projects a conversation was read into."""
-    rows = await db.scalars(
-        select(Placement.project_id)
-        .where(
-            Placement.company_id == company_id,
-            Placement.project_id.is_not(None),
-            Placement.reading.is_not(None),
+async def kept_readings(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> list[Kept]:
+    """The readings kept for these projects, each with when its conversation was first noted."""
+    if not project_ids:
+        return []
+    rows = await db.execute(
+        select(
+            KeptReading.project_id,
+            KeptReading.thread_id,
+            KeptReading.reading,
+            Placement.created_at,
+            Placement.id,
         )
-        .distinct()
+        .join(
+            Placement,
+            (Placement.company_id == KeptReading.company_id)
+            & (Placement.thread_id == KeptReading.thread_id),
+        )
+        .where(KeptReading.company_id == company_id, KeptReading.project_id.in_(project_ids))
     )
+    return [
+        Kept(project_id, thread_id, reading, (created_at, placement_id))
+        for project_id, thread_id, reading, created_at, placement_id in rows.all()
+    ]
+
+
+async def keep_reading(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    project_id: uuid.UUID,
+    reading: dict[str, Any],
+) -> None:
+    statement = insert(KeptReading).values(
+        company_id=company_id, thread_id=thread_id, project_id=project_id, reading=reading
+    )
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=["company_id", "thread_id", "project_id"],
+            set_={"reading": statement.excluded.reading},
+        )
+    )
+
+
+async def move_kept_readings(
+    db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
+) -> None:
+    """A merged project's kept readings are the other's. Where both kept the same conversation's,
+    the other's keeps its values and takes what only the merged one read; the merged one's row
+    goes with its project."""
+    rows = await db.scalars(
+        select(KeptReading).where(
+            KeptReading.company_id == company_id,
+            KeptReading.project_id.in_((source_id, target_id)),
+        )
+    )
+    kept = rows.all()
+    there = {row.thread_id: row for row in kept if row.project_id == target_id}
+    for row in kept:
+        if row.project_id != source_id:
+            continue
+        if (other := there.get(row.thread_id)) is not None:
+            other.reading = {**row.reading, **other.reading}
+        else:
+            row.project_id = target_id
+
+
+async def read_projects(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
+    """The projects a conversation was read into, and those keeping what one read there before
+    its later mails went to another project."""
+    placed = select(Placement.project_id).where(
+        Placement.company_id == company_id,
+        Placement.project_id.is_not(None),
+        Placement.reading.is_not(None),
+    )
+    kept = select(KeptReading.project_id).where(KeptReading.company_id == company_id)
+    rows = await db.scalars(placed.union(kept))
     return [project_id for project_id in rows if project_id is not None]
 
 

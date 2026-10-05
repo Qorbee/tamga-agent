@@ -24,6 +24,9 @@ _extractors: dict[str, TextExtractor] = {}
 # Kinds whose value names one job, or one document of one job: two items that share one belong
 # together. A party's IBAN, tax number or plate is in its every mail, so none of those is a key.
 _key_kinds: set[str] = {INVOICE_NUMBER}
+# Kinds that are no key but whose new value in a reply may announce another job of the same
+# conversation: a plate the job has not had (a sector pack's).
+_load_kinds: set[str] = set()
 
 
 def register(name: str, extractor: TextExtractor) -> None:
@@ -39,6 +42,16 @@ def register_key_kind(kind: str) -> None:
 
 def key_kinds() -> frozenset[str]:
     return frozenset(_key_kinds)
+
+
+def register_load_kind(kind: str) -> None:
+    _load_kinds.add(kind)
+
+
+def load_kinds() -> frozenset[str]:
+    """The kinds whose value, new to a job, may say a reply is another job: every key kind, and
+    those a pack registers."""
+    return frozenset(_key_kinds | _load_kinds)
 
 
 def from_text(text: str) -> list[NewFact]:
