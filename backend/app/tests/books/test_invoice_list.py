@@ -119,3 +119,73 @@ async def test_invoices_are_listed_by_kind_by_what_is_left_and_in_the_order_aske
     assert await numbers(kind="purchase", outstanding=False) == ["P-3"]
     assert await numbers(direction="receivable", sort="-remaining_amount") == ["S-2", "S-1"]
     assert (await client.get("/invoices", params={"sort": "amount"})).status_code == 422
+    # Overdue on a day: still owed, and due before it.
+    assert await numbers(
+        kind=["purchase", "expense"], outstanding=True, due_before="2026-09-10", sort="due_date"
+    ) == ["E-1", "P-2"]
+
+    # What the same lists add up to: a cancelled bill counts in the total, not in what is left.
+    totals = (await client.get("/invoice-totals", params={"kind": "purchase"})).json()
+    assert totals == [
+        {"currency": "EUR", "count": 3, "total_amount": "1100.00", "remaining_amount": "1000.00"}
+    ]
+    open_sales = (
+        await client.get("/invoice-totals", params={"kind": "sales", "outstanding": True})
+    ).json()
+    assert [(t["count"], t["remaining_amount"]) for t in open_sales] == [(1, "500.00")]
+
+
+async def test_totals_are_never_summed_across_currencies(client: httpx.AsyncClient) -> None:
+    company_id = await guest_client(client)
+    async with open_session() as db:
+        lira = bill(
+            company_id, "S-1", InvoiceKind.SALES, total="1000", left="400", due=date(2026, 9, 1)
+        )
+        lira.currency = "TRY"
+        db.add_all(
+            [
+                lira,
+                bill(
+                    company_id,
+                    "S-2",
+                    InvoiceKind.SALES,
+                    total="300",
+                    left="300",
+                    due=date(2026, 9, 1),
+                ),
+                bill(
+                    company_id,
+                    "S-3",
+                    InvoiceKind.SALES,
+                    total="200",
+                    left="0",
+                    due=date(2026, 9, 1),
+                ),
+            ]
+        )
+        await db.commit()
+
+    totals = (await client.get("/invoice-totals", params={"kind": "sales"})).json()
+    assert totals == [
+        {"currency": "EUR", "count": 2, "total_amount": "500.00", "remaining_amount": "300.00"},
+        {"currency": "TRY", "count": 1, "total_amount": "1000.00", "remaining_amount": "400.00"},
+    ]
+
+    # A bill whose remainder the books do not give: what is left is unknown, not understated.
+    async with open_session() as db:
+        unknown = bill(
+            company_id, "S-4", InvoiceKind.SALES, total="50", left="0", due=date(2026, 9, 1)
+        )
+        unknown.remaining_amount = None
+        db.add(unknown)
+        await db.commit()
+    totals = (await client.get("/invoice-totals", params={"kind": "sales"})).json()
+    assert totals[0] == {
+        "currency": "EUR",
+        "count": 3,
+        "total_amount": "550.00",
+        "remaining_amount": None,
+    }
+    # Another company's invoices are in none of them.
+    await guest_client(client)
+    assert (await client.get("/invoice-totals")).json() == []

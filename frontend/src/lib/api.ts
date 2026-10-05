@@ -133,8 +133,10 @@ export const removeProjectParty = (id: string) => request<void>(`/project-partie
 // Parties: everyone the company deals with, to choose a project's firms from.
 export type Party = Schemas["PartyOut"];
 export type PartyPage = Schemas["PartyPage"];
-export const listParties = (params: { q?: string; kind?: Party["kind"]; limit?: number; offset?: number }) =>
+type PartyQuery = NonNullable<operations["parties.list_parties"]["parameters"]["query"]>;
+export const listParties = (params: PartyQuery) =>
   request<PartyPage>(`/parties${query({ ...params, limit: params.limit ?? 20 })}`);
+export const getParty = (id: string) => request<Party>(`/parties/${id}`);
 
 export type Shipment = Schemas["ShipmentOut"];
 export const listShipments = (projectIds: readonly string[]) =>
@@ -221,6 +223,11 @@ export type Invoice = Schemas["InvoiceOut"];
 export type InvoicePage = Schemas["InvoicePage"];
 type InvoiceQuery = NonNullable<operations["invoices.list_invoices"]["parameters"]["query"]>;
 export const listInvoices = (params: InvoiceQuery) => request<InvoicePage>(`/invoices${query(params)}`);
+export type InvoiceTotal = Schemas["InvoiceTotal"];
+type InvoiceTotalQuery = NonNullable<operations["invoices.invoice_totals"]["parameters"]["query"]>;
+/** What the invoices the same filters list add up to, one figure per currency. */
+export const listInvoiceTotals = (params: InvoiceTotalQuery) =>
+  request<InvoiceTotal[]>(`/invoice-totals${query(params)}`);
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
 
 // Decisions and payments (docs/architecture/05)

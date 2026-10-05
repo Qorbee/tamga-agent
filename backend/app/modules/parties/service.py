@@ -12,6 +12,8 @@ import unicodedata
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
 from typing import Any, Final
 
 from sqlalchemy import ColumnElement
@@ -27,8 +29,9 @@ from app.modules.parties.models import (
     PartyIdentifier,
     PartyKind,
 )
-from app.modules.parties.schemas import PartyOut, PartyPage, PartySort
+from app.modules.parties.schemas import BalanceSide, PartyOut, PartyPage, PartySort
 from app.platform.auth import Actor
+from app.platform.errors import NotFound
 from app.platform.pagination import PageParams
 
 _CONFIRMING: Final = frozenset({IdentifierSource.BOOKS, IdentifierSource.OWNER})
@@ -42,6 +45,8 @@ _PARTY_SORTS: Final[dict[str, list[ColumnElement[Any]]]] = {
     "-name": [Party.name.desc()],
     "created_at": [Party.created_at.asc()],
     "-created_at": [Party.created_at.desc()],
+    "balance": [Party.balance.asc().nulls_last()],
+    "-balance": [Party.balance.desc().nulls_last()],
 }
 
 
@@ -66,12 +71,23 @@ async def sync_party(
     name: str,
     kind: PartyKind,
     identifiers: Iterable[Identifier] = (),
+    balance: Decimal | None = None,
+    balance_currency: str | None = None,
+    balance_on: date | None = None,
 ) -> Party:
     """The party behind an accounting card, created or updated, with the card's identifiers
-    confirmed. Identifiers that later leave the card are kept: an old phone still identifies the
-    messages it sent."""
+    confirmed and its balance as the card gives it now. Identifiers that later leave the card are
+    kept: an old phone still identifies the messages it sent."""
     party = await repository.upsert_from_source(
-        db, company_id=company_id, source=source, source_id=source_id, name=name, kind=kind
+        db,
+        company_id=company_id,
+        source=source,
+        source_id=source_id,
+        name=name,
+        kind=kind,
+        balance=balance,
+        balance_currency=balance_currency if balance is not None else None,
+        balance_on=balance_on if balance is not None else None,
     )
     await add_identifiers(
         db,
@@ -212,12 +228,20 @@ def name_key(name: str) -> str:
     return normalise_name(short_name(name))
 
 
+async def get_party(db: AsyncSession, actor: Actor, party_id: uuid.UUID) -> PartyOut:
+    found = await repository.get_many(db, actor.company_id, [party_id])
+    if not found:
+        raise NotFound("No such party")
+    return PartyOut.model_validate(found[0])
+
+
 async def list_parties(
     db: AsyncSession,
     actor: Actor,
     *,
     kind: PartyKind | None,
     q: str | None,
+    balance_side: BalanceSide | None = None,
     sort: PartySort,
     page: PageParams,
 ) -> PartyPage:
@@ -228,6 +252,7 @@ async def list_parties(
         actor.company_id,
         kind=kind,
         q=words,
+        balance_side=balance_side,
         normalised=normalise_name(words) if words else None,
         order_by=_PARTY_SORTS[sort],
         page=page,

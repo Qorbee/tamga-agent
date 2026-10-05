@@ -11,6 +11,7 @@ from app.modules.decisions.schemas import (
     DecisionEventPage,
     DecisionOut,
     DecisionPage,
+    DecisionSort,
     EventSort,
 )
 from app.modules.identity.deps import ActorDep
@@ -29,8 +30,9 @@ async def list_decisions(
     invoice_id: uuid.UUID | None = None,
     party_id: uuid.UUID | None = None,
     expand: Annotated[list[Literal["invoice"]], Query()] = [],  # noqa: B006
+    sort: DecisionSort = "-evaluated_at",
 ) -> DecisionPage:
-    """Decisions about the company's payables, the latest evaluated first."""
+    """Decisions about the company's payables, by default the latest evaluated first."""
     return await service.list_decisions(
         db,
         actor,
@@ -38,6 +40,7 @@ async def list_decisions(
         invoice_id=invoice_id,
         party_id=party_id,
         with_invoices="invoice" in expand,
+        sort=sort,
         page=page,
     )
 

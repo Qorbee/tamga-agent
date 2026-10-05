@@ -69,8 +69,10 @@ PRICE: Final = Decimal("2400.00")
 COST: Final = Decimal("1900.00")
 
 
-def cards() -> list[PartyCard]:
-    """The scenario's customer and supplier cards."""
+def cards(today: date) -> list[PartyCard]:
+    """The scenario's customer and supplier cards, with the balances their invoices leave: the
+    client has paid, and the company owes each carrier its bill."""
+    owed = {CLIENT.card: Decimal("0.00"), DELIVERED.card: -COST, MOVING.card: -COST}
     return [
         PartyCard(
             source_id=firm.card,
@@ -80,6 +82,9 @@ def cards() -> list[PartyCard]:
                 Identifier(IdentifierKind.TAX_ID, firm.tax_id),
                 Identifier(IdentifierKind.IBAN, firm.iban),
             ],
+            balance=owed[firm.card],
+            balance_currency=_EUR,
+            balance_on=today,
         )
         for firm in (CLIENT, DELIVERED, MOVING)
     ]
@@ -168,7 +173,7 @@ async def seed(company_id: uuid.UUID) -> None:
         # Looked for first: a second run on a later day must not re-date the books it stored.
         if await projects.find_by_number(db, company_id, SALE) is not None:
             return
-    await books.store_records(company_id, SOURCE, cards(), books_of(today))
+    await books.store_records(company_id, SOURCE, cards(today), books_of(today))
 
     async with open_session() as db:
         firms = {}

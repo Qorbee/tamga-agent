@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -70,6 +70,8 @@ class Decision(CompanyScoped, Base):
     amount_edited: Mapped[bool] = mapped_column(default=False)
     # Each rule's result: ``{"rule", "outcome", "reason"}``, in the rules' order.
     rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
+    # The bill's issue day as the books gave it at the last evaluation, which lists are sorted by.
+    issued_on: Mapped[date | None]
     # The controller's latest proposal for this evaluation (``agents.Advice`` with its
     # evaluation, inputs, model and trace), an opinion that moves nothing; None until one is in,
     # and again on the next evaluation.

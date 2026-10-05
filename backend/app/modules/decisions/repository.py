@@ -1,6 +1,7 @@
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import ColumnElement, func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,6 +158,7 @@ async def list_decisions(
     states: Sequence[DecisionState] | None,
     invoice_id: uuid.UUID | None,
     party_id: uuid.UUID | None,
+    sort: str = "-evaluated_at",
     page: PageParams,
 ) -> tuple[Sequence[Decision], int]:
     filters = [Decision.company_id == company_id]
@@ -170,11 +172,18 @@ async def list_decisions(
     rows = await db.scalars(
         select(Decision)
         .where(*filters)
-        .order_by(Decision.evaluated_at.desc(), Decision.id.desc())
+        .order_by(*_DECISION_SORTS[sort], Decision.id.desc())
         .limit(page.limit)
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+_DECISION_SORTS: dict[str, list[ColumnElement[Any]]] = {
+    "-evaluated_at": [Decision.evaluated_at.desc()],
+    "-issued_on": [Decision.issued_on.desc().nulls_last()],
+    "issued_on": [Decision.issued_on.asc().nulls_last()],
+}
 
 
 async def last_event(db: AsyncSession, company_id: uuid.UUID) -> DecisionEvent | None:

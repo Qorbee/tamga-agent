@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.books import repository, sources
-from app.modules.books.models import InvoiceDirection, InvoiceKind
-from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort
+from app.modules.books.repository import InvoiceFilter as InvoiceFilter
+from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort, InvoiceTotal
 from app.modules.books.sources import (
     BooksSource,
     BudgetSpent,
@@ -152,6 +152,9 @@ async def store_records(
                 name=card.name,
                 kind=card.kind,
                 identifiers=card.identifiers,
+                balance=card.balance,
+                balance_currency=card.balance_currency,
+                balance_on=card.balance_on,
             )
         for invoice in invoices:
             await _store_invoice(db, company_id, source, invoice)
@@ -173,6 +176,9 @@ async def _sync_parties(
             name=card.name,
             kind=card.kind,
             identifiers=card.identifiers,
+            balance=card.balance,
+            balance_currency=card.balance_currency,
+            balance_on=card.balance_on,
         )
         result.parties += 1
     await repository.save_cursor(db, company_id, source.name, "parties", today)
@@ -374,32 +380,31 @@ async def invoice_exists(db: AsyncSession, company_id: uuid.UUID, invoice_id: uu
 async def list_invoices(
     db: AsyncSession,
     actor: Actor,
+    which: InvoiceFilter,
     *,
-    direction: InvoiceDirection | None,
-    kinds: Sequence[InvoiceKind] | None = None,
-    party_id: uuid.UUID | None,
-    outstanding: bool | None = None,
-    q: str | None,
     sort: InvoiceSort = "-issue_date",
     page: PageParams,
 ) -> InvoicePage:
-    rows, total = await repository.list_invoices(
-        db,
-        actor.company_id,
-        direction=direction,
-        kinds=kinds,
-        party_id=party_id,
-        outstanding=outstanding,
-        q=q.strip() if q else None,
-        sort=sort,
-        page=page,
-    )
+    rows, total = await repository.list_invoices(db, actor.company_id, which, sort=sort, page=page)
     return InvoicePage(
         items=[InvoiceOut.model_validate(row) for row in rows],
         total=total,
         limit=page.limit,
         offset=page.offset,
     )
+
+
+async def invoice_totals(
+    db: AsyncSession, actor: Actor, which: InvoiceFilter
+) -> list[InvoiceTotal]:
+    """What the invoices a list holds add up to, one figure per currency: amounts in different
+    currencies are never summed together."""
+    return [
+        InvoiceTotal(currency=currency, count=count, total_amount=total, remaining_amount=left)
+        for currency, count, total, left in await repository.invoice_totals(
+            db, actor.company_id, which
+        )
+    ]
 
 
 async def find_invoices(

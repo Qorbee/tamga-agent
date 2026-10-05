@@ -142,6 +142,12 @@ async def test_the_delivered_truck_waits_for_the_owner_and_the_one_on_the_road_i
         sandbox.DELIVERED_BILL,
         sandbox.MOVING_BILL,
     }
+    # The newest bill first, or the oldest: the one on the road was sent four days later.
+    newest = (await client.get("/decisions", params={"sort": "-issued_on"})).json()["items"]
+    assert [item["id"] for item in newest] == [moving["id"], delivered["id"]]
+    oldest = (await client.get("/decisions", params={"sort": "issued_on"})).json()["items"]
+    assert [item["id"] for item in oldest] == [delivered["id"], moving["id"]]
+    assert delivered["issued_on"] < moving["issued_on"]
 
     # Nothing changed: nothing is evaluated again, and the log does not grow.
     assert await service.evaluate_pending() == 0
@@ -151,6 +157,17 @@ async def test_the_delivered_truck_waits_for_the_owner_and_the_one_on_the_road_i
     assert log["items"][1]["previous_hash"] == log["items"][0]["hash"]
     async with open_session() as db:
         assert await service.broken_link(db, company_id) is None
+
+    # The books correct a date: the order follows, though nothing the rules read changed.
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE invoices SET issue_date = issue_date - 30 WHERE id = :id"),
+            {"id": moving["invoice_id"]},
+        )
+        await db.commit()
+    assert await service.evaluate_pending() == 0
+    newest = (await client.get("/decisions", params={"sort": "-issued_on"})).json()["items"]
+    assert [item["id"] for item in newest] == [delivered["id"], moving["id"]]
 
 
 async def test_an_answer_names_the_evaluation_it_answers(

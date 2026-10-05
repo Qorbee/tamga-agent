@@ -99,8 +99,10 @@ Arc testnet; nothing touches a company's bank or real money.
   stream, and a note says when Tamga writes, also as the browser's notification.
 - **Budgets:** each use of a model has a daily budget per company that is zero until the owner
   sets it, so nothing a company holds is read by a model before that.
-- **The books:** a read-only accounting sync, through a country pack, and a page of the invoices
-  and firms as read.
+- **The books:** a read-only accounting sync, through a country pack, and a page of the invoices,
+  newest first or as sorted, open, overdue or all, with what each list adds up to per currency;
+  and of the firms, each with the balance its account in the books shows (what it owes the
+  company, or what the company owes it).
 - **Decisions:** each bill the company has to pay is evaluated by code, with no model: whether a
   confirmed job holds it, whether each truck it pays for has a proof of delivery the owner
   confirmed, whether the client paid, whether it was paid before, and the vault's caps and

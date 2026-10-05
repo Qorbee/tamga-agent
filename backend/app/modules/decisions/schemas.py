@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal, Self
 
@@ -51,6 +51,8 @@ class DecisionOut(BaseModel):
     usdc_units: int | None
     amount_edited: bool
     rules: list[RuleResult]
+    # The bill's issue day at the last evaluation.
+    issued_on: date | None
     decided_by: uuid.UUID | None
     decided_at: datetime | None
     evaluated_at: datetime
@@ -58,6 +60,10 @@ class DecisionOut(BaseModel):
     advice: AdviceOut | None = None
     # The bill, with ``expand=invoice``.
     invoice: InvoiceOut | None = None
+
+
+# "-evaluated_at": the latest evaluated first; "-issued_on": the newest bill first.
+DecisionSort = Literal["-evaluated_at", "-issued_on", "issued_on"]
 
 
 class DecisionPage(BaseModel):

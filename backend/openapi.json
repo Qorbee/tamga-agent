@@ -1323,6 +1323,18 @@
             "title": "Invoice Id",
             "type": "string"
           },
+          "issued_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issued On"
+          },
           "party_id": {
             "format": "uuid",
             "title": "Party Id",
@@ -1379,6 +1391,7 @@
           "usdc_units",
           "amount_edited",
           "rules",
+          "issued_on",
           "decided_by",
           "decided_at",
           "evaluated_at"
@@ -2360,6 +2373,58 @@
           "offset"
         ],
         "title": "InvoicePage",
+        "type": "object"
+      },
+      "InvoiceTotal": {
+        "description": "What the invoices a list holds add up to in one currency.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "remaining_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Amount"
+          },
+          "total_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Amount"
+          }
+        },
+        "required": [
+          "currency",
+          "count",
+          "total_amount",
+          "remaining_amount"
+        ],
+        "title": "InvoiceTotal",
         "type": "object"
       },
       "ItemKind": {
@@ -3472,6 +3537,41 @@
       },
       "PartyOut": {
         "properties": {
+          "balance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance"
+          },
+          "balance_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance Currency"
+          },
+          "balance_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance On"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3506,6 +3606,9 @@
           "name",
           "kind",
           "source",
+          "balance",
+          "balance_currency",
+          "balance_on",
           "created_at"
         ],
         "title": "PartyOut",
@@ -6490,7 +6593,7 @@
     },
     "/decisions": {
       "get": {
-        "description": "Decisions about the company's payables, the latest evaluated first.",
+        "description": "Decisions about the company's payables, by default the latest evaluated first.",
         "operationId": "decisions.list_decisions",
         "parameters": [
           {
@@ -6558,6 +6661,21 @@
               },
               "title": "Expand",
               "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "-evaluated_at",
+              "enum": [
+                "-evaluated_at",
+                "-issued_on",
+                "issued_on"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           },
           {
@@ -7797,9 +7915,10 @@
         ]
       }
     },
-    "/invoices": {
+    "/invoice-totals": {
       "get": {
-        "operationId": "invoices.list_invoices",
+        "description": "What the invoices ``/invoices`` would list with the same filters add up to, per\ncurrency.",
+        "operationId": "invoices.invoice_totals",
         "parameters": [
           {
             "in": "query",
@@ -7872,6 +7991,25 @@
             }
           },
           {
+            "description": "Due before this day.",
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Due before this day.",
+              "title": "Due Before"
+            }
+          },
+          {
             "in": "query",
             "name": "q",
             "required": false,
@@ -7887,7 +8025,49 @@
               ],
               "title": "Q"
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceTotal"
+                  },
+                  "title": "Response Invoices.Invoice Totals",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
           },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Invoice Totals",
+        "tags": [
+          "invoices"
+        ]
+      }
+    },
+    "/invoices": {
+      "get": {
+        "operationId": "invoices.list_invoices",
+        "parameters": [
           {
             "in": "query",
             "name": "sort",
@@ -7927,6 +8107,112 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InvoiceDirection"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Direction"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceKind"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "party_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Party Id"
+            }
+          },
+          {
+            "description": "True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither.",
+            "in": "query",
+            "name": "outstanding",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither.",
+              "title": "Outstanding"
+            }
+          },
+          {
+            "description": "Due before this day.",
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Due before this day.",
+              "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           }
         ],
@@ -8341,6 +8627,28 @@
             }
           },
           {
+            "description": "Only parties whose balance in the books runs this way.",
+            "in": "query",
+            "name": "balance_side",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "receivable",
+                    "payable"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only parties whose balance in the books runs this way.",
+              "title": "Balance Side"
+            }
+          },
+          {
             "in": "query",
             "name": "sort",
             "required": false,
@@ -8351,7 +8659,9 @@
                 "name",
                 "-name",
                 "created_at",
-                "-created_at"
+                "-created_at",
+                "balance",
+                "-balance"
               ],
               "title": "Sort",
               "type": "string"
@@ -8409,6 +8719,54 @@
           }
         ],
         "summary": "List Parties",
+        "tags": [
+          "parties"
+        ]
+      }
+    },
+    "/parties/{party_id}": {
+      "get": {
+        "operationId": "parties.get_party",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Party",
         "tags": [
           "parties"
         ]

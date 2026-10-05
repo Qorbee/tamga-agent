@@ -62,7 +62,7 @@ function Decisions({ view }: { view: View }) {
   const { t } = useI18n();
   const decisions = usePagedList(
     ["decisions", { view }],
-    (page) => listDecisions({ state: STATES[view], expand: ["invoice"], ...page }),
+    (page) => listDecisions({ state: STATES[view], expand: ["invoice"], sort: "-issued_on", ...page }),
     PAGE,
     (decision) => decision.id,
   );

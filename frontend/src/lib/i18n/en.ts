@@ -195,10 +195,37 @@ export const en = {
     read: "Read from the books",
     notFound: "This invoice is not here any more.",
     views: { collect: "To collect", pay: "To pay", firms: "Firms" },
-    shown: { open: "Open", all: "All" },
+    shown: { open: "Open", overdue: "Overdue", all: "All" },
+    sort: {
+      label: "Sort",
+      options: {
+        "-issue_date": "Newest first",
+        issue_date: "Oldest first",
+        due_date: "Due soonest",
+        "-total_amount": "Largest first",
+      },
+    },
+    /** What a list adds up to in one currency. */
+    totals: {
+      left: (amount: string) => `${amount} left`,
+      total: (amount: string) => `${amount} in all`,
+      invoices: (count: number) => (count === 1 ? "1 invoice" : `${count} invoices`),
+      /** The books give the amount of only some of them, so no sum is shown. */
+      unknown: "Amount not in the books",
+      unavailable: "The totals could not be loaded",
+    },
+    /** Which firms the Firms tab lists, by the balance the books keep for each. */
+    balances: { receivable: "Owe us", payable: "We owe", all: "All" },
+    balance: {
+      receivable: (amount: string) => `Owes us ${amount}`,
+      payable: (amount: string) => `We owe ${amount}`,
+      settled: "Nothing owed",
+      asOf: (day: string) => `In the books on ${day}`,
+    },
     search: "Search invoices",
     searchFirms: "Search firms",
     overdue: "Overdue",
+    issuedOn: (day: string) => `Issued ${day}`,
     dueOn: (day: string) => `Due ${day}`,
     onlyFirm: (name: string) => `Only ${name}`,
     everyFirm: "Show every firm",

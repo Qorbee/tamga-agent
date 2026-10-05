@@ -267,7 +267,7 @@ export interface paths {
         };
         /**
          * List Decisions
-         * @description Decisions about the company's payables, the latest evaluated first.
+         * @description Decisions about the company's payables, by default the latest evaluated first.
          */
         get: operations["decisions.list_decisions"];
         put?: never;
@@ -629,6 +629,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invoice-totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invoice Totals
+         * @description What the invoices ``/invoices`` would list with the same filters add up to, per
+         *     currency.
+         */
+        get: operations["invoices.invoice_totals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invoices": {
         parameters: {
             query?: never;
@@ -760,6 +781,23 @@ export interface paths {
         };
         /** List Parties */
         get: operations["parties.list_parties"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/parties/{party_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Party */
+        get: operations["parties.get_party"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1646,6 +1684,8 @@ export interface components {
              * Format: uuid
              */
             invoice_id: string;
+            /** Issued On */
+            issued_on: string | null;
             /**
              * Party Id
              * Format: uuid
@@ -2001,6 +2041,20 @@ export interface components {
             offset: number;
             /** Total */
             total: number;
+        };
+        /**
+         * InvoiceTotal
+         * @description What the invoices a list holds add up to in one currency.
+         */
+        InvoiceTotal: {
+            /** Count */
+            count: number;
+            /** Currency */
+            currency: string | null;
+            /** Remaining Amount */
+            remaining_amount: string | null;
+            /** Total Amount */
+            total_amount: string | null;
         };
         /**
          * ItemKind
@@ -2381,6 +2435,12 @@ export interface components {
         PartyKind: "organisation" | "person";
         /** PartyOut */
         PartyOut: {
+            /** Balance */
+            balance: string | null;
+            /** Balance Currency */
+            balance_currency: string | null;
+            /** Balance On */
+            balance_on: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3602,6 +3662,7 @@ export interface operations {
                 invoice_id?: string | null;
                 party_id?: string | null;
                 expand?: "invoice"[];
+                sort?: "-evaluated_at" | "-issued_on" | "issued_on";
                 limit?: number;
                 offset?: number;
             };
@@ -4311,7 +4372,7 @@ export interface operations {
             };
         };
     };
-    "invoices.list_invoices": {
+    "invoices.invoice_totals": {
         parameters: {
             query?: {
                 direction?: components["schemas"]["InvoiceDirection"] | null;
@@ -4319,10 +4380,50 @@ export interface operations {
                 party_id?: string | null;
                 /** @description True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither. */
                 outstanding?: boolean | null;
+                /** @description Due before this day. */
+                due_before?: string | null;
                 q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceTotal"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "invoices.list_invoices": {
+        parameters: {
+            query?: {
                 sort?: "-issue_date" | "issue_date" | "due_date" | "-due_date" | "-total_amount" | "-remaining_amount";
                 limit?: number;
                 offset?: number;
+                direction?: components["schemas"]["InvoiceDirection"] | null;
+                kind?: components["schemas"]["InvoiceKind"][] | null;
+                party_id?: string | null;
+                /** @description True: not cancelled and something left to pay. False: cancelled, or nothing left. One the books give no amount left for is in neither. */
+                outstanding?: boolean | null;
+                /** @description Due before this day. */
+                due_before?: string | null;
+                q?: string | null;
             };
             header?: never;
             path?: never;
@@ -4537,7 +4638,9 @@ export interface operations {
             query?: {
                 kind?: components["schemas"]["PartyKind"] | null;
                 q?: string | null;
-                sort?: "source" | "name" | "-name" | "created_at" | "-created_at";
+                /** @description Only parties whose balance in the books runs this way. */
+                balance_side?: ("receivable" | "payable") | null;
+                sort?: "source" | "name" | "-name" | "created_at" | "-created_at" | "balance" | "-balance";
                 limit?: number;
                 offset?: number;
             };
@@ -4554,6 +4657,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartyPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.get_party": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyOut"];
                 };
             };
             /** @description Validation Error */

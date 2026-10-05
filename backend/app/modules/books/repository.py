@@ -1,9 +1,11 @@
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, func, or_, select
+from sqlalchemy import ColumnElement, Row, and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -196,38 +198,54 @@ async def invoice_exists(db: AsyncSession, company_id: uuid.UUID, invoice_id: uu
     return found is not None
 
 
+@dataclass(frozen=True, slots=True)
+class InvoiceFilter:
+    """Which of a company's invoices a list or its totals hold."""
+
+    direction: InvoiceDirection | None = None
+    kinds: Sequence[InvoiceKind] | None = None
+    party_id: uuid.UUID | None = None
+    # True: not cancelled and something left to pay. False: cancelled, or nothing left.
+    outstanding: bool | None = None
+    # Due before this day.
+    due_before: date | None = None
+    q: str | None = None
+
+    def where(self, company_id: uuid.UUID) -> list[ColumnElement[bool]]:
+        filters: list[ColumnElement[bool]] = [Invoice.company_id == company_id]
+        if self.direction is not None:
+            filters.append(Invoice.direction == self.direction)
+        if self.kinds:
+            filters.append(Invoice.kind.in_(self.kinds))
+        if self.party_id is not None:
+            filters.append(Invoice.party_id == self.party_id)
+        if self.outstanding is True:
+            filters.append(and_(Invoice.cancelled.is_(False), Invoice.remaining_amount > 0))
+        elif self.outstanding is False:
+            filters.append(or_(Invoice.cancelled.is_(True), Invoice.remaining_amount <= 0))
+        if self.due_before is not None:
+            filters.append(Invoice.due_date < self.due_before)
+        if self.q:
+            pattern = f"%{escape_like(self.q)}%"
+            filters.append(
+                or_(
+                    Invoice.number.ilike(pattern, escape="\\"),
+                    Invoice.party_name.ilike(pattern, escape="\\"),
+                    Invoice.e_document_id.ilike(pattern, escape="\\"),
+                )
+            )
+        return filters
+
+
 async def list_invoices(
     db: AsyncSession,
     company_id: uuid.UUID,
+    which: InvoiceFilter,
     *,
-    direction: InvoiceDirection | None,
-    kinds: Sequence[InvoiceKind] | None = None,
-    party_id: uuid.UUID | None,
-    outstanding: bool | None = None,
-    q: str | None,
     sort: str = "-issue_date",
     page: PageParams,
 ) -> tuple[Sequence[Invoice], int]:
-    filters: list[ColumnElement[bool]] = [Invoice.company_id == company_id]
-    if direction is not None:
-        filters.append(Invoice.direction == direction)
-    if kinds:
-        filters.append(Invoice.kind.in_(kinds))
-    if party_id is not None:
-        filters.append(Invoice.party_id == party_id)
-    if outstanding is True:
-        filters.append(and_(Invoice.cancelled.is_(False), Invoice.remaining_amount > 0))
-    elif outstanding is False:
-        filters.append(or_(Invoice.cancelled.is_(True), Invoice.remaining_amount <= 0))
-    if q:
-        pattern = f"%{escape_like(q)}%"
-        filters.append(
-            or_(
-                Invoice.number.ilike(pattern, escape="\\"),
-                Invoice.party_name.ilike(pattern, escape="\\"),
-                Invoice.e_document_id.ilike(pattern, escape="\\"),
-            )
-        )
+    filters = which.where(company_id)
     total = await db.scalar(select(func.count()).select_from(Invoice).where(*filters))
     rows = await db.scalars(
         select(Invoice)
@@ -237,6 +255,34 @@ async def list_invoices(
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def invoice_totals(
+    db: AsyncSession, company_id: uuid.UUID, which: InvoiceFilter
+) -> Sequence[Row[tuple[str | None, int, Decimal | None, Decimal | None]]]:
+    """Per currency: how many invoices, their totals, and what is left of those not cancelled.
+    A figure is null when the books give the amount of only some of them: a partial sum would
+    read as the whole."""
+    live = Invoice.cancelled.is_(False)
+    total = case(
+        (
+            func.count(Invoice.total_amount) == func.count(),
+            func.coalesce(func.sum(Invoice.total_amount), 0),
+        )
+    )
+    left = case(
+        (
+            func.count(Invoice.remaining_amount).filter(live) == func.count().filter(live),
+            func.coalesce(func.sum(Invoice.remaining_amount).filter(live), 0),
+        )
+    )
+    rows = await db.execute(
+        select(Invoice.currency, func.count(), total, left)
+        .where(*which.where(company_id))
+        .group_by(Invoice.currency)
+        .order_by(func.count().desc(), Invoice.currency)
+    )
+    return rows.all()
 
 
 _INVOICE_SORTS: dict[str, list[ColumnElement[Any]]] = {

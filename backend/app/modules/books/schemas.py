@@ -45,3 +45,15 @@ class InvoicePage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class InvoiceTotal(BaseModel):
+    """What the invoices a list holds add up to in one currency."""
+
+    # Null for invoices the books give no currency.
+    currency: str | None
+    count: int
+    # Each null when the books give the amount of only some of them.
+    total_amount: Decimal | None
+    # What is left of those not cancelled.
+    remaining_amount: Decimal | None

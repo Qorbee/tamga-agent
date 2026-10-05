@@ -1,3 +1,6 @@
+from datetime import date
+from decimal import Decimal
+
 import httpx
 import pytest
 from sqlalchemy import func, select
@@ -208,3 +211,56 @@ async def test_parties_are_listed_for_choosing_one_those_from_the_books_first(
     # Another company sees none of them.
     await guest_client(client)
     assert (await client.get("/parties")).json()["total"] == 0
+
+
+async def test_firms_are_listed_by_what_the_books_say_each_owes(client: httpx.AsyncClient) -> None:
+    company_id = await guest_client(client)
+    async with open_session() as db:
+        for card, name, balance in (
+            ("1", "Client Owing", "1500.00"),
+            ("2", "Client Settled", "0.00"),
+            ("3", "Carrier Owed", "-900.00"),
+            ("4", "Client Owing More", "4000.00"),
+        ):
+            await service.sync_party(
+                db,
+                company_id=company_id,
+                source="books",
+                source_id=card,
+                name=name,
+                kind=PartyKind.ORGANISATION,
+                balance=Decimal(balance),
+                balance_currency="EUR",
+                balance_on=date(2026, 10, 3),
+            )
+        # Read from mail: the books say nothing of what it owes.
+        await service.create_party(
+            db,
+            company_id=company_id,
+            name="Atlas Haulage",
+            kind=PartyKind.ORGANISATION,
+            source=IdentifierSource.EXTRACTION,
+        )
+        await db.commit()
+
+    async def names(**params: str) -> list[str]:
+        page = (await client.get("/parties", params=params)).json()
+        return [party["name"] for party in page["items"]]
+
+    assert await names(balance_side="receivable", sort="-balance") == [
+        "Client Owing More",
+        "Client Owing",
+    ]
+    assert await names(balance_side="payable", sort="balance") == ["Carrier Owed"]
+    # The most owed to the company first, and a party with no balance last.
+    assert (await names(sort="-balance"))[-1] == "Atlas Haulage"
+    owing = (await client.get("/parties", params={"balance_side": "receivable"})).json()["items"]
+    assert {(p["balance"], p["balance_currency"], p["balance_on"]) for p in owing} == {
+        ("1500.00", "EUR", "2026-10-03"),
+        ("4000.00", "EUR", "2026-10-03"),
+    }
+    # One firm, as it is now, for a page that shows the firm it was opened on.
+    one = await client.get(f"/parties/{owing[0]['id']}")
+    assert one.status_code == 200 and one.json() == owing[0]
+    await guest_client(client)
+    assert (await client.get(f"/parties/{owing[0]['id']}")).status_code == 404

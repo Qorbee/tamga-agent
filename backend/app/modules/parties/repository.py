@@ -1,5 +1,7 @@
 import uuid
 from collections.abc import Sequence
+from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import ColumnElement, exists, func, or_, select
@@ -30,14 +32,27 @@ async def upsert_from_source(
     source_id: str,
     name: str,
     kind: PartyKind,
+    balance: Decimal | None,
+    balance_currency: str | None,
+    balance_on: date | None,
 ) -> Party:
     statement = insert(Party).values(
-        company_id=company_id, source=source, source_id=source_id, name=name, kind=kind
+        company_id=company_id,
+        source=source,
+        source_id=source_id,
+        name=name,
+        kind=kind,
+        balance=balance,
+        balance_currency=balance_currency,
+        balance_on=balance_on,
     )
     party = await db.scalar(
         statement.on_conflict_do_update(
             index_elements=[Party.company_id, Party.source, Party.source_id],
-            set_={"name": statement.excluded.name, "kind": statement.excluded.kind},
+            set_={
+                column: statement.excluded[column]
+                for column in ("name", "kind", "balance", "balance_currency", "balance_on")
+            },
         )
         .returning(Party)
         # The row may already sit in this session: return the updated values, not the old ones.
@@ -137,14 +152,21 @@ async def list_parties(
     kind: PartyKind | None,
     q: str | None,
     normalised: str | None,
+    balance_side: str | None = None,
     order_by: Sequence[ColumnElement[Any]],
     page: PageParams,
 ) -> tuple[Sequence[Party], int]:
     """The company's parties in the order given. ``q`` matches the name as written, and
-    ``normalised`` a name identifier in its compared form, so "ozdemir" finds "ÖZDEMİR"."""
+    ``normalised`` a name identifier in its compared form, so "ozdemir" finds "ÖZDEMİR".
+    ``balance_side`` keeps those that owe the company ("receivable") or that it owes
+    ("payable")."""
     filters: list[ColumnElement[bool]] = [Party.company_id == company_id]
     if kind is not None:
         filters.append(Party.kind == kind)
+    if balance_side == "receivable":
+        filters.append(Party.balance > 0)
+    elif balance_side == "payable":
+        filters.append(Party.balance < 0)
     if q:
         matches: list[ColumnElement[bool]] = [Party.name.ilike(f"%{escape_like(q)}%", escape="\\")]
         if normalised:

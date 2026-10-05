@@ -1,11 +1,13 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
     CheckConstraint,
     ForeignKeyConstraint,
     Index,
+    Numeric,
     String,
     UniqueConstraint,
     func,
@@ -54,6 +56,10 @@ class Party(CompanyScoped, Base):
         # The target of identifiers' (company_id, party_id) key, which ties both to one company.
         UniqueConstraint("company_id", "id"),
         CheckConstraint("(source IS NULL) = (source_id IS NULL)", name="parties_source_check"),
+        CheckConstraint(
+            "(balance IS NULL) = (balance_currency IS NULL)",
+            name="parties_balance_currency_check",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -62,6 +68,12 @@ class Party(CompanyScoped, Base):
     # The accounting card this party is synced from (its source and id), so a re-sync updates it.
     source: Mapped[str | None] = mapped_column(String(40))
     source_id: Mapped[str | None] = mapped_column(String(100))
+    # Its account balance as the books keep it (the cari): positive when it owes the company,
+    # negative when the company owes it, in ``balance_currency``, as of ``balance_on``. Read with
+    # its card; null when the books give none or it has no card.
+    balance: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    balance_currency: Mapped[str | None] = mapped_column(String(3))
+    balance_on: Mapped[date | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

@@ -57,6 +57,12 @@ function localDay(day: string): Date {
   return new Date(year, month - 1, date);
 }
 
+/** Today here, as the API writes a calendar day (`2026-08-10`). */
+export function todayIso(now: Date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** Whether a calendar day the API gives is before today, here. */
 export function isBeforeToday(day: string, now: Date = new Date()): boolean {
   return localDay(day) < new Date(now.getFullYear(), now.getMonth(), now.getDate());

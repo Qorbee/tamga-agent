@@ -48,6 +48,7 @@ from app.modules.decisions.schemas import (
     DecisionEventPage,
     DecisionOut,
     DecisionPage,
+    DecisionSort,
 )
 from app.modules.parties import service as parties
 from app.modules.policy import service as policies
@@ -146,9 +147,12 @@ async def evaluate_company(company_id: uuid.UUID) -> int:
         async with open_session() as db:
             await repository.lock_decisions(db, company_id)
             decision = await repository.for_invoice(db, company_id, bill.id)
-            if decision is not None and not _movable(decision):
-                continue
-            if await _decide(db, company_id, bill, decision, seen):
+            if decision is not None:
+                # The list sorts by the bill's date, which the books may correct in any state.
+                decision.issued_on = bill.issue_date
+            if (decision is None or _movable(decision)) and await _decide(
+                db, company_id, bill, decision, seen
+            ):
                 moved += 1
             await db.commit()
     return moved
@@ -244,6 +248,7 @@ async def _decide(
     decision.rate = mirrored.rate if mirrored is not None else None
     decision.usdc_units = mirrored.units if mirrored is not None else None
     decision.rules = [asdict(result) | {"outcome": result.outcome.value} for result in results]
+    decision.issued_on = bill.issue_date
     decision.decided_by, decision.decided_at = None, None
     # An opinion on the evaluation before is no opinion on this one.
     decision.advice = None
@@ -625,6 +630,7 @@ async def list_decisions(
     invoice_id: uuid.UUID | None,
     party_id: uuid.UUID | None,
     with_invoices: bool = False,
+    sort: DecisionSort = "-evaluated_at",
     page: PageParams,
 ) -> DecisionPage:
     rows, total = await repository.list_decisions(
@@ -633,6 +639,7 @@ async def list_decisions(
         states=states,
         invoice_id=invoice_id,
         party_id=party_id,
+        sort=sort,
         page=page,
     )
     items = [DecisionOut.model_validate(row) for row in rows]

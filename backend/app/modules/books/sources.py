@@ -34,6 +34,12 @@ class PartyCard:
     name: str
     kind: PartyKind
     identifiers: list[Identifier] = field(default_factory=list)
+    # The firm's account balance as the books keep it (its cari), positive when the firm owes the
+    # company and negative when the company owes the firm, in ``balance_currency``, as of
+    # ``balance_on``. None when the source gives none.
+    balance: Decimal | None = None
+    balance_currency: str | None = None
+    balance_on: date | None = None
 
 
 @dataclass(frozen=True, slots=True)

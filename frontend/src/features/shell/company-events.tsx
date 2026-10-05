@@ -29,7 +29,7 @@ const READ_AGAIN: Record<CompanyEvent["kind"], QueryKey[]> = {
   ],
   documents: [["documents"], ["document"]],
   threads: [["threads"], ["thread"], ["placements"]],
-  invoices: [["invoice"], ["invoices"], ["parties"]],
+  invoices: [["invoice"], ["invoices"], ["invoice-totals"], ["parties"]],
   decisions: [["decisions"], ["decision"], ["payments"], ["decision-events"], ["decision-chain"]],
 };
 
