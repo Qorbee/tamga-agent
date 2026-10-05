@@ -400,6 +400,15 @@ async def test_a_cancelled_bill_and_a_second_booking_are_never_approved(
                 "moving": moving["invoice_id"],
             },
         )
+        # The firm's account owes both, as the books show a bill booked twice: else the account
+        # holds the older one.
+        await db.execute(
+            text(
+                "UPDATE parties SET balance = balance * 2 "
+                "WHERE id = (SELECT party_id FROM invoices WHERE id = :delivered)"
+            ),
+            {"delivered": delivered["invoice_id"]},
+        )
         # On the delivered truck, whose proof is in.
         await db.execute(
             text(
@@ -510,3 +519,42 @@ async def test_the_log_names_the_firm_each_entry_was_made_for(
         ("proposed", before),
         ("approved", before),
     ]
+
+
+async def test_a_bill_the_firms_account_shows_paid_is_held_and_read_so(
+    client: httpx.AsyncClient, vault: Vault
+) -> None:
+    await a_sandbox(client)
+    await service.evaluate_pending()
+    delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    # Paid on the firm's account in the books, the bill left open (ADR-0022).
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE parties SET balance = 0 WHERE id = :party"),
+            {"party": delivered["party_id"]},
+        )
+        await db.commit()
+
+    await service.evaluate_pending()
+
+    held = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    assert held["state"] == "held" and "on_account" in failing(held)
+    bill = (await client.get(f"/invoices/{delivered['invoice_id']}")).json()
+    assert (bill["settled"], bill["account_owed"]) == ("paid_on_account", "0.00")
+
+
+async def test_a_policy_change_keeps_what_it_does_not_name(client: httpx.AsyncClient) -> None:
+    await guest_client(client)
+    whole = {"currency": "EUR", "approval_limit": "500.00", "pay_when_paid": False}
+    assert (await client.put("/policy", json=whole)).status_code == 200
+
+    changed = await client.patch("/policy", json={"payments_recorded": "per_invoice"})
+
+    assert changed.status_code == 200, changed.text
+    policy = changed.json()
+    assert (policy["version"], policy["payments_recorded"]) == (2, "per_invoice")
+    assert (policy["currency"], policy["approval_limit"], policy["pay_when_paid"]) == (
+        "EUR",
+        "500.00",
+        False,
+    )

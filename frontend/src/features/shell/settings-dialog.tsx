@@ -14,8 +14,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { getMe, updateCompany, type WritingLanguage } from "@/lib/api";
+import { changePolicy, getMe, getPolicy, updateCompany, type WritingLanguage } from "@/lib/api";
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
@@ -71,6 +72,7 @@ export function SettingsDialog({
           </Row>
         </section>
         <CompanyIdentitySection />
+        <PaymentsSection />
       </DialogContent>
     </Dialog>
   );
@@ -80,6 +82,97 @@ export function SettingsDialog({
 function CompanyIdentitySection() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   return <CompanyIdentity owner={me.data?.role === "owner"} />;
+}
+
+const RECORDED = ["per_invoice", "on_account"] as const;
+
+/** How the company records payments in its books (ADR-0022): what the Books page shows of an
+ * open invoice. A change is a new version of the policy; the payment path reads the firm's
+ * account whatever it says. */
+function PaymentsSection() {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
+  const [tolerance, setTolerance] = useState<string | null>(null);
+  const change = useMutation({
+    // Only the field changed: the rest of the policy stays as it is in force when it is written.
+    mutationFn: changePolicy,
+    onSuccess: (updated, sent) => {
+      queryClient.setQueryData(["policy"], updated);
+      // A typed tolerance not saved yet stays while the other setting changes.
+      if (sent.remainder_tolerance !== undefined) setTolerance(null);
+      // What the Books page reads of each open invoice follows the policy.
+      void queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      void queryClient.invalidateQueries({ queryKey: ["invoice"] });
+    },
+  });
+  if (!policy.data) return null;
+  const owner = me.data?.role === "owner";
+  const words = t.settings.payments;
+  const typed = tolerance ?? String(Number(policy.data.remainder_tolerance));
+  const valid = /^\d{1,2}(\.\d{1,2})?$/.test(typed) && Number(typed) <= 20;
+
+  return (
+    <section className="flex flex-col">
+      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
+      <Row label={words.recorded} hint={words.recordedHint}>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          spacing={0}
+          value={policy.data.payments_recorded}
+          aria-label={words.recorded}
+          disabled={!owner || change.isPending}
+          onValueChange={(value) => {
+            const chosen = RECORDED.find((each) => each === value);
+            if (chosen && chosen !== policy.data?.payments_recorded) change.mutate({ payments_recorded: chosen });
+          }}
+        >
+          {RECORDED.map((value) => (
+            <ToggleGroupItem key={value} value={value} className={SEGMENT}>
+              {words[value]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </Row>
+      <Row label={words.tolerance} hint={words.toleranceHint}>
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid) change.mutate({ remainder_tolerance: typed });
+          }}
+        >
+          <span className="relative">
+            <Input
+              inputMode="decimal"
+              value={typed}
+              onChange={(event) => setTolerance(event.target.value)}
+              disabled={!owner || change.isPending}
+              aria-label={words.tolerance}
+              aria-invalid={!valid}
+              className="w-20 pe-6 text-end tabular-nums"
+            />
+            <span className="text-muted-foreground pointer-events-none absolute inset-y-0 end-2 flex items-center text-sm">
+              %
+            </span>
+          </span>
+          {tolerance !== null ? (
+            <Button type="submit" size="sm" disabled={!owner || !valid || change.isPending}>
+              {words.save}
+            </Button>
+          ) : null}
+        </form>
+      </Row>
+      {me.data && !owner ? <span className="text-muted-foreground text-xs">{t.settings.ownerOnly}</span> : null}
+      {change.isError ? (
+        <span className="text-danger-foreground text-xs" role="alert">
+          {t.errors.generic}
+        </span>
+      ) : null}
+    </section>
+  );
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {

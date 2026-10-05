@@ -92,14 +92,31 @@ export function InvoiceView({ id }: { id: string }) {
   );
 }
 
-/** What is left to pay, or that nothing is; nothing shown when the books do not say. */
+/** What is left to pay, or that nothing is, and what the firm's account says of it; nothing shown
+ * when the books do not say. */
 function Left({ bill, money }: { bill: Invoice; money: (amount: string | null) => string | null }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   if (bill.remaining_amount === null || bill.cancelled) return null;
   const left = Number(bill.remaining_amount);
+  const day = bill.account_on ? formatDays(bill.account_on, null, locale) : "";
+  const why = t.books.settled.why;
+  const said =
+    bill.settled === "paid_on_account"
+      ? why.paidOnAccount(day)
+      : bill.settled === "paid_with_difference"
+        ? why.paidWithDifference
+        : bill.settled === "unknown"
+          ? why.unknown
+          : bill.settled === "open" && bill.account_owed != null && Number(bill.account_owed) < left
+            ? why.owed(money(bill.account_owed) ?? "", day)
+            : null;
+  const owed = left > 0 && bill.settled !== "paid_on_account" && bill.settled !== "paid_with_difference";
   return (
-    <span className={cn("text-sm tabular-nums", left > 0 ? "text-warning-foreground" : "text-success-foreground")}>
-      {t.books.left}: {money(bill.remaining_amount)}
+    <span className="grid gap-0.5">
+      <span className={cn("text-sm tabular-nums", owed ? "text-warning-foreground" : "text-success-foreground")}>
+        {t.books.left}: {money(bill.remaining_amount)}
+      </span>
+      {said ? <span className="text-muted-foreground text-xs text-pretty">{said}</span> : null}
     </span>
   );
 }

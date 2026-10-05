@@ -951,7 +951,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change Policy
+         * @description A new version of the policy with only the fields given changed from the one in force: the
+         *     owner's only.
+         */
+        patch: operations["policy.change_policy"];
         trace?: never;
     };
     "/project-links": {
@@ -2122,6 +2127,10 @@ export interface components {
         InvoiceKind: "sales" | "purchase" | "incoming_e_invoice" | "expense";
         /** InvoiceOut */
         InvoiceOut: {
+            /** Account On */
+            account_on?: string | null;
+            /** Account Owed */
+            account_owed?: string | null;
             /** Cancelled */
             cancelled: boolean;
             /** Currency */
@@ -2155,6 +2164,7 @@ export interface components {
             remaining_amount: string | null;
             /** Same As Id */
             same_as_id: string | null;
+            settled?: components["schemas"]["Settled"] | null;
             /** Source */
             source: string;
             /** Status */
@@ -2689,6 +2699,13 @@ export interface components {
          */
         PaymentState: "submitting" | "settled" | "failed" | "would_release";
         /**
+         * PaymentsRecorded
+         * @description How the company records a payment in its books (ADR-0022): what the Books page shows of an
+         *     open invoice, and whether pay-when-paid counts a client invoice paid on account as paid.
+         * @enum {string}
+         */
+        PaymentsRecorded: "per_invoice" | "on_account";
+        /**
          * PlacementDecision
          * @description The owner's answer, one of two. ``links``: every link that waits between the conversation's
          *     mails and its project is confirmed or rejected. ``project_id``: the conversation belongs to
@@ -2751,6 +2768,22 @@ export interface components {
             total: number;
         };
         /**
+         * PolicyChange
+         * @description A new version of the company's policy with only these fields changed from the one in force
+         *     when it is written: a screen that shows one setting never writes back another's stale value.
+         */
+        PolicyChange: {
+            /** Approval Limit */
+            approval_limit?: number | string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Pay When Paid */
+            pay_when_paid?: boolean | null;
+            payments_recorded?: components["schemas"]["PaymentsRecorded"] | null;
+            /** Remainder Tolerance */
+            remainder_tolerance?: number | string | null;
+        };
+        /**
          * PolicyIn
          * @description A new version of the company's policy, replacing the one in force.
          */
@@ -2761,6 +2794,13 @@ export interface components {
             currency: string;
             /** Pay When Paid */
             pay_when_paid: boolean;
+            /** @default on_account */
+            payments_recorded: components["schemas"]["PaymentsRecorded"];
+            /**
+             * Remainder Tolerance
+             * @default 2.00
+             */
+            remainder_tolerance: number | string;
         };
         /** PolicyOut */
         PolicyOut: {
@@ -2772,6 +2812,9 @@ export interface components {
             currency: string;
             /** Pay When Paid */
             pay_when_paid: boolean;
+            payments_recorded: components["schemas"]["PaymentsRecorded"];
+            /** Remainder Tolerance */
+            remainder_tolerance: string;
             /** Version */
             version: number;
         };
@@ -3063,6 +3106,12 @@ export interface components {
             /** Rule */
             rule: string;
         };
+        /**
+         * Settled
+         * @description What is read of an invoice the books show open, beside its own figures.
+         * @enum {string}
+         */
+        Settled: "open" | "paid_on_account" | "paid_with_difference" | "unknown";
         /** SheetOut */
         SheetOut: {
             /** Columns */
@@ -5189,6 +5238,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PolicyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "policy.change_policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyChange"];
             };
         };
         responses: {

@@ -156,6 +156,25 @@ def _open_payable() -> ColumnElement[bool]:
     )
 
 
+async def open_on_account(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
+) -> Sequence[Invoice]:
+    """These firms' booked invoices the books show open: sales, purchases and expenses, not
+    cancelled, with something left. An incoming e-invoice is on the account as its purchase."""
+    if not party_ids:
+        return []
+    rows = await db.scalars(
+        select(Invoice).where(
+            Invoice.company_id == company_id,
+            Invoice.party_id.in_(party_ids),
+            Invoice.kind.in_((InvoiceKind.SALES, InvoiceKind.PURCHASE, InvoiceKind.EXPENSE)),
+            Invoice.cancelled.is_(False),
+            Invoice.remaining_amount > 0,
+        )
+    )
+    return rows.all()
+
+
 async def open_payables(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Invoice]:
     rows = await db.scalars(
         select(Invoice)

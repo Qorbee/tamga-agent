@@ -1,9 +1,11 @@
 """The hard rules, as pure functions over a picture: each says what fails and the worst decides."""
 
 import dataclasses
+from datetime import date
 from decimal import Decimal
 
 from app.modules.policy import service as policies
+from app.modules.policy.models import PaymentsRecorded
 from app.modules.policy.schemas import Outcome, Picture, Vault
 
 POLICY = policies.DEFAULT
@@ -11,6 +13,9 @@ POLICY = policies.DEFAULT
 CLEAR = Picture(
     amount=Decimal("1900.00"),
     left=Decimal("1900.00"),
+    owed_on_account=Decimal("1900.00"),
+    account_on=date(2026, 10, 3),
+    within_tolerance=False,
     cancelled=False,
     party=True,
     currency="EUR",
@@ -103,3 +108,31 @@ def test_a_bill_is_mirrored_at_its_currencys_rate_rounded_down() -> None:
     assert policies.mirror(Decimal("1900.00"), "XYZ") is None
     # Compared through the ratio of the two rates, never figure against figure.
     assert policies.convert(Decimal("1900.00"), "EUR", "USD") == Decimal("2204.00")
+
+
+def test_the_firms_account_narrows_what_is_paid_whatever_the_setting() -> None:
+    per_invoice = POLICY.model_copy(update={"payments_recorded": PaymentsRecorded.PER_INVOICE})
+    paid = dataclasses.replace(CLEAR, owed_on_account=Decimal("0.00"))
+    for policy in (POLICY, per_invoice):
+        _, results = policies.evaluate(paid, policy)
+        [held] = [result for result in results if result.rule == "on_account"]
+        assert held.outcome is Outcome.HOLD and "2026-10-03" in held.reason
+    # Partly owed: the smaller figure is proposed, and the owner decides.
+    partly = dataclasses.replace(
+        CLEAR, amount=Decimal("1200.00"), owed_on_account=Decimal("1200.00")
+    )
+    assert failed(partly)["on_account"] is Outcome.PROPOSE
+    # An amount the owner raised above what the account says is owed is never paid.
+    raised = dataclasses.replace(CLEAR, owed_on_account=Decimal("1200.00"))
+    assert failed(raised)["on_account"] is Outcome.HOLD
+    assert (
+        failed(dataclasses.replace(CLEAR, within_tolerance=True))["on_account"] is Outcome.PROPOSE
+    )
+
+
+def test_an_account_that_cannot_speak_is_noted_only_where_payments_go_on_account() -> None:
+    silent = dataclasses.replace(CLEAR, owed_on_account=None, account_on=None)
+    assert failed(silent)["on_account"] is Outcome.PROPOSE
+    per_invoice = POLICY.model_copy(update={"payments_recorded": PaymentsRecorded.PER_INVOICE})
+    _, results = policies.evaluate(silent, per_invoice)
+    assert [r.outcome for r in results if r.rule == "on_account"] == [Outcome.OK]

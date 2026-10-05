@@ -390,9 +390,16 @@ function InvoiceRow({ bill, bothSides, ofFirm }: { bill: Invoice; bothSides: boo
   const money = (amount: string | null) =>
     amount !== null && bill.currency ? formatMoney(Number(amount), bill.currency, locale) : null;
   const left = bill.remaining_amount !== null && !bill.cancelled ? Number(bill.remaining_amount) : null;
-  const overdue = left !== null && left > 0 && bill.due_date !== null && isBeforeToday(bill.due_date);
+  // Paid on the firm's account, or all but a fee: open in the books, not owed (ADR-0022).
+  const settled = bill.settled === "paid_on_account" || bill.settled === "paid_with_difference";
+  const overdue =
+    !settled && left !== null && left > 0 && bill.due_date !== null && isBeforeToday(bill.due_date);
   const paid = left === 0;
-  const partly = left !== null && left > 0 && bill.remaining_amount !== bill.total_amount;
+  const partly = !settled && left !== null && left > 0 && bill.remaining_amount !== bill.total_amount;
+  const owedOnAccount =
+    bill.settled === "open" && bill.account_owed != null && left !== null && Number(bill.account_owed) < left
+      ? money(bill.account_owed)
+      : null;
   const kind = bothSides || bill.kind === "expense" ? t.books.kinds[bill.kind] : null;
 
   return (
@@ -422,11 +429,18 @@ function InvoiceRow({ bill, bothSides, ofFirm }: { bill: Invoice; bothSides: boo
           {bill.issue_date ? <span>{t.books.issuedOn(formatDays(bill.issue_date, null, locale))}</span> : null}
           {bill.due_date ? <span>{t.books.dueOn(formatDays(bill.due_date, null, locale))}</span> : null}
         </span>
-        {overdue || paid || partly || bill.cancelled ? (
+        {overdue || paid || partly || settled || owedOnAccount || bill.cancelled ? (
           <span className="mt-1 flex flex-wrap gap-1.5">
             {overdue ? <Pill tone="late" icon={Alert02Icon} label={t.books.overdue} /> : null}
             {partly ? <Pill tone="out" label={t.books.totals.left(money(bill.remaining_amount) ?? "")} /> : null}
+            {owedOnAccount ? <Pill tone="plain" label={t.books.settled.owedOnAccount(owedOnAccount)} /> : null}
             {paid ? <Pill tone="in" icon={CheckmarkCircle02Icon} label={t.books.paid} /> : null}
+            {bill.settled === "paid_on_account" ? (
+              <Pill tone="in" icon={CheckmarkCircle02Icon} label={t.books.settled.paidOnAccount} />
+            ) : null}
+            {bill.settled === "paid_with_difference" ? (
+              <Pill tone="in" icon={CheckmarkCircle02Icon} label={t.books.settled.paidWithDifference} />
+            ) : null}
             {bill.cancelled ? <Pill tone="plain" label={t.books.cancelled} /> : null}
           </span>
         ) : null}

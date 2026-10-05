@@ -19,16 +19,18 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.modules.books import accounts
 from app.modules.books import service as books
+from app.modules.books.accounts import Account
 from app.modules.books.models import InvoiceDirection
-from app.modules.books.schemas import InvoiceOut
+from app.modules.books.schemas import InvoiceOut, Settled
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.decisions import anchoring, repository
@@ -208,12 +210,16 @@ async def _decide(
     ``force``, after the owner's edit): a new evaluation number, the state the rules give, and a
     ``proposed`` row in the log. Returns whether it did. Under the caller's lock; no commit."""
     policy = await policies.current_policy(db, company_id)
+    readings = await books.account_readings(
+        db, company_id, [bill.party_id] if bill.party_id else []
+    )
+    account = readings.get(bill.id)
     amount = (
         decision.amount
         if decision is not None and decision.amount_edited
-        else bill.remaining_amount or Decimal("0.00")
+        else _to_pay(bill, account)
     )
-    picture = await _picture(db, company_id, bill, amount, policy, seen)
+    picture = await _picture(db, company_id, bill, amount, account, policy, seen)
     outcome, results = policies.evaluate(picture, policy)
     # What the rules read, but the time, and what they gave: a timelock that runs out changes
     # the result, so the decision moves then. Whom it pays is part of it: a bill the books move
@@ -277,11 +283,20 @@ async def _decide(
     return True
 
 
+def _to_pay(bill: InvoiceOut, account: Account | None) -> Decimal:
+    """What is left of a bill, or less where the firm's account says less is owed on it (ADR-0022);
+    one the account shows paid keeps the books' figure, for the rule to hold."""
+    left = bill.remaining_amount or Decimal("0.00")
+    owed = account.owed if account is not None else None
+    return owed if owed is not None and 0 < owed < left else left
+
+
 async def _picture(
     db: AsyncSession,
     company_id: uuid.UUID,
     bill: InvoiceOut,
     amount: Decimal,
+    account: Account | None,
     policy: PolicyOut,
     seen: _OnChain,
 ) -> Picture:
@@ -298,12 +313,18 @@ async def _picture(
         for invoice in await books.get_invoices(db, company_id, client_bills)
         if invoice.direction is InvoiceDirection.RECEIVABLE and not invoice.cancelled
     ]
+    on_clients = await books.account_readings(
+        db, company_id, {client.party_id for client in clients if client.party_id}
+    )
     trucks = tuple(await _delivery[0](db, company_id, bill.id)) if _delivery and jobs else None
     mirrored = policies.mirror(amount, bill.currency)
     payee = seen.payees.get(bill.party_id) if bill.party_id else None
     return Picture(
         amount=amount,
         left=bill.remaining_amount,
+        owed_on_account=account.owed if account is not None else None,
+        account_on=account.on if account is not None else None,
+        within_tolerance=accounts.within(bill, policy.remainder_tolerance),
         cancelled=bill.cancelled,
         party=bill.party_id is not None,
         currency=bill.currency,
@@ -313,7 +334,7 @@ async def _picture(
         trucks=trucks,
         client_invoices=len(clients),
         client_unpaid=sum(
-            1 for c in clients if c.remaining_amount is None or c.remaining_amount > 0
+            1 for client in clients if not _client_paid(client, on_clients.get(client.id), policy)
         ),
         paid_on_chain=bill.id in seen.paid,
         paid_as_another=await repository.approved_among(
@@ -324,6 +345,16 @@ async def _picture(
         payee_active_from=seen.active_from.get(payee) if payee is not None else None,
         now=int(utcnow().timestamp()),
     )
+
+
+def _client_paid(invoice: InvoiceOut, account: Account | None, policy: PolicyOut) -> bool:
+    """Whether a client invoice counts as paid for pay-when-paid: the books show it paid, or what
+    is left is within the tolerance, or the company records payments on account and the client's
+    account shows it paid."""
+    if invoice.remaining_amount is None:
+        return False
+    read = accounts.settled(invoice, account, policy.payments_recorded, policy.remainder_tolerance)
+    return read in (None, Settled.PAID_ON_ACCOUNT, Settled.PAID_WITH_DIFFERENCE)
 
 
 # The owner's answer
@@ -837,13 +868,15 @@ def _hash(content: dict[str, Any]) -> str:
 
 
 def _jsonable(value: Any) -> Any:
-    """As stored in JSON and read back the same: amounts as text, never floats."""
+    """As stored in JSON and read back the same: amounts as text, never floats; days in ISO."""
     if isinstance(value, dict):
         return {key: _jsonable(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
         return [_jsonable(item) for item in value]
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
     return value
 
 

@@ -10,7 +10,7 @@ read and stops, and the next month continues from its cursor.
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Final
@@ -18,7 +18,7 @@ from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.books import repository, sources
+from app.modules.books import accounts, repository, sources
 from app.modules.books.repository import InvoiceFilter as InvoiceFilter
 from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort, InvoiceTotal
 from app.modules.books.sources import (
@@ -38,6 +38,8 @@ from app.modules.facts.service import NewFact
 from app.modules.parties import service as parties
 from app.modules.parties.models import IdentifierKind
 from app.modules.parties.service import Identifier
+from app.modules.policy import service as policies
+from app.modules.policy.models import PaymentsRecorded
 from app.platform import clock, events
 from app.platform.auth import Actor
 from app.platform.db import open_session
@@ -210,7 +212,8 @@ async def _sync_parties(
             identifiers=card.identifiers,
             balance=card.balance,
             balance_currency=card.balance_currency,
-            balance_on=card.balance_on,
+            # A source that gives no balance's date gives the balance as of the day it is read.
+            balance_on=card.balance_on or today,
         )
         result.parties += 1
     await repository.save_cursor(db, company_id, source.name, "parties", today)
@@ -419,7 +422,7 @@ async def list_invoices(
 ) -> InvoicePage:
     rows, total = await repository.list_invoices(db, actor.company_id, which, sort=sort, page=page)
     return InvoicePage(
-        items=[InvoiceOut.model_validate(row) for row in rows],
+        items=await _read(db, actor.company_id, [InvoiceOut.model_validate(row) for row in rows]),
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -473,7 +476,56 @@ async def get_invoice(db: AsyncSession, actor: Actor, invoice_id: uuid.UUID) -> 
     found = await get_invoices(db, actor.company_id, [invoice_id])
     if not found:
         raise NotFound("No such invoice")
-    return found[0]
+    return (await _read(db, actor.company_id, found))[0]
+
+
+async def account_readings(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Collection[uuid.UUID]
+) -> dict[uuid.UUID, accounts.Account]:
+    """What each of these firms' accounts in the books says of its open invoices (ADR-0022), by
+    invoice."""
+    firms = await parties.get_parties(db, company_id, list(party_ids))
+    held: dict[uuid.UUID, list[InvoiceOut]] = {}
+    for row in await repository.open_on_account(db, company_id, list(firms)):
+        if row.party_id is not None:
+            held.setdefault(row.party_id, []).append(InvoiceOut.model_validate(row))
+    readings: dict[uuid.UUID, accounts.Account] = {}
+    for party_id, firm in firms.items():
+        balance = accounts.Balance(firm.balance, firm.balance_currency, firm.balance_on)
+        readings |= accounts.lay(balance, held.get(party_id, []))
+    return readings
+
+
+async def _read(
+    db: AsyncSession, company_id: uuid.UUID, invoices: list[InvoiceOut]
+) -> list[InvoiceOut]:
+    """The invoices with what is read of them beside the books' own figures."""
+    policy = await policies.current_policy(db, company_id)
+    # Read per invoice, an invoice is shown as the books give it, its firm's account aside.
+    alone = policy.payments_recorded is PaymentsRecorded.PER_INVOICE
+    readings = (
+        {}
+        if alone
+        else await account_readings(
+            db, company_id, {invoice.party_id for invoice in invoices if invoice.party_id}
+        )
+    )
+    read = []
+    for invoice in invoices:
+        account = readings.get(invoice.id)
+        settled = accounts.settled(
+            invoice, account, policy.payments_recorded, policy.remainder_tolerance
+        )
+        read.append(
+            invoice.model_copy(
+                update={
+                    "settled": settled,
+                    "account_owed": account.owed if account and settled else None,
+                    "account_on": account.on if account and settled else None,
+                }
+            )
+        )
+    return read
 
 
 async def remap_invoices(db: AsyncSession, company_id: uuid.UUID) -> int:

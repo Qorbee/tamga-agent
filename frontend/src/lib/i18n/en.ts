@@ -69,6 +69,16 @@ export const en = {
     notifyTurnOn: "Turn on",
     notifyOn: "On",
     notifyBlocked: "Blocked in this browser's settings",
+    payments: {
+      title: "Payments in your books",
+      recorded: "You record a payment",
+      recordedHint: "Against the firm's account (cari), an invoice can stay open though it was paid. Tamga never pays more than the firm's account says is owed, whichever you choose.",
+      per_invoice: "Per invoice",
+      on_account: "On the firm's account",
+      tolerance: "A remainder this small reads as paid",
+      toleranceHint: "Percent of the invoice: a bank fee or a rate difference.",
+      save: "Save",
+    },
     identity: {
       title: "Who you are",
       hint: "Tamga tells your own mail and papers from your firms' by these, and shows what proves each.",
@@ -287,6 +297,18 @@ export const en = {
     issuedOn: (day: string) => `Issued ${day}`,
     dueOn: (day: string) => `Due ${day}`,
     paid: "Paid",
+    /** What an open invoice reads as beside the books' own figures (ADR-0022). */
+    settled: {
+      paidOnAccount: "Paid on account",
+      paidWithDifference: "Paid, with a difference",
+      owedOnAccount: (amount: string) => `${amount} owed on account`,
+      why: {
+        paidOnAccount: (day: string) => `The firm's account in your books on ${day} shows it paid.`,
+        paidWithDifference: "What is left is within your tolerance: a bank fee or a rate difference.",
+        owed: (amount: string, day: string) => `The firm's account on ${day} shows ${amount} of it owed.`,
+        unknown: "The firm's account can't say whether it is paid.",
+      },
+    },
     everyFirm: "Show every firm",
     firmKinds: { organisation: "Company", person: "Person" },
     empty: "Nothing here",
@@ -340,6 +362,7 @@ export const en = {
       timelock: "The wallet is new and still in its timelock",
       vault_caps: "More than the vault allows now",
       approval_limit: "Above your approval limit",
+      on_account: "The firm's account shows it paid, or less owed",
     } as Record<string, string>,
   },
   log: {

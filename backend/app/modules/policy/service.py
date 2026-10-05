@@ -11,8 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.policy import repository, rules
-from app.modules.policy.models import Policy
-from app.modules.policy.schemas import Outcome, Picture, PolicyIn, PolicyOut, Result
+from app.modules.policy.models import PaymentsRecorded, Policy
+from app.modules.policy.schemas import (
+    Outcome,
+    Picture,
+    PolicyChange,
+    PolicyIn,
+    PolicyOut,
+    Result,
+)
 from app.platform import chain
 from app.platform.auth import Actor, Role
 from app.platform.errors import BadRequest
@@ -24,6 +31,8 @@ DEFAULT: Final = PolicyOut(
     currency="USD",
     approval_limit=Decimal("0.00"),
     pay_when_paid=True,
+    payments_recorded=PaymentsRecorded.ON_ACCOUNT,
+    remainder_tolerance=Decimal("2.00"),
     created_at=None,
 )
 _CENT: Final = Decimal("0.01")
@@ -53,10 +62,27 @@ async def set_policy(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOu
     """Puts a new version in force. Decisions made under the old one are evaluated again on the
     next pass, since the version is part of what they were made from. Commits."""
     actor.require(Role.OWNER)
+    await repository.lock_versions(db, actor.company_id)
+    return await _put_in_force(db, actor, body)
+
+
+async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> PolicyOut:
+    """Puts in force a new version with the fields given changed from the version in force as it
+    stands under the lock, so a change made elsewhere meanwhile is kept. Commits."""
+    actor.require(Role.OWNER)
+    await repository.lock_versions(db, actor.company_id)
+    current = await current_policy(db, actor.company_id)
+    merged = current.model_dump(include=set(PolicyIn.model_fields)) | body.model_dump(
+        exclude_none=True
+    )
+    return await _put_in_force(db, actor, PolicyIn.model_validate(merged))
+
+
+async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOut:
+    """Under the caller's lock on the company's versions."""
     if body.currency not in mirror_rates():
         # Every amount of the policy is compared through this currency's rate.
         raise BadRequest(f"No mirror rate for {body.currency}")
-    await repository.lock_versions(db, actor.company_id)
     before = await repository.current(db, actor.company_id)
     policy = Policy(
         company_id=actor.company_id,
@@ -64,6 +90,8 @@ async def set_policy(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOu
         currency=body.currency,
         approval_limit=body.approval_limit,
         pay_when_paid=body.pay_when_paid,
+        payments_recorded=body.payments_recorded,
+        remainder_tolerance=body.remainder_tolerance,
         created_by=actor.user_id,
     )
     await repository.add(db, policy)

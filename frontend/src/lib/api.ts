@@ -236,6 +236,13 @@ export const openCompanyEvents = () =>
 
 // Books: invoices as the accounting system holds them, read only.
 export type Invoice = Schemas["InvoiceOut"];
+export type Policy = Schemas["PolicyOut"];
+/** The company's policy in force; version 0 is the defaults, while the owner has set none. */
+export const getPolicy = () => request<Policy>("/policy");
+/** A new version of the policy with only these fields changed from the one in force: the owner's
+ * only. */
+export const changePolicy = (body: Schemas["PolicyChange"]) =>
+  request<Policy>("/policy", json("PATCH", body));
 export type InvoicePage = Schemas["InvoicePage"];
 type InvoiceQuery = NonNullable<operations["invoices.list_invoices"]["parameters"]["query"]>;
 export const listInvoices = (params: InvoiceQuery) => request<InvoicePage>(`/invoices${query(params)}`);

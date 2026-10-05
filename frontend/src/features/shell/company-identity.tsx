@@ -168,7 +168,8 @@ function TaxNumber({ profile, owner }: { profile: CompanyProfile; owner: boolean
           <Button
             variant="ghost"
             size="sm"
-            className="justify-self-start"
+            // Its words wrap on a phone rather than widen the dialog past the screen.
+            className="h-auto min-h-8 max-w-full justify-self-start py-1.5 text-start whitespace-normal"
             onClick={() => {
               // The number as it is, so adding the legal name needs no retyping.
               setTaxId(own.tax_id);

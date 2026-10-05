@@ -10,6 +10,7 @@ over ``propose`` over ``ok``. What the owner decides beyond them is the decision
 from collections.abc import Callable
 from typing import Final
 
+from app.modules.policy.models import PaymentsRecorded
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Result
 from app.platform import chain
 
@@ -42,6 +43,43 @@ def _amount(picture: Picture, policy: PolicyOut) -> Result:
     if picture.usdc_units == 0:
         return Result("amount", Outcome.HOLD, "Too small to be paid in test USDC")
     return Result("amount", Outcome.OK)
+
+
+def _on_account(picture: Picture, policy: PolicyOut) -> Result:
+    """The firm's account caps what is paid whatever the policy's setting (ADR-0022): a bill the
+    account shows paid is never proposed, nor an amount above what it shows owed; one it shows
+    partly owed is proposed for that much, the owner's call."""
+    owed, on = picture.owed_on_account, picture.account_on
+    of = f" on {on.isoformat()}" if on else ""
+    if owed is not None and owed <= 0:
+        return Result(
+            "on_account", Outcome.HOLD, f"The firm's account in the books{of} shows it paid"
+        )
+    figure = f"{owed} {picture.currency}" if picture.currency else str(owed)
+    if owed is not None and picture.amount > owed:
+        return Result(
+            "on_account",
+            Outcome.HOLD,
+            f"The firm's account in the books{of} shows only {figure} owed on it, less than the "
+            "amount",
+        )
+    if owed is not None and picture.left is not None and owed < picture.left:
+        return Result(
+            "on_account",
+            Outcome.PROPOSE,
+            f"The firm's account in the books{of} shows {figure} owed on it, less than the bill",
+        )
+    if picture.within_tolerance:
+        return Result(
+            "on_account",
+            Outcome.PROPOSE,
+            "What is left is within the policy's tolerance: a bank fee or a rate difference?",
+        )
+    if owed is None and policy.payments_recorded is PaymentsRecorded.ON_ACCOUNT:
+        return Result(
+            "on_account", Outcome.PROPOSE, "The firm's account in the books cannot speak for it"
+        )
+    return Result("on_account", Outcome.OK)
 
 
 def _duplicate(picture: Picture, policy: PolicyOut) -> Result:
@@ -150,6 +188,7 @@ def _approval_limit(picture: Picture, policy: PolicyOut) -> Result:
 RULES: Final[tuple[Rule, ...]] = (
     _currency,
     _amount,
+    _on_account,
     _duplicate,
     _project,
     _proof_of_delivery,

@@ -2353,6 +2353,30 @@
       },
       "InvoiceOut": {
         "properties": {
+          "account_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account On"
+          },
+          "account_owed": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Owed"
+          },
           "cancelled": {
             "title": "Cancelled",
             "type": "boolean"
@@ -2506,6 +2530,16 @@
               }
             ],
             "title": "Same As Id"
+          },
+          "settled": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Settled"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "title": "Source",
@@ -4127,6 +4161,15 @@
         "title": "PaymentState",
         "type": "string"
       },
+      "PaymentsRecorded": {
+        "description": "How the company records a payment in its books (ADR-0022): what the Books page shows of an\nopen invoice, and whether pay-when-paid counts a client invoice paid on account as paid.",
+        "enum": [
+          "per_invoice",
+          "on_account"
+        ],
+        "title": "PaymentsRecorded",
+        "type": "string"
+      },
       "PlacementDecision": {
         "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested; with ``from_project_id`` it is moved there.",
         "properties": {
@@ -4341,6 +4384,79 @@
         "title": "PlacementPage",
         "type": "object"
       },
+      "PolicyChange": {
+        "description": "A new version of the company's policy with only these fields changed from the one in force\nwhen it is written: a screen that shows one setting never writes back another's stale value.",
+        "properties": {
+          "approval_limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Limit"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "pay_when_paid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay When Paid"
+          },
+          "payments_recorded": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentsRecorded"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remainder_tolerance": {
+            "anyOf": [
+              {
+                "maximum": 20.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainder Tolerance"
+          }
+        },
+        "title": "PolicyChange",
+        "type": "object"
+      },
       "PolicyIn": {
         "description": "A new version of the company's policy, replacing the one in force.",
         "properties": {
@@ -4365,6 +4481,25 @@
           "pay_when_paid": {
             "title": "Pay When Paid",
             "type": "boolean"
+          },
+          "payments_recorded": {
+            "$ref": "#/components/schemas/PaymentsRecorded",
+            "default": "on_account"
+          },
+          "remainder_tolerance": {
+            "anyOf": [
+              {
+                "maximum": 20.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              }
+            ],
+            "default": "2.00",
+            "title": "Remainder Tolerance"
           }
         },
         "required": [
@@ -4402,6 +4537,14 @@
             "title": "Pay When Paid",
             "type": "boolean"
           },
+          "payments_recorded": {
+            "$ref": "#/components/schemas/PaymentsRecorded"
+          },
+          "remainder_tolerance": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remainder Tolerance",
+            "type": "string"
+          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -4412,6 +4555,8 @@
           "currency",
           "approval_limit",
           "pay_when_paid",
+          "payments_recorded",
+          "remainder_tolerance",
           "created_at"
         ],
         "title": "PolicyOut",
@@ -5187,6 +5332,17 @@
         ],
         "title": "RuleResult",
         "type": "object"
+      },
+      "Settled": {
+        "description": "What is read of an invoice the books show open, beside its own figures.",
+        "enum": [
+          "open",
+          "paid_on_account",
+          "paid_with_difference",
+          "unknown"
+        ],
+        "title": "Settled",
+        "type": "string"
       },
       "SheetOut": {
         "properties": {
@@ -9681,6 +9837,51 @@
           }
         ],
         "summary": "Get Policy",
+        "tags": [
+          "policy"
+        ]
+      },
+      "patch": {
+        "description": "A new version of the policy with only the fields given changed from the one in force: the\nowner's only.",
+        "operationId": "policy.change_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Change Policy",
         "tags": [
           "policy"
         ]

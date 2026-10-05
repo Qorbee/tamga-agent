@@ -66,6 +66,16 @@ export const tr: Dictionary = {
     notifyTurnOn: "Aç",
     notifyOn: "Açık",
     notifyBlocked: "Bu tarayıcının ayarlarında engelli",
+    payments: {
+      title: "Defterinizdeki ödemeler",
+      recorded: "Ödemeyi işlediğiniz yer",
+      recordedHint: "Firmanın carisine işlenen ödemede fatura ödendiği halde açık kalabilir. Hangisini seçerseniz seçin Tamga, firmanın carisinin gösterdiği borçtan fazlasını asla ödemez.",
+      per_invoice: "Faturaya",
+      on_account: "Firmanın carisine",
+      tolerance: "Bu kadar küçük kalan ödenmiş sayılır",
+      toleranceHint: "Faturanın yüzdesi: banka masrafı ya da kur farkı.",
+      save: "Kaydet",
+    },
     identity: {
       title: "Siz kimsiniz",
       hint: "Tamga kendi postanızı ve evrakınızı firmalarınızınkinden bunlarla ayırır; her birini neyin kanıtladığını gösterir.",
@@ -277,6 +287,17 @@ export const tr: Dictionary = {
     issuedOn: (day: string) => `Kesim ${day}`,
     dueOn: (day: string) => `Vade ${day}`,
     paid: "Ödendi",
+    settled: {
+      paidOnAccount: "Cariden ödendi",
+      paidWithDifference: "Ödendi, farkla",
+      owedOnAccount: (amount: string) => `Caride ${amount} borç`,
+      why: {
+        paidOnAccount: (day: string) => `Firmanın defterinizdeki carisi ${day} itibarıyla bunu ödenmiş gösteriyor.`,
+        paidWithDifference: "Kalan, toleransınızın içinde: banka masrafı ya da kur farkı.",
+        owed: (amount: string, day: string) => `Firmanın carisi ${day} itibarıyla bunun ${amount} kadarını borç gösteriyor.`,
+        unknown: "Firmanın carisi bunun ödenip ödenmediğini söyleyemiyor.",
+      },
+    },
     everyFirm: "Tüm firmaları göster",
     firmKinds: { organisation: "Şirket", person: "Kişi" },
     empty: "Burada bir şey yok",
@@ -327,6 +348,7 @@ export const tr: Dictionary = {
       timelock: "Cüzdan yeni, bekleme süresinde",
       vault_caps: "Kasanın şu an izin verdiğinden fazla",
       approval_limit: "Onay sınırınızın üstünde",
+      on_account: "Firmanın carisi ödendi ya da daha az borç gösteriyor",
     } as Record<string, string>,
   },
   log: {
