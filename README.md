@@ -211,7 +211,11 @@ Contracts need Foundry at the release in `contracts/.foundry-version` and the li
 
 ## Checks
 
-The ones CI runs, each from its package's directory:
+`scripts/check-all.sh` runs every check CI runs, on this machine, with `docker compose up`: the
+backend's on a database of their own at the ports the root `.env` gives. Name jobs to run only
+those (`scripts/check-all.sh backend audit`).
+
+The same checks, each from its package's directory:
 
 ```bash
 # backend/, with docker compose up; the tests include the API contract check
@@ -235,7 +239,7 @@ If the root `.env` moved the ports, export `DATABASE_URL` (to the `app_test` dat
 | [`contracts/`](contracts/README.md) | Solidity with Foundry: PolicyVault, the contract that caps the executor |
 | `docker-compose.yml` | Local Postgres, file storage and the converter; the backend and web images under `--profile app` |
 | [`deploy/`](deploy/README.md) | The production Compose file laid over it, and the server's steps |
-| `scripts/` | `setup-machine.sh` (per-machine supply-chain settings); `export-abi.sh` (contract ABIs into the backend); `find_hidden_unicode.py` (invisible characters, in CI and pre-commit) |
+| `scripts/` | `check-all.sh` (CI's checks, run here); `setup-machine.sh` (per-machine supply-chain settings); `export-abi.sh` (contract ABIs into the backend); `find_hidden_unicode.py` (invisible characters, in CI and pre-commit) |
 | `.github/` | CI and the pull-request checklist |
 
 ## Supply chain
