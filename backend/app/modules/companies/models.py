@@ -2,11 +2,12 @@ import uuid
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, String, func, text
+from sqlalchemy import CheckConstraint, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base, text_enum
 from app.platform.language import Language
+from app.platform.tenancy import CompanyScoped
 
 
 class CompanyKind(StrEnum):
@@ -58,3 +59,25 @@ class Company(Base):
     )
     # Replays only: how far the history has been fed. Nothing in the company may see past it.
     replay_cursor: Mapped[datetime | None]
+    # Who the company is to the tax office: its tax number (a VKN or TCKN in Turkey) and its legal
+    # name, set by the owner once modules/profile has checked them. Null until then.
+    tax_id: Mapped[str | None] = mapped_column(String(20))
+    legal_name: Mapped[str | None] = mapped_column(String(300))
+    # What the tax registry answered for ``tax_id``, and when: the name it is registered under, or
+    # null when the registry does not know it. Both null when the registry was not reached.
+    tax_registry_title: Mapped[str | None] = mapped_column(String(300))
+    tax_registry_checked_at: Mapped[datetime | None]
+
+
+class CompanyDomain(CompanyScoped, Base):
+    """The owner's word on one mail domain: the company's (``ours``) though none of its mailboxes
+    or sent mail shows it, or not the company's though its sent mail does. What the mail shows
+    needs no row; modules/profile reads it each time."""
+
+    __tablename__ = "company_domains"
+    __table_args__ = (UniqueConstraint("company_id", "domain"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    domain: Mapped[str] = mapped_column(String(253))
+    ours: Mapped[bool]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

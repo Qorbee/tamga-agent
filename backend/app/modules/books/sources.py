@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from app.modules.books.models import InvoiceDirection, InvoiceKind
 from app.modules.parties.models import PartyKind
@@ -98,6 +98,24 @@ class BooksSource(Protocol):
     def dispatches(self, start: date, end: date) -> AsyncIterator[DispatchRecord]: ...
 
     async def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Taxpayer:
+    """A tax number as the tax registry knows it: the name its holder is registered under."""
+
+    tax_id: str
+    title: str
+
+
+@runtime_checkable
+class TaxRegistry(Protocol):
+    """A source that can also ask the tax registry who holds a tax number, as an e-invoice
+    integrator can: it delivers e-invoices by that number. It only reads."""
+
+    async def taxpayer(self, tax_id: str) -> Taxpayer | None:
+        """The holder of ``tax_id``, or None when the registry has none on record."""
+        ...
 
 
 # (company id, budget) → a source for that company, or None when it is not configured for it.

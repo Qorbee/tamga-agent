@@ -27,6 +27,8 @@ from app.modules.books.sources import (
     DispatchRecord,
     InvoiceRecord,
     PartyCard,
+    Taxpayer,
+    TaxRegistry,
 )
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
@@ -110,6 +112,36 @@ async def sync_pilot_books() -> SyncResult:
         result.dispatches += one.dispatches
         result.budget_spent = result.budget_spent or one.budget_spent
     return result
+
+
+class RegistryUnavailable(Exception):
+    """The tax registry could not be asked: no source of the company's can ask it, the month's
+    reads are spent, or the source failed."""
+
+
+async def look_up_taxpayer(db: AsyncSession, company_id: uuid.UUID, tax_id: str) -> Taxpayer | None:
+    """Who the tax registry says holds ``tax_id``, asked through the company's books source: one
+    read of its monthly budget. None when the registry has no record, which does not make the
+    number wrong: only e-document users are on it. A replay company is never read live."""
+    company = (await companies.get_companies(db, [company_id])).get(company_id)
+    if company is None or company.mode is CompanyMode.REPLAY:
+        raise RegistryUnavailable("the company's books are not read live")
+    for name, registered in sources.registered().items():
+        source = registered.factory(
+            company_id, DbReadBudget(company_id, name, registered.monthly_reads())
+        )
+        if source is None:
+            continue
+        try:
+            if isinstance(source, TaxRegistry):
+                return await source.taxpayer(tax_id)
+        except Exception as exc:
+            # The source's own message: never the request, whose headers carry its key.
+            logger.warning("the tax registry could not be asked through %s: %s", name, exc)
+            raise RegistryUnavailable(name) from exc
+        finally:
+            await source.close()
+    raise RegistryUnavailable("no books source of the company asks the tax registry")
 
 
 async def sync_source(company_id: uuid.UUID, source: BooksSource) -> SyncResult:

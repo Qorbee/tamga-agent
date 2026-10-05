@@ -216,6 +216,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/company/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile */
+        get: operations["profile.get_profile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/company/profile/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Domain */
+        post: operations["profile.add_domain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/company/profile/domains/{domain}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Domain */
+        delete: operations["profile.remove_domain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/company/profile/tax-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Tax Id */
+        put: operations["profile.set_tax_id"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/decision-chain": {
         parameters: {
             query?: never;
@@ -1427,6 +1495,28 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** CheckFinding */
+        CheckFinding: {
+            /** Count */
+            count?: number | null;
+            /** Firm */
+            firm?: string | null;
+            reason: components["schemas"]["CheckReason"];
+            /** Suggestion */
+            suggestion?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /**
+         * CheckReason
+         * @enum {string}
+         */
+        CheckReason: "not_valid" | "shared_domain" | "firms_address" | "firms_tax_id" | "firms_name" | "only_received" | "no_mail" | "spelling" | "registry_name" | "not_seen";
+        /**
+         * CheckVerdict
+         * @enum {string}
+         */
+        CheckVerdict: "ok" | "confirm" | "refused" | "invalid";
         /**
          * ChecklistItemOut
          * @description One item of a project's or a truck's checklist, as it stands: ``done`` (a confirmed paper,
@@ -1554,6 +1644,21 @@ export interface components {
          * @enum {string}
          */
         CompanyMode: "replay" | "shadow" | "live";
+        /**
+         * CompanyProfile
+         * @description Who the company is: the name it goes by, its legal name and tax number, and the mail
+         *     domains it writes from, each with what shows it.
+         */
+        CompanyProfile: {
+            /** Domains */
+            domains: components["schemas"]["OwnDomain"][];
+            /** Legal Name */
+            legal_name: string | null;
+            /** Name */
+            name: string;
+            proposal: components["schemas"]["TaxIdProposal"] | null;
+            tax_id: components["schemas"]["OwnTaxId"] | null;
+        };
         /** CompanySummary */
         CompanySummary: {
             /**
@@ -1858,6 +1963,22 @@ export interface components {
             /** Filename */
             filename?: string | null;
         };
+        /** DomainAdd */
+        DomainAdd: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Domain */
+            domain: string;
+        };
+        /**
+         * DomainSource
+         * @description What shows a mail domain is the company's.
+         * @enum {string}
+         */
+        DomainSource: "mailbox" | "sent_mail" | "owner";
         /**
          * EventKind
          * @enum {string}
@@ -1898,6 +2019,21 @@ export interface components {
             html: string;
             /** Remote Images */
             remote_images: number;
+        };
+        /** IdentityChange */
+        IdentityChange: {
+            check: components["schemas"]["IdentityCheck"];
+            profile: components["schemas"]["CompanyProfile"];
+            /** Saved */
+            saved: boolean;
+        };
+        /** IdentityCheck */
+        IdentityCheck: {
+            /** Findings */
+            findings: components["schemas"]["CheckFinding"][];
+            /** Value */
+            value: string | null;
+            verdict: components["schemas"]["CheckVerdict"];
         };
         /** InviteAccept */
         InviteAccept: {
@@ -2430,6 +2566,32 @@ export interface components {
          * @enum {string}
          */
         "Outcome-Input": "linked" | "proposed" | "asked" | "unplaced";
+        /** OwnDomain */
+        OwnDomain: {
+            /** Domain */
+            domain: string;
+            /** Ours */
+            ours: boolean;
+            /** Received */
+            received: number;
+            /** Removable */
+            removable: boolean;
+            /** Sent */
+            sent: number;
+            /** Sources */
+            sources: components["schemas"]["DomainSource"][];
+        };
+        /** OwnTaxId */
+        OwnTaxId: {
+            /** Checked At */
+            checked_at: string | null;
+            evidence: components["schemas"]["TaxIdEvidence"];
+            registry: components["schemas"]["RegistryStatus"];
+            /** Registry Title */
+            registry_title: string | null;
+            /** Tax Id */
+            tax_id: string;
+        };
         /**
          * PartyKind
          * @enum {string}
@@ -2871,6 +3033,11 @@ export interface components {
          */
         Reason: "password" | "unsupported" | "damaged" | "too_large" | "limits";
         /**
+         * RegistryStatus
+         * @enum {string}
+         */
+        RegistryStatus: "found" | "not_found" | "not_asked";
+        /**
          * Role
          * @enum {string}
          */
@@ -3027,6 +3194,40 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /**
+         * TaxIdEvidence
+         * @description Where a tax number was seen in the company's own records.
+         */
+        TaxIdEvidence: {
+            /** Papers */
+            papers: number;
+            /** Received Mails */
+            received_mails: number;
+            /** Sent Mails */
+            sent_mails: number;
+        };
+        /**
+         * TaxIdProposal
+         * @description A tax number the company's own sent mail gives, which no firm in its books has: Tamga's
+         *     guess at the company's own, for the owner to confirm.
+         */
+        TaxIdProposal: {
+            evidence: components["schemas"]["TaxIdEvidence"];
+            /** Tax Id */
+            tax_id: string;
+        };
+        /** TaxIdSet */
+        TaxIdSet: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Legal Name */
+            legal_name?: string | null;
+            /** Tax Id */
+            tax_id: string;
         };
         /** TextOut */
         TextOut: {
@@ -3590,6 +3791,123 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "profile.get_profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyProfile"];
+                };
+            };
+        };
+    };
+    "profile.add_domain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DomainAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "profile.remove_domain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                domain: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "profile.set_tax_id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaxIdSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityChange"];
+                };
             };
             /** @description Validation Error */
             422: {

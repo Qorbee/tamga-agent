@@ -98,6 +98,22 @@ export const translate = (body: Schemas["TranslationRequest"]) =>
 export const updateCompany = (body: Schemas["CompanyUpdate"]) =>
   request<Me>("/me/company", json("PATCH", body));
 
+export type CompanyProfile = Schemas["CompanyProfile"];
+export type IdentityChange = Schemas["IdentityChange"];
+export type IdentityCheck = Schemas["IdentityCheck"];
+export type CheckFinding = Schemas["CheckFinding"];
+export type OwnDomain = Schemas["OwnDomain"];
+/** Who the company is: its legal name, tax number and mail domains, each with what shows it. */
+export const getCompanyProfile = () => request<CompanyProfile>("/company/profile");
+/** Saved only when the checks find nothing against it, or the owner confirms their doubts. */
+export const setCompanyTaxId = (body: Schemas["TaxIdSet"]) =>
+  request<IdentityChange>("/company/profile/tax-id", json("PUT", body));
+export const addCompanyDomain = (body: Schemas["DomainAdd"]) =>
+  request<IdentityChange>("/company/profile/domains", json("POST", body));
+/** The owner says a domain is not the company's. */
+export const removeCompanyDomain = (domain: string) =>
+  request<CompanyProfile>(`/company/profile/domains/${encodeURIComponent(domain)}`, { method: "DELETE" });
+
 // Projects
 export type Project = Schemas["ProjectOut"];
 export type ProjectPage = Schemas["ProjectPage"];

@@ -3,9 +3,10 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.companies.models import Company, CompanyKind
+from app.modules.companies.models import Company, CompanyDomain, CompanyKind
 from app.platform.language import Language
 
 
@@ -48,3 +49,53 @@ async def expired_sandboxes(db: AsyncSession, now: datetime, limit: int) -> list
 
 async def delete_company(db: AsyncSession, company_id: uuid.UUID) -> None:
     await db.execute(delete(Company).where(Company.id == company_id))
+
+
+async def set_tax_id(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    tax_id: str,
+    legal_name: str | None,
+    registry_title: str | None,
+    checked_at: datetime | None,
+) -> None:
+    await db.execute(
+        update(Company)
+        .where(Company.id == company_id)
+        .values(
+            tax_id=tax_id,
+            legal_name=legal_name,
+            tax_registry_title=registry_title,
+            tax_registry_checked_at=checked_at,
+        )
+    )
+
+
+async def domain_words(db: AsyncSession, company_id: uuid.UUID) -> list[CompanyDomain]:
+    rows = await db.scalars(
+        select(CompanyDomain)
+        .where(CompanyDomain.company_id == company_id)
+        .order_by(CompanyDomain.domain)
+    )
+    return list(rows)
+
+
+async def set_domain_word(
+    db: AsyncSession, company_id: uuid.UUID, domain: str, *, ours: bool
+) -> None:
+    statement = insert(CompanyDomain).values(company_id=company_id, domain=domain, ours=ours)
+    await db.execute(
+        statement.on_conflict_do_update(
+            index_elements=[CompanyDomain.company_id, CompanyDomain.domain],
+            set_={"ours": statement.excluded.ours},
+        )
+    )
+
+
+async def forget_domain_word(db: AsyncSession, company_id: uuid.UUID, domain: str) -> None:
+    await db.execute(
+        delete(CompanyDomain).where(
+            CompanyDomain.company_id == company_id, CompanyDomain.domain == domain
+        )
+    )

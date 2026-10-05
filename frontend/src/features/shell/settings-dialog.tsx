@@ -21,6 +21,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
+import { CompanyIdentity } from "./company-identity";
 import { allowNotifications, canNotify } from "./notify";
 
 // The chosen option is filled and in full ink; the others recede.
@@ -48,7 +49,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t.settings.title}</DialogTitle>
           <DialogDescription>{t.settings.description}</DialogDescription>
@@ -69,9 +70,16 @@ export function SettingsDialog({
             <WritingLanguagePicker />
           </Row>
         </section>
+        <CompanyIdentitySection />
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Who the company is; its changes are the owner's. */
+function CompanyIdentitySection() {
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  return <CompanyIdentity owner={me.data?.role === "owner"} />;
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {

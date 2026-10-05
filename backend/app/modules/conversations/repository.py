@@ -13,6 +13,7 @@ from sqlalchemy import (
     delete,
     exists,
     func,
+    or_,
     select,
     true,
     tuple_,
@@ -20,6 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.modules.conversations.models import (
     Channel,
@@ -897,3 +899,71 @@ async def touch_threads_carrying(
         .where(Thread.company_id == company_id, Thread.thread_key.in_(carriers))
         .values(changed_at=at)
     )
+
+
+async def mailboxes(db: AsyncSession, company_id: uuid.UUID) -> list[str]:
+    rows = await db.scalars(
+        select(MailFolder.mailbox).where(MailFolder.company_id == company_id).distinct()
+    )
+    return list(rows)
+
+
+@dataclass(frozen=True, slots=True)
+class DomainMail:
+    domain: str
+    sent: int
+    received: int
+
+
+def _sent_by_company() -> ColumnElement[bool]:
+    """A mail the company sent: it, or a copy of it, is outbound. A copy kept from the Sent folder
+    may be the only outbound one when another mailbox received the same mail first."""
+    copy = aliased(Message)
+    return or_(
+        Message.direction == Direction.OUTBOUND,
+        exists(
+            select(copy.id).where(
+                copy.company_id == Message.company_id,
+                copy.copy_of_id == Message.id,
+                copy.direction == Direction.OUTBOUND,
+            )
+        ),
+    )
+
+
+async def mail_by_sender_domain(
+    db: AsyncSession, company_id: uuid.UUID, domains: Sequence[str] | None
+) -> list[DomainMail]:
+    """Distinct mails (a copy counts once) per sender domain as stored: sent by the company, and
+    received. With no ``domains``, only those the company sent from."""
+    domain = func.lower(func.split_part(Message.sender, "@", 2))
+    outbound = _sent_by_company()
+    sent = func.count().filter(outbound)
+    received = func.count().filter(~outbound)
+    statement = (
+        select(domain, sent, received)
+        .where(
+            Message.company_id == company_id,
+            Message.channel == Channel.EMAIL,
+            Message.copy_of_id.is_(None),
+            Message.sender.contains("@"),
+        )
+        .group_by(domain)
+    )
+    if domains is None:
+        statement = statement.having(sent > 0)
+    else:
+        statement = statement.where(domain.in_(domains))
+    rows = await db.execute(statement)
+    return [DomainMail(domain, sent, received) for domain, sent, received in rows.tuples()]
+
+
+async def outbound_among(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    rows = await db.scalars(
+        select(Message.id).where(
+            Message.company_id == company_id, Message.id.in_(ids), _sent_by_company()
+        )
+    )
+    return set(rows)

@@ -192,3 +192,45 @@ async def list_parties(
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def on_mail_domain(
+    db: AsyncSession, company_id: uuid.UUID, spellings: Sequence[str]
+) -> Sequence[Party]:
+    """Parties with a mail address at a domain, in any of its ``spellings``, or a subdomain."""
+    at = [
+        PartyIdentifier.normalised.like(pattern, escape="\\")
+        for spelling in spellings
+        for pattern in (f"%@{escape_like(spelling)}", f"%@%.{escape_like(spelling)}")
+    ]
+    parties = await db.scalars(
+        select(Party)
+        .join(PartyIdentifier, PartyIdentifier.party_id == Party.id)
+        .where(
+            Party.company_id == company_id,
+            PartyIdentifier.company_id == company_id,
+            PartyIdentifier.kind == IdentifierKind.EMAIL,
+            or_(*at),
+        )
+        .distinct()
+        .order_by(Party.name)
+    )
+    return parties.all()
+
+
+async def named_from(db: AsyncSession, company_id: uuid.UUID, start: str) -> Sequence[Party]:
+    """Parties one of whose names, compared without spaces, starts with ``start``."""
+    compact = func.replace(PartyIdentifier.normalised, " ", "")
+    parties = await db.scalars(
+        select(Party)
+        .join(PartyIdentifier, PartyIdentifier.party_id == Party.id)
+        .where(
+            Party.company_id == company_id,
+            PartyIdentifier.company_id == company_id,
+            PartyIdentifier.kind == IdentifierKind.NAME,
+            compact.like(f"{escape_like(start)}%", escape="\\"),
+        )
+        .distinct()
+        .order_by(Party.name)
+    )
+    return parties.all()

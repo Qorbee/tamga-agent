@@ -12,7 +12,7 @@ from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import repository
-from app.modules.companies.models import Company, CompanyKind, CompanyMode
+from app.modules.companies.models import Company, CompanyDomain, CompanyKind, CompanyMode
 from app.platform.language import Language
 
 # A pilot starts in shadow: beside real work, sending nothing (ADR-0009). Demo companies and
@@ -44,6 +44,41 @@ async def get_companies(db: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid
 async def set_language(db: AsyncSession, company_id: uuid.UUID, language: Language) -> None:
     """What Tamga writes from now on is in ``language``; what it wrote before stays as it is."""
     await repository.set_language(db, company_id, language)
+
+
+async def set_tax_id(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    tax_id: str,
+    legal_name: str | None,
+    registry_title: str | None,
+    checked_at: datetime | None,
+) -> None:
+    """Who the company is to the tax office. Only modules/profile calls it, after its checks."""
+    await repository.set_tax_id(
+        db,
+        company_id,
+        tax_id=tax_id,
+        legal_name=legal_name,
+        registry_title=registry_title,
+        checked_at=checked_at,
+    )
+
+
+async def domain_words(db: AsyncSession, company_id: uuid.UUID) -> list[CompanyDomain]:
+    """The owner's word on each mail domain they named: the company's or not."""
+    return await repository.domain_words(db, company_id)
+
+
+async def set_domain_word(
+    db: AsyncSession, company_id: uuid.UUID, domain: str, *, ours: bool
+) -> None:
+    await repository.set_domain_word(db, company_id, domain, ours=ours)
+
+
+async def forget_domain_word(db: AsyncSession, company_id: uuid.UUID, domain: str) -> None:
+    await repository.forget_domain_word(db, company_id, domain)
 
 
 async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:

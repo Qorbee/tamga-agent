@@ -704,6 +704,88 @@
         "title": "ChatUpdate",
         "type": "object"
       },
+      "CheckFinding": {
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "firm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Firm"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/CheckReason"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "CheckFinding",
+        "type": "object"
+      },
+      "CheckReason": {
+        "enum": [
+          "not_valid",
+          "shared_domain",
+          "firms_address",
+          "firms_tax_id",
+          "firms_name",
+          "only_received",
+          "no_mail",
+          "spelling",
+          "registry_name",
+          "not_seen"
+        ],
+        "title": "CheckReason",
+        "type": "string"
+      },
+      "CheckVerdict": {
+        "enum": [
+          "ok",
+          "confirm",
+          "refused",
+          "invalid"
+        ],
+        "title": "CheckVerdict",
+        "type": "string"
+      },
       "ChecklistItemOut": {
         "description": "One item of a project's or a truck's checklist, as it stands: ``done`` (a confirmed paper,\nor the owner's mark), ``waiting`` (a paper suggested, a proof not yet marked, a bill not yet\npaid), ``missing``, or ``not_needed``. ``link_ids`` are the project links that fill it.",
         "properties": {
@@ -973,6 +1055,62 @@
         ],
         "title": "CompanyMode",
         "type": "string"
+      },
+      "CompanyProfile": {
+        "description": "Who the company is: the name it goes by, its legal name and tax number, and the mail\ndomains it writes from, each with what shows it.",
+        "properties": {
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/OwnDomain"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "legal_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxIdProposal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tax_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnTaxId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "legal_name",
+          "tax_id",
+          "proposal",
+          "domains"
+        ],
+        "title": "CompanyProfile",
+        "type": "object"
       },
       "CompanySummary": {
         "properties": {
@@ -1860,6 +1998,36 @@
         "title": "DocumentUpdate",
         "type": "object"
       },
+      "DomainAdd": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "domain": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "title": "DomainAdd",
+        "type": "object"
+      },
+      "DomainSource": {
+        "description": "What shows a mail domain is the company's.",
+        "enum": [
+          "mailbox",
+          "sent_mail",
+          "owner"
+        ],
+        "title": "DomainSource",
+        "type": "string"
+      },
       "EventKind": {
         "enum": [
           "chat",
@@ -1936,6 +2104,59 @@
           "remote_images"
         ],
         "title": "HtmlOut",
+        "type": "object"
+      },
+      "IdentityChange": {
+        "properties": {
+          "check": {
+            "$ref": "#/components/schemas/IdentityCheck"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/CompanyProfile"
+          },
+          "saved": {
+            "title": "Saved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "saved",
+          "check",
+          "profile"
+        ],
+        "title": "IdentityChange",
+        "type": "object"
+      },
+      "IdentityCheck": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/CheckFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/CheckVerdict"
+          }
+        },
+        "required": [
+          "value",
+          "verdict",
+          "findings"
+        ],
+        "title": "IdentityCheck",
         "type": "object"
       },
       "InviteAccept": {
@@ -3540,6 +3761,93 @@
         "title": "Outcome",
         "type": "string"
       },
+      "OwnDomain": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "ours": {
+            "title": "Ours",
+            "type": "boolean"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          },
+          "removable": {
+            "title": "Removable",
+            "type": "boolean"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DomainSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain",
+          "ours",
+          "sources",
+          "sent",
+          "received",
+          "removable"
+        ],
+        "title": "OwnDomain",
+        "type": "object"
+      },
+      "OwnTaxId": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/TaxIdEvidence"
+          },
+          "registry": {
+            "$ref": "#/components/schemas/RegistryStatus"
+          },
+          "registry_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registry Title"
+          },
+          "tax_id": {
+            "title": "Tax Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tax_id",
+          "registry",
+          "registry_title",
+          "checked_at",
+          "evidence"
+        ],
+        "title": "OwnTaxId",
+        "type": "object"
+      },
       "PartyKind": {
         "enum": [
           "organisation",
@@ -4775,6 +5083,15 @@
         "title": "Reason",
         "type": "string"
       },
+      "RegistryStatus": {
+        "enum": [
+          "found",
+          "not_found",
+          "not_asked"
+        ],
+        "title": "RegistryStatus",
+        "type": "string"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -5393,6 +5710,80 @@
           "password"
         ],
         "title": "SignIn",
+        "type": "object"
+      },
+      "TaxIdEvidence": {
+        "description": "Where a tax number was seen in the company's own records.",
+        "properties": {
+          "papers": {
+            "title": "Papers",
+            "type": "integer"
+          },
+          "received_mails": {
+            "title": "Received Mails",
+            "type": "integer"
+          },
+          "sent_mails": {
+            "title": "Sent Mails",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "papers",
+          "sent_mails",
+          "received_mails"
+        ],
+        "title": "TaxIdEvidence",
+        "type": "object"
+      },
+      "TaxIdProposal": {
+        "description": "A tax number the company's own sent mail gives, which no firm in its books has: Tamga's\nguess at the company's own, for the owner to confirm.",
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/TaxIdEvidence"
+          },
+          "tax_id": {
+            "title": "Tax Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tax_id",
+          "evidence"
+        ],
+        "title": "TaxIdProposal",
+        "type": "object"
+      },
+      "TaxIdSet": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "legal_name": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "tax_id": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Tax Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tax_id"
+        ],
+        "title": "TaxIdSet",
         "type": "object"
       },
       "TextOut": {
@@ -6467,6 +6858,171 @@
         "summary": "Delete Checklist Mark",
         "tags": [
           "checklists"
+        ]
+      }
+    },
+    "/company/profile": {
+      "get": {
+        "operationId": "profile.get_profile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Profile",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/company/profile/domains": {
+      "post": {
+        "operationId": "profile.add_domain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DomainAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Add Domain",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/company/profile/domains/{domain}": {
+      "delete": {
+        "operationId": "profile.remove_domain",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "title": "Domain",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Remove Domain",
+        "tags": [
+          "profile"
+        ]
+      }
+    },
+    "/company/profile/tax-id": {
+      "put": {
+        "operationId": "profile.set_tax_id",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaxIdSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Set Tax Id",
+        "tags": [
+          "profile"
         ]
       }
     },

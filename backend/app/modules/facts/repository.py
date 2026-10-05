@@ -134,3 +134,15 @@ async def forget(
             Fact.company_id == company_id, Fact.item_kind == item_kind, Fact.item_id == item_id
         )
     )
+
+
+async def of_kind(
+    db: AsyncSession, company_id: uuid.UUID, kind: str, item_kind: ItemKind, limit: int
+) -> Sequence[Fact]:
+    facts = await db.scalars(
+        select(Fact)
+        .where(Fact.company_id == company_id, Fact.kind == kind, Fact.item_kind == item_kind)
+        .order_by(Fact.created_at.desc())
+        .limit(limit)
+    )
+    return facts.all()

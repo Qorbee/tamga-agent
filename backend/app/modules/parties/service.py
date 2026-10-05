@@ -30,6 +30,7 @@ from app.modules.parties.models import (
     PartyKind,
 )
 from app.modules.parties.schemas import BalanceSide, PartyOut, PartyPage, PartySort
+from app.platform import maildomains
 from app.platform.auth import Actor
 from app.platform.errors import NotFound
 from app.platform.pagination import PageParams
@@ -164,6 +165,34 @@ async def find_parties(
         return []
     rows = await repository.find_by_identifier(db, company_id, identifier.kind, normalised)
     return [PartyMatch(party=party, confirmed=found.confirmed) for party, found in rows]
+
+
+@dataclass(frozen=True, slots=True)
+class DomainFirms:
+    # Firms with a mail address at the domain: the books say it is theirs.
+    by_address: list[Party]
+    # Firms whose name starts with the name the domain was registered as ("denizcompany.com",
+    # "ATLAS COMPANY OTOMOTİV …"): a hint, never proof, since names repeat.
+    by_name: list[Party]
+
+
+# A shorter registered name ("abc.com") starts too many firms' names to hint at one.
+_SHORTEST_DOMAIN_NAME: Final = 4
+
+
+async def firms_for_domain(db: AsyncSession, company_id: uuid.UUID, domain: str) -> DomainFirms:
+    """The firms a mail domain points to. A public provider's domain points to no one."""
+    if maildomains.is_shared(domain):
+        return DomainFirms(by_address=[], by_name=[])
+    spellings = maildomains.spellings(domain)
+    by_address = list(await repository.on_mail_domain(db, company_id, spellings))
+    name = normalise_name(maildomains.name_of(domain)).replace(" ", "")
+    by_name = (
+        list(await repository.named_from(db, company_id, name))
+        if len(name) >= _SHORTEST_DOMAIN_NAME
+        else []
+    )
+    return DomainFirms(by_address=by_address, by_name=by_name)
 
 
 async def get_parties(

@@ -32,6 +32,7 @@ from app.modules.conversations import agents, html, quoted, repository
 from app.modules.conversations.adapters.imap import FetchedMail, ListedFolder, MailboxReader
 from app.modules.conversations.mail import UNREADABLE, ParsedMail, parse_mail
 from app.modules.conversations.models import Channel, Direction, Message, Thread, ThreadCategory
+from app.modules.conversations.repository import DomainMail as DomainMail
 from app.modules.conversations.schemas import (
     AttachmentOut,
     MessageOut,
@@ -44,7 +45,7 @@ from app.modules.documents import service as documents
 from app.modules.documents.schemas import Holder
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.platform import events, llm, search, storage
+from app.platform import events, llm, maildomains, search, storage
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -765,6 +766,43 @@ class ThreadRead:
     category: ThreadCategory | None
     changed_at: datetime
     mails: list[MailRead]
+
+
+async def mailbox_domains(db: AsyncSession, company_id: uuid.UUID) -> set[str]:
+    """The domains of the mailboxes Tamga reads for the company. Each was signed in to, so each is
+    the company's own."""
+    mailboxes = await repository.mailboxes(db, company_id)
+    found = (maildomains.address_domain(mailbox) for mailbox in mailboxes)
+    return {domain for domain in found if domain is not None}
+
+
+async def mail_by_sender_domain(
+    db: AsyncSession, company_id: uuid.UUID, domains: Sequence[str] | None = None
+) -> dict[str, DomainMail]:
+    """How many mails the company sent from each sender domain and how many it received from it,
+    by the domain's IDNA form. With no ``domains``, every domain it sent from: its own mailboxes'
+    Sent folders hold them."""
+    asked = None if domains is None else [way for d in domains for way in maildomains.spellings(d)]
+    found: dict[str, DomainMail] = {}
+    for row in await repository.mail_by_sender_domain(db, company_id, asked):
+        # One domain stored in two spellings is one domain, in its IDNA form.
+        domain = maildomains.domain_of(row.domain)
+        if domain is None:
+            continue
+        held = found.get(domain)
+        found[domain] = DomainMail(
+            domain,
+            row.sent + (held.sent if held else 0),
+            row.received + (held.received if held else 0),
+        )
+    return found
+
+
+async def outbound_among(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these messages the company sent."""
+    return await repository.outbound_among(db, company_id, ids) if ids else set()
 
 
 async def companies_with_read_threads(db: AsyncSession) -> list[uuid.UUID]:

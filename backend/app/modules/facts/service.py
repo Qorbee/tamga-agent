@@ -98,6 +98,14 @@ async def items_sharing(
     return await repository.matching(db, company_id, kind, normalised)
 
 
+async def facts_of_kind(
+    db: AsyncSession, *, company_id: uuid.UUID, kind: str, item_kind: ItemKind, limit: int
+) -> Sequence[Fact]:
+    """The newest ``limit`` facts of one kind read from one kind of item (every tax number in the
+    company's mail)."""
+    return await repository.of_kind(db, company_id, kind, item_kind, limit)
+
+
 async def items_sharing_each(
     db: AsyncSession, *, company_id: uuid.UUID, pairs: Sequence[tuple[str, str]], per_pair: int
 ) -> dict[tuple[str, str], list[Fact]]:
