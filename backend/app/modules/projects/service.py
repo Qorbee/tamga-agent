@@ -16,6 +16,7 @@ transaction and never commit; those behind the API commit.
 
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Any, Final
@@ -25,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.books import service as books
+from app.modules.books.models import InvoiceKind
 from app.modules.companies import service as companies
 from app.modules.conversations import service as conversations
 from app.modules.conversations.models import Channel
@@ -143,6 +145,89 @@ async def jobs_of(
     for reader in _job_readers:
         jobs |= await reader(db, company_id, project_ids)
     return jobs
+
+
+# A firm's name this short ("Ace") starts too many others' to say one firm is another.
+_SHORTEST_FIRM_NAME: Final = 4
+# A word of a firm's name cut to this many letters is still that word ("NAK." for "NAKLİYAT").
+_SHORTEST_ABBREVIATION: Final = 3
+
+
+@dataclass(frozen=True, slots=True)
+class Firms:
+    """The firms a project has in one role: those the owner put on it, else those its job's
+    conversations name, by name only (as a model read them)."""
+
+    party_ids: frozenset[uuid.UUID] = frozenset()
+    # Compared as ``parties.name_key`` gives them.
+    names: frozenset[str] = frozenset()
+
+    def agree(self, party_id: uuid.UUID | None, name: str | None) -> bool | None:
+        """Whether a firm is one of these; None when no firm is known in the role, so nothing
+        agrees or disagrees. A name agrees when one of the two is the other's first words
+        ("Atlas Company" and "ATLAS COMPANY OTOMOTİV … LTD. ŞTİ."), a word after the first
+        perhaps abbreviated ("NAK." for "NAKLİYAT")."""
+        if not self.party_ids and not self.names:
+            return None
+        if party_id is not None and party_id in self.party_ids:
+            return True
+        key = parties.name_key(name or "").split()
+        return any(_one_firm(key, known.split()) for known in self.names)
+
+
+def _one_firm(a: list[str], b: list[str]) -> bool:
+    short, long = sorted((a, b), key=len)
+    if len("".join(short)) < _SHORTEST_FIRM_NAME or short[0] != long[0]:
+        return False
+    return all(_one_word(x, y) for x, y in zip(short, long, strict=False))
+
+
+def _one_word(a: str, b: str) -> bool:
+    shorter, longer = sorted((a, b), key=len)
+    return shorter == longer or (
+        len(shorter) >= _SHORTEST_ABBREVIATION and longer.startswith(shorter)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectFirms:
+    client: Firms
+    subcontractors: Firms
+
+    def billing(self, kind: InvoiceKind) -> Firms | None:
+        """The firms an invoice of this kind is with: the client a sale is billed to, the
+        subcontractors a purchase is billed by; None for an expense, which no role holds."""
+        if kind is InvoiceKind.SALES:
+            return self.client
+        if kind in (InvoiceKind.PURCHASE, InvoiceKind.INCOMING_E_INVOICE):
+            return self.subcontractors
+        return None
+
+
+async def firms_of(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, ProjectFirms]:
+    """Each project's client and subcontractors: the owner's where the owner named the role, else
+    the firms its job's conversations name."""
+    jobs = await jobs_of(db, company_id, project_ids)
+    rows = await repository.list_project_parties(db, company_id, project_ids)
+    named = await parties.get_parties(db, company_id, list({row.party_id for row in rows}))
+
+    def role(project_id: uuid.UUID, role: ProjectRole, read: Sequence[str]) -> Firms:
+        own = {row.party_id for row in rows if row.project_id == project_id and row.role is role}
+        if own:
+            names = {parties.name_key(named[each].name) for each in own if each in named}
+            return Firms(frozenset(own), frozenset(names) - {""})
+        return Firms(names=frozenset(map(parties.name_key, read)) - {""})
+
+    firms: dict[uuid.UUID, ProjectFirms] = {}
+    for project_id in project_ids:
+        job = jobs.get(project_id) or ProjectJob()
+        firms[project_id] = ProjectFirms(
+            client=role(project_id, ProjectRole.CLIENT, [job.client] if job.client else []),
+            subcontractors=role(project_id, ProjectRole.SUBCONTRACTOR, job.subcontractors),
+        )
+    return firms
 
 
 class NumberTaken(Conflict):
@@ -486,6 +571,21 @@ async def links_of_projects(
 async def open_projects(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Project]:
     """The company's projects but the rejected ones."""
     return await repository.open_projects(db, company_id)
+
+
+async def suggested_links(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, method: LinkMethod
+) -> Sequence[ProjectLink]:
+    """Code's links of one kind of item made one way, that nobody has answered."""
+    return await repository.suggested_links(db, company_id, item_kind, method)
+
+
+async def drop_suggested(
+    db: AsyncSession, company_id: uuid.UUID, link_ids: Sequence[uuid.UUID]
+) -> int:
+    """Removes code's links a rule of today would not make, where nobody has answered them yet;
+    a link answered meanwhile stays. How many went. Does not commit."""
+    return await repository.drop_suggested(db, company_id, link_ids)
 
 
 async def links_on_trucks(

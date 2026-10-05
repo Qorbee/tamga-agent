@@ -26,6 +26,8 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.books import service as books
+from app.modules.books.models import InvoiceKind
+from app.modules.books.schemas import InvoiceOut
 from app.modules.companies import service as companies
 from app.modules.conversations import service as conversations
 from app.modules.conversations.models import ThreadCategory
@@ -237,6 +239,8 @@ class BillsPlaced:
     several: int = 0
     # No project holds an item that shares a number with it.
     none: int = 0
+    # A sale one project shares a number with, but whose client is another firm.
+    contradicted: int = 0
 
 
 async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced:
@@ -244,7 +248,8 @@ async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced
     key number with it: its number, its e-document id, an order or CMR number its description
     gives. A bill is placed once, as the record a project holds: an incoming e-invoice booked as a
     purchase is placed as that purchase, with what both of them say. A number more than
-    KEY_MAX_ITEMS items share names no job. Does not commit."""
+    KEY_MAX_ITEMS items share names no job, and a sale whose project has another client is
+    counted, not placed: a number repeats across clients. Does not commit."""
     bills = {bill.id: bill for bill in await books.placeable_invoices(db, company_id)}
     records: dict[uuid.UUID, list[uuid.UUID]] = {}
     for bill in bills.values():
@@ -308,6 +313,7 @@ async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced
     known = await projects.get_projects(
         db, company_id, list({link.project_id for links in tied.values() for link in links})
     )
+    firms = await projects.firms_of(db, company_id, list(known))
     placed = BillsPlaced()
     for target in loose:
         found: dict[uuid.UUID, set[uuid.UUID]] = {}
@@ -321,6 +327,9 @@ async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced
             placed.none += 1
         else:
             [(project_id, evidence)] = found.items()
+            if _firm_differs(firms[project_id], bills[target]):
+                placed.contradicted += 1
+                continue
             await projects.link_item(
                 db,
                 company_id=company_id,
@@ -333,6 +342,34 @@ async def place_invoices(db: AsyncSession, company_id: uuid.UUID) -> BillsPlaced
             )
             placed.linked += 1
     return placed
+
+
+async def recheck_invoices(db: AsyncSession, company_id: uuid.UUID) -> int:
+    """Removes the sales code placed by a shared number in a project whose client is another
+    firm, as the rule of today would not place them; a link the owner answered stays. How many
+    went. Does not commit."""
+    links = await projects.suggested_links(db, company_id, ItemKind.INVOICE, LinkMethod.KEY)
+    bills = {
+        bill.id: bill
+        for bill in await books.get_invoices(db, company_id, [link.item_id for link in links])
+    }
+    firms = await projects.firms_of(db, company_id, list({link.project_id for link in links}))
+    wrong = [
+        link.id
+        for link in links
+        if link.item_id in bills and _firm_differs(firms[link.project_id], bills[link.item_id])
+    ]
+    return await projects.drop_suggested(db, company_id, wrong)
+
+
+def _firm_differs(firms: projects.ProjectFirms, bill: InvoiceOut) -> bool:
+    """Whether a sale is billed to another firm than the project's client, where it is known. A
+    purchase is never held against the job's carriers: a job buys from more firms than them (a
+    customs agent, a port)."""
+    return (
+        bill.kind is InvoiceKind.SALES
+        and firms.client.agree(bill.party_id, bill.party_name) is False
+    )
 
 
 def _as_compared_id(document_id: str) -> str:

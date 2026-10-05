@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.books import service as books
 from app.modules.books.models import InvoiceKind
+from app.modules.books.schemas import InvoiceOut
 from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
 from app.modules.facts import extractors
@@ -458,7 +459,9 @@ async def _bills_by_plate(
     db: AsyncSession, company_id: uuid.UUID, open_projects: Sequence[Project]
 ) -> int:
     """Suggests a bill no project holds to the one project with a truck, not rejected, whose
-    plate the bill names, when the bill was issued within that job's days."""
+    plate the bill names, when the bill was issued within that job's days and its firm is the
+    project's in the bill's role. A plate alone is no key: one truck carries many clients'
+    loads, most of them no project in Tamga, so the one project with the plate is no proof."""
     bills = {bill.id: bill for bill in await books.placeable_invoices(db, company_id)}
     # Placed once, as the record a project holds (an e-invoice as its booked purchase).
     targets = {bill.id: bill.same_as_id or bill.id for bill in bills.values()}
@@ -484,6 +487,7 @@ async def _bills_by_plate(
             for plate in _plates_of(truck):
                 by_plate.setdefault(_compared(plate), set()).add(truck.project_id)
     days = await _days(db, company_id, open_projects)
+    firms = await projects.firms_of(db, company_id, [project.id for project in open_projects])
     placed = 0
     for target, found in named.items():
         issued = bills[target].issue_date
@@ -494,6 +498,7 @@ async def _bills_by_plate(
             for plate in found
             for project_id in by_plate.get(plate, set())
             if _within(issued, days.get(project_id))
+            and _firm_agrees(firms[project_id], bills[target])
         }
         if len(fits) != 1:
             continue
@@ -510,6 +515,30 @@ async def _bills_by_plate(
         )
         placed += 1
     return placed
+
+
+async def recheck_bills_by_plate(db: AsyncSession, company_id: uuid.UUID) -> int:
+    """Removes the bills code placed by plate in a project whose firm in the bill's role is not
+    the bill's, or is not known, as the rule of today would not place them; a link the owner
+    answered stays. How many went. Does not commit."""
+    links = await projects.suggested_links(db, company_id, ItemKind.INVOICE, LinkMethod.SCORED)
+    bills = {
+        bill.id: bill
+        for bill in await books.get_invoices(db, company_id, [link.item_id for link in links])
+    }
+    firms = await projects.firms_of(db, company_id, list({link.project_id for link in links}))
+    wrong = [
+        link.id
+        for link in links
+        if link.item_id not in bills
+        or not _firm_agrees(firms[link.project_id], bills[link.item_id])
+    ]
+    return await projects.drop_suggested(db, company_id, wrong)
+
+
+def _firm_agrees(firms: projects.ProjectFirms, bill: InvoiceOut) -> bool:
+    billing = firms.billing(bill.kind)
+    return billing is not None and billing.agree(bill.party_id, bill.party_name) is True
 
 
 async def _days(

@@ -50,6 +50,7 @@ def main() -> int:
     print(f"  suggested: {placed.linked} bill(s)")
     print(f"    several: {placed.several} bill(s) whose numbers point to more than one project")
     print(f"       none: {placed.none} bill(s) no project shares a number with")
+    print(f"    another: {placed.contradicted} sale(s) whose project has another client")
     print("written" if args.write else "dry run, nothing written")
     return 0
 

@@ -12,10 +12,12 @@ import pytest
 
 from app.modules.books import service as books
 from app.modules.books.models import InvoiceDirection, InvoiceKind
-from app.modules.books.sources import InvoiceRecord
+from app.modules.books.sources import InvoiceRecord, PartyCard
 from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
 from app.modules.facts import repository as facts_repository
+from app.modules.parties import service as parties
+from app.modules.parties.models import PartyKind
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource
 from app.modules.projects.schemas import ProjectJob
@@ -109,25 +111,43 @@ async def test_a_rejected_truck_loses_codes_papers_and_stays_out(
     assert [t["state"] for t in await trucks_of(client, project_id)] == ["rejected"]
 
 
+# The carrier the jobs below are given to, as the books know it.
+HAULER = PartyCard("hauler", "HAULER TRANSPORT SERVICES LTD", PartyKind.ORGANISATION)
+
+
 def bill(source_id: str, issued: date, description: str, **fields: object) -> InvoiceRecord:
-    return InvoiceRecord(
-        source_id=source_id,
-        direction=InvoiceDirection.PAYABLE,
-        kind=InvoiceKind.PURCHASE,
-        raw={},
-        number=source_id.upper(),
-        issue_date=issued,
-        description=description,
-        **fields,  # type: ignore[arg-type]
-    )
+    """The carrier's bill, unless ``fields`` say otherwise."""
+    values: dict[str, object] = {
+        "source_id": source_id,
+        "direction": InvoiceDirection.PAYABLE,
+        "kind": InvoiceKind.PURCHASE,
+        "raw": {},
+        "number": source_id.upper(),
+        "issue_date": issued,
+        "description": description,
+        "party_source_id": HAULER.source_id,
+        "party_name": HAULER.name,
+    }
+    return InvoiceRecord(**(values | fields))  # type: ignore[arg-type]
+
+
+def firm(name: str) -> dict[str, object]:
+    """A bill's firm by its name alone, as a record that names no card has it."""
+    return {"party_source_id": None, "party_name": name}
 
 
 async def a_job(client: httpx.AsyncClient, company_id: uuid.UUID, key: str, plate: str) -> str:
-    """A project the owner made, with its days and a confirmed truck."""
+    """A project the owner made, with its days, a confirmed truck, and the carrier."""
     await arrive(company_id, hash(key) % 10_000, mail(key, subject=key), category=None)
     project = await owner_project(company_id, key, name=key)
     days = {"starts_on": "2026-09-01", "ends_on": "2026-09-10"}
     assert (await client.patch(f"/projects/{project.id}", json=days)).status_code == 200
+    await books.store_records(company_id, "books", [HAULER], [])
+    async with open_session() as db:
+        hauler = await parties.get_synced_party(db, company_id, "books", HAULER.source_id)
+    assert hauler is not None
+    carrier = {"project_id": str(project.id), "party_id": str(hauler.id), "role": "subcontractor"}
+    assert (await client.post("/project-parties", json=carrier)).status_code == 201
     made = await client.post(
         "/shipments", json={"project_id": str(project.id), "truck_plate": plate}
     )
@@ -604,3 +624,60 @@ async def test_a_paper_that_misread_a_kept_truck_hitches_its_trailer_and_is_plac
         )
     ).json()["items"]
     assert cmr["shipment_id"] == truck["id"]
+
+
+async def test_a_plate_places_only_a_bill_of_the_jobs_own_firm(client: httpx.AsyncClient) -> None:
+    company_id = await guest_client(client)
+    await a_job(client, company_id, "<one@x>", "AB 123 CD")
+    await books.store_records(
+        company_id,
+        "books",
+        [],
+        [
+            # The same truck carried another firm's load for a client Tamga has no project of.
+            bill("p-other", date(2026, 9, 12), "Truck: AB 123 CD", **firm("OTHER CARRIER LTD")),
+            bill(
+                "s-1",
+                date(2026, 9, 12),
+                "Freight, truck: AB 123 CD",
+                kind=InvoiceKind.SALES,
+                direction=InvoiceDirection.RECEIVABLE,
+                **firm("STONE GMBH"),
+            ),
+            # A shortened name of the job's carrier.
+            bill("p-own", date(2026, 9, 12), "Truck: AB 123 CD", **firm("HAULER TRANS. SERV.")),
+        ],
+    )
+
+    assert (await filed(company_id)).bills == 1
+    [link] = (await client.get("/project-links", params={"item_kind": "invoice"})).json()["items"]
+    [own] = [i for i in (await client.get("/invoices")).json()["items"] if i["number"] == "P-OWN"]
+    # No client is known for the sale: the plate alone does not place it.
+    assert link["item_id"] == own["id"]
+
+
+async def test_rechecking_removes_codes_bills_by_plate_once_the_firm_differs(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    project_id = await a_job(client, company_id, "<one@x>", "AB 123 CD")
+    await books.store_records(
+        company_id,
+        "books",
+        [],
+        [bill(f"p-{n}", date(2026, 9, 12), "Truck: AB 123 CD") for n in (1, 2)],
+    )
+    assert (await filed(company_id)).bills == 2
+    links = (await client.get("/project-links", params={"item_kind": "invoice"})).json()["items"]
+    await client.patch(f"/project-links/{links[0]['id']}", json={"status": "confirmed"})
+    # The owner takes the carrier off the job: the plate alone is left.
+    [carrier] = (await client.get("/project-parties", params={"project_id": project_id})).json()
+    assert (await client.delete(f"/project-parties/{carrier['id']}")).status_code == 204
+
+    async with open_session() as db:
+        removed = await filing.recheck_bills_by_plate(db, company_id)
+        await db.commit()
+
+    assert removed == 1
+    kept = (await client.get("/project-links", params={"item_kind": "invoice"})).json()["items"]
+    assert [link["id"] for link in kept] == [links[0]["id"]]

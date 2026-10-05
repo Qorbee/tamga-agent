@@ -12,6 +12,8 @@ from app.modules.books.models import InvoiceDirection, InvoiceKind
 from app.modules.books.sources import InvoiceRecord
 from app.modules.facts import service as facts
 from app.modules.linking import service
+from app.modules.parties import service as parties
+from app.modules.parties.models import IdentifierSource, PartyKind
 from app.platform.db import open_session
 from app.platform.items import ItemKind
 from app.tests.conftest import guest_client
@@ -232,3 +234,73 @@ async def test_bills_are_placed_for_a_company_with_no_conversation(
 
     links = await bill_links(client)
     assert links["P-2"]["project_id"] == project["id"] and links["P-2"]["status"] == "suggested"
+
+
+async def client_is(client: httpx.AsyncClient, company_id: uuid.UUID, project_id: uuid.UUID) -> str:
+    """Names the project's client, as the owner does: the id of the project's party row."""
+    async with open_session() as db:
+        acme = await parties.create_party(
+            db,
+            company_id=company_id,
+            name="ACME FREIGHT SERVICES LTD",
+            kind=PartyKind.ORGANISATION,
+            source=IdentifierSource.OWNER,
+        )
+        await db.commit()
+    body = {"project_id": str(project_id), "party_id": str(acme.id), "role": "client"}
+    made = await client.post("/project-parties", json=body)
+    assert made.status_code == 201, made.text
+    return str(made.json()["id"])
+
+
+async def test_a_sale_to_another_client_is_counted_not_placed(client: httpx.AsyncClient) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>", body=ORDER), category=None)
+    project = await owner_project(company_id, "<order@x>")
+    await client_is(client, company_id, project.id)
+    await books.store_records(
+        company_id,
+        "books",
+        [],
+        [
+            # The client's name abbreviated, as the books often write it.
+            bill("sales:1", number="S-1", description=ORDER, party_name="ACME FREIGHT SERV."),
+            bill("sales:2", number="S-2", description=ORDER, party_name="Stone GmbH"),
+            # A job buys from more firms than its carriers: a purchase is never held against them.
+            bill("buy:3", InvoiceKind.PURCHASE, number="P-3", description=ORDER, party_name="Port"),
+        ],
+    )
+
+    result = await placed(company_id)
+
+    assert (result.linked, result.contradicted) == (2, 1)
+    assert set(await bill_links(client)) == {"S-1", "P-3"}
+
+
+async def test_rechecking_removes_codes_sales_placed_with_another_client(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>", body=ORDER), category=None)
+    project = await owner_project(company_id, "<order@x>")
+    await books.store_records(
+        company_id,
+        "books",
+        [],
+        [
+            bill(f"sales:{n}", number=f"S-{n}", description=ORDER, party_name="Stone GmbH")
+            for n in (1, 2)
+        ],
+    )
+    await placed(company_id)
+    answered = (await bill_links(client))["S-2"]
+    await client.patch(f"/project-links/{answered['id']}", json={"status": "confirmed"})
+    # The client named after the bills were placed.
+    await client_is(client, company_id, project.id)
+
+    async with open_session() as db:
+        removed = await service.recheck_invoices(db, company_id)
+        await db.commit()
+
+    assert removed == 1
+    assert set(await bill_links(client)) == {"S-2"}

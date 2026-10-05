@@ -389,6 +389,43 @@ async def links_of_items(
     return rows.all()
 
 
+async def suggested_links(
+    db: AsyncSession, company_id: uuid.UUID, item_kind: ItemKind, method: LinkMethod
+) -> Sequence[ProjectLink]:
+    """Code's links of one kind of item made one way, that nobody has answered."""
+    rows = await db.scalars(
+        select(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.item_kind == item_kind,
+            ProjectLink.method == method,
+            ProjectLink.status == LinkStatus.SUGGESTED,
+        )
+        .order_by(ProjectLink.created_at, ProjectLink.id)
+    )
+    return rows.all()
+
+
+async def drop_suggested(
+    db: AsyncSession, company_id: uuid.UUID, link_ids: Sequence[uuid.UUID]
+) -> int:
+    """Removes these links where code made them and nobody has answered them yet, as the rows
+    stand when removed; how many went."""
+    if not link_ids:
+        return 0
+    result = await db.execute(
+        delete_rows(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.id.in_(link_ids),
+            ProjectLink.status == LinkStatus.SUGGESTED,
+            ProjectLink.method != LinkMethod.OWNER,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return result.rowcount or 0  # type: ignore[attr-defined]  # a DML statement's result has one
+
+
 async def links_of_projects(
     db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
 ) -> Sequence[ProjectLink]:
