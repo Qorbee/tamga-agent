@@ -63,9 +63,11 @@ class Company(Base):
     # name, set by the owner once modules/profile has checked them. Null until then.
     tax_id: Mapped[str | None] = mapped_column(String(20))
     legal_name: Mapped[str | None] = mapped_column(String(300))
-    # What the tax registry answered for ``tax_id``, and when: the name it is registered under, or
-    # null when the registry does not know it. Both null when the registry was not reached.
+    # What the tax registry answered for ``tax_id``, and when: the name it is registered under,
+    # and the domain of its e-document address (an answer may give either, or neither when the
+    # registry does not know the number). All null when the registry was not reached.
     tax_registry_title: Mapped[str | None] = mapped_column(String(300))
+    tax_registry_domain: Mapped[str | None] = mapped_column(String(253))
     tax_registry_checked_at: Mapped[datetime | None]
 
 

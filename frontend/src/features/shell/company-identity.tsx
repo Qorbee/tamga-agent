@@ -40,6 +40,12 @@ const PILL: Record<Tone, string> = {
   doubt: "bg-warning-soft text-warning-foreground",
   plain: "bg-muted text-muted-foreground",
 };
+const SOURCE_ICONS: Record<OwnDomain["sources"][number], IconSvgElement> = {
+  mailbox: MailAccount01Icon,
+  sent_mail: SentIcon,
+  registry: CheckmarkBadge01Icon,
+  owner: UserIcon,
+};
 const REGISTRY_TONE: Record<NonNullable<CompanyProfile["tax_id"]>["registry"], Tone> = {
   found: "good",
   not_found: "plain",
@@ -137,7 +143,7 @@ function TaxNumber({ profile, owner }: { profile: CompanyProfile; owner: boolean
   );
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (taxId.trim()) saving.submit({ tax_id: taxId, legal_name: legalName.trim() || null });
+    if (taxId.trim()) saving.submit({ tax_id: taxId, legal_name: legalName.trim() });
   };
   const own = profile.tax_id;
   const proposal = profile.proposal;
@@ -159,7 +165,17 @@ function TaxNumber({ profile, owner }: { profile: CompanyProfile; owner: boolean
           <Evidence papers={own.evidence.papers} sent={own.evidence.sent_mails} />
         </div>
         {owner ? (
-          <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setEditing(true)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-self-start"
+            onClick={() => {
+              // The number as it is, so adding the legal name needs no retyping.
+              setTaxId(own.tax_id);
+              setLegalName(profile.legal_name ?? "");
+              setEditing(true);
+            }}
+          >
             {words.change}
           </Button>
         ) : null}
@@ -380,7 +396,7 @@ function DomainRow({
               <Pill
                 key={source}
                 tone={source === "owner" ? "plain" : "good"}
-                icon={source === "mailbox" ? MailAccount01Icon : source === "sent_mail" ? SentIcon : UserIcon}
+                icon={SOURCE_ICONS[source]}
                 label={source === "sent_mail" ? words.sources.sent_mail(own.sent) : words.sources[source]}
               />
             ))
@@ -461,6 +477,8 @@ function said(finding: CheckFinding, kind: "tax" | "domain", words: FindingWords
       return words.spelling(finding.suggestion ?? "");
     case "registry_name":
       return words.registry_name(finding.title ?? "");
+    case "registry_domain":
+      return words.registry_domain(finding.domain ?? "");
     case "not_seen":
       return words.not_seen;
   }

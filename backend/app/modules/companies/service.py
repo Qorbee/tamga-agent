@@ -53,6 +53,7 @@ async def set_tax_id(
     tax_id: str,
     legal_name: str | None,
     registry_title: str | None,
+    registry_domain: str | None,
     checked_at: datetime | None,
 ) -> None:
     """Who the company is to the tax office. Only modules/profile calls it, after its checks."""
@@ -62,6 +63,7 @@ async def set_tax_id(
         tax_id=tax_id,
         legal_name=legal_name,
         registry_title=registry_title,
+        registry_domain=registry_domain,
         checked_at=checked_at,
     )
 

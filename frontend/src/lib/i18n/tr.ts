@@ -74,7 +74,7 @@ export const tr: Dictionary = {
       legalName: "Ticari unvan (vergi kaydı veremezse)",
       noTaxId: "Henüz girilmedi",
       save: "Kaydet",
-      change: "Vergi numarasını değiştir",
+      change: "Vergi numarasını veya unvanı değiştir",
       cancel: "Vazgeç",
       confirmTaxId: "Bizim, kaydet",
       proposal: (taxId: string) => `${taxId} sizin vergi numaranız mı?`,
@@ -96,6 +96,7 @@ export const tr: Dictionary = {
       sources: {
         mailbox: "Posta kutusu",
         sent_mail: (count: number) => `${count} gönderilen posta`,
+        registry: "Vergi kaydı",
         owner: "Sizin eklediğiniz",
       },
       notOurs: "Sizin değil",
@@ -111,6 +112,8 @@ export const tr: Dictionary = {
         no_mail: "Bu alan adından henüz posta yok.",
         spelling: (suggestion: string) => `${suggestion} mi demek istediniz?`,
         registry_name: (title: string) => `Vergi kaydında bu numara ${title} adına.`,
+        registry_domain: (domain: string) =>
+          `Vergi kaydında bu numaranın e-fatura adresi ${domain} alan adında; bu alan adı şirketinizin adını taşımıyor.`,
         not_seen: "Bu numarayı ne vergi kaydı ne de postanız ve dosyalarınız biliyor.",
       },
     },

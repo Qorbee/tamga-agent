@@ -58,6 +58,7 @@ async def set_tax_id(
     tax_id: str,
     legal_name: str | None,
     registry_title: str | None,
+    registry_domain: str | None,
     checked_at: datetime | None,
 ) -> None:
     await db.execute(
@@ -67,6 +68,7 @@ async def set_tax_id(
             tax_id=tax_id,
             legal_name=legal_name,
             tax_registry_title=registry_title,
+            tax_registry_domain=registry_domain,
             tax_registry_checked_at=checked_at,
         )
     )

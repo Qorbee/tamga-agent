@@ -27,9 +27,9 @@ from app.modules.books.sources import (
     DispatchRecord,
     InvoiceRecord,
     PartyCard,
-    Taxpayer,
     TaxRegistry,
 )
+from app.modules.books.sources import Taxpayer as Taxpayer
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.facts import extractors

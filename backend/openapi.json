@@ -717,6 +717,17 @@
             ],
             "title": "Count"
           },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
           "firm": {
             "anyOf": [
               {
@@ -771,6 +782,7 @@
           "no_mail",
           "spelling",
           "registry_name",
+          "registry_domain",
           "not_seen"
         ],
         "title": "CheckReason",
@@ -2023,6 +2035,7 @@
         "enum": [
           "mailbox",
           "sent_mail",
+          "registry",
           "owner"
         ],
         "title": "DomainSource",
@@ -3822,6 +3835,17 @@
           "registry": {
             "$ref": "#/components/schemas/RegistryStatus"
           },
+          "registry_domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registry Domain"
+          },
           "registry_title": {
             "anyOf": [
               {
@@ -3842,6 +3866,7 @@
           "tax_id",
           "registry",
           "registry_title",
+          "registry_domain",
           "checked_at",
           "evidence"
         ],

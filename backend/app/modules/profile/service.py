@@ -24,6 +24,7 @@ from typing import Any, Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.books import service as books
+from app.modules.books.service import Taxpayer
 from app.modules.companies import service as companies
 from app.modules.conversations import service as conversations
 from app.modules.facts import service as facts
@@ -120,21 +121,27 @@ async def set_tax_id(db: AsyncSession, actor: Actor, body: TaxIdSet) -> Identity
     doubt it and the owner confirms. The tax registry's name for it becomes the legal name."""
     actor.require(Role.OWNER)
     company = await _company(db, actor.company_id)
-    check, registered, asked = await _check_tax_id(db, company, body.tax_id)
+    check, holder, asked = await _check_tax_id(db, company, body.tax_id)
     saved = _passes(check, confirmed=body.confirm)
     if saved and check.value is not None:
         same = company.tax_id == check.value
-        checked_at = utcnow() if asked else None
-        if same and not asked:
-            # The registry was not reached this time: its last answer on the number stands.
-            registered, checked_at = company.tax_registry_title, company.tax_registry_checked_at
-        typed = body.legal_name.strip() if body.legal_name else None
+        # Not reached this time, the registry's last answer on the same number stands.
+        checked_at = utcnow() if asked else (company.tax_registry_checked_at if same else None)
+        title = holder.title if holder else None
+        # A legal name sent, even empty, is the owner's; one not sent keeps the saved one.
+        typed = body.legal_name.strip() or None if body.legal_name is not None else None
+        kept = company.legal_name if same and body.legal_name is None else None
+        domain = None
+        if holder and holder.domains:
+            ours = (await who_we_are(db, company.id)).domains
+            domain = _our_registry_domain(holder, company.name, ours) or holder.domains[0]
         await companies.set_tax_id(
             db,
             company.id,
             tax_id=check.value,
-            legal_name=registered or typed or (company.legal_name if same else None),
-            registry_title=registered,
+            legal_name=title or typed or kept,
+            registry_title=title,
+            registry_domain=domain,
             checked_at=checked_at,
         )
         await db.commit()
@@ -187,7 +194,7 @@ async def _profile(db: AsyncSession, company_id: uuid.UUID) -> CompanyProfile:
     own_tax_id = None
     proposal = None
     if company.tax_id:
-        if company.tax_registry_title:
+        if company.tax_registry_title or company.tax_registry_domain:
             status = RegistryStatus.FOUND
         elif company.tax_registry_checked_at:
             status = RegistryStatus.NOT_FOUND
@@ -197,6 +204,7 @@ async def _profile(db: AsyncSession, company_id: uuid.UUID) -> CompanyProfile:
             tax_id=company.tax_id,
             registry=status,
             registry_title=company.tax_registry_title,
+            registry_domain=company.tax_registry_domain,
             checked_at=company.tax_registry_checked_at,
             evidence=await _evidence(db, company_id, company.tax_id),
         )
@@ -215,14 +223,22 @@ async def _profile(db: AsyncSession, company_id: uuid.UUID) -> CompanyProfile:
 
 
 async def _domains(db: AsyncSession, company_id: uuid.UUID) -> list[OwnDomain]:
-    """Every domain the mail shows is the company's, and every one the owner named, the
-    company's first."""
+    """Every domain the mail or the tax registry shows is the company's, and every one the owner
+    named, the company's first."""
+    company = await _company(db, company_id)
     mailboxes = await conversations.mailbox_domains(db, company_id)
     sent_from = await conversations.mail_by_sender_domain(db, company_id)
     words = {row.domain: row.ours for row in await companies.domain_words(db, company_id)}
+    # The registry's e-document address may be an e-invoice provider's: its domain counts only
+    # when it is named as the company is.
+    registry = company.tax_registry_domain if company.tax_id else None
+    if registry and not _domain_names_us(
+        registry, company.name, frozenset(mailboxes | set(sent_from))
+    ):
+        registry = None
     named = sorted(
         domain
-        for domain in mailboxes | set(sent_from) | set(words)
+        for domain in mailboxes | set(sent_from) | set(words) | ({registry} if registry else set())
         if not maildomains.is_shared(domain)
     )
     mail = await conversations.mail_by_sender_domain(db, company_id, named) if named else {}
@@ -237,11 +253,13 @@ async def _domains(db: AsyncSession, company_id: uuid.UUID) -> list[OwnDomain]:
             for source, shows in (
                 (DomainSource.MAILBOX, domain in mailboxes),
                 (DomainSource.SENT_MAIL, sent > 0),
+                (DomainSource.REGISTRY, domain == registry),
                 (DomainSource.OWNER, word is True),
             )
             if shows
         ]
-        ours = domain in mailboxes or (word if word is not None else sent > 0)
+        proven = sent > 0 or domain == registry
+        ours = domain in mailboxes or (word if word is not None else proven)
         found.append(
             OwnDomain(
                 domain=domain,
@@ -307,9 +325,9 @@ def _tax_number(country: str, written: str) -> str | None:
 
 async def _check_tax_id(
     db: AsyncSession, company: Any, written: str
-) -> tuple[IdentityCheck, str | None, bool]:
-    """The check of a tax number the owner says is the company's; with it, the name the tax
-    registry gives for it, and whether the registry was reached."""
+) -> tuple[IdentityCheck, Taxpayer | None, bool]:
+    """The check of a tax number the owner says is the company's; with it, the tax registry's
+    answer on it, and whether the registry was reached this time."""
     tax_id = _tax_number(company.country, written)
     if tax_id is None:
         invalid = [CheckFinding(reason=CheckReason.NOT_VALID)]
@@ -324,19 +342,24 @@ async def _check_tax_id(
         asked = True
     except books.RegistryUnavailable:
         holder, asked = None, False
-    title = holder.title if holder is not None else None
     if not asked and company.tax_id == tax_id:
-        title = company.tax_registry_title  # its last answer on this very number
-    if title is not None:
-        if _names_us(title, company.name, domains):
-            return _verdict(tax_id, CheckVerdict.OK, []), title, asked
-        doubt = [CheckFinding(reason=CheckReason.REGISTRY_NAME, title=title)]
-        return _verdict(tax_id, CheckVerdict.CONFIRM, doubt), title, asked
+        holder = _last_answer(company)  # the registry's last answer on this very number
+    if holder is not None and holder.title:
+        # A registered name decides: another firm's is a doubt, whatever its address's domain.
+        if _names_us(holder.title, company.name, domains):
+            return _verdict(tax_id, CheckVerdict.OK, []), holder, asked
+        doubt = CheckFinding(reason=CheckReason.REGISTRY_NAME, title=holder.title)
+        return _verdict(tax_id, CheckVerdict.CONFIRM, [doubt]), holder, asked
+    if holder is not None and holder.domains:
+        if _our_registry_domain(holder, company.name, domains) is not None:
+            return _verdict(tax_id, CheckVerdict.OK, []), holder, asked
+        doubt = CheckFinding(reason=CheckReason.REGISTRY_DOMAIN, domain=holder.domains[0])
+        return _verdict(tax_id, CheckVerdict.CONFIRM, [doubt]), holder, asked
     evidence = await _evidence(db, company.id, tax_id)
     if evidence.papers or evidence.sent_mails:
-        return _verdict(tax_id, CheckVerdict.OK, []), None, asked
-    doubt = [CheckFinding(reason=CheckReason.NOT_SEEN)]
-    return _verdict(tax_id, CheckVerdict.CONFIRM, doubt), None, asked
+        return _verdict(tax_id, CheckVerdict.OK, []), holder, asked
+    unseen = [CheckFinding(reason=CheckReason.NOT_SEEN)]
+    return _verdict(tax_id, CheckVerdict.CONFIRM, unseen), holder, asked
 
 
 async def _firms_with(
@@ -349,6 +372,31 @@ async def _firms_with(
     )
     names = (match.party.name for match in matches)
     return [name for name in names if not _names_us(name, company.name, domains)]
+
+
+def _last_answer(company: Any) -> Taxpayer | None:
+    """What the registry answered last on the company's number, when it named or placed it."""
+    if not (company.tax_registry_title or company.tax_registry_domain):
+        return None
+    domain = company.tax_registry_domain
+    return Taxpayer(
+        tax_id=company.tax_id, title=company.tax_registry_title, domains=(domain,) if domain else ()
+    )
+
+
+def _our_registry_domain(holder: Taxpayer, name: str, domains: frozenset[str]) -> str | None:
+    """The domain of the holder's e-document addresses that is the company's, if one is."""
+    return next((d for d in holder.domains if _domain_names_us(d, name, domains)), None)
+
+
+def _domain_names_us(domain: str, name: str, domains: frozenset[str]) -> bool:
+    """Whether a domain is the company's by its name: one of its domains, or one registered as a
+    name the company goes by ("acmelojistik.com.tr" for Acme). A public provider's never is."""
+    if maildomains.is_shared(domain):
+        return False
+    if any(maildomains.within(domain, own) for own in domains):
+        return True
+    return _names_us(maildomains.name_of(domain), name, domains)
 
 
 def _names_us(title: str, name: str, domains: frozenset[str]) -> bool:

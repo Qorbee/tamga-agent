@@ -77,7 +77,7 @@ export const en = {
       legalName: "Legal name, if the tax registry can't give it",
       noTaxId: "Not set yet",
       save: "Save",
-      change: "Change the tax number",
+      change: "Change the tax number or legal name",
       cancel: "Cancel",
       confirmTaxId: "It's ours, save it",
       proposal: (taxId: string) => `Is ${taxId} your tax number?`,
@@ -99,6 +99,7 @@ export const en = {
       sources: {
         mailbox: "Mailbox",
         sent_mail: (count: number) => (count === 1 ? "1 mail sent" : `${count} mails sent`),
+        registry: "Tax registry",
         owner: "Added by you",
       },
       notOurs: "Not yours",
@@ -115,6 +116,8 @@ export const en = {
         no_mail: "No mail from this domain yet.",
         spelling: (suggestion: string) => `Did you mean ${suggestion}?`,
         registry_name: (title: string) => `The tax registry has this number as ${title}.`,
+        registry_domain: (domain: string) =>
+          `The tax registry has this number's e-invoice address at ${domain}, which isn't named as your company is.`,
         not_seen: "Neither the tax registry nor your mail and files know this number.",
       },
     },

@@ -11,6 +11,9 @@ class DomainSource(StrEnum):
     MAILBOX = "mailbox"
     # The company's own sent mail comes from it.
     SENT_MAIL = "sent_mail"
+    # The tax registry has the company's tax number's e-document address at it, and the domain
+    # is named as the company is.
+    REGISTRY = "registry"
     OWNER = "owner"
 
 
@@ -47,6 +50,8 @@ class OwnTaxId(BaseModel):
     tax_id: str
     registry: RegistryStatus
     registry_title: str | None
+    # The domain of the number's e-document address, as the registry has it.
+    registry_domain: str | None
     checked_at: datetime | None
     evidence: TaxIdEvidence
 
@@ -99,6 +104,9 @@ class CheckReason(StrEnum):
     SPELLING = "spelling"
     # The tax registry names a holder (``title``) that is not the company by its name or domains.
     REGISTRY_NAME = "registry_name"
+    # The registry gives no name, and the number's e-document address is at a domain (``domain``)
+    # that is not named as the company is: an e-invoice provider's, or another firm's.
+    REGISTRY_DOMAIN = "registry_domain"
     # Neither the registry nor the company's mail and files know the number.
     NOT_SEEN = "not_seen"
 
@@ -109,6 +117,7 @@ class CheckFinding(BaseModel):
     title: str | None = None
     count: int | None = None
     suggestion: str | None = None
+    domain: str | None = None
 
 
 class IdentityCheck(BaseModel):
@@ -126,7 +135,8 @@ class IdentityChange(BaseModel):
 
 class TaxIdSet(BaseModel):
     tax_id: str = Field(min_length=1, max_length=40)
-    # Kept only when the tax registry gives none.
+    # Kept only when the tax registry gives none. Left out, the saved one stays; sent empty, it
+    # is cleared.
     legal_name: str | None = Field(default=None, max_length=300)
     # The owner has read the check's doubts and says it is the company's all the same.
     confirm: bool = False

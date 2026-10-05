@@ -1499,6 +1499,8 @@ export interface components {
         CheckFinding: {
             /** Count */
             count?: number | null;
+            /** Domain */
+            domain?: string | null;
             /** Firm */
             firm?: string | null;
             reason: components["schemas"]["CheckReason"];
@@ -1511,7 +1513,7 @@ export interface components {
          * CheckReason
          * @enum {string}
          */
-        CheckReason: "not_valid" | "shared_domain" | "firms_address" | "firms_tax_id" | "firms_name" | "only_received" | "no_mail" | "spelling" | "registry_name" | "not_seen";
+        CheckReason: "not_valid" | "shared_domain" | "firms_address" | "firms_tax_id" | "firms_name" | "only_received" | "no_mail" | "spelling" | "registry_name" | "registry_domain" | "not_seen";
         /**
          * CheckVerdict
          * @enum {string}
@@ -1978,7 +1980,7 @@ export interface components {
          * @description What shows a mail domain is the company's.
          * @enum {string}
          */
-        DomainSource: "mailbox" | "sent_mail" | "owner";
+        DomainSource: "mailbox" | "sent_mail" | "registry" | "owner";
         /**
          * EventKind
          * @enum {string}
@@ -2587,6 +2589,8 @@ export interface components {
             checked_at: string | null;
             evidence: components["schemas"]["TaxIdEvidence"];
             registry: components["schemas"]["RegistryStatus"];
+            /** Registry Domain */
+            registry_domain: string | null;
             /** Registry Title */
             registry_title: string | null;
             /** Tax Id */

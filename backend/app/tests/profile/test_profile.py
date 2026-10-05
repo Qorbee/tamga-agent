@@ -321,9 +321,7 @@ async def test_a_number_the_registry_does_not_know_needs_the_companys_records(
     # Neither the registry nor the records know it, and the registry cannot be asked.
     monkeypatch.setattr(books, "look_up_taxpayer", registry(None))
     unseen = await client.put("/company/profile/tax-id", json={"tax_id": OTHER})
-    assert unseen.json()["check"]["findings"] == [
-        {"reason": "not_seen", "firm": None, "title": None, "count": None, "suggestion": None}
-    ]
+    assert [f["reason"] for f in unseen.json()["check"]["findings"]] == ["not_seen"]
     saved = await client.put("/company/profile/tax-id", json={"tax_id": OTHER, "confirm": True})
     after = saved.json()["profile"]
     # A new number drops the name given for the old one.
@@ -416,3 +414,67 @@ async def test_only_the_owner_reads_the_tax_number_whole(
     assert read["tax_id"]["tax_id"] == "••••••••24"
     refused = await client.put("/company/profile/tax-id", json={"tax_id": OURS})
     assert refused.status_code == 403
+
+
+async def test_the_registry_may_place_the_number_at_a_domain(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    await read_mailbox(company_id)
+    places = {OURS: "acmelojistik.example", OTHER: "einvoice-provider.example"}
+
+    async def look_up(db: Any, company_id: uuid.UUID, tax_id: str) -> Taxpayer | None:
+        return Taxpayer(tax_id=tax_id, domains=(places[tax_id],))
+
+    monkeypatch.setattr(books, "look_up_taxpayer", look_up)
+
+    # An e-invoice provider's domain is no name of the company's: a doubt, and never its domain.
+    other = (await client.put("/company/profile/tax-id", json={"tax_id": OTHER})).json()
+    assert other["check"]["findings"][0]["domain"] == "einvoice-provider.example"
+    taken = await client.put("/company/profile/tax-id", json={"tax_id": OTHER, "confirm": True})
+    assert "einvoice-provider.example" not in domains(taken.json()["profile"])
+
+    # One registered as the company's own name agrees, and becomes one of its domains.
+    ours = (await client.put("/company/profile/tax-id", json={"tax_id": OURS})).json()
+    assert ours["saved"] and ours["profile"]["tax_id"]["registry"] == "found"
+    assert ours["profile"]["tax_id"]["registry_domain"] == "acmelojistik.example"
+    assert ours["profile"]["legal_name"] is None  # the registry gave no name to take
+    found = domains(ours["profile"])["acmelojistik.example"]
+    assert (found["ours"], found["sources"]) == (True, ["registry"])
+    async with open_session() as db:
+        assert (await service.who_we_are(db, company_id)).writes_from("ali@acmelojistik.example")
+
+
+async def test_a_registry_name_decides_over_its_addresses_domain(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    await read_mailbox(company_id)
+    answers = {
+        # Another firm's name, though one of its addresses is at the company's domain.
+        OTHER: Taxpayer(tax_id=OTHER, title="BAŞKA NAKLİYAT A.Ş.", domains=("acme.example",)),
+        # A provider's address first, the company's second; a public provider named like it.
+        OURS: Taxpayer(tax_id=OURS, domains=("einvoice-provider.example", "acmelojistik.example")),
+        SIGNED: Taxpayer(tax_id=SIGNED, domains=("acme.com",)),
+    }
+
+    async def look_up(db: Any, company_id: uuid.UUID, tax_id: str) -> Taxpayer | None:
+        return answers[tax_id]
+
+    monkeypatch.setattr(books, "look_up_taxpayer", look_up)
+    monkeypatch.setattr("app.platform.maildomains._SHARED", {"acme.com"})
+
+    other = (await client.put("/company/profile/tax-id", json={"tax_id": OTHER})).json()
+    assert other["check"]["verdict"] == "confirm"
+    shared = (await client.put("/company/profile/tax-id", json={"tax_id": SIGNED})).json()
+    assert shared["check"]["verdict"] == "confirm"
+
+    ours = (
+        await client.put("/company/profile/tax-id", json={"tax_id": OURS, "legal_name": "Acme"})
+    ).json()
+    # The domain that agreed is the one kept.
+    assert ours["profile"]["tax_id"]["registry_domain"] == "acmelojistik.example"
+    assert ours["profile"]["legal_name"] == "Acme"
+    # Sent empty, the legal name is cleared; left out, it stays.
+    cleared = await client.put("/company/profile/tax-id", json={"tax_id": OURS, "legal_name": ""})
+    assert cleared.json()["profile"]["legal_name"] is None

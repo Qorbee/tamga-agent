@@ -102,10 +102,12 @@ class BooksSource(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Taxpayer:
-    """A tax number as the tax registry knows it: the name its holder is registered under."""
+    """A tax number as the tax registry knows it: the name its holder is registered under, when
+    the registry gives one, and the mail domains of its holder's e-document addresses."""
 
     tax_id: str
-    title: str
+    title: str | None = None
+    domains: tuple[str, ...] = ()
 
 
 @runtime_checkable
