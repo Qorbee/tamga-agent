@@ -20,7 +20,13 @@ Trailer plate: B-123-XYZ
 Truck: TBC
 Truck: 2"""
 
-    assert found(labelled_plates(text)) == {("plate", "CA1234AB"), ("plate", "B123XYZ")}
+    assert found(labelled_plates(text)) == {
+        ("plate", "CA1234AB"),
+        ("plate", "B123XYZ"),
+        # What the label says the vehicle is, kept as the plate's role.
+        ("truck_plate", "CA1234AB"),
+        ("trailer_plate", "B123XYZ"),
+    }
 
 
 def test_order_and_booking_references_need_a_digit_and_a_whole_label() -> None:

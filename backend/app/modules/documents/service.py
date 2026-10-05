@@ -723,6 +723,45 @@ async def read_document(db: AsyncSession, company_id: uuid.UUID, document_id: uu
         await _was_read(db, document)
 
 
+async def reread_facts(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    kinds: frozenset[str],
+    *,
+    after: uuid.UUID | None,
+    limit: int = 200,
+) -> tuple[int, uuid.UUID | None]:
+    """Reads the facts of ``kinds`` again from one batch of read files' text, for a kind code
+    learned to find after they were read; the facts they have stay. What the vision model wrote
+    of a file is no surer than its reading (``_MODEL_CONFIDENCE``), and its text does not say
+    which words the model wrote, so a file it read gives its facts as the model's. Returns how
+    many it found, and the last file read, to pass as ``after`` for the next batch (None when
+    every one has been read). Does not commit."""
+    batch = await repository.read_after(db, company_id, after=after, limit=limit)
+    found = 0
+    for document in batch:
+        wanted = [fact for fact in extractors.from_text(document.text) if fact.kind in kinds]
+        if document.vision_pages:
+            wanted = [
+                dataclasses.replace(
+                    fact,
+                    extractor=agents.MODEL_READ,
+                    confidence=min(fact.confidence, _MODEL_CONFIDENCE),
+                )
+                for fact in wanted
+            ]
+        if wanted:
+            await facts.record_facts(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.DOCUMENT,
+                item_id=document.id,
+                facts=wanted,
+            )
+            found += len({(fact.kind, fact.normalised) for fact in wanted})
+    return found, batch[-1].id if batch else None
+
+
 # Typing what code could not
 
 

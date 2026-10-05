@@ -315,6 +315,21 @@ async def mail_after(
     return rows.all()
 
 
+async def originals_after(
+    db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int
+) -> Sequence[Message]:
+    """The messages read once, no copy of another, after ``after``, by id."""
+    filters = [
+        Message.company_id == company_id,
+        Message.processed_at.is_not(None),
+        Message.copy_of_id.is_(None),
+    ]
+    if after is not None:
+        filters.append(Message.id > after)
+    rows = await db.scalars(select(Message).where(*filters).order_by(Message.id).limit(limit))
+    return rows.all()
+
+
 async def attaches(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> bool:
     found = await db.scalar(
         select(MessageAttachment.id)

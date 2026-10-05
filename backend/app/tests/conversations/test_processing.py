@@ -106,12 +106,14 @@ async def test_a_mail_is_read_once_and_a_reply_only_for_what_it_says(
     assert await found(company_id, first) == {
         ("order_number", "4500123"),
         ("plate", "CA1234AB"),
+        # Its label says which vehicle it is.
+        ("truck_plate", "CA1234AB"),
         ("iban", "TR330006100519786457841326"),
     }
     assert await found(company_id, second) == set()
     # The reply's facts come from what it says, not from the order it quotes.
     assert reply.own_text == "Confirmed, trailer: B-123-XYZ."
-    assert await found(company_id, reply) == {("plate", "B123XYZ")}
+    assert await found(company_id, reply) == {("plate", "B123XYZ"), ("trailer_plate", "B123XYZ")}
 
 
 async def test_a_reused_message_id_with_other_text_is_its_own_mail(

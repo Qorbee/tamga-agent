@@ -524,6 +524,35 @@ async def process_message(db: AsyncSession, company_id: uuid.UUID, message_id: u
     )
 
 
+async def reread_facts(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    kinds: frozenset[str],
+    *,
+    after: uuid.UUID | None,
+    limit: int = 200,
+) -> tuple[int, uuid.UUID | None]:
+    """Reads the facts of ``kinds`` again from one batch of read messages, for a kind code learned
+    to find after they were read; the facts they have stay. Returns how many it found, and the
+    last message read, to pass as ``after`` for the next batch (None when every one has been
+    read). Does not commit."""
+    batch = await repository.originals_after(db, company_id, after=after, limit=limit)
+    found = 0
+    for message in batch:
+        text = "\n".join(part for part in (message.subject, message.own_text) if part)
+        wanted = [fact for fact in extractors.from_text(text) if fact.kind in kinds]
+        if wanted:
+            await facts.record_facts(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.MESSAGE,
+                item_id=message.id,
+                facts=wanted,
+            )
+            found += len({(fact.kind, fact.normalised) for fact in wanted})
+    return found, batch[-1].id if batch else None
+
+
 async def _files_to_read(db: AsyncSession, message: Message) -> list[uuid.UUID]:
     """The files of a mail to ask a reading of: those beside its text, and the pictures its body
     shows, since one can be the message itself (a pasted screenshot, a photo of a plate). Not

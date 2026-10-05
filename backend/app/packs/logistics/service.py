@@ -57,17 +57,7 @@ async def refuse_merge(
     truck is dropped (the papers that named it propose it again on the project that stays), and
     a rejected one stays rejected there, so its plates stay out."""
     trucks = await repository.list_shipments(db, company_id, [source_id], for_update=True)
-    ids = [truck.id for truck in trucks]
-    followed = {
-        location.shipment_id for location in await repository.last_locations(db, company_id, ids)
-    }
-    marked = await checklist.marked_trucks(db, company_id, ids)
-    if any(
-        truck.state is ShipmentState.CONFIRMED
-        or truck.id in followed | marked
-        or _written_by_owner(truck)
-        for truck in trucks
-    ):
+    if await _touched(db, company_id, trucks):
         raise Conflict("This project has trucks: merge the other project into this one")
     await projects.take_off_trucks(db, company_id, [truck.id for truck in trucks])
     target = list(await repository.list_shipments(db, company_id, [target_id], for_update=True))
@@ -77,6 +67,44 @@ async def refuse_merge(
         await projects.drop_field_proposals(db, company_id, ProposalTarget.SHIPMENT, truck.id)
         await db.delete(truck)
     await db.flush()
+
+
+async def drop_untouched(db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID) -> int:
+    """Drops the trucks code proposed on a project and the owner has had no hand in, for its
+    papers to propose them again under the rules of today; how many went. A rejected truck stays,
+    so its plates stay out. Does not commit."""
+    trucks = await repository.list_shipments(db, company_id, [project_id], for_update=True)
+    proposed = [truck for truck in trucks if truck.state is ShipmentState.PROPOSED]
+    touched = await _touched(db, company_id, proposed)
+    dropped = [truck for truck in proposed if truck.id not in touched]
+    await projects.take_off_trucks(db, company_id, [truck.id for truck in dropped])
+    for truck in dropped:
+        await projects.drop_field_proposals(db, company_id, ProposalTarget.SHIPMENT, truck.id)
+        await db.delete(truck)
+    await db.flush()
+    return len(dropped)
+
+
+async def _touched(
+    db: AsyncSession, company_id: uuid.UUID, trucks: Sequence[Shipment]
+) -> set[uuid.UUID]:
+    """The trucks the owner has had a hand in: confirmed, written on, marked, followed, or
+    carrying a paper the owner placed on it."""
+    ids = [truck.id for truck in trucks]
+    followed = {
+        location.shipment_id for location in await repository.last_locations(db, company_id, ids)
+    }
+    placed = {
+        link.shipment_id
+        for link in await projects.links_on_trucks(db, company_id, ids)
+        if link.method is LinkMethod.OWNER and link.shipment_id is not None
+    }
+    answered = {
+        truck.id
+        for truck in trucks
+        if truck.state is ShipmentState.CONFIRMED or _written_by_owner(truck)
+    }
+    return answered | followed | placed | await checklist.marked_trucks(db, company_id, ids)
 
 
 def _written_by_owner(truck: Shipment) -> bool:

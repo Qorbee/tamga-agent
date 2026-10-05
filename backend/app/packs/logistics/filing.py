@@ -1,16 +1,21 @@
-"""Keeping a project's file by code (ADR-0021): the trucks its papers and mail name, proposed for
-the owner's yes; the truck each item belongs to, where only one fits; and the bills a plate ties
-to a project. Code proposes and suggests; it never confirms a truck and never marks a proof.
+"""Keeping a project's file by code (ADR-0021): the trucks its own papers name, proposed for the
+owner's yes; the truck each item belongs to, where only one fits; and the bills a plate ties to a
+project. Code proposes and suggests; it never confirms a truck and never marks a proof.
 
-A plate is no key: one truck carries many jobs. So a truck is proposed only from what is the
-job's own (a truck paper, a purchase bill, or two of its items), and a bill is placed by plate only
-when one project fits its plate within the days of the job.
+A plate is no key, and a mail is no evidence of a truck: one truck carries many jobs, and a mail
+names trucks that were offered, swapped or meant for another load. So a truck is proposed only
+from the job's own papers (a consignment note, a dispatch note, a loading or delivery photo, a
+carrier's bill placed by something other than its plate), dated within the job's days, and no
+more of them than the job's trucks when its conversations say how many. Two plates are a truck
+and its trailer only where a paper says so: a consignment or dispatch note is written for one
+vehicle, the truck first, and a label ("Dorse:", "Trailer:") names a trailer anywhere. Two plates
+written once apart from each other ("both trucks, 06 ABC 101 and 06 XYZ 202") stay two.
 """
 
 import uuid
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Final
 
@@ -31,8 +36,9 @@ from app.modules.projects.models import (
     ProjectLink,
 )
 from app.packs.logistics import repository
+from app.packs.logistics.facts import TRAILER_ROLE, TRUCK_ROLE
 from app.packs.logistics.models import Shipment, ShipmentState
-from app.packs.logistics.service import add_shipment, fill_shipment
+from app.packs.logistics.service import add_shipment, drop_untouched, fill_shipment
 from app.platform import events
 from app.platform.db import open_session
 from app.platform.items import ItemKind
@@ -40,13 +46,25 @@ from app.platform.items import ItemKind
 PLATE: Final = "plate"
 # The papers that travel with one truck: a plate on one of them is that truck's.
 TRUCK_PAPERS: Final = frozenset({"cmr", "pod_photo", "loading_photo", "e_irsaliye"})
+# Written for one vehicle: two plates on one are its truck and its trailer, the truck first.
+ONE_VEHICLE_PAPERS: Final = frozenset({"cmr", "e_irsaliye"})
 # An item naming more plates than this is a fleet list or a rate sheet, no one job's trucks.
 MAX_PLATES: Final = 4
+# A paper is the job's when dated from this long before its first day to this long after its
+# last: a note is written days before loading, a photo or a bill comes after delivery.
+PAPER_BEFORE: Final = timedelta(days=7)
+PAPER_AFTER: Final = timedelta(days=21)
 # A bill is placed by plate when issued from this long before the job's first day to this long
 # after its last: a carrier bills after delivery, sometimes weeks after.
 BILLED_BEFORE: Final = timedelta(days=10)
 BILLED_AFTER: Final = timedelta(days=60)
 _PLATE_CONFIDENCE: Final = 0.7
+# Characters a reading mistakes for each other: one of them in place of the other is a misread.
+_LOOKALIKES: Final = frozenset(
+    frozenset(pair) for pair in ("0O", "0D", "1I", "2Z", "4A", "5S", "6G", "8B")
+)
+
+type _Item = tuple[ItemKind, uuid.UUID]
 
 
 @dataclass(slots=True)
@@ -79,30 +97,87 @@ async def file_company(db: AsyncSession, company_id: uuid.UUID) -> Filed:
     """Proposes trucks, places items on them, then bills by plate. Does not commit."""
     filed = Filed()
     open_projects = await projects.open_projects(db, company_id)
+    expected = await _expected(db, company_id, open_projects)
     for project in open_projects:
-        links = await projects.links_of_project(db, company_id, project.id)
-        plates = await _plates(db, company_id, links)
-        # Locked: the owner's answer to a truck waits for this run rather than being overwritten.
-        trucks = list(
-            await repository.list_shipments(db, company_id, [project.id], for_update=True)
-        )
-        new = await _propose_trucks(db, project, links, plates, trucks)
+        new, placed = await file_trucks(db, project, expected.get(project.id))
         filed.trucks += len(new)
-        filed.placed += await _place_on_trucks(db, company_id, links, plates, [*trucks, *new])
+        filed.placed += placed
     filed.bills = await _bills_by_plate(db, company_id, open_projects)
     await db.flush()
     return filed
 
 
+async def file_trucks(
+    db: AsyncSession, project: Project, expected: int | None
+) -> tuple[list[Shipment], int]:
+    """One project's trucks proposed from its papers, no more than the ``expected`` trucks of its
+    job where they are known, and its items placed on them: the trucks proposed, and how many
+    links were placed. Does not commit."""
+    company_id = project.company_id
+    links = await projects.links_of_project(db, company_id, project.id)
+    plates = await _plates(db, company_id, links)
+    # Locked: the owner's answer to a truck waits for this run rather than being overwritten.
+    trucks = list(await repository.list_shipments(db, company_id, [project.id], for_update=True))
+    new = await _propose_trucks(db, project, links, plates, trucks, expected)
+    placed = await _place_on_trucks(db, company_id, links, plates, [*trucks, *new])
+    return new, placed
+
+
+@dataclass(frozen=True, slots=True)
+class Refiled:
+    """One project's trucks, not rejected, before and after it was filed again."""
+
+    project_id: uuid.UUID
+    number: str
+    expected: int | None
+    before: int
+    dropped: int
+    proposed: int
+
+    @property
+    def after(self) -> int:
+        return self.before - self.dropped + self.proposed
+
+
+async def refile_company(db: AsyncSession, company_id: uuid.UUID) -> list[Refiled]:
+    """Every project's trucks proposed again under the rules of today: those code proposed and the
+    owner has had no hand in are dropped, then the project's papers propose them again and its
+    items are placed on them. Bills stay where they are. Does not commit."""
+    open_projects = await projects.open_projects(db, company_id)
+    expected = await _expected(db, company_id, open_projects)
+    refiled: list[Refiled] = []
+    for project in open_projects:
+        trucks = await repository.list_shipments(db, company_id, [project.id])
+        before = sum(truck.state is not ShipmentState.REJECTED for truck in trucks)
+        dropped = await drop_untouched(db, company_id, project.id)
+        new, _ = await file_trucks(db, project, expected.get(project.id))
+        refiled.append(
+            Refiled(project.id, project.number, expected.get(project.id), before, dropped, len(new))
+        )
+    await db.flush()
+    return refiled
+
+
+async def _expected(
+    db: AsyncSession, company_id: uuid.UUID, open_projects: Sequence[Project]
+) -> dict[uuid.UUID, int]:
+    """How many trucks each job has, where its conversations say."""
+    jobs = await projects.jobs_of(db, company_id, [project.id for project in open_projects])
+    return {project_id: job.trucks for project_id, job in jobs.items() if job.trucks is not None}
+
+
 @dataclass(frozen=True, slots=True)
 class _Plates:
-    """The plates each item names, as compared and as written, with the facts that say so."""
+    """The plates each item names, as compared and as written, with the facts that say so; and
+    the role a label gives a plate on an item."""
 
-    of: dict[tuple[ItemKind, uuid.UUID], dict[str, Fact]]
+    of: dict[_Item, dict[str, Fact]]
+    roles: dict[_Item, dict[str, str]]
 
 
 async def _plates(db: AsyncSession, company_id: uuid.UUID, links: Sequence[ProjectLink]) -> _Plates:
-    of: dict[tuple[ItemKind, uuid.UUID], dict[str, Fact]] = {}
+    of: dict[_Item, dict[str, Fact]] = {}
+    roles: dict[_Item, dict[str, str]] = {}
     for kind in (ItemKind.MESSAGE, ItemKind.DOCUMENT, ItemKind.INVOICE):
         ids = [link.item_id for link in links if link.item_kind is kind]
         for fact in await facts.facts_of_items(
@@ -110,8 +185,31 @@ async def _plates(db: AsyncSession, company_id: uuid.UUID, links: Sequence[Proje
         ):
             if fact.kind == PLATE:
                 of.setdefault((kind, fact.item_id), {})[fact.normalised] = fact
-    # A fleet list names no one job's trucks.
-    return _Plates({item: found for item, found in of.items() if len(found) <= MAX_PLATES})
+            elif fact.kind in (TRUCK_ROLE, TRAILER_ROLE):
+                roles.setdefault((kind, fact.item_id), {})[fact.normalised] = fact.kind
+    # A fleet list names no one job's trucks, nor their roles.
+    return _Plates(
+        {item: found for item, found in of.items() if len(found) <= MAX_PLATES},
+        {item: found for item, found in roles.items() if len(of.get(item, {})) <= MAX_PLATES},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Paper:
+    item: _Item
+    day: date | None
+    # A consignment or dispatch note: its two plates are one vehicle.
+    one_vehicle: bool = False
+    text: str = ""
+
+
+@dataclass(slots=True)
+class _Seen:
+    """A truck the papers name: the papers, the trailers they pair it with, its first day."""
+
+    papers: set[_Item] = field(default_factory=set)
+    trailers: Counter[str] = field(default_factory=Counter)
+    first: date | None = None
 
 
 async def _propose_trucks(
@@ -120,44 +218,46 @@ async def _propose_trucks(
     links: Sequence[ProjectLink],
     plates: _Plates,
     trucks: Sequence[Shipment],
+    expected: int | None,
 ) -> list[Shipment]:
-    """A truck for each plate a truck paper or a purchase bill names, or two of the project's
-    items do, with its trailer when items naming exactly two plates pair them most often. A
-    plate on a truck the project has, in any state, is never proposed again: a rejected truck
-    keeps its plates out. A plate paired with a truck the project has is that truck's trailer,
-    no truck of its own."""
-    papers = await _truck_papers(db, project.company_id, links)
-    seen: Counter[str] = Counter()
-    sure: set[str] = set()
-    pairs: Counter[frozenset[str]] = Counter()
-    written: dict[str, Fact] = {}
-    for item, found in plates.of.items():
-        seen.update(found.keys())
-        written.update(found)
-        if item in papers:
-            sure.update(found)
-        if len(found) == 2:
-            pairs[frozenset(found)] += 1
+    """The trucks the project's papers name and it does not have yet, each with its trailer where
+    a paper pairs them, the best shown first and no more than the job's trucks. A plate on a
+    truck the project has, in any state, is never proposed again: a rejected truck keeps its
+    plates out, and a misread of them. A plate a paper pairs with a truck the project has is
+    that truck's trailer."""
+    seen, trailers, written, together = _vehicles(await _papers(db, project, links), plates)
     known = {_compared(plate) for truck in trucks for plate in _plates_of(truck)}
+
+    def is_known(plate: str) -> bool:
+        return any(_same_plate(plate, each, together) for each in known)
+
     pulling = {_compared(truck.truck_plate): truck for truck in trucks if truck.truck_plate}
-    wanted = [
-        plate
-        for plate, count in seen.most_common()
-        if (plate in sure or count >= 2) and plate not in known
-    ]
+    for plate, vehicle in seen.items():
+        pulled = [truck for kept, truck in pulling.items() if _same_plate(plate, kept, together)]
+        if len(pulled) == 1 and vehicle.trailers:
+            trailer = _most(vehicle.trailers)
+            if trailer is not None and not is_known(trailer):
+                await _hitch(db, pulled[0], written[trailer])
+                known.add(trailer)
+
+    def best_shown(plate: str) -> tuple[int, int, str]:
+        # The most papers first, then the one nearest the first day of loading.
+        first, start = seen[plate].first, project.starts_on
+        return -len(seen[plate].papers), abs((first - start).days) if first and start else 0, plate
+
+    wanted = sorted(
+        (plate for plate in seen if not is_known(plate) and plate not in trailers), key=best_shown
+    )
+    live = sum(truck.state is not ShipmentState.REJECTED for truck in trucks)
+    if expected is not None:
+        wanted = wanted[: max(expected - live, 0)]
     proposed: list[Shipment] = []
-    taken: set[str] = set()
     for plate in wanted:
-        if plate in taken:
-            continue
-        trailer = _partner(plate, pairs, taken)
-        if trailer in known:
-            # The other plate is a truck the project has: this one is its trailer.
-            taken.add(plate)
-            await _hitch(db, pulling.get(trailer), written[plate])
-            continue
+        trailer = _most(seen[plate].trailers)
+        if trailer is not None and is_known(trailer):
+            trailer = None
         group = [plate] if trailer is None else [plate, trailer]
-        taken.update(group)
+        known.update(group)
         truck = await add_shipment(db, company_id=project.company_id, project_id=project.id)
         truck.state = ShipmentState.PROPOSED
         truck.evidence = sorted(written[each].id for each in group)
@@ -169,6 +269,110 @@ async def _propose_trucks(
     return proposed
 
 
+def _vehicles(
+    papers: Sequence[_Paper], plates: _Plates
+) -> tuple[dict[str, _Seen], set[str], dict[str, Fact], set[frozenset[str]]]:
+    """What the papers say of the job's vehicles: each truck's plate with what names it, every
+    plate a paper or a label shows is a trailer, each plate as written, and the plates one paper
+    names together. Misreads of one plate are one plate."""
+    seen: dict[str, _Seen] = {}
+    trailers = {
+        plate
+        for roles in plates.roles.values()
+        for plate, role in roles.items()
+        if role == TRAILER_ROLE
+    }
+    written: dict[str, Fact] = {}
+    together: set[frozenset[str]] = set()
+    for paper in papers:
+        found = plates.of.get(paper.item, {})
+        written.update(found)
+        together.update(frozenset({a, b}) for a in found for b in found if a != b)
+        pair = _pair(paper, found, plates.roles.get(paper.item, {}))
+        units = [pair] if pair else [(plate, None) for plate in found]
+        for truck, trailer in units:
+            vehicle = seen.setdefault(truck, _Seen())
+            vehicle.papers.add(paper.item)
+            if paper.day and (vehicle.first is None or paper.day < vehicle.first):
+                vehicle.first = paper.day
+            if trailer is not None:
+                vehicle.trailers[trailer] += 1
+                trailers.add(trailer)
+    same = _misreads(seen, together)
+    merged: dict[str, _Seen] = {}
+    for plate, vehicle in seen.items():
+        into = merged.setdefault(same[plate], _Seen())
+        into.papers |= vehicle.papers
+        into.trailers.update({same.get(t, t): n for t, n in vehicle.trailers.items()})
+        if vehicle.first and (into.first is None or vehicle.first < into.first):
+            into.first = vehicle.first
+    return merged, {same.get(plate, plate) for plate in trailers}, written, together
+
+
+def _pair(paper: _Paper, found: dict[str, Fact], roles: dict[str, str]) -> tuple[str, str] | None:
+    """The truck and trailer one paper names together, where it says which is which: a label on
+    one of two plates, or a consignment or dispatch note's two plates, the truck written first."""
+    if len(found) != 2:
+        return None
+    first, second = sorted(found, key=lambda plate: _at(paper.text, found[plate]))
+    if roles.get(first) == TRAILER_ROLE or roles.get(second) == TRUCK_ROLE:
+        first, second = second, first
+    if TRAILER_ROLE in (roles.get(first), roles.get(second)) or paper.one_vehicle:
+        return first, second
+    return None
+
+
+def _at(text: str, plate: Fact) -> int:
+    """Where a plate is first written in a paper's text; a plate not found there comes last."""
+    at = text.find(plate.value)
+    return at if at >= 0 else len(text)
+
+
+def _misreads(seen: dict[str, _Seen], together: set[frozenset[str]]) -> dict[str, str]:
+    """Each plate's one form among its misreads ("06 KLM 345" read as "06 KML 345"): the one the
+    most papers name. Two plates one paper names together are two vehicles, never a misread."""
+    plates = sorted(seen, key=lambda plate: (-len(seen[plate].papers), plate))
+    same: dict[str, str] = {}
+    for plate in plates:
+        same[plate] = next(
+            (
+                kept
+                for kept in dict.fromkeys(same.values())
+                if _misread(plate, kept) and frozenset({plate, kept}) not in together
+            ),
+            plate,
+        )
+    return same
+
+
+def _same_plate(a: str, b: str, together: set[frozenset[str]]) -> bool:
+    """Whether two plates are one: the same, or one a misread of the other that no paper names
+    beside it."""
+    return a == b or (_misread(a, b) and frozenset({a, b}) not in together)
+
+
+def _misread(a: str, b: str) -> bool:
+    """Whether two plates are one read twice: the same length and the same first two characters,
+    and one character read as a lookalike, or two neighbours swapped."""
+    if len(a) != len(b) or a[:2] != b[:2] or a == b:
+        return False
+    differ = [i for i in range(len(a)) if a[i] != b[i]]
+    if len(differ) == 1:
+        return frozenset({a[differ[0]], b[differ[0]]}) in _LOOKALIKES
+    first, second = differ[0], differ[-1]
+    return (
+        len(differ) == 2 and second == first + 1 and (a[first], a[second]) == (b[second], b[first])
+    )
+
+
+def _most(trailers: Counter[str]) -> str | None:
+    """The trailer the papers pair a truck with most often; none on a tie."""
+    ranked = trailers.most_common(2)
+    if not ranked or (len(ranked) == 2 and ranked[0][1] == ranked[1][1]):
+        return None
+    return ranked[0][0]
+
+
 async def _hitch(db: AsyncSession, truck: Shipment | None, trailer: Fact) -> None:
     """Names a truck's trailer when a paper pairs the two and the truck has none yet."""
     if truck is None or truck.trailer_plate or truck.state is ShipmentState.REJECTED:
@@ -177,34 +381,49 @@ async def _hitch(db: AsyncSession, truck: Shipment | None, trailer: Fact) -> Non
     await fill_shipment(db, truck, {"trailer_plate": trailer.value}, source=FieldSource.EXTRACTION)
 
 
-def _partner(plate: str, pairs: Counter[frozenset[str]], taken: set[str]) -> str | None:
-    """The plate an item naming exactly two pairs with this one most often; none on a tie."""
-    with_it = [(pair, count) for pair, count in pairs.items() if plate in pair]
-    with_it = [(pair, count) for pair, count in with_it if not (pair - {plate}) & taken]
-    if not with_it:
-        return None
-    best = max(count for _, count in with_it)
-    top = [pair for pair, count in with_it if count == best]
-    if len(top) > 1:
-        return None
-    [other] = top[0] - {plate}
-    return other
-
-
-async def _truck_papers(
-    db: AsyncSession, company_id: uuid.UUID, links: Sequence[ProjectLink]
-) -> set[tuple[ItemKind, uuid.UUID]]:
-    """The project's items that are one truck's: its truck papers and its purchase bills."""
+async def _papers(db: AsyncSession, project: Project, links: Sequence[ProjectLink]) -> list[_Paper]:
+    """The project's items that are one truck's, dated within the job's days: its truck papers,
+    and its carriers' bills placed by something other than a plate (a bill placed by its plate
+    cannot vouch for that plate's truck)."""
+    company_id = project.company_id
     files = [link.item_id for link in links if link.item_kind is ItemKind.DOCUMENT]
-    bills = [link.item_id for link in links if link.item_kind is ItemKind.INVOICE]
     typed = await documents.get_documents(db, company_id, files)
-    papers = {
-        (ItemKind.DOCUMENT, file.id) for file in typed.values() if file.doc_type in TRUCK_PAPERS
+    truck_files = [file for file in typed.values() if file.doc_type in TRUCK_PAPERS]
+    carried = await conversations.first_carriers(db, company_id, [file.id for file in truck_files])
+    papers = [
+        _Paper(
+            item=(ItemKind.DOCUMENT, file.id),
+            day=(carried[file.id].sent_at if file.id in carried else file.created_at).date(),
+            one_vehicle=file.doc_type in ONE_VEHICLE_PAPERS,
+            text=file.text,
+        )
+        for file in truck_files
+    ]
+    by_plate = {
+        link.item_id
+        for link in links
+        if link.item_kind is ItemKind.INVOICE and link.method is LinkMethod.SCORED
     }
+    bills = [
+        link.item_id
+        for link in links
+        if link.item_kind is ItemKind.INVOICE and link.item_id not in by_plate
+    ]
     for bill in await books.get_invoices(db, company_id, bills):
         if bill.kind in (InvoiceKind.PURCHASE, InvoiceKind.INCOMING_E_INVOICE):
-            papers.add((ItemKind.INVOICE, bill.id))
-    return papers
+            papers.append(_Paper(item=(ItemKind.INVOICE, bill.id), day=bill.issue_date))
+    return [paper for paper in papers if _of_the_job(paper.day, project)]
+
+
+def _of_the_job(day: date | None, project: Project) -> bool:
+    """Whether a paper's day falls within the job's days, as far as they are known. A paper with
+    no day keeps it, as does a job with none: the day cannot speak against it."""
+    if day is None:
+        return True
+    first, last = project.starts_on, project.ends_on or project.starts_on
+    return (first is None or first - PAPER_BEFORE <= day) and (
+        last is None or day <= last + PAPER_AFTER
+    )
 
 
 async def _place_on_trucks(
@@ -224,7 +443,12 @@ async def _place_on_trucks(
         named = set(plates.of.get((link.item_kind, link.item_id), {}))
         if not named:
             continue
-        fits = [truck for truck in live if {_compared(p) for p in _plates_of(truck)} & named]
+        # A paper that misread a truck's plate is that truck's too.
+        fits = [
+            truck
+            for truck in live
+            if any(_same_plate(a, _compared(b), set()) for a in named for b in _plates_of(truck))
+        ]
         if len(fits) == 1 and await projects.suggest_truck(db, company_id, link.id, fits[0].id):
             placed += 1
     return placed

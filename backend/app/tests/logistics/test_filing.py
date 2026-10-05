@@ -13,12 +13,16 @@ import pytest
 from app.modules.books import service as books
 from app.modules.books.models import InvoiceDirection, InvoiceKind
 from app.modules.books.sources import InvoiceRecord
+from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
+from app.modules.facts import repository as facts_repository
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource
+from app.modules.projects.schemas import ProjectJob
 from app.packs.logistics import filing
 from app.packs.logistics import repository as logistics_repository
 from app.packs.logistics import service as logistics
+from app.packs.logistics.facts import TRAILER_ROLE
 from app.packs.logistics.models import ShipmentState
 from app.platform.db import open_session
 from app.platform.items import ItemKind
@@ -372,3 +376,231 @@ async def test_a_bill_pays_the_truck_only_its_e_invoice_names(client: httpx.Asyn
         billed = await logistics.trucks_billed(db, company_id, uuid.UUID(link["item_id"]))
 
     assert billed == [uuid.UUID(truck["id"])]
+
+
+def note(words: str) -> bytes:
+    return pdfs.pdf(pdfs.text(f"CMR consignment note. {words} Goods received."))
+
+
+async def with_notes(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+    notes: dict[str, str],
+) -> tuple[uuid.UUID, str]:
+    """A proposed project whose first mail carried a consignment note for each of ``notes``."""
+    attach = {name: note(words) for name, words in notes.items()}
+    placement = await proposed(client, model, attach=attach)
+    await documents.read_pending()
+    return uuid.UUID(placement["company_id"]), placement["project_id"]
+
+
+def plates_of(trucks: list[dict[str, Any]]) -> list[tuple[str, str | None]]:
+    return sorted((truck["truck_plate"], truck["trailer_plate"]) for truck in trucks)
+
+
+async def test_a_notes_two_plates_are_its_truck_and_trailer_the_truck_written_first(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(
+        client,
+        model,
+        {
+            "CMR 1.pdf": "Plate: AB 123 CD, plate: XY 987 ZW",
+            # A trailer named alone is no truck.
+            "CMR 2.pdf": "Trailer: TR 555 LR",
+        },
+    )
+
+    await filed(company_id)
+
+    assert plates_of(await trucks_of(client, project_id)) == [("AB 123 CD", "XY 987 ZW")]
+
+
+async def test_no_more_trucks_than_the_job_has_the_best_shown_first(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id, project_id = await with_notes(
+        client,
+        model,
+        {
+            "CMR 1.pdf": "Plate: AA 111 AA",
+            "CMR 2.pdf": "Truck: AA 111 AA arrived.",
+            "CMR 3.pdf": "Plate: BB 222 BB",
+            "CMR 4.pdf": "Plate: CC 333 CC",
+        },
+    )
+    real = projects.jobs_of
+
+    async def two_trucks(*args: Any) -> dict[uuid.UUID, Any]:
+        jobs = await real(*args)
+        return {uuid.UUID(project_id): ProjectJob(trucks=2)} | {
+            key: job for key, job in jobs.items() if key != uuid.UUID(project_id)
+        }
+
+    monkeypatch.setattr(projects, "jobs_of", two_trucks)
+
+    result = await filed(company_id)
+
+    assert result.trucks == 2
+    # The plate two notes name comes first; of the others, one.
+    proposed_plates = [truck for truck, _ in plates_of(await trucks_of(client, project_id))]
+    assert "AA 111 AA" in proposed_plates and len(proposed_plates) == 2
+
+
+async def test_a_misread_is_one_truck_and_two_plates_on_one_paper_are_two(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(
+        client,
+        model,
+        {
+            "CMR 1.pdf": "Plate: AB 123 CD",
+            # The same plate with two neighbours swapped, as a reading slips.
+            "CMR 2.pdf": "Plate: AB 213 CD",
+            "CMR 3.pdf": "Plate: AB 123 CD",
+        },
+    )
+
+    await filed(company_id)
+
+    assert plates_of(await trucks_of(client, project_id)) == [("AB 123 CD", None)]
+    assert filing._misread("AB123CD", "AB213CD") and filing._misread("06KLM345", "06KML345")
+    assert filing._misread("34AB108", "34AB10B")  # 8 read as B
+    assert not filing._misread("06XYZ900", "06XYZ901")  # two trucks of one fleet
+    assert not filing._misread("34AB123", "06AB123")
+
+
+async def test_a_note_outside_the_jobs_days_names_no_truck(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(client, model, {"CMR 1.pdf": "Plate: AB 123 CD"})
+    # The note came on 3 August; this job loads in late September.
+    days = {"starts_on": "2026-09-20", "ends_on": "2026-09-25"}
+    assert (await client.patch(f"/projects/{project_id}", json=days)).status_code == 200
+
+    assert (await filed(company_id)).trucks == 0
+
+
+async def test_refiling_drops_only_the_trucks_the_owner_had_no_hand_in(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(client, model, {"CMR 1.pdf": "Plate: AB 123 CD"})
+    await filed(company_id)
+    async with open_session() as db:
+        # Trucks an earlier rule proposed from a mail's plates.
+        for plate in ("MM 999 MM", "OW 111 NR"):
+            truck = await logistics.add_shipment(
+                db, company_id=company_id, project_id=uuid.UUID(project_id)
+            )
+            truck.state = ShipmentState.PROPOSED
+            await logistics.fill_shipment(
+                db, truck, {"truck_plate": plate}, source=FieldSource.EXTRACTION
+            )
+        await db.commit()
+    [written] = [t for t in await trucks_of(client, project_id) if t["truck_plate"] == "OW 111 NR"]
+    await client.patch(f"/shipments/{written['id']}", json={"driver_name": "A. Driver"})
+
+    async with open_session() as db:
+        refiled = await filing.refile_company(db, company_id)
+        await db.commit()
+
+    [project] = [each for each in refiled if str(each.project_id) == project_id]
+    assert (project.before, project.dropped, project.proposed, project.after) == (3, 2, 1, 2)
+    assert plates_of(await trucks_of(client, project_id)) == [
+        ("AB 123 CD", None),
+        ("OW 111 NR", None),
+    ]
+
+
+async def test_a_trailer_label_read_again_from_old_papers_and_mail(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, _ = await with_notes(client, model, {"CMR 1.pdf": "Trailer: XY 987 ZW"})
+    await arrive(company_id, 2, mail("<m2@x>", body="Trailer: QQ 555 RR"), category=None)
+    kinds = frozenset({TRAILER_ROLE})
+    async with open_session() as db:
+        # Read before code knew a plate's role.
+        for kind in (ItemKind.DOCUMENT, ItemKind.MESSAGE):
+            roles = await facts_repository.of_kind(db, company_id, TRAILER_ROLE, kind, 10)
+            await facts_repository.forget_ids(db, company_id, [fact.id for fact in roles])
+        await db.commit()
+
+    async with open_session() as db:
+        files, after = await documents.reread_facts(db, company_id, kinds, after=None)
+        assert (await documents.reread_facts(db, company_id, kinds, after=after))[1] is None
+        mails, _ = await conversations.reread_facts(db, company_id, kinds, after=None)
+        await db.commit()
+        [paper] = await facts_repository.of_kind(db, company_id, TRAILER_ROLE, ItemKind.DOCUMENT, 9)
+        [said] = await facts_repository.of_kind(db, company_id, TRAILER_ROLE, ItemKind.MESSAGE, 9)
+    assert (files, mails) == (1, 1)
+    assert (paper.normalised, said.normalised) == ("XY987ZW", "QQ555RR")
+
+
+async def test_a_misread_of_a_kept_truck_is_that_truck(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(client, model, {"CMR 1.pdf": "Plate: AB 123 C0"})
+    made = await client.post(
+        "/shipments", json={"project_id": project_id, "truck_plate": "AB123CD"}
+    )
+    assert made.status_code == 201, made.text
+
+    assert (await filed(company_id)).trucks == 0
+
+
+async def test_a_fleet_lists_labels_say_nothing_of_a_jobs_trucks(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    fleet = "Trailer: AB 123 CD, " + ", ".join(f"Truck: FL {n} AA" for n in range(101, 105))
+    company_id, project_id = await with_notes(
+        client, model, {"CMR 1.pdf": "Plate: AB 123 CD", "Fleet.pdf": fleet}
+    )
+
+    await filed(company_id)
+
+    assert plates_of(await trucks_of(client, project_id)) == [("AB 123 CD", None)]
+
+
+async def test_a_jobs_last_day_bounds_its_papers_without_a_first(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(client, model, {"CMR 1.pdf": "Plate: AB 123 CD"})
+    # The note came on 3 August; this job ended in June.
+    assert (
+        await client.patch(f"/projects/{project_id}", json={"ends_on": "2026-06-30"})
+    ).is_success
+
+    assert (await filed(company_id)).trucks == 0
+
+
+async def test_a_paper_that_misread_a_kept_truck_hitches_its_trailer_and_is_placed_on_it(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id, project_id = await with_notes(
+        client, model, {"CMR 1.pdf": "Plate: AB 123 C0, plate: XY 987 ZW"}
+    )
+    made = await client.post(
+        "/shipments", json={"project_id": project_id, "truck_plate": "AB123CD"}
+    )
+    truck = made.json()
+
+    assert (await filed(company_id)).trucks == 0
+
+    assert plates_of(await trucks_of(client, project_id)) == [("AB123CD", "XY 987 ZW")]
+    [cmr] = (
+        await client.get(
+            "/project-links", params={"project_id": project_id, "item_kind": "document"}
+        )
+    ).json()["items"]
+    assert cmr["shipment_id"] == truck["id"]

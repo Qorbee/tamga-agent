@@ -135,6 +135,16 @@ def read_jobs_with(reader: JobReader) -> None:
     _job_readers.append(reader)
 
 
+async def jobs_of(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, ProjectJob]:
+    """What is known of each project's job, as the project shows it: its trucks among it."""
+    jobs: dict[uuid.UUID, ProjectJob] = {}
+    for reader in _job_readers:
+        jobs |= await reader(db, company_id, project_ids)
+    return jobs
+
+
 class NumberTaken(Conflict):
     code = "number_taken"
 
@@ -1224,9 +1234,7 @@ async def _describe(
 ) -> list[ProjectOut]:
     numbers = await repository.numbers_of(db, company_id, [p.id for p in projects])
     links = await repository.count_links(db, company_id, [p.id for p in projects])
-    jobs: dict[uuid.UUID, ProjectJob] = {}
-    for reader in _job_readers:
-        jobs |= await reader(db, company_id, [p.id for p in projects])
+    jobs = await jobs_of(db, company_id, [p.id for p in projects])
     aliases: dict[uuid.UUID, list[str]] = {}
     for number in numbers:
         aliases.setdefault(number.project_id, []).append(number.number)

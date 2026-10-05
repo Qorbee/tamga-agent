@@ -3,6 +3,8 @@ their label, and the order and booking references a load travels under (docs/arc
 
 Plates have no one format across countries, so only a plate written after its label ("Truck:",
 "Trailer plate:") is read here; a country pack reads its own plates wherever they are written.
+A label that says what the vehicle is ("Trailer:", "Tractor:") is kept as the plate's role too
+(``TRUCK_ROLE``, ``TRAILER_ROLE``): a country pack writes the same kinds for its own words.
 """
 
 from collections.abc import Iterable
@@ -11,6 +13,9 @@ from typing import Final
 from app.modules.facts.extractors import REGEX, after_label, is_quantity, is_reference, reference
 from app.modules.facts.service import NewFact
 
+# A plate's role, where its label says it: the truck that pulls, or the trailer it pulls.
+TRUCK_ROLE: Final = "truck_plate"
+TRAILER_ROLE: Final = "trailer_plate"
 _CMR: Final = after_label(r"\bCMR")
 _PLATE: Final = after_label(
     r"\b(?:truck|trailer|tractor|lorry|vehicle|reg(?:istration)?)(?:\s+plates?)?|\bplates?",
@@ -42,6 +47,11 @@ def labelled_plates(text: str) -> Iterable[NewFact]:
         # A plate has letters and digits; "Truck: 2" or "Trailer: TBC" are not plates.
         if 4 <= len(compact) <= 10 and any(c.isalpha() for c in compact) and is_reference(plate):
             yield NewFact("plate", plate, compact, 0.75, REGEX)
+            label = match.group(0)[: match.start(1) - match.start(0)].lower()
+            if "trailer" in label:
+                yield NewFact(TRAILER_ROLE, plate, compact, 0.75, REGEX)
+            elif any(word in label for word in ("truck", "tractor", "lorry")):
+                yield NewFact(TRUCK_ROLE, plate, compact, 0.75, REGEX)
 
 
 def order_numbers(text: str) -> Iterable[NewFact]:

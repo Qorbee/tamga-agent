@@ -303,6 +303,17 @@ async def list_documents(
     return rows.all(), total or 0
 
 
+async def read_after(
+    db: AsyncSession, company_id: uuid.UUID, *, after: uuid.UUID | None, limit: int
+) -> Sequence[Document]:
+    """The read files after ``after``, by id."""
+    filters = [Document.company_id == company_id, Document.read_state == ReadState.READ]
+    if after is not None:
+        filters.append(Document.id > after)
+    rows = await db.scalars(select(Document).where(*filters).order_by(Document.id).limit(limit))
+    return rows.all()
+
+
 async def request_reading(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> None:
