@@ -9,7 +9,9 @@ from app.modules.parties.models import PartyKind
 
 # "source": the parties synced from the books first, then by name. "balance": the most the company
 # owes first; "-balance": the most owed to the company first.
-PartySort = Literal["source", "name", "-name", "created_at", "-created_at", "balance", "-balance"]
+PartySort = Literal[
+    "source", "name", "-name", "created_at", "-created_at", "balance", "-balance", "open"
+]
 # Which way a party's balance in the books runs: it owes the company, or the company owes it.
 BalanceSide = Literal["receivable", "payable"]
 

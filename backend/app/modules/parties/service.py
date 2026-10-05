@@ -16,7 +16,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Final
 
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import service as companies
@@ -47,6 +47,9 @@ _PARTY_SORTS: Final[dict[str, list[ColumnElement[Any]]]] = {
     "-created_at": [Party.created_at.desc()],
     "balance": [Party.balance.asc().nulls_last()],
     "-balance": [Party.balance.desc().nulls_last()],
+    # Those whose account in the books is open first, by name: balances in different currencies
+    # are never ranked against each other.
+    "open": [func.coalesce(Party.balance, 0) == 0, Party.name.asc()],
 }
 
 

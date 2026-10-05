@@ -254,6 +254,14 @@ async def test_firms_are_listed_by_what_the_books_say_each_owes(client: httpx.As
     assert await names(balance_side="payable", sort="balance") == ["Carrier Owed"]
     # The most owed to the company first, and a party with no balance last.
     assert (await names(sort="-balance"))[-1] == "Atlas Haulage"
+    # Open accounts first, by name, whatever their currency; then the rest.
+    assert await names(sort="open") == [
+        "Carrier Owed",
+        "Client Owing",
+        "Client Owing More",
+        "Atlas Haulage",
+        "Client Settled",
+    ]
     owing = (await client.get("/parties", params={"balance_side": "receivable"})).json()["items"]
     assert {(p["balance"], p["balance_currency"], p["balance_on"]) for p in owing} == {
         ("1500.00", "EUR", "2026-10-03"),

@@ -400,8 +400,14 @@ async def invoice_totals(
     """What the invoices a list holds add up to, one figure per currency: amounts in different
     currencies are never summed together."""
     return [
-        InvoiceTotal(currency=currency, count=count, total_amount=total, remaining_amount=left)
-        for currency, count, total, left in await repository.invoice_totals(
+        InvoiceTotal(
+            currency=currency,
+            count=count,
+            total_amount=total,
+            remaining_amount=left,
+            paid_amount=paid,
+        )
+        for currency, count, total, left, paid in await repository.invoice_totals(
             db, actor.company_id, which
         )
     ]

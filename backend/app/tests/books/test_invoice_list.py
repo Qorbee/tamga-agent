@@ -124,10 +124,17 @@ async def test_invoices_are_listed_by_kind_by_what_is_left_and_in_the_order_aske
         kind=["purchase", "expense"], outstanding=True, due_before="2026-09-10", sort="due_date"
     ) == ["E-1", "P-2"]
 
-    # What the same lists add up to: a cancelled bill counts in the total, not in what is left.
+    # What the same lists add up to: a cancelled bill counts in the total, and neither in what is
+    # left nor in what was paid.
     totals = (await client.get("/invoice-totals", params={"kind": "purchase"})).json()
     assert totals == [
-        {"currency": "EUR", "count": 3, "total_amount": "1100.00", "remaining_amount": "1000.00"}
+        {
+            "currency": "EUR",
+            "count": 3,
+            "total_amount": "1100.00",
+            "remaining_amount": "1000.00",
+            "paid_amount": "0.00",
+        }
     ]
     open_sales = (
         await client.get("/invoice-totals", params={"kind": "sales", "outstanding": True})
@@ -167,8 +174,20 @@ async def test_totals_are_never_summed_across_currencies(client: httpx.AsyncClie
 
     totals = (await client.get("/invoice-totals", params={"kind": "sales"})).json()
     assert totals == [
-        {"currency": "EUR", "count": 2, "total_amount": "500.00", "remaining_amount": "300.00"},
-        {"currency": "TRY", "count": 1, "total_amount": "1000.00", "remaining_amount": "400.00"},
+        {
+            "currency": "EUR",
+            "count": 2,
+            "total_amount": "500.00",
+            "remaining_amount": "300.00",
+            "paid_amount": "200.00",
+        },
+        {
+            "currency": "TRY",
+            "count": 1,
+            "total_amount": "1000.00",
+            "remaining_amount": "400.00",
+            "paid_amount": "600.00",
+        },
     ]
 
     # A bill whose remainder the books do not give: what is left is unknown, not understated.
@@ -185,6 +204,7 @@ async def test_totals_are_never_summed_across_currencies(client: httpx.AsyncClie
         "count": 3,
         "total_amount": "550.00",
         "remaining_amount": None,
+        "paid_amount": None,
     }
     # Another company's invoices are in none of them.
     await guest_client(client)

@@ -2393,6 +2393,18 @@
             ],
             "title": "Currency"
           },
+          "paid_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid Amount"
+          },
           "remaining_amount": {
             "anyOf": [
               {
@@ -2422,7 +2434,8 @@
           "currency",
           "count",
           "total_amount",
-          "remaining_amount"
+          "remaining_amount",
+          "paid_amount"
         ],
         "title": "InvoiceTotal",
         "type": "object"
@@ -8661,7 +8674,8 @@
                 "created_at",
                 "-created_at",
                 "balance",
-                "-balance"
+                "-balance",
+                "open"
               ],
               "title": "Sort",
               "type": "string"

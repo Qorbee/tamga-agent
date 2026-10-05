@@ -259,10 +259,10 @@ async def list_invoices(
 
 async def invoice_totals(
     db: AsyncSession, company_id: uuid.UUID, which: InvoiceFilter
-) -> Sequence[Row[tuple[str | None, int, Decimal | None, Decimal | None]]]:
-    """Per currency: how many invoices, their totals, and what is left of those not cancelled.
-    A figure is null when the books give the amount of only some of them: a partial sum would
-    read as the whole."""
+) -> Sequence[Row[tuple[str | None, int, Decimal | None, Decimal | None, Decimal | None]]]:
+    """Per currency: how many invoices, their totals, and what is left and what was paid of those
+    not cancelled. A figure is null when the books give the amounts of only some of them: a
+    partial sum would read as the whole."""
     live = Invoice.cancelled.is_(False)
     total = case(
         (
@@ -276,8 +276,17 @@ async def invoice_totals(
             func.coalesce(func.sum(Invoice.remaining_amount).filter(live), 0),
         )
     )
+    paid = case(
+        (
+            func.count(Invoice.total_amount - Invoice.remaining_amount).filter(live)
+            == func.count().filter(live),
+            func.coalesce(
+                func.sum(Invoice.total_amount - Invoice.remaining_amount).filter(live), 0
+            ),
+        )
+    )
     rows = await db.execute(
-        select(Invoice.currency, func.count(), total, left)
+        select(Invoice.currency, func.count(), total, left, paid)
         .where(*which.where(company_id))
         .group_by(Invoice.currency)
         .order_by(func.count().desc(), Invoice.currency)

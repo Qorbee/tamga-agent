@@ -55,5 +55,6 @@ class InvoiceTotal(BaseModel):
     count: int
     # Each null when the books give the amount of only some of them.
     total_amount: Decimal | None
-    # What is left of those not cancelled.
+    # What is left of those not cancelled, and what was paid of them.
     remaining_amount: Decimal | None
+    paid_amount: Decimal | None

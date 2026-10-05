@@ -1,11 +1,21 @@
 "use client";
 
-import { Cancel01Icon, Search01Icon, SortByDown02Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Alert02Icon,
+  ArrowDownLeft01Icon,
+  ArrowUpRight01Icon,
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
+  Invoice01Icon,
+  Search01Icon,
+  SortByDown02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
+import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -52,6 +62,40 @@ const BALANCES = ["receivable", "payable", "all"] as const;
 type Balances = (typeof BALANCES)[number];
 // The chosen option is filled and in full ink; the others recede.
 const SEGMENT = "text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground";
+/** What a figure is to the company, and its colour from the palette's soft tones: money coming in
+ * is sage, money going out ochre, what is late terracotta; anything else stays neutral. */
+type Tone = "in" | "out" | "late" | "plain";
+const TONES: Record<Tone, { card: string; chip: string; ink: string; pill: string; icon: IconSvgElement }> = {
+  in: {
+    card: "bg-success-soft",
+    chip: "bg-card text-success-foreground",
+    ink: "text-success-foreground",
+    pill: "bg-success-soft text-success-foreground",
+    icon: ArrowDownLeft01Icon,
+  },
+  out: {
+    card: "bg-warning-soft",
+    chip: "bg-card text-warning-foreground",
+    ink: "text-warning-foreground",
+    pill: "bg-warning-soft text-warning-foreground",
+    icon: ArrowUpRight01Icon,
+  },
+  late: {
+    card: "bg-danger-soft",
+    chip: "bg-card text-danger-foreground",
+    ink: "text-danger-foreground",
+    pill: "bg-danger-soft text-danger-foreground",
+    icon: Alert02Icon,
+  },
+  plain: {
+    card: "bg-card border-border border",
+    chip: "bg-muted text-muted-foreground",
+    ink: "text-muted-foreground",
+    pill: "bg-muted text-muted-foreground",
+    icon: CheckmarkCircle02Icon,
+  },
+};
+const SIDE_TONE: Record<Exclude<Side, "both">, Tone> = { collect: "in", pay: "out" };
 
 /**
  * The books as Tamga read them, read only: what clients owe, what the company owes, and the
@@ -129,21 +173,14 @@ export function BooksPage() {
       </div>
 
       {view !== "firms" && firm ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setChosen(null);
-              if (view === "both") choose("collect");
-            }}
-            aria-label={t.books.everyFirm}
-          >
-            {t.books.onlyFirm(firm.name)}
-            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} />
-          </Button>
-          <Balance party={firm} />
-        </div>
+        <FirmSummary
+          party={firm}
+          view={view}
+          onClose={() => {
+            setChosen(null);
+            if (view === "both") choose("collect");
+          }}
+        />
       ) : null}
 
       {view === "firms" ? (
@@ -266,16 +303,16 @@ function Invoices({
     return <p className="text-muted-foreground py-10 text-center text-sm">{t.books.empty}</p>;
   return (
     <div className="grid gap-3">
-      {totals.isError ? (
+      {view === "both" ? null : totals.isError ? (
         <p className="text-muted-foreground px-1 text-sm" role="status">
           {t.books.totals.unavailable}
         </p>
       ) : totals.data ? (
-        <Totals totals={totals.data} open={shown !== "all"} />
+        <Totals totals={totals.data} side={view} shown={shown} />
       ) : null}
       <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-2xl border">
         {invoices.items.map((bill) => (
-          <InvoiceRow key={bill.id} bill={bill} bothSides={view === "both"} />
+          <InvoiceRow key={bill.id} bill={bill} bothSides={view === "both"} ofFirm={firm !== null} />
         ))}
       </ul>
       <ShowMore list={invoices} />
@@ -283,26 +320,56 @@ function Invoices({
   );
 }
 
-/** What the list adds up to, one figure per currency: what is left of open ones, else the total. */
-function Totals({ totals, open }: { totals: InvoiceTotal[]; open: boolean }) {
+/** What the list adds up to, a card per currency, never summed across them: what is left of the
+ * open ones, coloured by the side of the books (or as late, for the overdue), else the total. */
+function Totals({ totals, side, shown }: { totals: InvoiceTotal[]; side: Exclude<Side, "both">; shown: Shown }) {
   const { t, locale } = useI18n();
   const words = t.books.totals;
+  const open = shown !== "all";
+  const tone: Tone = shown === "overdue" ? "late" : SIDE_TONE[side];
+  const label = words.labels[shown][side];
   return (
-    <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 px-1 text-sm">
+    <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
       {totals.map((total) => {
         const amount = open ? total.remaining_amount : total.total_amount;
-        const figure =
-          total.currency && amount !== null ? formatMoney(Number(amount), total.currency, locale) : null;
+        const left = total.remaining_amount;
+        const money = (value: string | null) =>
+          value !== null && total.currency ? formatMoney(Number(value), total.currency, locale) : null;
+        const detail = [
+          !open && left !== null && Number(left) > 0 ? words.left(money(left) ?? "") : null,
+          words.invoices(total.count),
+        ]
+          .filter(Boolean)
+          .join(" · ");
         return (
-          <li key={total.currency ?? "none"} className="tabular-nums">
-            <span className="text-foreground font-medium">
-              {figure ? (open ? words.left(figure) : words.total(figure)) : words.unknown}
-            </span>
-            <span> · {words.invoices(total.count)}</span>
-          </li>
+          <Stat
+            key={total.currency ?? "none"}
+            tone={tone}
+            label={label}
+            figure={money(amount) ?? words.unknown}
+            detail={detail}
+          />
         );
       })}
     </ul>
+  );
+}
+
+/** One figure as a banking app shows it: a tinted card, an icon for which way the money goes, the
+ * amount large, and a line of what it is made of. */
+function Stat({ tone, label, figure, detail }: { tone: Tone; label: string; figure: string; detail?: string }) {
+  const style = TONES[tone];
+  return (
+    <li className={cn("flex min-w-0 items-center gap-3 rounded-2xl px-3 py-3", style.card)}>
+      <span className={cn("grid size-10 shrink-0 place-items-center rounded-full", style.chip)} aria-hidden>
+        <HugeiconsIcon icon={tone === "plain" ? Invoice01Icon : style.icon} strokeWidth={1.75} className="size-5" />
+      </span>
+      <span className="grid min-w-0">
+        <span className={cn("text-xs font-medium", style.ink)}>{label}</span>
+        <span className="text-foreground truncate text-lg leading-tight font-semibold tabular-nums">{figure}</span>
+        {detail ? <span className="text-muted-foreground text-xs text-pretty">{detail}</span> : null}
+      </span>
+    </li>
   );
 }
 
@@ -315,76 +382,175 @@ function ShowMore({ list }: { list: { more: (() => void) | null; loadingMore: bo
   ) : null;
 }
 
-/** An invoice's row. With both sides of the books in one list, each row says which side it is on. */
-function InvoiceRow({ bill, bothSides }: { bill: Invoice; bothSides: boolean }) {
+/** An invoice's row, as a banking app lists a payment: its number and amount on one line, then
+ * the firm across the row, its days, and pills for what needs seeing. In one firm's list the
+ * firm is the page's, so the row names the kind of invoice instead. */
+function InvoiceRow({ bill, bothSides, ofFirm }: { bill: Invoice; bothSides: boolean; ofFirm: boolean }) {
   const { t, locale } = useI18n();
   const money = (amount: string | null) =>
     amount !== null && bill.currency ? formatMoney(Number(amount), bill.currency, locale) : null;
   const left = bill.remaining_amount !== null && !bill.cancelled ? Number(bill.remaining_amount) : null;
   const overdue = left !== null && left > 0 && bill.due_date !== null && isBeforeToday(bill.due_date);
+  const paid = left === 0;
+  const partly = left !== null && left > 0 && bill.remaining_amount !== bill.total_amount;
+  const kind = bothSides || bill.kind === "expense" ? t.books.kinds[bill.kind] : null;
 
   return (
     <li className="py-1 ps-2 pe-3">
       <CanvasLink
         view={{ kind: "invoice", id: bill.id }}
-        className="hover:bg-accent/40 aria-[current=true]:bg-secondary flex min-w-0 items-start gap-3 rounded-xl px-2 py-2.5 transition-colors"
+        className="hover:bg-accent/40 aria-[current=true]:bg-secondary grid min-w-0 gap-0.5 rounded-xl px-2 py-2.5 transition-colors"
       >
-        <span className="min-w-0 flex-1">
-          <span className="text-muted-foreground flex items-baseline gap-2 text-xs">
-            <span className="font-mono">{bill.number ?? t.books.noNumber}</span>
-            {bothSides || bill.kind === "expense" ? <span>{t.books.kinds[bill.kind]}</span> : null}
+        <span className="flex min-w-0 items-baseline justify-between gap-3">
+          <span className="text-muted-foreground min-w-0 truncate font-mono text-xs">
+            {bill.number ?? t.books.noNumber}
           </span>
-          <span className="block text-base font-medium text-pretty break-words">{bill.party_name ?? "—"}</span>
-          <span className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-            {bill.issue_date ? <span>{t.books.issuedOn(formatDays(bill.issue_date, null, locale))}</span> : null}
-            {bill.due_date ? <span>{t.books.dueOn(formatDays(bill.due_date, null, locale))}</span> : null}
-            {overdue ? (
-              <span className="text-warning-foreground inline-flex items-center gap-1.5">
-                <span className="bg-warning size-1.5 rounded-full" aria-hidden />
-                {t.books.overdue}
-              </span>
-            ) : null}
-            {bill.cancelled ? <span className="text-danger-foreground">{t.books.cancelled}</span> : null}
-          </span>
-        </span>
-        <span className="shrink-0 text-end tabular-nums">
-          <span className={cn("block text-sm font-medium", bill.cancelled && "line-through")}>
+          <span
+            className={cn(
+              "shrink-0 text-base font-semibold tabular-nums",
+              bill.cancelled && "text-muted-foreground line-through",
+            )}
+          >
             {money(bill.total_amount) ?? "—"}
           </span>
-          {left !== null && left > 0 && bill.remaining_amount !== bill.total_amount ? (
-            <span className="text-warning-foreground block text-xs">
-              {t.books.left}: {money(bill.remaining_amount)}
-            </span>
-          ) : null}
         </span>
+        <span className="text-base font-medium text-pretty break-words">
+          {ofFirm ? (t.books.kinds[bill.kind] ?? "—") : (bill.party_name ?? "—")}
+        </span>
+        <span className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+          {kind && !ofFirm ? <span>{kind}</span> : null}
+          {bill.issue_date ? <span>{t.books.issuedOn(formatDays(bill.issue_date, null, locale))}</span> : null}
+          {bill.due_date ? <span>{t.books.dueOn(formatDays(bill.due_date, null, locale))}</span> : null}
+        </span>
+        {overdue || paid || partly || bill.cancelled ? (
+          <span className="mt-1 flex flex-wrap gap-1.5">
+            {overdue ? <Pill tone="late" icon={Alert02Icon} label={t.books.overdue} /> : null}
+            {partly ? <Pill tone="out" label={t.books.totals.left(money(bill.remaining_amount) ?? "")} /> : null}
+            {paid ? <Pill tone="in" icon={CheckmarkCircle02Icon} label={t.books.paid} /> : null}
+            {bill.cancelled ? <Pill tone="plain" label={t.books.cancelled} /> : null}
+          </span>
+        ) : null}
       </CanvasLink>
     </li>
   );
 }
 
-/** A firm's balance as the books keep it: what it owes the company, or what the company owes it. */
-function Balance({ party, className }: { party: Party; className?: string }) {
+/** A small status, coloured as its figure would be. */
+function Pill({ tone, label, icon }: { tone: Tone; label: string; icon?: IconSvgElement }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+        TONES[tone].pill,
+      )}
+    >
+      {icon ? <HugeiconsIcon icon={icon} strokeWidth={2} className="size-3.5" aria-hidden /> : null}
+      {label}
+    </span>
+  );
+}
+
+/** A firm's balance as the books keep it, as a pill: what it owes the company (sage), what the
+ * company owes it (ochre), or a settled account. Nothing while the books gave none. */
+function BalancePill({ party, large = false }: { party: Party; large?: boolean }) {
   const { t, locale } = useI18n();
   const words = t.books.balance;
   if (party.balance === null || party.balance_currency === null) return null;
   const amount = Number(party.balance);
   const figure = formatMoney(Math.abs(amount), party.balance_currency, locale);
+  const tone: Tone = amount > 0 ? "in" : amount < 0 ? "out" : "plain";
   const said = amount > 0 ? words.receivable(figure) : amount < 0 ? words.payable(figure) : words.settled;
   return (
-    <span className={cn("grid min-w-0 text-sm tabular-nums", className)}>
-      <span className={cn("font-medium", amount === 0 && "text-muted-foreground")}>{said}</span>
-      {party.balance_on ? (
-        <span className="text-muted-foreground text-xs">{words.asOf(formatDays(party.balance_on, null, locale))}</span>
-      ) : null}
+    <span
+      className={cn(
+        "inline-flex w-fit max-w-full items-center gap-1.5 rounded-full font-medium tabular-nums",
+        large ? "px-3 py-1.5 text-base" : "px-2.5 py-1 text-sm",
+        TONES[tone].pill,
+      )}
+    >
+      <HugeiconsIcon icon={TONES[tone].icon} strokeWidth={2} className={large ? "size-4.5" : "size-4"} aria-hidden />
+      <span className="truncate">{said}</span>
     </span>
   );
 }
 
+/** The firm a list is narrowed to: its balance in the books, and on each side of the books what
+ * its invoices add up to, what was paid of them and what is left. */
+function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClose: () => void }) {
+  const { t, locale } = useI18n();
+  const words = t.books.totals;
+  const sides = view === "both" ? (["collect", "pay"] as const) : ([view] as const);
+  const totals = useQuery({
+    queryKey: ["invoice-totals", { party_id: party.id, firm: true }],
+    queryFn: async () => {
+      const [collect, pay] = await Promise.all([
+        listInvoiceTotals({ party_id: party.id, kind: KINDS.collect }),
+        listInvoiceTotals({ party_id: party.id, kind: KINDS.pay }),
+      ]);
+      return { collect, pay };
+    },
+  });
+  return (
+    <section className="border-border bg-card grid gap-3 rounded-2xl border p-3 sm:p-4" aria-label={party.name}>
+      <div className="flex items-start gap-3">
+        <div className="grid min-w-0 flex-1 gap-1.5">
+          <h2 className="text-lg leading-tight font-semibold text-pretty break-words">{party.name}</h2>
+          <BalancePill party={party} large />
+          {party.balance_on ? (
+            <span className="text-muted-foreground text-xs">
+              {t.books.balance.asOf(formatDays(party.balance_on, null, locale))}
+            </span>
+          ) : null}
+        </div>
+        <IconButton label={t.books.everyFirm} icon={Cancel01Icon} onClick={onClose} />
+      </div>
+      {totals.isError ? (
+        <p className="text-muted-foreground text-sm" role="status">
+          {words.unavailable}
+        </p>
+      ) : totals.data ? (
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
+          {sides.flatMap((side) =>
+            totals.data[side].map((total) => {
+              const money = (value: string | null) =>
+                value !== null && total.currency ? formatMoney(Number(value), total.currency, locale) : null;
+              // What was invoiced of those not cancelled: what was paid of them and what is left.
+              const invoiced =
+                total.paid_amount !== null && total.remaining_amount !== null
+                  ? String(Number(total.paid_amount) + Number(total.remaining_amount))
+                  : null;
+              const left = Number(total.remaining_amount ?? 0);
+              return (
+                <Stat
+                  key={`${side}-${total.currency ?? "none"}`}
+                  tone={left > 0 ? SIDE_TONE[side] : "plain"}
+                  label={words.labels.open[side]}
+                  figure={money(total.remaining_amount) ?? words.unknown}
+                  detail={[
+                    invoiced !== null
+                      ? words.paidOf(money(total.paid_amount) ?? "", money(invoiced) ?? "")
+                      : null,
+                    words.invoices(total.count),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                />
+              );
+            }),
+          )}
+        </ul>
+      ) : (
+        <Skeleton className="h-16 rounded-2xl" />
+      )}
+    </section>
+  );
+}
+
 function Firms({ q, balances, onChoose }: { q: string; balances: Balances; onChoose: (party: Party) => void }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const filters =
     balances === "all"
-      ? { sort: "source" as const }
+      ? { sort: "open" as const }
       : { balance_side: balances, sort: balances === "receivable" ? ("-balance" as const) : ("balance" as const) };
   const parties = usePagedList(
     ["parties", { q, list: "books", ...filters }],
@@ -402,21 +568,34 @@ function Firms({ q, balances, onChoose }: { q: string; balances: Balances; onCho
   if (!parties.items) return <Skeleton className="h-40 rounded-2xl" />;
   if (parties.items.length === 0)
     return <p className="text-muted-foreground py-10 text-center text-sm">{t.books.empty}</p>;
+  // One day above the list when every firm's balance is of that day; else each says its own.
+  const days = new Set(parties.items.map((party) => party.balance_on));
+  const shared = days.size === 1 ? parties.items[0].balance_on : null;
   return (
     <div className="grid gap-3">
+      {shared ? (
+        <p className="text-muted-foreground px-1 text-xs">{t.books.balance.asOf(formatDays(shared, null, locale))}</p>
+      ) : null}
       <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-2xl border">
         {parties.items.map((party) => (
           <li key={party.id} className="py-1 ps-2 pe-3">
             <button
               type="button"
               onClick={() => onChoose(party)}
-              className="hover:bg-accent/40 flex w-full min-w-0 flex-col gap-1 rounded-xl px-2 py-2.5 text-start transition-colors sm:flex-row sm:items-start sm:gap-3"
+              className="hover:bg-accent/40 flex w-full min-w-0 flex-col gap-1.5 rounded-xl px-2 py-2.5 text-start transition-colors sm:flex-row sm:items-center sm:gap-3"
             >
               <span className="grid min-w-0 flex-1">
                 <span className="text-base font-medium text-pretty break-words">{party.name}</span>
                 <span className="text-muted-foreground text-xs">{t.books.firmKinds[party.kind]}</span>
               </span>
-              <Balance party={party} className="sm:max-w-56 sm:shrink-0 sm:text-end" />
+              <span className="grid gap-0.5 sm:max-w-64 sm:shrink-0 sm:justify-items-end">
+                <BalancePill party={party} />
+                {!shared && party.balance_on && party.balance !== null ? (
+                  <span className="text-muted-foreground text-xs">
+                    {t.books.balance.asOf(formatDays(party.balance_on, null, locale))}
+                  </span>
+                ) : null}
+              </span>
             </button>
           </li>
         ))}

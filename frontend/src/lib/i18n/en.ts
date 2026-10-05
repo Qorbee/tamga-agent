@@ -210,6 +210,13 @@ export const en = {
       left: (amount: string) => `${amount} left`,
       total: (amount: string) => `${amount} in all`,
       invoices: (count: number) => (count === 1 ? "1 invoice" : `${count} invoices`),
+      /** What a card of the totals is, by what the list shows and its side of the books. */
+      labels: {
+        open: { collect: "To collect", pay: "To pay" },
+        overdue: { collect: "Overdue to collect", pay: "Overdue to pay" },
+        all: { collect: "Invoiced", pay: "Billed to us" },
+      },
+      paidOf: (paid: string, total: string) => `${paid} paid of ${total}`,
       /** The books give the amount of only some of them, so no sum is shown. */
       unknown: "Amount not in the books",
       unavailable: "The totals could not be loaded",
@@ -219,7 +226,7 @@ export const en = {
     balance: {
       receivable: (amount: string) => `Owes us ${amount}`,
       payable: (amount: string) => `We owe ${amount}`,
-      settled: "Nothing owed",
+      settled: "Settled",
       asOf: (day: string) => `In the books on ${day}`,
     },
     search: "Search invoices",
@@ -227,7 +234,7 @@ export const en = {
     overdue: "Overdue",
     issuedOn: (day: string) => `Issued ${day}`,
     dueOn: (day: string) => `Due ${day}`,
-    onlyFirm: (name: string) => `Only ${name}`,
+    paid: "Paid",
     everyFirm: "Show every firm",
     firmKinds: { organisation: "Company", person: "Person" },
     empty: "Nothing here",

@@ -2051,6 +2051,8 @@ export interface components {
             count: number;
             /** Currency */
             currency: string | null;
+            /** Paid Amount */
+            paid_amount: string | null;
             /** Remaining Amount */
             remaining_amount: string | null;
             /** Total Amount */
@@ -4640,7 +4642,7 @@ export interface operations {
                 q?: string | null;
                 /** @description Only parties whose balance in the books runs this way. */
                 balance_side?: ("receivable" | "payable") | null;
-                sort?: "source" | "name" | "-name" | "created_at" | "-created_at" | "balance" | "-balance";
+                sort?: "source" | "name" | "-name" | "created_at" | "-created_at" | "balance" | "-balance" | "open";
                 limit?: number;
                 offset?: number;
             };

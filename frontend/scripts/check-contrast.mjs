@@ -23,8 +23,8 @@ const NON_TEXT = 3; // icons, dots and fills (WCAG 1.4.11)
 
 // [foreground token, background tokens, minimum ratio]
 const pairs = [
-  ["foreground", ["background", "card", "muted", "accent"], TEXT],
-  ["muted-foreground", ["background", "card", "muted"], TEXT],
+  ["foreground", ["background", "card", "muted", "accent", "success-soft", "warning-soft", "danger-soft"], TEXT],
+  ["muted-foreground", ["background", "card", "muted", "success-soft", "warning-soft", "danger-soft"], TEXT],
   ["primary-foreground", ["primary"], TEXT],
   ["sidebar-foreground", ["sidebar", "sidebar-accent"], TEXT],
   ["success-foreground", ["background", "card", "success-soft"], TEXT],
