@@ -371,6 +371,81 @@ async def test_a_file_typed_a_signature_leaves_its_project_and_comes_back_typed_
     assert set(await files_of(client, project_id)) == {"CMR 4471.pdf"}
 
 
+CARD = """ACME LOJISTIK
+Ayse YILMAZ
+Operations Specialist
++90 530 111 22 33
+ayse@acme-lojistik.example
+www.acme-lojistik.example
+Liman Mh. 12. Sk. No: 4 Mersin
+ISO 9001:2015
+ISO 14001:2015
+ISO 45001:2018
+10 TH ANNIVERSARY"""
+
+
+async def test_a_picture_that_reads_as_a_business_card_never_joins_its_mails_project(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id = await guest_client(client)
+    pictures = {
+        "image002.png": sized_png(1200, 400),
+        "photo.png": sized_png(1200, 1600),
+        "truck.png": sized_png(1600, 1200),
+    }
+    await arrive(company_id, 1, with_pictures(ORDER, pictures), category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    [placement] = (await client.get("/placements")).json()["items"]
+    await documents.read_pending()
+
+    async with open_session() as db:
+        found = await db.execute(
+            select(MessageAttachment.filename, MessageAttachment.document_id).where(
+                MessageAttachment.filename.in_(list(pictures))
+            )
+        )
+        ids = dict(found.tuples().all())
+        read = await documents.get_documents(db, company_id, list(ids.values()))
+        card, photo = read[ids["image002.png"]], read[ids["photo.png"]]
+        truck = read[ids["truck.png"]]
+        # A signature's card, badges and all; a CMR's photo that also names a mail and a phone,
+        # in the many words a CMR has; and a truck whose side carries its firm's phone and web
+        # address, in a card's few words, beside its plate.
+        card.text, card.description = CARD, "A business card"
+        photo.text = " ".join([CARD, *(["Consignee Sender Goods Weight Plates"] * 10)])
+        photo.description = "A CMR"
+        truck.text = "Truck plate: 34 ABC 123\nACME LOJISTIK\n+90 530 111 22 33\nwww.acme.example"
+        truck.description = "A truck at the loading dock"
+        for each in (card, photo, truck):
+            await documents._was_read(db, each)  # noqa: SLF001  (the vision model's reading ends in it)
+        await db.commit()
+
+    assert set(await files_of(client, placement["project_id"])) == {
+        "CMR 4471.pdf",
+        "photo.png",
+        "truck.png",
+    }
+    typed = (await client.get(f"/documents/{ids['image002.png']}")).json()
+    assert (typed["doc_type"], typed["doc_type_source"]) == ("signature", "code")
+    assert (await client.get(f"/documents/{ids['truck.png']}")).json()["doc_type"] != "signature"
+
+
+async def test_a_file_typed_as_nothing_of_a_job_leaves_its_project(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model)
+    project_id = placement["project_id"]
+    [cmr] = (await files_of(client, project_id)).values()
+
+    typed = await client.patch(f"/documents/{cmr['item_id']}", json={"doc_type": "not_a_paper"})
+
+    assert typed.status_code == 200, typed.text
+    assert await files_of(client, project_id) == {}
+
+
 async def test_an_upload_no_mail_carried_tells_its_projects_when_typed(
     client: httpx.AsyncClient,
     model: Callable[..., Script],  # noqa: F811

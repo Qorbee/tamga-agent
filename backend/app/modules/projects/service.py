@@ -1010,6 +1010,11 @@ async def carry_all_files(db: AsyncSession, company_id: uuid.UUID) -> dict[LinkS
     return await repository.mail_link_counts(db, company_id)
 
 
+async def linked_documents(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
+    """Every file some project links."""
+    return await repository.linked_items(db, company_id, ItemKind.DOCUMENT)
+
+
 async def carry_files(
     db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
 ) -> None:

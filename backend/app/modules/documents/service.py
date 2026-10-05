@@ -156,18 +156,29 @@ async def _was_read(db: AsyncSession, document: Document) -> None:
 
 async def _classify(db: AsyncSession, document: Document) -> None:
     """Types a file nobody typed by what is plainly written in it, before anything that rests on
-    its type hears of it. Written only where the stored row is still untyped: a type the owner
-    saved while the file was being read stands."""
+    its type hears of it: a picture that reads as a business card, and names no plate and no
+    number of a job, is a signature, whatever the packs' rules say. Written only where the stored
+    row is still untyped: a type the owner saved while the file was being read stands."""
     if document.doc_type is not None:
         return
-    key = registry.classify(
-        registry.Seen(filename=document.filename, text=search.fold(document.text))
+    key = (
+        registry.SIGNATURE
+        if _is_picture(document)
+        and registry.is_a_card(document.text)
+        and not extractors.names_a_job(document.text)
+        else registry.classify(
+            registry.Seen(filename=document.filename, text=search.fold(document.text))
+        )
     )
     if key is not None and await repository.type_if_untyped(
         db, document.company_id, document.id, key, TypeSource.CODE
     ):
         set_committed_value(document, "doc_type", key)
         set_committed_value(document, "doc_type_source", TypeSource.CODE)
+
+
+def _is_picture(document: Document) -> bool:
+    return filetypes.media_type(document.content_type, document.filename) in filetypes.IMAGES
 
 
 async def classify_read(db: AsyncSession, company_id: uuid.UUID) -> dict[str, int]:
@@ -261,9 +272,11 @@ async def upload(
         filename=filename,
         content_type=content_type or "application/octet-stream",
     )
-    # The uploader's type fills an unknown one, or one code or a model guessed; it never replaces
-    # a type a person gave.
-    if doc_type is not None and document.doc_type_source is not TypeSource.OWNER:
+    # The uploader's type fills an unknown one (a person's cleared one too), or one code or a
+    # model guessed; it never replaces a type a person gave.
+    if doc_type is not None and (
+        document.doc_type is None or document.doc_type_source is not TypeSource.OWNER
+    ):
         document.doc_type, document.doc_type_source = doc_type, TypeSource.OWNER
     row = Upload(
         company_id=actor.company_id,
@@ -494,8 +507,9 @@ async def update_document(
     if "doc_type" in body.model_fields_set:
         _check_type(body.doc_type)
         document.doc_type = body.doc_type
-        # Cleared, the type is unknown again, and code may tell it next time the file is read.
-        document.doc_type_source = TypeSource.OWNER if body.doc_type is not None else None
+        # Cleared, the type is unknown again, and code may tell it next time the file is read;
+        # the owner's mark stays, so the typist's own "no type" is never confused with it.
+        document.doc_type_source = TypeSource.OWNER
         await db.flush()
         await _became_known(db, actor.company_id, document.id)
     if body.filename is not None:
@@ -729,18 +743,40 @@ async def type_pending() -> int:
     return asked
 
 
+async def answered_none(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID], *, limit: int | None = None
+) -> list[uuid.UUID]:
+    """Which of these files the typist was asked about and could give no type, newest first, at
+    most ``limit``. A file the owner cleared the type of is not one: the owner answered it."""
+    return await repository.answered_none(db, company_id, ids, limit=limit)
+
+
+async def ask_again(db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]) -> int:
+    """Lets the typist be asked again about these files it gave no type: a type it may answer
+    now did not exist when it was asked. A file someone typed or cleared meanwhile is left. Does
+    not commit."""
+    return await repository.ask_again(db, company_id, ids)
+
+
 async def type_files(
-    company_id: uuid.UUID, *, limit: int, write: bool = True, usage: RunUsage | None = None
+    company_id: uuid.UUID,
+    *,
+    limit: int,
+    write: bool = True,
+    usage: RunUsage | None = None,
+    only: Sequence[uuid.UUID] | None = None,
 ) -> list[tuple[str, str | None]]:
     """Asks the typist about up to ``limit`` of the company's read files that wait for it, newest
     first, and returns each file's name with its answer. A file is asked about once, whatever
     the answer; a type the owner or code gave it meanwhile stands. ``write`` false asks and
     writes nothing (a measured trial). A failure outside the answer (the provider, the network)
-    leaves the file and the rest for the next run."""
+    leaves the file and the rest for the next run. ``only`` asks about those of these files."""
     if limit <= 0:
         return []
     async with open_session() as db:
-        waiting = await repository.untyped(db, company_id, chars=agents.TYPIST_TEXT, limit=limit)
+        waiting = await repository.untyped(
+            db, company_id, chars=agents.TYPIST_TEXT, limit=limit, only=only
+        )
         company = (await companies.get_companies(db, [company_id])).get(company_id)
     trace_content = company is not None and companies.traces_content(company.kind)
     offered = [(each.key, each.label, each.hint) for each in registry.all_types()]
@@ -821,13 +857,14 @@ async def holding_nothing(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> set[uuid.UUID]:
     """Which of these files hold nothing of a job, so no mail brings them into a project: one
-    typed a signature or logo, and a picture not read yet or read with nothing on it that a model
-    could read or say it shows (an icon, a logo, a line of a signature), unless someone typed it.
-    A picture that could not be read stays: what it holds is not known."""
+    typed a signature or logo, or as holding nothing of any job (a bounce notice), and a picture
+    not read yet or read with nothing on it that a model could read or say it shows (an icon, a
+    logo, a line of a signature), unless someone typed it. A picture that could not be read
+    stays: what it holds is not known."""
     return {
         reading.id
         for reading in await repository.readings(db, company_id, ids)
-        if reading.doc_type == registry.SIGNATURE
+        if reading.doc_type in registry.HOLDING_NOTHING
         or (
             # A type someone gave says what it holds.
             reading.doc_type is None

@@ -150,18 +150,62 @@ class Untyped:
 
 
 async def untyped(
-    db: AsyncSession, company_id: uuid.UUID, *, chars: int, limit: int
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    *,
+    chars: int,
+    limit: int,
+    only: Sequence[uuid.UUID] | None = None,
 ) -> list[Untyped]:
-    """Files waiting for the typist, newest first: what the owner looks at now comes first."""
+    """Files waiting for the typist, newest first: what the owner looks at now comes first.
+    ``only`` keeps those of these files."""
+    filters = [Document.company_id == company_id, _untyped()]
+    if only is not None:
+        filters.append(Document.id.in_(only))
     rows = await db.execute(
         select(
             Document.id, Document.filename, Document.description, func.left(Document.text, chars)
         )
-        .where(Document.company_id == company_id, _untyped())
+        .where(*filters)
         .order_by(Document.created_at.desc(), Document.id)
         .limit(limit)
     )
     return [Untyped(*row) for row in rows.tuples()]
+
+
+async def answered_none(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID], *, limit: int | None
+) -> list[uuid.UUID]:
+    """Which of these files the typist was asked about and gave no type, newest first."""
+    rows = await db.scalars(
+        select(Document.id)
+        .where(
+            Document.company_id == company_id,
+            Document.id.in_(ids),
+            Document.doc_type.is_(None),
+            Document.doc_type_source.is_(None),
+            Document.typed_at.is_not(None),
+        )
+        .order_by(Document.created_at.desc(), Document.id)
+        .limit(limit)
+    )
+    return list(rows)
+
+
+async def ask_again(db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]) -> int:
+    """Lets the typist be asked again about these files, where none has a type yet."""
+    asked = await db.execute(
+        update(Document)
+        .where(
+            Document.company_id == company_id,
+            Document.id.in_(ids),
+            Document.doc_type.is_(None),
+            Document.doc_type_source.is_(None),
+        )
+        .values(typed_at=None)
+        .execution_options(synchronize_session=False)
+    )
+    return int(getattr(asked, "rowcount", 0))
 
 
 async def typed_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:

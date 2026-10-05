@@ -591,6 +591,7 @@ export const tr: Dictionary = {
       e_arsiv: "e-Arşiv fatura",
       e_irsaliye: "e-İrsaliye",
       signature: "İmza veya logo",
+      not_a_paper: "İşle ilgisi yok",
       weighbridge_ticket: "Kantar fişi",
       customs_declaration: "Gümrük beyannamesi",
       commercial_invoice: "Ticari fatura",

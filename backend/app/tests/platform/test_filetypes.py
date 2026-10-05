@@ -9,6 +9,7 @@ PNG = b"\x89PNG\r\n\x1a\n rest of the image"
 def test_a_generic_type_is_recognised_by_its_name() -> None:
     assert filetypes.preview("application/octet-stream", "CMR.PDF") == Preview.PDF
     assert filetypes.preview("application/octet-stream", "yükleme.jpeg") == Preview.IMAGE
+    assert filetypes.preview("application/octet-stream", "kantar.jfif") == Preview.IMAGE
     assert filetypes.preview("image/jpg", "photo") == Preview.IMAGE
     assert filetypes.preview("application/vnd.ms-excel", "liste.xls") == Preview.SHEET
 

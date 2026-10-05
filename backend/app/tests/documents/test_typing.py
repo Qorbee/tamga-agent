@@ -14,8 +14,9 @@ from pydantic_ai.messages import UserPromptPart as UserPrompt
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.config import get_settings
-from app.modules.documents import service
+from app.modules.documents import registry, service
 from app.platform import llm
+from app.platform.db import open_session
 from app.tests.conftest import guest_client
 from app.tests.documents.test_file_content import upload
 
@@ -208,3 +209,68 @@ async def test_a_worker_stopped_while_the_typist_answers_gives_the_file_back(
     assert await service.type_pending() == 1
     assert await typed(client, document_id) == ("weighbridge_ticket", "model")
     assert len(asked.prompts) == 1
+
+
+async def test_a_file_answered_none_is_asked_again_when_chosen(
+    client: httpx.AsyncClient, typist: Callable[[str | None], Asked]
+) -> None:
+    document_id = await a_read_file(client)
+    typist(None)
+    assert await service.type_pending() == 1
+    company_id = uuid.UUID((await client.get("/me")).json()["company"]["id"])
+
+    # A type it may answer now did not exist when it was asked: the file is asked again.
+    asked = typist("not_a_paper")
+    async with open_session() as db:
+        again = await service.answered_none(db, company_id, [document_id])
+        assert again == [document_id]
+        assert await service.ask_again(db, company_id, again) == 1
+        await db.commit()
+    assert await service.type_files(company_id, limit=5, only=again) == [
+        ("IMG_0042.txt", "not_a_paper")
+    ]
+    assert await typed(client, document_id) == ("not_a_paper", "model")
+    assert "- not_a_paper: Nothing of a job" in asked.prompts[0]
+    # Typed now: it is asked about no more.
+    async with open_session() as db:
+        assert await service.answered_none(db, company_id, [document_id]) == []
+        assert await service.ask_again(db, company_id, [document_id]) == 0
+
+    # The owner clears the type: that is the owner's answer, never taken for the typist's none.
+    cleared = await client.patch(f"/documents/{document_id}", json={"doc_type": None})
+    assert cleared.status_code == 200
+    assert await typed(client, document_id) == (None, "owner")
+    async with open_session() as db:
+        assert await service.answered_none(db, company_id, [document_id]) == []
+        assert await service.ask_again(db, company_id, [document_id]) == 0
+
+
+async def test_files_asked_about_again_are_the_newest_up_to_the_limit(
+    client: httpx.AsyncClient, typist: Callable[[str | None], Asked]
+) -> None:
+    older = await a_read_file(client)
+    newer = uuid.UUID(await upload(client, "IMG_0043.txt", SLIP.encode() + b" 2", "text/plain"))
+    assert await service.read_pending() == 1
+    typist(None)
+    assert await service.type_pending() == 2
+    company_id = uuid.UUID((await client.get("/me")).json()["company"]["id"])
+
+    async with open_session() as db:
+        assert await service.answered_none(db, company_id, [older, newer], limit=1) == [newer]
+        assert await service.answered_none(db, company_id, [older, newer]) == [newer, older]
+
+
+def test_a_business_card_is_an_address_and_a_phone_in_a_few_words() -> None:
+    card = "Ayse YILMAZ\nSales\n0 530 111 22 33\nayse@acme.example"
+    assert registry.is_a_card(card)
+    assert registry.is_a_card("www.acme.example | +90 (324) 111 22 33")
+    # No phone, no address, or a page's worth of words: no card.
+    assert not registry.is_a_card("Ayse YILMAZ ayse@acme.example")
+    assert not registry.is_a_card("Ayse YILMAZ 0 530 111 22 33")
+    assert not registry.is_a_card(" ".join([card, *["CMR"] * registry.CARD_WORDS]))
+    # A bare run of digits is a phone only after a phone's label: a tax number, an invoice's or a
+    # tracking number beside a seller's address is none, and nor is an IBAN or a date and time.
+    assert registry.is_a_card("Ayse YILMAZ\nTel: 05301112233\nayse@acme.example")
+    assert not registry.is_a_card("ACME Ltd\nVKN 1234567890\ninfo@acme.example\nTotal 1,200.00")
+    assert not registry.is_a_card("ACME Ltd\nTR12 0006 4000 0011 2345 6789 01\ninfo@acme.example")
+    assert not registry.is_a_card("Sent 05.10.2026 14:30 by info@acme.example")

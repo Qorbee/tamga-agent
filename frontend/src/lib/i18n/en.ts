@@ -611,6 +611,7 @@ export const en = {
       e_arsiv: "e-Archive invoice",
       e_irsaliye: "e-Dispatch note",
       signature: "Signature or logo",
+      not_a_paper: "Nothing of a job",
       weighbridge_ticket: "Weighbridge slip",
       customs_declaration: "Customs declaration",
       commercial_invoice: "Commercial invoice",

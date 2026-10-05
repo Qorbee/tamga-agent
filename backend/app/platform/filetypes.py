@@ -72,6 +72,9 @@ _EXTENSIONS: Final = {
     ".png": PNG,
     ".jpg": JPEG,
     ".jpeg": JPEG,
+    # Windows saves a JPEG from the web under these, and mail sends it with no picture's type.
+    ".jfif": JPEG,
+    ".jpe": JPEG,
     ".gif": GIF,
     ".webp": WEBP,
     ".bmp": BMP,

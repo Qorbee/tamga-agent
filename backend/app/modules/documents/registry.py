@@ -6,6 +6,7 @@ its e-documents and tax-id checks, a sector pack its own papers (a CMR); each re
 ``register.py``, so the core never imports a pack.
 """
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -108,6 +109,50 @@ class BankReceipt(BaseModel):
 # A picture that is only part of how a mail looks. A file of this type is in no project: a mail
 # that carries it brings it to none (conversations, ``carried_files``).
 SIGNATURE: Final = "signature"
+# A file with nothing of any job in it: a delivery failure, an app's screen, a portrait. It is in
+# no project either.
+NOT_A_PAPER: Final = "not_a_paper"
+# The types that keep a file out of every project.
+HOLDING_NOTHING: Final = frozenset({SIGNATURE, NOT_A_PAPER})
+# A business card says who wrote, how to reach them and little else: a picture with an address and
+# a phone in this many words or fewer is one, whatever badges sit beside it.
+CARD_WORDS: Final = 60
+_ADDRESS: Final = re.compile(
+    r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\bwww\.[\w-]+(?:\.[\w-]+)+|https?://\S+", re.IGNORECASE
+)
+# Digits a phone number is written with, spaced, dashed or bracketed as people write them.
+_PHONE: Final = re.compile(r"\+?\(?\d[\d\s().-]{7,}\d")
+_PHONE_DIGITS: Final = 9
+# A bare run of digits is as likely a tax, invoice or tracking number: it is a phone only when
+# written as one (an international prefix, or digits in groups) or after a phone's label.
+_GROUPED: Final = re.compile(r"\d[\s().-]+\d")
+_LABELLED: Final = re.compile(
+    r"\b(?:tel|telefon|phone|gsm|mobile|mob|cell|fax|t|m|p|f)\b\.?\s*:?\s*$", re.IGNORECASE
+)
+_DATE: Final = re.compile(r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b")
+
+
+def is_a_card(text: str) -> bool:
+    """Whether a picture's text is a business card's: a mail or web address and a phone, in a
+    few words."""
+    if len(text.split()) > CARD_WORDS or not _ADDRESS.search(text):
+        return False
+    return any(_is_a_phone(text, found) for found in _PHONE.finditer(text))
+
+
+def _is_a_phone(text: str, found: re.Match[str]) -> bool:
+    written, before = found.group(), text[: found.start()]
+    if sum(char.isdigit() for char in written) < _PHONE_DIGITS or _DATE.search(written):
+        return False
+    # An IBAN's digits follow its country's two capitals, in groups too.
+    if before[-2:].isalpha() and before[-2:].isupper():
+        return False
+    return (
+        written.startswith(("+", "("))
+        or _GROUPED.search(written) is not None
+        or _LABELLED.search(before[-16:]) is not None
+    )
+
 
 CORE_TYPES: Final = (
     DocumentType(
@@ -130,8 +175,20 @@ CORE_TYPES: Final = (
         pack="core",
         schema=Nothing,
         hint=(
-            "A picture that is only part of how a mail looks: a signature or business card, a "
-            "logo, a banner, a social icon, a certificate badge, a disclaimer."
+            "A picture that is only part of how a mail looks: a signature or business card (a "
+            "name, a title, a phone, an address), a logo, a banner, a social icon, a "
+            "certificate badge, a disclaimer, a portrait or a picture placed under a signature."
+        ),
+    ),
+    DocumentType(
+        key=NOT_A_PAPER,
+        label="Nothing of a job",
+        pack="core",
+        schema=Nothing,
+        hint=(
+            "A file with nothing of any shipment, firm or payment in it: a notice that a mail "
+            "could not be delivered or that someone is away, an advertisement or a greeting. "
+            "A screen of an order, a list of loads or a photo of the cargo is not this."
         ),
     ),
 )

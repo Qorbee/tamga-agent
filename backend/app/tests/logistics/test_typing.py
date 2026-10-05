@@ -74,7 +74,17 @@ async def test_the_owners_type_stands_and_a_cleared_one_is_unknown(
     assert await typed(client, document_id) == ("invoice", "owner")
     cleared = await client.patch(f"/documents/{document_id}", json={"doc_type": None})
     assert cleared.status_code == 200, cleared.text
-    assert await typed(client, document_id) == (None, None)
+    # Unknown again, and the owner's: the typist's own "no type" is never mistaken for it.
+    assert await typed(client, document_id) == (None, "owner")
+    # Uploaded again with a type: the person's new answer fills it.
+    again = await client.post(
+        "/documents",
+        params={"filename": "cmr 4471.pdf", "doc_type": "cmr"},
+        content=CMR_FORM,
+        headers={"content-type": "application/pdf"},
+    )
+    assert again.json()["document"]["id"] == document_id
+    assert await typed(client, document_id) == ("cmr", "owner")
 
 
 async def test_files_read_before_the_rules_are_typed_by_the_backfill(

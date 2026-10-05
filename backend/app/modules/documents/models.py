@@ -56,8 +56,11 @@ class Document(CompanyScoped, Base):
             "created_at",
             postgresql_where=text("read_state = 'pending' AND NOT needs_vision"),
         ),
+        # A type always says who gave it; no type says so only where the owner cleared one.
         CheckConstraint(
-            "(doc_type IS NULL) = (doc_type_source IS NULL)", name="documents_doc_type_source_set"
+            "doc_type IS NOT NULL AND doc_type_source IS NOT NULL "
+            "OR doc_type IS NULL AND (doc_type_source IS NULL OR doc_type_source = 'owner')",
+            name="documents_doc_type_source_set",
         ),
         # What waits for the typist, newest first.
         Index(

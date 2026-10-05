@@ -17,7 +17,8 @@ class DocumentOut(BaseModel):
     content_type: str
     size: int
     doc_type: str | None
-    # Who gave the type: the owner, code reading the file, or a model; null while it has none.
+    # Who gave the type: the owner, code reading the file, or a model; null while it has none,
+    # or the owner's where the owner cleared one.
     doc_type_source: TypeSource | None
     sha256: str
     created_at: datetime

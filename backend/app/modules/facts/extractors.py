@@ -53,6 +53,13 @@ def from_text(text: str) -> list[NewFact]:
     return list(best.values())
 
 
+def names_a_job(text: str) -> bool:
+    """Whether a text holds a number of one job or a vehicle's plate: what a firm's card never
+    holds, and a truck's side or a driver's note may hold beside a firm's phone and web address."""
+    of_a_job = _key_kinds | {IdentifierKind.PLATE.value}
+    return any(fact.kind in of_a_job for fact in from_text(text))
+
+
 def reference(value: str) -> str:
     """The form a number is compared in: upper case, letters and digits only."""
     return re.sub(r"[^0-9A-Z]", "", value.upper())
