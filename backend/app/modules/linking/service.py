@@ -31,7 +31,7 @@ from app.modules.books.schemas import InvoiceOut
 from app.modules.companies import service as companies
 from app.modules.conversations import service as conversations
 from app.modules.conversations.models import ThreadCategory
-from app.modules.conversations.service import ThreadRead
+from app.modules.conversations.service import MailRead, ThreadRead
 from app.modules.documents import service as documents
 from app.modules.documents.models import ReadState
 from app.modules.facts import extractors
@@ -139,6 +139,9 @@ class _Ties:
     # The longest time between an untied mail and the tied mail nearest to it; None when no
     # mail is tied or none is untied.
     gap: timedelta | None
+    # The project its last tied mails are in, when they run on to the end in it alone: the one
+    # its next mail follows. None when its mails go back and forth between projects.
+    latest: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -431,10 +434,13 @@ async def place_thread(
     model_allowed: bool,
     language: Language,
     trace_content: bool,
+    upto: uuid.UUID | None = None,
 ) -> bool:
     """Places one conversation: by code when a rule decides, else by the ``linker`` agent when
     ``model_allowed``. Returns whether it was placed; one that needs the model and may not have
-    it keeps waiting. No transaction is open while the model reads."""
+    it keeps waiting. No transaction is open while the model reads. ``upto`` places it as it
+    stood once that mail of it had come, for a conversation placed again in the order its mail
+    came (``recut_threads``); while later mails of it are left, it keeps waiting."""
     async with open_session() as db:
         placement = await repository.get(db, company_id, thread_id)
         if placement is None:
@@ -442,22 +448,30 @@ async def place_thread(
         seen_at = placement.placed_at
         placement.look_again_at = None
         thread = await conversations.read_thread(db, company_id, thread_id)
+        left = False
+        if thread is not None and upto is not None:
+            sent = [mail.id for mail in thread.mails]
+            cut = sent.index(upto) + 1 if upto in sent else len(sent)
+            left = cut < len(sent)
+            thread = replace(thread, mails=thread.mails[:cut])
         if thread is None or thread.category not in _READ or not thread.mails:
             # Sent back to be sorted, or sorted as noise since: nothing reads it until it changes.
             placement.waiting = False
             await db.commit()
             return False
         found = await _look(db, company_id, thread)
-        if found.unread_since and utcnow() - found.unread_since < FILES_WAIT:
+        if upto is None and found.unread_since and utcnow() - found.unread_since < FILES_WAIT:
             # Its new mails' files are read first: one can hold what its job does not. Reading
             # one notes the conversation changed, and it is looked at again then, or once the
-            # wait is over if a file stays unread.
+            # wait is over if a file stays unread. Placed again in order, nothing waits: what is
+            # not read by now is placed as it is.
             placement.waiting = False
             placement.look_again_at = found.unread_since + FILES_WAIT
             await db.commit()
             return False
         if (
-            placement.outcome is not None
+            upto is None
+            and placement.outcome is not None
             and placement.mails == len(thread.mails)
             and placement.last_mail_at == thread.mails[-1].sent_at
             and placement.files_read == found.files_read
@@ -515,8 +529,136 @@ async def place_thread(
         await _count(company_id, usage.requests - 1)
     async with open_session() as db:
         applied = await _apply(db, company_id, thread, found, decision, seen_at=seen_at)
+        if left:
+            await repository.keep_waiting(db, company_id, [thread_id])
         await db.commit()
     return applied
+
+
+@dataclass(slots=True)
+class Recut:
+    """What placing conversations again in the order their mail came does, or would do."""
+
+    # Conversations whose later mails go back to be placed again.
+    threads: int = 0
+    mails: int = 0
+    # Of those mails, the ones that name what their conversation's earlier mails did not, or
+    # came long after them: each would send it to a model. An estimate: where one becomes the
+    # next load, the mails after it are measured against that load instead.
+    news: int = 0
+    # Written only: mails placed again, model reads made, and replays that failed. A mail left
+    # unplaced keeps its conversation waiting, for the worker to place within the day's budget.
+    placed: int = 0
+    reads: int = 0
+    failed: int = 0
+
+
+async def recut_threads(company_id: uuid.UUID, *, write: bool, max_reads: int = 0) -> Recut:
+    """Places again, under the rules of today, the mails each conversation brought after its
+    first into the one project code tied it to: a thread with daily replies often carried the
+    next loads into its first project. Its first mail stays; the others are untied, with the
+    files they carried, and placed again one by one in the order they were sent, across every
+    conversation, as they would have been had they come today: code follows where nothing is
+    new, the linker reads where a mail names what its job does not hold, starting no model run
+    once ``max_reads`` requests were made (one under way may go past it, by a run's requests at
+    most). A conversation the owner tied or answered anywhere, or one in more than one
+    project, stays as it is. Each conversation untied waits until its last mail is placed
+    again: stopped half way, or short of reads, the worker places the rest. Run it with the
+    worker stopped. A dry run counts and writes nothing; no model is asked in it."""
+    recut = Recut()
+    later: list[tuple[datetime, uuid.UUID, uuid.UUID]] = []
+    async with open_session() as db:
+        company = (await companies.get_companies(db, [company_id]))[company_id]
+        language = company.language
+        trace_content = companies.traces_content(company.kind)
+        for placement in await repository.placed_in_projects(db, company_id):
+            if placement.placed_by == BY_OWNER:
+                continue
+            thread = await conversations.read_thread(db, company_id, placement.thread_id)
+            # One sorted as noise since, or sent back to be sorted, is placed by nothing now.
+            if thread is None or thread.category not in _READ or len(thread.mails) < 2:
+                continue
+            links = await projects.links_of_items(
+                db, company_id, ItemKind.MESSAGE, [mail.id for mail in thread.mails]
+            )
+            held = {link.project_id for link in links}
+            if any(link.method is LinkMethod.OWNER or link.decided_by for link in links) or (
+                len(held) != 1
+            ):
+                continue
+            # The owner rejected the project it is in: what they refused is not proposed again.
+            [project] = (await projects.get_projects(db, company_id, list(held))).values()
+            if project.status is ProjectStatus.REJECTED:
+                continue
+            tied = {link.item_id: link for link in links}
+            again = [mail for mail in thread.mails[1:] if mail.id in tied]
+            if not again:
+                continue
+            recut.threads += 1
+            recut.mails += len(again)
+            recut.news += await _new_in_order(db, company_id, thread.mails)
+            later.extend((mail.sent_at, mail.id, thread.id) for mail in again)
+            if write:
+                await projects.drop_suggested(db, company_id, [tied[m.id].id for m in again])
+                await projects.carry_files(db, company_id, [mail.id for mail in again])
+        if write:
+            await repository.keep_waiting(db, company_id, list({each[2] for each in later}))
+        await (db.commit() if write else db.rollback())
+    if not write:
+        return recut
+    began = utcnow()
+    failed: set[uuid.UUID] = set()
+    for _, mail_id, thread_id in sorted(later):
+        if thread_id in failed:
+            # Its later mails are left to the worker with the one that failed, not placed with it.
+            continue
+        async with open_session() as db:
+            recut.reads = await conversations.model_reads_since(db, company_id, began)
+        try:
+            recut.placed += await place_thread(
+                company_id,
+                thread_id,
+                model_allowed=recut.reads < max_reads,
+                language=language,
+                trace_content=trace_content,
+                upto=mail_id,
+            )
+        except Exception as error:  # one that fails stays untied, its conversation waiting
+            logger.warning("placing again %s failed: %s", thread_id, type(error).__name__)
+            recut.failed += 1
+            failed.add(thread_id)
+    async with open_session() as db:
+        recut.reads = await conversations.model_reads_since(db, company_id, began)
+        await tell_projects_again(db, company_id)
+        await db.commit()
+    await events.publish_now(company_id, [events.EventKind.PROJECTS])
+    return recut
+
+
+async def _new_in_order(db: AsyncSession, company_id: uuid.UUID, mails: Sequence[MailRead]) -> int:
+    """How many of a conversation's mails after its first name a key number or a plate none
+    before them did, or came more than FOLLOW_WITHIN after the one before or FOLLOW_JOB_WITHIN
+    after its first: what would send each to a model when it came."""
+    kinds = extractors.load_kinds()
+    said: dict[uuid.UUID, set[tuple[str, str]]] = {mail.id: set() for mail in mails}
+    files = {file.document_id: mail.id for mail in mails for file in mail.files}
+    for item_kind, ids in ((ItemKind.MESSAGE, list(said)), (ItemKind.DOCUMENT, list(files))):
+        for fact in await facts.facts_of_items(
+            db, company_id=company_id, item_kind=item_kind, item_ids=ids
+        ):
+            if fact.kind in kinds:
+                owner = fact.item_id if item_kind is ItemKind.MESSAGE else files[fact.item_id]
+                said[owner].add((fact.kind, fact.normalised))
+    seen = set(said[mails[0].id])
+    new = 0
+    for before, mail in zip(mails, mails[1:], strict=False):
+        late = (
+            mail.sent_at - before.sent_at > FOLLOW_WITHIN
+            or mail.sent_at - mails[0].sent_at > FOLLOW_JOB_WITHIN
+        )
+        new += late or bool(said[mail.id] - seen)
+        seen |= said[mail.id]
+    return new
 
 
 def _desk(company_id: uuid.UUID, thread_id: uuid.UUID, found: _Found) -> agents.Desk:
@@ -595,8 +737,8 @@ async def _look(db: AsyncSession, company_id: uuid.UUID, thread: ThreadRead) -> 
     keys = await _key_candidates(db, company_id, mail_ids, file_ids)
     known = await projects.get_projects(db, company_id, [*ties.held, *ties.refused, *keys])
     files = await documents.get_documents(db, company_id, file_ids)
-    following = len(ties.held) == 1 and bool(ties.untied)
-    news = await _news(db, company_id, thread, ties, known) if following else ()
+    following = ties.latest if ties.untied else None
+    news = await _news(db, company_id, thread, ties, known[following]) if following else ()
     unread = [
         files[file.document_id].created_at
         for mail in thread.mails
@@ -628,12 +770,10 @@ async def _news(
     company_id: uuid.UUID,
     thread: ThreadRead,
     ties: _Ties,
-    known: Mapping[uuid.UUID, Project],
+    project: Project,
 ) -> tuple[str, ...]:
-    """What the conversation's mails not tied yet name that the one project its other mails are
-    tied to does not hold (a key number, a plate), and whether that project began long before
-    them."""
-    [project_id] = ties.held
+    """What the conversation's mails not tied yet name that the project its last mails are in
+    does not hold (a key number, a plate), and whether that project began long before them."""
     kinds = extractors.load_kinds()
     untied = [mail for mail in thread.mails if mail.id in ties.untied]
     said = [
@@ -649,7 +789,7 @@ async def _news(
     ]
     links = [
         link
-        for link in await projects.links_of_project(db, company_id, project_id)
+        for link in await projects.links_of_project(db, company_id, project.id)
         if link.status is not LinkStatus.REJECTED
     ]
     held: set[tuple[str, str]] = set()
@@ -669,7 +809,7 @@ async def _news(
                 (fact.kind, fact.normalised), f"{fact.kind.replace('_', ' ')} {fact.value}"
             )
     news = sorted(new.values())
-    first, since = known[project_id].starts_on, min(mail.sent_at for mail in untied).date()
+    first, since = project.starts_on, min(mail.sent_at for mail in untied).date()
     if first is not None and since - first > FOLLOW_JOB_WITHIN:
         news.append(
             f"the project's first day, {first.isoformat()}, {(since - first).days} days before them"
@@ -709,7 +849,31 @@ async def _ties(db: AsyncSession, company_id: uuid.UUID, thread: ThreadRead) -> 
         refused=frozenset(refused - tied.keys()),
         untied=frozenset(untied),
         gap=gap,
+        latest=_latest(thread, tied),
     )
+
+
+def _latest(thread: ThreadRead, tied: Mapping[uuid.UUID, set[uuid.UUID]]) -> uuid.UUID | None:
+    """The project a conversation's last tied mails are in, where every tied mail from its first
+    one there on is in it alone: a conversation that carried the next load to another project
+    goes on in that one. None where its mails go back and forth (it carries two jobs at once),
+    or where a mail not tied yet came before that project's first while another's mails did too:
+    an older mail read late from the mailbox may be the earlier job's."""
+    of: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for project_id, mail_ids in tied.items():
+        for mail_id in mail_ids:
+            of.setdefault(mail_id, set()).add(project_id)
+    sent = [mail.id for mail in thread.mails]
+    runs = [(index, of[mail_id]) for index, mail_id in enumerate(sent) if mail_id in of]
+    if not runs or len(runs[-1][1]) != 1:
+        return None
+    [latest] = runs[-1][1]
+    start = next(index for index, held in runs if latest in held)
+    if any(held != runs[-1][1] for index, held in runs if index >= start):
+        return None
+    if runs[0][0] < start and any(mail_id not in of for mail_id in sent[:start]):
+        return None
+    return latest
 
 
 async def _key_candidates(
@@ -833,13 +997,12 @@ async def _standing(
 def _by_code(thread: ThreadRead, placement: Placement, found: _Found) -> _Decision | None:
     """What code can decide without a model, or None when a model has to read it."""
     ties = found.ties
-    only_held = next(iter(ties.held)) if len(ties.held) == 1 else None
     # Nothing of it is unplaced (the owner, or an earlier run, tied every mail), or every mail
-    # that is came soon before or after one that is tied and names nothing new to its job. A
-    # system's notice says nothing of a next load.
-    if only_held is not None and (ties.gap is None or ties.gap <= FOLLOW_WITHIN):
+    # that is came soon before or after one that is tied and names nothing new to the job its
+    # last mails are in. A system's notice says nothing of a next load.
+    if ties.latest is not None and (ties.gap is None or ties.gap <= FOLLOW_WITHIN):
         if not found.news or thread.category is ThreadCategory.AUTOMATED:
-            return _follows(only_held, found, placement)
+            return _follows(ties.latest, found, placement)
         # The new mails may be the next load: a model reads them.
         return None
     fits = ties.held | found.keys.keys()

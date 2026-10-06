@@ -3,7 +3,8 @@ import uuid
 from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from app.modules.conversations import repository as mail_repository
 from app.modules.conversations import service as conversations
 from app.modules.conversations.adapters.imap import FetchedMail
 from app.modules.conversations.models import MailModelRead, Message, Thread, ThreadCategory
+from app.modules.conversations.service import ThreadRead
 from app.modules.documents import service as documents
 from app.modules.linking import repository, service
 from app.modules.linking.models import Outcome, Placement
@@ -1152,6 +1154,19 @@ async def test_a_reply_naming_a_truck_its_job_has_not_had_is_read_as_maybe_the_n
     job = (await client.get(f"/projects/{project.id}")).json()["job"]
     assert (job["origin"], job["cargo"]) == ("Istanbul", "steel coils")
 
+    # A reply on the next load follows it, the conversation's last project, without a model.
+    script = model()
+    loaded = mail(
+        "<loaded@x>",
+        date="Sun, 09 Aug 2026 09:00:00 +0300",
+        references="<order@x>",
+        body="Truck: XY 987 ZW is loaded.",
+    )
+    await arrive(company_id, 4, loaded, category=None)
+    assert await service.place_pending() == 1
+    assert script.requests == []
+    assert (await links(company_id, "<order@x>"))[3].project_id == third.project_id
+
 
 @pytest.mark.integration
 async def test_a_reply_waits_for_its_files_before_it_follows(
@@ -1302,3 +1317,131 @@ async def test_a_number_quoted_over_more_than_a_month_names_no_one_job(
     # The order is on mail six weeks apart: a model reads it rather than code tying it by number.
     assert len(script.requests) == 1
     assert await links(company_id, "<aug@x>") == []
+
+
+async def placed_by_an_earlier_rule(company_id: uuid.UUID, model: Callable[..., Script]) -> Project:
+    """A conversation whose replies all followed its first project, as an earlier rule placed
+    them: the same truck two days on, another truck three days later, and that truck loaded."""
+    order = mail("<order@x>", body="We confirm the load for Monday. Truck: AB 123 CD")
+    await arrive(company_id, 1, order, category=ThreadCategory.WORK)
+    model(NEW_PROJECT)
+    await service.place_pending()
+    [project] = await the_projects(company_id)
+    replies = {
+        "<same@x>": ("Wed, 05 Aug 2026 09:00:00 +0300", "Truck: AB 123 CD is on its way."),
+        "<next@x>": ("Sat, 08 Aug 2026 09:00:00 +0300", "Next one: Truck: XY 987 ZW loads Monday."),
+        "<loaded@x>": ("Sun, 09 Aug 2026 09:00:00 +0300", "Truck: XY 987 ZW is loaded."),
+    }
+    for uid, (key, (sent, body)) in enumerate(replies.items(), start=2):
+        reply = mail(key, date=sent, references="<order@x>", body=body)
+        await arrive(company_id, uid, reply, category=None)
+    async with open_session() as db:
+        mail_ids = await db.scalars(
+            select(Message.id).where(
+                Message.company_id == company_id, Message.rfc_message_id.in_(list(replies))
+            )
+        )
+        for mail_id in mail_ids.all():
+            await projects.link_item(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.MESSAGE,
+                item_id=mail_id,
+                project_id=project.id,
+                method=LinkMethod.SCORED,
+                confidence=0.6,
+            )
+        await db.commit()
+    return project
+
+
+@pytest.mark.integration
+async def test_a_thread_that_carried_the_next_load_is_placed_again_in_the_order_it_came(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    project = await placed_by_an_earlier_rule(company_id, model)
+
+    counted = await service.recut_threads(company_id, write=False)
+    assert (counted.threads, counted.mails, counted.news) == (1, 3, 1)
+    assert [link.project_id for link in await links(company_id, "<order@x>")] == [project.id] * 4
+
+    script = model(
+        answer("new_project", new_project={"name": "Stone, the next load"}, cited_mails=[3])
+    )
+    done = await service.recut_threads(company_id, write=True, max_reads=5)
+
+    # The same truck followed by code; the other truck was read, and is the next load, which
+    # the reply after it follows by code.
+    assert (done.placed, done.reads, done.failed) == (3, 1, 0)
+    assert len(script.requests) == 1
+    first, second, third, fourth = await links(company_id, "<order@x>")
+    assert first.project_id == second.project_id == project.id
+    assert third.project_id != project.id and fourth.project_id == third.project_id
+    assert not (await placement(company_id, "<order@x>")).waiting
+
+
+@pytest.mark.integration
+async def test_a_mail_that_fails_to_be_placed_again_waits_for_the_worker(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    project = await placed_by_an_earlier_rule(company_id, model)
+
+    model(ModelHTTPError(503, "the-model"))
+    done = await service.recut_threads(company_id, write=True, max_reads=5)
+
+    # The model could not be reached for the other truck: it, and the reply after it, wait for
+    # the worker rather than be placed together by the next replay.
+    assert (done.placed, done.failed) == (1, 1)
+    assert [link.project_id for link in await links(company_id, "<order@x>")] == [project.id] * 2
+    assert (await placement(company_id, "<order@x>")).waiting
+
+    model(answer("new_project", new_project={"name": "Stone, the next load"}, cited_mails=[3, 4]))
+    assert await service.place_pending() == 1
+    first, second, third, fourth = await links(company_id, "<order@x>")
+    assert first.project_id == second.project_id == project.id
+    assert third.project_id == fourth.project_id != project.id
+
+
+@pytest.mark.integration
+async def test_no_more_mail_is_read_again_than_the_reads_given(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await placed_by_an_earlier_rule(company_id, model)
+
+    script = model()
+    done = await service.recut_threads(company_id, write=True, max_reads=0)
+
+    assert (done.placed, done.reads) == (1, 0) and script.requests == []
+    assert (await placement(company_id, "<order@x>")).waiting
+
+
+@pytest.mark.integration
+async def test_a_conversation_in_a_project_the_owner_rejected_is_not_placed_again(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    project = await placed_by_an_earlier_rule(company_id, model)
+    rejected = await client.patch(f"/projects/{project.id}", json={"status": "rejected"})
+    assert rejected.status_code == 200
+
+    counted = await service.recut_threads(company_id, write=False)
+
+    assert (counted.threads, counted.mails) == (0, 0)
+
+
+def test_a_conversation_follows_its_last_project_only_after_it_began() -> None:
+    a, b = uuid.uuid4(), uuid.uuid4()
+    mails = [uuid.uuid4() for _ in range(4)]
+    thread = cast(ThreadRead, SimpleNamespace(mails=[SimpleNamespace(id=m) for m in mails]))
+
+    # The next load's mails run on to the end: a new one follows it.
+    assert service._latest(thread, {a: {mails[0], mails[1]}, b: {mails[2]}}) == b
+    # They go back and forth: none.
+    assert service._latest(thread, {a: {mails[0], mails[2]}, b: {mails[1], mails[3]}}) is None
+    # An untied mail older than the next load's first may be the earlier job's: none.
+    assert service._latest(thread, {a: {mails[0]}, b: {mails[2], mails[3]}}) is None
+    # In one project alone, an older mail follows it as before.
+    assert service._latest(thread, {a: {mails[2], mails[3]}}) == a

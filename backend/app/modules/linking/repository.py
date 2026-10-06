@@ -41,6 +41,17 @@ async def note_changed(
     )
 
 
+async def keep_waiting(
+    db: AsyncSession, company_id: uuid.UUID, thread_ids: Sequence[uuid.UUID]
+) -> None:
+    await db.execute(
+        update(Placement)
+        .where(Placement.company_id == company_id, Placement.thread_id.in_(thread_ids))
+        .values(waiting=True)
+        .execution_options(synchronize_session=False)
+    )
+
+
 async def wake_due(db: AsyncSession, company_id: uuid.UUID, now: datetime) -> None:
     """Marks as waiting the conversations whose wait for their files is over."""
     await db.execute(
@@ -77,7 +88,8 @@ async def readings_of_projects(
             Placement.company_id == company_id,
             Placement.project_id.in_(project_ids),
             Placement.outcome.in_((Outcome.LINKED, Outcome.PROPOSED)),
-            Placement.reading.is_not(None),
+            # A reading stored as JSON null before such were stored as SQL NULL is none either.
+            func.jsonb_typeof(Placement.reading) == "object",
         )
         .order_by(Placement.created_at, Placement.id)
     )
@@ -211,6 +223,16 @@ async def waiting(
         )
         .order_by(Placement.thread_changed_at, Placement.id)
         .limit(limit)
+    )
+    return rows.all()
+
+
+async def placed_in_projects(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Placement]:
+    """The conversations placed in a project, by a rule or a model."""
+    rows = await db.scalars(
+        select(Placement)
+        .where(Placement.company_id == company_id, Placement.project_id.is_not(None))
+        .order_by(Placement.id)
     )
     return rows.all()
 

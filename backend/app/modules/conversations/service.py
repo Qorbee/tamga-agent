@@ -993,6 +993,11 @@ async def model_reads_left(db: AsyncSession, company_id: uuid.UUID) -> int:
     return get_settings().mail_model_reads_per_day - spent
 
 
+async def model_reads_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
+    """How many requests sent the company's mail to a model since then, by every agent."""
+    return await repository.model_reads_since(db, company_id, since)
+
+
 async def count_model_reads(
     db: AsyncSession, company_id: uuid.UUID, agent: str, *, requests: int = 1
 ) -> None:

@@ -91,7 +91,8 @@ class Placement(CompanyScoped, Base):
     # firm is to it in this job (party, party_role); of the job, what the conversation says of
     # its client, subcontractor, consignee, origin, destination, cargo, trucks and days
     # (starts_on, ends_on). Each value is kept as text.
-    reading: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # Nothing read is SQL NULL, never JSON null: what reads the readings skips the missing ones.
+    reading: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     # How many mails it held when it was read, and the newest of them. A change that brings no
     # mail (a copy stored from a second mailbox) is not read again, and a later mail soon after
     # follows the conversation without a model reading it again.
