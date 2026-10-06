@@ -494,6 +494,17 @@ async def mail_labels(
     return rows.tuples().all()
 
 
+async def mail_senders(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> Sequence[tuple[uuid.UUID, Direction, str | None, str | None]]:
+    rows = await db.execute(
+        select(Message.id, Message.direction, Message.sender, Message.subject).where(
+            Message.company_id == company_id, Message.id.in_(ids)
+        )
+    )
+    return rows.tuples().all()
+
+
 async def first_carriers(
     db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
 ) -> list[tuple[uuid.UUID, uuid.UUID, datetime, Channel]]:

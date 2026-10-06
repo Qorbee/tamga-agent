@@ -1065,7 +1065,11 @@ export interface paths {
         delete: operations["projects.remove_project_party"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Answer Project Party
+         * @description The owner's yes or no to a firm code suggested; 409 when it is the owner's already.
+         */
+        patch: operations["projects.answer_project_party"];
         trace?: never;
     };
     "/projects": {
@@ -2311,6 +2315,15 @@ export interface components {
             /** Writer */
             writer?: string | null;
         };
+        /** ItemRef */
+        ItemRef: {
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            item_kind: components["schemas"]["ItemKind"];
+        };
         /**
          * JobReading
          * @description What a model read in a conversation: a proposal for the owner, never a fact.
@@ -3062,6 +3075,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * ProjectPartyAnswer
+         * @description The owner's answer to a suggested firm.
+         */
+        ProjectPartyAnswer: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "confirmed" | "rejected";
+        };
         /** ProjectPartyCreate */
         ProjectPartyCreate: {
             /** Amount */
@@ -3085,12 +3109,17 @@ export interface components {
             project_id: string;
             role: components["schemas"]["ProjectRole"];
         };
-        /** ProjectPartyOut */
+        /**
+         * ProjectPartyOut
+         * @description A firm's role on a project: the owner's, or code's suggestion with what names it.
+         */
         ProjectPartyOut: {
             /** Amount */
             amount: string | null;
             /** Currency */
             currency: string | null;
+            /** Evidence */
+            evidence: components["schemas"]["ItemRef"][];
             /**
              * Id
              * Format: uuid
@@ -3111,6 +3140,13 @@ export interface components {
              */
             project_id: string;
             role: components["schemas"]["ProjectRole"];
+            /** Signals */
+            signals: string[];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "confirmed" | "suggested" | "rejected";
         };
         /**
          * ProjectRole
@@ -5728,6 +5764,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "projects.answer_project_party": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectPartyAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPartyOut"];
+                };
             };
             /** @description Validation Error */
             422: {

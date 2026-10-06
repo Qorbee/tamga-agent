@@ -114,6 +114,27 @@ async def find_by_identifier(
     return [(party, identifier) for party, identifier in rows.tuples()]
 
 
+async def sharing_tax_ids(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
+) -> Sequence[tuple[uuid.UUID, str]]:
+    """Every party that shares a tax id with one of these, with that tax id."""
+    theirs = select(PartyIdentifier.normalised).where(
+        PartyIdentifier.company_id == company_id,
+        PartyIdentifier.kind == IdentifierKind.TAX_ID,
+        PartyIdentifier.party_id.in_(party_ids),
+    )
+    rows = await db.execute(
+        select(PartyIdentifier.party_id, PartyIdentifier.normalised)
+        .where(
+            PartyIdentifier.company_id == company_id,
+            PartyIdentifier.kind == IdentifierKind.TAX_ID,
+            PartyIdentifier.normalised.in_(theirs),
+        )
+        .distinct()
+    )
+    return rows.tuples().all()
+
+
 async def get_many(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> Sequence[Party]:

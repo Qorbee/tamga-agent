@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.books import accounts, repository, sources
+from app.modules.books.models import InvoiceKind
 from app.modules.books.repository import InvoiceFilter as InvoiceFilter
 from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort, InvoiceTotal
 from app.modules.books.sources import (
@@ -470,6 +471,18 @@ async def get_invoices(
 ) -> list[InvoiceOut]:
     rows = await repository.get_invoices(db, company_id, ids)
     return [InvoiceOut.model_validate(row) for row in rows]
+
+
+async def kinds_of_parties(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, frozenset[InvoiceKind]]:
+    """The kinds of invoice the books hold with each firm: whether we sell to it, buy from it,
+    or both."""
+    kinds: dict[uuid.UUID, set[InvoiceKind]] = {}
+    if party_ids:
+        for party_id, kind in await repository.kinds_of_parties(db, company_id, party_ids):
+            kinds.setdefault(party_id, set()).add(kind)
+    return {party_id: frozenset(found) for party_id, found in kinds.items()}
 
 
 async def invoice_labels(

@@ -397,6 +397,17 @@ async def invoice_labels(
     return {invoice_id: (number, issued) for invoice_id, number, issued in rows.tuples().all()}
 
 
+async def kinds_of_parties(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
+) -> Sequence[tuple[uuid.UUID, InvoiceKind]]:
+    rows = await db.execute(
+        select(Invoice.party_id, Invoice.kind)
+        .where(Invoice.company_id == company_id, Invoice.party_id.in_(party_ids))
+        .distinct()
+    )
+    return [(party_id, kind) for party_id, kind in rows.tuples().all() if party_id is not None]
+
+
 async def invoices_named(
     db: AsyncSession,
     company_id: uuid.UUID,

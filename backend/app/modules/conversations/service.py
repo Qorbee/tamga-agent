@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import imaplib
 import logging
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -903,6 +904,37 @@ async def message_summaries(
         return {}
     rows = await repository.messages_by_ids(db, company_id, ids)
     return {message.id: _summary(message, count) for message, count in rows}
+
+
+@dataclass(frozen=True, slots=True)
+class MailSender:
+    """Who a mail came from, and whether it only passed another's mail on."""
+
+    address: str
+    inbound: bool
+    forwarded: bool
+
+
+# A subject that says the mail passes another's on: "Fwd:", "FW:".
+_FORWARDED: Final = re.compile(r"^\s*(?:fwd?|fw)\s*:", re.IGNORECASE)
+
+
+async def mail_senders(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, MailSender]:
+    """These mails' senders, never their text; one with no sender is left out."""
+    if not ids:
+        return {}
+    rows = await repository.mail_senders(db, company_id, ids)
+    return {
+        mail_id: MailSender(
+            address=sender,
+            inbound=direction is Direction.INBOUND,
+            forwarded=bool(_FORWARDED.match(subject or "")),
+        )
+        for mail_id, direction, sender, subject in rows
+        if sender
+    }
 
 
 @dataclass(frozen=True, slots=True)

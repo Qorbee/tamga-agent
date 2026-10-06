@@ -157,6 +157,15 @@ export const en = {
     empty: "Empty",
     clear: "Clear",
     readFromMail: "read from mail",
+    suggestedFirm: "suggested",
+    askFirm: (name: string, role: string) => `Is ${name} the ${role.toLowerCase()}?`,
+    firmSignals: { reading: "named in mail", sender: "their mail address", invoice: "their invoice" } as Record<
+      string,
+      string
+    >,
+    openSource: { message: "open the mail", invoice: "open the invoice" } as Record<string, string>,
+    confirmFirm: (name: string) => `Yes, ${name}`,
+    rejectFirm: (name: string) => `No, not ${name}`,
     chooseParty: (role: string) => `Choose the ${role.toLowerCase()}`,
     removeParty: (name: string) => `Remove ${name}`,
     searchParties: "Search firms",

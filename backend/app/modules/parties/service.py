@@ -260,6 +260,80 @@ def name_key(name: str) -> str:
     return normalise_name(short_name(name))
 
 
+# A firm's name this short ("Ace") starts too many others' to say one firm is another.
+_SHORTEST_FIRM_NAME: Final = 4
+# A word of a firm's name cut to this many letters is still that word ("NAK." for "NAKLİYAT").
+_SHORTEST_ABBREVIATION: Final = 3
+
+
+def same_firm(a: str, b: str) -> bool:
+    """Whether two names are one firm's: one is the other's first words ("Atlas Company" and
+    "ATLAS COMPANY OTOMOTİV … LTD. ŞTİ."), a word after the first perhaps abbreviated ("NAK."
+    for "NAKLİYAT")."""
+    short, long = sorted((name_key(a).split(), name_key(b).split()), key=len)
+    if not short or len("".join(short)) < _SHORTEST_FIRM_NAME or short[0] != long[0]:
+        return False
+    return all(_one_word(x, y) for x, y in zip(short, long, strict=False))
+
+
+def _one_word(a: str, b: str) -> bool:
+    shorter, longer = sorted((a, b), key=len)
+    return shorter == longer or (
+        len(shorter) >= _SHORTEST_ABBREVIATION and longer.startswith(shorter)
+    )
+
+
+async def named_like(db: AsyncSession, company_id: uuid.UUID, name: str) -> list[Party]:
+    """The firms whose name is this one's, as ``same_firm`` compares them."""
+    words = name_key(name).split()
+    if not words:
+        return []
+    found = await repository.named_from(db, company_id, words[0])
+    return [party for party in found if same_firm(name, party.name)]
+
+
+async def one_per_firm(
+    db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """For each of these parties, the one that stands for its firm: cards in the books that share
+    a tax id are one firm, kept under the oldest of them. A party sharing none stands for itself."""
+    by_tax: dict[str, set[uuid.UUID]] = {}
+    for party_id, tax_id in await repository.sharing_tax_ids(db, company_id, party_ids):
+        by_tax.setdefault(tax_id, set()).add(party_id)
+    firm = {party_id: party_id for party_id in party_ids}
+    for cards in by_tax.values():
+        # uuid7 ids sort by when they were made.
+        oldest = min(cards)
+        for card in cards:
+            if card in firm:
+                firm[card] = min(firm[card], oldest)
+    return firm
+
+
+async def writing_from(db: AsyncSession, company_id: uuid.UUID, address: str) -> list[Party]:
+    """The firms a mail address is known to be: its own address in the books or as the owner
+    taught it, else the one firm with an address at its domain in the books, else the one whose
+    name starts with the name the domain was registered as. A public provider's domain names no
+    one but by the full address."""
+    exact = [
+        match.party
+        for match in await find_parties(
+            db, company_id=company_id, identifier=Identifier(IdentifierKind.EMAIL, address)
+        )
+    ]
+    if exact:
+        return exact
+    domain = maildomains.address_domain(address)
+    if domain is None:
+        return []
+    found = await firms_for_domain(db, company_id, domain)
+    for firms in (found.by_address, found.by_name):
+        ones = await one_per_firm(db, company_id, [party.id for party in firms])
+        if len(set(ones.values())) == 1:
+            return [party for party in firms if ones[party.id] == party.id][:1] or firms[:1]
+    return []
+
+
 async def get_party(db: AsyncSession, actor: Actor, party_id: uuid.UUID) -> PartyOut:
     found = await repository.get_many(db, actor.company_id, [party_id])
     if not found:

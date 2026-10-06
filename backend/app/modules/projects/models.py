@@ -63,6 +63,18 @@ class ProjectRole(StrEnum):
     CONSIGNEE = "consignee"
 
 
+class PartyState(StrEnum):
+    """Whose word a party's role on a project is."""
+
+    # The owner's: put there, or a suggestion answered yes.
+    CONFIRMED = "confirmed"
+    # Code's, from what names the firm in that role (``signals``): counted as the project's firm
+    # where two signals agree, else asked of the owner.
+    SUGGESTED = "suggested"
+    # A suggestion the owner refused: kept, so it is never suggested again.
+    REJECTED = "rejected"
+
+
 class LinkMethod(StrEnum):
     # A shared strong key: a project, order, invoice, ETTN or CMR number, a plate within the dates.
     KEY = "key"
@@ -186,6 +198,19 @@ class ProjectParty(CompanyScoped, Base):
     layer: Mapped[int] = mapped_column(default=0)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     currency: Mapped[str | None] = mapped_column(String(3))
+    state: Mapped[PartyState] = mapped_column(
+        text_enum(PartyState, "project_parties_state_check"),
+        default=PartyState.CONFIRMED,
+        server_default=PartyState.CONFIRMED.value,
+    )
+    # A suggestion's kinds of signal that name the firm in the role ("reading", "sender",
+    # "invoice"), and the items each was read from ({"item_kind", "item_id"}).
+    signals: Mapped[list[str]] = mapped_column(
+        ARRAY(String(20)), default=list, server_default=text("'{}'")
+    )
+    evidence: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB, default=list, server_default=text("'[]'::jsonb")
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

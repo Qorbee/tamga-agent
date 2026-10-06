@@ -36,7 +36,7 @@ from app.modules.documents import service as documents
 from app.modules.documents.models import ReadState
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.modules.linking import agents, repository
+from app.modules.linking import agents, firms, repository
 from app.modules.linking.models import Outcome, Placement
 from app.modules.linking.schemas import JobReading, PlacementOut, PlacementPage
 from app.modules.parties import service as parties
@@ -203,6 +203,7 @@ async def place_pending() -> int:
             company = (await companies.get_companies(db, [company_id])).get(company_id)
         trace_content = company is not None and companies.traces_content(company.kind)
         language = company.language if company is not None else Language.EN
+        here = 0
         for thread_id in waiting:
             try:
                 done = await place_thread(
@@ -222,22 +223,23 @@ async def place_pending() -> int:
                     await db.commit()
                 continue
             placed += done
+            here += done
             if done:
                 await events.publish_now(company_id, [events.EventKind.PROJECTS])
             async with open_session() as db:
                 left = await conversations.model_reads_left(db, company_id)
-        await _place_bills(company_id)
+        await _suggest_firms(company_id, placed=bool(await _place_bills(company_id) or here))
     # A company whose projects the owner made by hand has bills to place, and no conversation.
     async with open_session() as db:
         others = set(await projects.companies_with_projects(db)) - set(company_ids)
     for company_id in sorted(others):
-        await _place_bills(company_id)
+        await _suggest_firms(company_id, placed=bool(await _place_bills(company_id)))
     return placed
 
 
-async def _place_bills(company_id: uuid.UUID) -> None:
+async def _place_bills(company_id: uuid.UUID) -> int:
     """The company's bills placed after its conversations, which may have made the project a
-    bill's numbers point to. A failure is logged and tried again next run."""
+    bill's numbers point to: how many were. A failure is logged and tried again next run."""
     try:
         async with open_session() as db:
             bills = await place_invoices(db, company_id)
@@ -246,9 +248,36 @@ async def _place_bills(company_id: uuid.UUID) -> None:
             await db.commit()
     except Exception as error:
         logger.warning("placing bills failed: %s", type(error).__name__)
-        return
+        return 0
     if bills.linked:
         logger.info("bills placed in projects: %d", bills.linked)
+    return bills.linked
+
+
+async def _suggest_firms(company_id: uuid.UUID, *, placed: bool) -> None:
+    """The firms signals name on the company's projects, after a run placed mails or bills there
+    or the owner added, answered, moved or removed a link: a bill on a project by its number is
+    one of them. Else nothing changed what names a firm, and nothing is read. A failure is
+    logged and tried again next run."""
+    async with open_session() as db:
+        mark = await projects.links_mark(db, company_id)
+    if not placed and _FIRMS_READ_AT.get(company_id) == mark:
+        return
+    try:
+        async with open_session() as db:
+            found = await firms.suggest_firms(db, company_id)
+            if found.written:
+                await events.publish(db, company_id, events.EventKind.PROJECTS)
+            await db.commit()
+    except Exception as error:
+        logger.warning("suggesting firms failed: %s", type(error).__name__)
+        return
+    _FIRMS_READ_AT[company_id] = mark
+
+
+# Each company's links as firms were last suggested from them (projects.links_mark), in this
+# process: a worker started again suggests once for every company, then on a change.
+_FIRMS_READ_AT: dict[uuid.UUID, tuple[int, datetime | None]] = {}
 
 
 @dataclass(slots=True)

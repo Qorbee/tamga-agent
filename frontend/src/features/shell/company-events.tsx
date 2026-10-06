@@ -27,6 +27,8 @@ const READ_AGAIN: Record<CompanyEvent["kind"], QueryKey[]> = {
     ["shipments"],
     ["plates"],
     ["field-proposals"],
+    // The firms code suggests on a project.
+    ["project-parties"],
   ],
   // A file read names plates a job's board lists.
   documents: [["documents"], ["document"], ["plates"]],

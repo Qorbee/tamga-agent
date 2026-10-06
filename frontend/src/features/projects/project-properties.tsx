@@ -16,6 +16,8 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useState, type ReactNode } from "react";
 
+import { CanvasLink } from "@/components/canvas-link";
+import { IconButton } from "@/components/icon-button";
 import { InlineDateRange } from "@/components/inline-date-range";
 import { InlineText } from "@/components/inline-text";
 import { T } from "@/components/translated";
@@ -24,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   addProjectParty,
+  answerProjectParty,
   ApiError,
   listParties,
   listProjectParties,
@@ -34,8 +37,9 @@ import {
   type ProjectParty,
   type ProjectUpdate,
 } from "@/lib/api";
+import type { CanvasView } from "@/lib/canvas-view";
 import { useI18n } from "@/lib/i18n/client";
-import { useCanEditProjects } from "@/lib/use-role";
+import { useCanEditProjects, useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 import { StatusMenu } from "./project-actions";
@@ -77,7 +81,8 @@ export function ProjectProperties({ project }: { project: Project }) {
   const job = project.job;
   const route = [job?.origin, job?.destination].filter(Boolean).join(" → ");
   const edited = (field: string) => project.field_sources[field] === "owner";
-  const chosen = (role: ProjectParty["role"]) => (parties.data ?? []).filter((party) => party.role === role);
+  const held = (role: ProjectParty["role"], state: ProjectParty["state"]) =>
+    (parties.data ?? []).filter((party) => party.role === role && party.state === state);
   // Until the owner's own choices are read, what was read in mail is not shown in their place.
   const partyField = (role: "client" | "subcontractor", read: string[]) =>
     parties.isPending ? (
@@ -90,7 +95,8 @@ export function ProjectProperties({ project }: { project: Project }) {
       <PartyField
         project={project}
         role={role}
-        chosen={chosen(role)}
+        chosen={held(role, "confirmed")}
+        suggested={held(role, "suggested")}
         read={read}
         canEdit={canEdit}
         several={role === "subcontractor"}
@@ -186,10 +192,16 @@ function Edited() {
  * then. A tap opens a search over the company's parties, those from the books first; the client
  * is one firm, subcontractors may be several.
  */
+/** Whether two kinds of signal name a suggested firm: it stands for the role until the owner says. */
+function agreed(party: ProjectParty): boolean {
+  return new Set(party.signals).size >= 2;
+}
+
 function PartyField({
   project,
   role,
   chosen,
+  suggested,
   read,
   canEdit,
   several = false,
@@ -197,6 +209,8 @@ function PartyField({
   project: Project;
   role: "client" | "subcontractor";
   chosen: ProjectParty[];
+  // Firms Tamga suggests in the role, from what names them.
+  suggested: ProjectParty[];
   read: string[];
   canEdit: boolean;
   several?: boolean;
@@ -227,9 +241,17 @@ function PartyField({
   });
   const remove = useMutation({ mutationFn: (id: string) => removeProjectParty(id), onSuccess: done });
   const chosenIds = new Set(chosen.map((each) => each.party_id));
+  // A client the owner named leaves nothing to ask; a job can have more subcontractors.
+  const unanswered = several || chosen.length === 0 ? suggested : [];
+  const standing = chosen.length === 0 ? unanswered.filter(agreed) : [];
   const shown =
     chosen.length > 0 ? (
       <span className="[overflow-wrap:anywhere]">{chosen.map((each) => each.party_name).join(", ")}</span>
+    ) : standing.length > 0 ? (
+      <span className="[overflow-wrap:anywhere]">
+        {standing.map((each) => each.party_name).join(", ")}{" "}
+        <span className="text-muted-foreground text-xs">· {t.project.suggestedFirm}</span>
+      </span>
     ) : read.length > 0 ? (
       <span className="[overflow-wrap:anywhere]">
         {read.join(", ")} <span className="text-muted-foreground text-xs">· {t.project.readFromMail}</span>
@@ -238,78 +260,172 @@ function PartyField({
       <span className="text-muted-foreground">{t.project.empty}</span>
     );
 
-  if (!canEdit) return shown;
+  const asked =
+    unanswered.length > 0 ? <SuggestedFirms project={project} role={role} firms={unanswered} /> : null;
+  if (!canEdit)
+    return (
+      <span className="grid gap-1">
+        {shown}
+        {asked}
+      </span>
+    );
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setWords("");
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={t.project.chooseParty(role === "client" ? t.project.client : t.project.subcontractor)}
-          className="hover:bg-accent/60 focus-visible:ring-ring/50 -mx-1.5 min-w-0 rounded-lg px-1.5 text-start outline-none focus-visible:ring-2"
-        >
-          {shown}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="grid gap-2 p-2">
-        {chosen.length > 0 ? (
-          <ul className="grid gap-0.5">
-            {chosen.map((each) => (
-              <li key={each.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm">
-                <HugeiconsIcon icon={Tick02Icon} strokeWidth={1.75} className="size-4 shrink-0" aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{each.party_name}</span>
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground rounded p-0.5"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(each.id)}
-                >
-                  <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} className="size-4" />
-                  <span className="sr-only">{t.project.removeParty(each.party_name)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <Input
-          autoFocus
-          value={words}
-          placeholder={t.project.searchParties}
-          aria-label={t.project.searchParties}
-          onChange={(event) => setWords(event.target.value)}
-        />
-        <ul className="grid max-h-60 gap-0.5 overflow-y-auto">
-          {(found.data?.items ?? [])
-            .filter((party) => !chosenIds.has(party.id))
-            .map((party) => (
-              <li key={party.id}>
-                <button
-                  type="button"
-                  disabled={choose.isPending}
-                  onClick={() => choose.mutate(party)}
-                  className={cn(
-                    "hover:bg-accent focus-visible:bg-accent w-full truncate rounded-lg px-2 py-1.5 text-start text-sm outline-none",
-                  )}
-                >
-                  {party.name}
-                </button>
-              </li>
-            ))}
-          {found.data && found.data.items.length === 0 ? (
-            <li className="text-muted-foreground px-2 py-1.5 text-sm">{q ? t.project.noParties : t.project.noFirms}</li>
+    <span className="grid gap-1">
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setWords("");
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={t.project.chooseParty(role === "client" ? t.project.client : t.project.subcontractor)}
+            className="hover:bg-accent/60 focus-visible:ring-ring/50 -mx-1.5 min-w-0 rounded-lg px-1.5 text-start outline-none focus-visible:ring-2"
+          >
+            {shown}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="grid gap-2 p-2">
+          {chosen.length > 0 ? (
+            <ul className="grid gap-0.5">
+              {chosen.map((each) => (
+                <li key={each.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm">
+                  <HugeiconsIcon icon={Tick02Icon} strokeWidth={1.75} className="size-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{each.party_name}</span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground rounded p-0.5"
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(each.id)}
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} className="size-4" />
+                    <span className="sr-only">{t.project.removeParty(each.party_name)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : null}
-        </ul>
-        {choose.isError || remove.isError ? (
-          <p className="text-danger-foreground px-2 text-xs" role="alert">
-            {t.errors.generic}
-          </p>
-        ) : null}
-      </PopoverContent>
-    </Popover>
+          <Input
+            autoFocus
+            value={words}
+            placeholder={t.project.searchParties}
+            aria-label={t.project.searchParties}
+            onChange={(event) => setWords(event.target.value)}
+          />
+          <ul className="grid max-h-60 gap-0.5 overflow-y-auto">
+            {(found.data?.items ?? [])
+              .filter((party) => !chosenIds.has(party.id))
+              .map((party) => (
+                <li key={party.id}>
+                  <button
+                    type="button"
+                    disabled={choose.isPending}
+                    onClick={() => choose.mutate(party)}
+                    className={cn(
+                      "hover:bg-accent focus-visible:bg-accent w-full truncate rounded-lg px-2 py-1.5 text-start text-sm outline-none",
+                    )}
+                  >
+                    {party.name}
+                  </button>
+                </li>
+              ))}
+            {found.data && found.data.items.length === 0 ? (
+              <li className="text-muted-foreground px-2 py-1.5 text-sm">{q ? t.project.noParties : t.project.noFirms}</li>
+            ) : null}
+          </ul>
+          {choose.isError || remove.isError ? (
+            <p className="text-danger-foreground px-2 text-xs" role="alert">
+              {t.errors.generic}
+            </p>
+          ) : null}
+        </PopoverContent>
+      </Popover>
+      {asked}
+    </span>
   );
 }
+
+/**
+ * The firms Tamga suggests in a role, each with what names it and a tap to the mail or invoice
+ * it was read from: two kinds of signal agreeing are said as such, one alone is asked. The owner
+ * answers yes or no; a no keeps the firm from being suggested there again.
+ */
+function SuggestedFirms({ project, role, firms }: { project: Project; role: "client" | "subcontractor"; firms: ProjectParty[] }) {
+  const { t } = useI18n();
+  const isOwner = useIsOwner();
+  const queryClient = useQueryClient();
+  const answer = useMutation({
+    mutationFn: ({ id, state }: { id: string; state: "confirmed" | "rejected" }) => answerProjectParty(id, { state }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: partiesKey(project.id) });
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+  const label = role === "client" ? t.project.client : t.project.subcontractor;
+  return (
+    <ul className="grid gap-1">
+      {firms.map((firm) => {
+        // A tap to each kind of item that named it: its first mail, its first invoice.
+        const sources = firm.evidence.filter(
+          (item, at) => firm.evidence.findIndex((other) => other.item_kind === item.item_kind) === at,
+        );
+        return (
+          <li key={firm.id} className="bg-secondary/60 grid gap-0.5 rounded-lg px-2 py-1.5 text-xs">
+            <span className="flex items-start gap-1.5">
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                {agreed(firm) ? firm.party_name : t.project.askFirm(firm.party_name, label)}
+              </span>
+              {isOwner ? (
+                <span className="flex shrink-0 items-center gap-0.5">
+                  <IconButton
+                    icon={Tick02Icon}
+                    label={t.project.confirmFirm(firm.party_name)}
+                    size="icon-xs"
+                    disabled={answer.isPending}
+                    onClick={() => answer.mutate({ id: firm.id, state: "confirmed" })}
+                  />
+                  <IconButton
+                    icon={Cancel01Icon}
+                    label={t.project.rejectFirm(firm.party_name)}
+                    size="icon-xs"
+                    className="text-muted-foreground"
+                    disabled={answer.isPending}
+                    onClick={() => answer.mutate({ id: firm.id, state: "rejected" })}
+                  />
+                </span>
+              ) : null}
+            </span>
+            <span className="text-muted-foreground flex flex-wrap gap-x-2">
+              <span>{firm.signals.map((signal) => t.project.firmSignals[signal] ?? signal).join(" · ")}</span>
+              {sources.map((item) => {
+                const view = SOURCES[item.item_kind];
+                return view ? (
+                  <CanvasLink
+                    key={item.item_id}
+                    view={{ kind: view, id: item.item_id }}
+                    className="hover:text-foreground underline decoration-dotted underline-offset-2"
+                  >
+                    {t.project.openSource[item.item_kind]}
+                  </CanvasLink>
+                ) : null;
+              })}
+            </span>
+            {answer.isError ? (
+              <span className="text-danger-foreground" role="alert">
+                {t.errors.generic}
+              </span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// The record an item a firm was read from opens as.
+const SOURCES: Partial<Record<ProjectParty["evidence"][number]["item_kind"], CanvasView["kind"]>> = {
+  message: "mail",
+  invoice: "invoice",
+};

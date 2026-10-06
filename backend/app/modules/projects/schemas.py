@@ -114,7 +114,14 @@ class NumberingUpdate(BaseModel):
     next_seq: int | None = Field(default=None, ge=1, le=10**9)
 
 
+class ItemRef(BaseModel):
+    item_kind: ItemKind
+    item_id: uuid.UUID
+
+
 class ProjectPartyOut(BaseModel):
+    """A firm's role on a project: the owner's, or code's suggestion with what names it."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -125,6 +132,20 @@ class ProjectPartyOut(BaseModel):
     layer: int
     amount: Decimal | None
     currency: str | None
+    # Never "rejected" in a list: only the answer that refused it says so.
+    state: Literal["confirmed", "suggested", "rejected"]
+    # A suggestion's kinds of signal: "reading" (a conversation's reading names the firm in the
+    # role), "sender" (its mail came from the firm's address), "invoice" (the firm's invoice is
+    # on the project by its number). Two agree: the project's firm until the owner says no.
+    signals: list[str]
+    # The items those signals were read from.
+    evidence: list[ItemRef]
+
+
+class ProjectPartyAnswer(BaseModel):
+    """The owner's answer to a suggested firm."""
+
+    state: Literal["confirmed", "rejected"]
 
 
 class ProjectPartyCreate(BaseModel):

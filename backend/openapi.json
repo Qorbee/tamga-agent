@@ -2772,6 +2772,24 @@
         "title": "ItemNamed",
         "type": "object"
       },
+      "ItemRef": {
+        "properties": {
+          "item_id": {
+            "format": "uuid",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "item_kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          }
+        },
+        "required": [
+          "item_kind",
+          "item_id"
+        ],
+        "title": "ItemRef",
+        "type": "object"
+      },
       "JobReading": {
         "description": "What a model read in a conversation: a proposal for the owner, never a fact.",
         "properties": {
@@ -5017,6 +5035,24 @@
         "title": "ProjectPage",
         "type": "object"
       },
+      "ProjectPartyAnswer": {
+        "description": "The owner's answer to a suggested firm.",
+        "properties": {
+          "state": {
+            "enum": [
+              "confirmed",
+              "rejected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "ProjectPartyAnswer",
+        "type": "object"
+      },
       "ProjectPartyCreate": {
         "properties": {
           "amount": {
@@ -5077,6 +5113,7 @@
         "type": "object"
       },
       "ProjectPartyOut": {
+        "description": "A firm's role on a project: the owner's, or code's suggestion with what names it.",
         "properties": {
           "amount": {
             "anyOf": [
@@ -5100,6 +5137,13 @@
               }
             ],
             "title": "Currency"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ItemRef"
+            },
+            "title": "Evidence",
+            "type": "array"
           },
           "id": {
             "format": "uuid",
@@ -5126,6 +5170,22 @@
           },
           "role": {
             "$ref": "#/components/schemas/ProjectRole"
+          },
+          "signals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signals",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "confirmed",
+              "suggested",
+              "rejected"
+            ],
+            "title": "State",
+            "type": "string"
           }
         },
         "required": [
@@ -5136,7 +5196,10 @@
           "role",
           "layer",
           "amount",
-          "currency"
+          "currency",
+          "state",
+          "signals",
+          "evidence"
         ],
         "title": "ProjectPartyOut",
         "type": "object"
@@ -10669,6 +10732,63 @@
           }
         ],
         "summary": "Remove Project Party",
+        "tags": [
+          "projects"
+        ]
+      },
+      "patch": {
+        "description": "The owner's yes or no to a firm code suggested; 409 when it is the owner's already.",
+        "operationId": "projects.answer_project_party",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_party_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPartyAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPartyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Answer Project Party",
         "tags": [
           "projects"
         ]

@@ -99,6 +99,33 @@ async def readings_of_projects(
     return readings
 
 
+async def readings_by_thread(
+    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+) -> list[tuple[uuid.UUID, uuid.UUID, dict[str, Any]]]:
+    """Each reading a conversation has in each project, its own or kept there: (project,
+    conversation, reading)."""
+    if not project_ids:
+        return []
+    placed = await db.execute(
+        select(Placement.project_id, Placement.thread_id, Placement.reading).where(
+            Placement.company_id == company_id,
+            Placement.project_id.in_(project_ids),
+            Placement.outcome.in_((Outcome.LINKED, Outcome.PROPOSED)),
+            func.jsonb_typeof(Placement.reading) == "object",
+        )
+    )
+    kept = await db.execute(
+        select(KeptReading.project_id, KeptReading.thread_id, KeptReading.reading).where(
+            KeptReading.company_id == company_id, KeptReading.project_id.in_(project_ids)
+        )
+    )
+    return [
+        (project_id, thread_id, reading)
+        for project_id, thread_id, reading in [*placed.tuples().all(), *kept.tuples().all()]
+        if project_id is not None and reading
+    ]
+
+
 async def kept_readings(
     db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
 ) -> list[Kept]:

@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import ColumnElement, Select, case, exists, func, or_, select, text, tuple_, update
@@ -164,24 +165,46 @@ async def get_numbering(db: AsyncSession, company_id: uuid.UUID) -> ProjectNumbe
 
 
 async def list_project_parties(
-    db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    project_ids: Sequence[uuid.UUID],
+    *,
+    for_update: bool = False,
 ) -> Sequence[ProjectParty]:
-    rows = await db.scalars(
+    query = (
         select(ProjectParty)
         .where(ProjectParty.company_id == company_id, ProjectParty.project_id.in_(project_ids))
         .order_by(ProjectParty.layer, ProjectParty.role, ProjectParty.created_at)
     )
+    rows = await db.scalars(query.with_for_update() if for_update else query)
     return rows.all()
 
 
-async def get_project_party(
-    db: AsyncSession, company_id: uuid.UUID, project_party_id: uuid.UUID
-) -> ProjectParty | None:
-    row: ProjectParty | None = await db.scalar(
-        select(ProjectParty).where(
-            ProjectParty.company_id == company_id, ProjectParty.id == project_party_id
-        )
+async def links_mark(db: AsyncSession, company_id: uuid.UUID) -> tuple[int, datetime | None]:
+    """How many links the company's projects hold, and when one was last made or answered: what
+    changes when any is added, answered, moved or removed."""
+    changed = func.greatest(
+        ProjectLink.created_at, func.coalesce(ProjectLink.decided_at, ProjectLink.created_at)
     )
+    row = (
+        await db.execute(
+            select(func.count(), func.max(changed)).where(ProjectLink.company_id == company_id)
+        )
+    ).one()
+    return row[0], row[1]
+
+
+async def get_project_party(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    project_party_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> ProjectParty | None:
+    query = select(ProjectParty).where(
+        ProjectParty.company_id == company_id, ProjectParty.id == project_party_id
+    )
+    row: ProjectParty | None = await db.scalar(query.with_for_update() if for_update else query)
     return row
 
 

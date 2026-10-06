@@ -5,7 +5,13 @@ from fastapi import APIRouter, Query, status
 
 from app.modules.identity.deps import ActorDep
 from app.modules.projects import checklist, service
-from app.modules.projects.models import LinkStatus, ProjectStatus, ProposalStatus, ProposalTarget
+from app.modules.projects.models import (
+    LinkStatus,
+    PartyState,
+    ProjectStatus,
+    ProposalStatus,
+    ProposalTarget,
+)
 from app.modules.projects.schemas import (
     ChecklistItemOut,
     ChecklistMarkOut,
@@ -21,6 +27,7 @@ from app.modules.projects.schemas import (
     ProjectMerge,
     ProjectOut,
     ProjectPage,
+    ProjectPartyAnswer,
     ProjectPartyCreate,
     ProjectPartyOut,
     ProjectSort,
@@ -125,6 +132,14 @@ async def add_project_party(
         amount=body.amount,
         currency=body.currency,
     )
+
+
+@projects.patch("/project-parties/{project_party_id}")
+async def answer_project_party(
+    project_party_id: uuid.UUID, body: ProjectPartyAnswer, actor: ActorDep, db: SessionDep
+) -> ProjectPartyOut:
+    """The owner's yes or no to a firm code suggested; 409 when it is the owner's already."""
+    return await service.answer_project_party(db, actor, project_party_id, PartyState(body.state))
 
 
 @projects.delete("/project-parties/{project_party_id}", status_code=status.HTTP_204_NO_CONTENT)

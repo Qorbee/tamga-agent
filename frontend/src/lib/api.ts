@@ -137,7 +137,8 @@ export const updateProject = (id: string, body: ProjectUpdate) =>
 export const mergeProject = (id: string, body: Schemas["ProjectMerge"]) =>
   request<Project>(`/projects/${id}/merge`, json("POST", body));
 
-// A project's parties, chosen by the owner: they stand over what was read of the job.
+// A project's parties: the owner's, which stand over what was read of the job, and the firms
+// Tamga suggests from what names them, which the owner answers.
 export type ProjectParty = Schemas["ProjectPartyOut"];
 export type ProjectRole = ProjectParty["role"];
 export const listProjectParties = (projectId: string) =>
@@ -145,6 +146,8 @@ export const listProjectParties = (projectId: string) =>
 export const addProjectParty = (body: Schemas["ProjectPartyCreate"]) =>
   request<ProjectParty>("/project-parties", json("POST", body));
 export const removeProjectParty = (id: string) => request<void>(`/project-parties/${id}`, { method: "DELETE" });
+export const answerProjectParty = (id: string, body: Schemas["ProjectPartyAnswer"]) =>
+  request<ProjectParty>(`/project-parties/${id}`, json("PATCH", body));
 
 // Parties: everyone the company deals with, to choose a project's firms from.
 export type Party = Schemas["PartyOut"];

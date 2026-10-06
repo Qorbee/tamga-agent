@@ -33,12 +33,14 @@ from app.modules.conversations.models import Channel
 from app.modules.documents import service as documents
 from app.modules.documents.schemas import Holder
 from app.modules.parties import service as parties
+from app.modules.parties.models import IdentifierKind, IdentifierSource
 from app.modules.projects import fields, numbering, repository
 from app.modules.projects.models import (
     FieldProposal,
     FieldSource,
     LinkMethod,
     LinkStatus,
+    PartyState,
     Project,
     ProjectLink,
     ProjectNumber,
@@ -52,6 +54,7 @@ from app.modules.projects.schemas import (
     DocumentBrief,
     InvoiceBrief,
     ItemBrief,
+    ItemRef,
     LinkOut,
     LinkPage,
     MessageBrief,
@@ -147,16 +150,11 @@ async def jobs_of(
     return jobs
 
 
-# A firm's name this short ("Ace") starts too many others' to say one firm is another.
-_SHORTEST_FIRM_NAME: Final = 4
-# A word of a firm's name cut to this many letters is still that word ("NAK." for "NAKLİYAT").
-_SHORTEST_ABBREVIATION: Final = 3
-
-
 @dataclass(frozen=True, slots=True)
 class Firms:
-    """The firms a project has in one role: those the owner put on it, else those its job's
-    conversations name, by name only (as a model read them)."""
+    """The firms a project has in one role: those the owner put on it, else those code suggests
+    on two signals that agree, else those its job's conversations name, by name only (as a model
+    read them)."""
 
     party_ids: frozenset[uuid.UUID] = frozenset()
     # Compared as ``parties.name_key`` gives them.
@@ -171,22 +169,7 @@ class Firms:
             return None
         if party_id is not None and party_id in self.party_ids:
             return True
-        key = parties.name_key(name or "").split()
-        return any(_one_firm(key, known.split()) for known in self.names)
-
-
-def _one_firm(a: list[str], b: list[str]) -> bool:
-    short, long = sorted((a, b), key=len)
-    if len("".join(short)) < _SHORTEST_FIRM_NAME or short[0] != long[0]:
-        return False
-    return all(_one_word(x, y) for x, y in zip(short, long, strict=False))
-
-
-def _one_word(a: str, b: str) -> bool:
-    shorter, longer = sorted((a, b), key=len)
-    return shorter == longer or (
-        len(shorter) >= _SHORTEST_ABBREVIATION and longer.startswith(shorter)
-    )
+        return any(parties.same_firm(name or "", known) for known in self.names)
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,17 +191,28 @@ async def firms_of(
     db: AsyncSession, company_id: uuid.UUID, project_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, ProjectFirms]:
     """Each project's client and subcontractors: the owner's where the owner named the role, else
-    the firms its job's conversations name."""
+    those code suggests on two signals that agree, else the firms its job's conversations name
+    that the owner has not refused there."""
     jobs = await jobs_of(db, company_id, project_ids)
     rows = await repository.list_project_parties(db, company_id, project_ids)
     named = await parties.get_parties(db, company_id, list({row.party_id for row in rows}))
 
     def role(project_id: uuid.UUID, role: ProjectRole, read: Sequence[str]) -> Firms:
-        own = {row.party_id for row in rows if row.project_id == project_id and row.role is role}
+        held = [row for row in rows if row.project_id == project_id and row.role is role]
+        own = {row.party_id for row in held if row.state is PartyState.CONFIRMED} or {
+            row.party_id for row in held if _agreed(row)
+        }
         if own:
             names = {parties.name_key(named[each].name) for each in own if each in named}
             return Firms(frozenset(own), frozenset(names) - {""})
-        return Firms(names=frozenset(map(parties.name_key, read)) - {""})
+        # A firm the owner refused in the role is not it by the name a reading gives either.
+        refused = [
+            named[row.party_id].name
+            for row in held
+            if row.state is PartyState.REJECTED and row.party_id in named
+        ]
+        kept = [name for name in read if not any(parties.same_firm(name, no) for no in refused)]
+        return Firms(names=frozenset(map(parties.name_key, kept)) - {""})
 
     firms: dict[uuid.UUID, ProjectFirms] = {}
     for project_id in project_ids:
@@ -228,6 +222,17 @@ async def firms_of(
             subcontractors=role(project_id, ProjectRole.SUBCONTRACTOR, job.subcontractors),
         )
     return firms
+
+
+async def links_mark(db: AsyncSession, company_id: uuid.UUID) -> tuple[int, datetime | None]:
+    """A mark of the company's links that changes when one is added, answered, moved or removed."""
+    return await repository.links_mark(db, company_id)
+
+
+def _agreed(row: ProjectParty) -> bool:
+    """Whether code's suggestion stands for the firm until the owner answers: two kinds of
+    signal name it."""
+    return row.state is PartyState.SUGGESTED and len(set(row.signals)) >= 2
 
 
 class NumberTaken(Conflict):
@@ -407,6 +412,9 @@ async def merge_project(
     return (await _describe(db, actor.company_id, [target]))[0]
 
 
+_WORD: Final = {PartyState.SUGGESTED: 0, PartyState.REJECTED: 1, PartyState.CONFIRMED: 2}
+
+
 async def _move_parties(
     db: AsyncSession, company_id: uuid.UUID, source_id: uuid.UUID, target_id: uuid.UUID
 ) -> None:
@@ -421,7 +429,11 @@ async def _move_parties(
         other = there.get((row.party_id, row.role))
         if other is None:
             row.project_id = target_id
-        elif other.amount is None:
+            continue
+        # The owner's word on either wins over code's suggestion; a yes over a no.
+        if _WORD[row.state] > _WORD[other.state]:
+            other.state, other.signals, other.evidence = row.state, row.signals, row.evidence
+        if other.amount is None:
             other.amount, other.currency = row.amount, row.currency
         elif row.amount is not None and (row.amount, row.currency) != (
             other.amount,
@@ -879,8 +891,11 @@ async def decide_proposal(
 async def list_project_parties(
     db: AsyncSession, actor: Actor, project_ids: Sequence[uuid.UUID]
 ) -> list[ProjectPartyOut]:
+    """The firms on these projects, the owner's and code's suggestions; never one the owner
+    refused."""
     rows = await repository.list_project_parties(db, actor.company_id, project_ids)
-    return await _describe_parties(db, actor.company_id, rows)
+    shown = [row for row in rows if row.state is not PartyState.REJECTED]
+    return await _describe_parties(db, actor.company_id, shown)
 
 
 async def add_project_party(
@@ -900,6 +915,21 @@ async def add_project_party(
         raise NotFound("No such party", field="party_id")
     if (amount is None) != (currency is None):
         raise BadRequest("An amount needs its currency, and a currency its amount", field="amount")
+    # Locked: code's run of suggestions waits rather than dropping a row being made the owner's.
+    held = [
+        row
+        for row in await repository.list_project_parties(
+            db, actor.company_id, [project_id], for_update=True
+        )
+        if row.party_id == party_id and row.role is role
+    ]
+    if held and held[0].state is not PartyState.CONFIRMED:
+        # Code suggested it, or the owner once refused it: it is the owner's now.
+        [found] = held
+        found.layer, found.amount, found.currency = layer, amount, currency
+        await _confirm(db, actor.company_id, found)
+        await db.commit()
+        return (await _describe_parties(db, actor.company_id, [found]))[0]
     row = ProjectParty(
         company_id=actor.company_id,
         project_id=project_id,
@@ -916,8 +946,120 @@ async def add_project_party(
         if violated_constraint(exc) != "project_parties_project_id_party_id_role_key":
             raise
         raise Conflict("This party already has that role on the project") from exc
+    await _confirm(db, actor.company_id, row)
     await db.commit()
     return (await _describe_parties(db, actor.company_id, [row]))[0]
+
+
+async def answer_project_party(
+    db: AsyncSession, actor: Actor, project_party_id: uuid.UUID, state: PartyState
+) -> ProjectPartyOut:
+    """The owner's yes or no to a firm code suggested. A yes to a client sets aside code's other
+    suggestions for the client; a yes to a firm a sender's address named teaches the books that
+    address, so the next mail from it names the firm surely. A no is kept: the firm is never
+    suggested in that role there again."""
+    actor.require(Role.OWNER)
+    # Locked: two tabs answering at once, the second finds it answered.
+    row = await repository.get_project_party(
+        db, actor.company_id, project_party_id, for_update=True
+    )
+    if row is None or row.state is PartyState.REJECTED:
+        raise NotFound("No such party on a project")
+    if row.state is not PartyState.SUGGESTED:
+        raise Conflict("This firm is already the owner's on the project")
+    if state is PartyState.CONFIRMED:
+        await _confirm(db, actor.company_id, row)
+    else:
+        row.state = state
+    await db.commit()
+    return (await _describe_parties(db, actor.company_id, [row]))[0]
+
+
+async def _confirm(db: AsyncSession, company_id: uuid.UUID, row: ProjectParty) -> None:
+    """A firm in a role made the owner's, picked or answered yes: as the client, code's other
+    suggestions for the client give way; named by a sender's address, the books learn it."""
+    row.state = PartyState.CONFIRMED
+    if row.role is ProjectRole.CLIENT:
+        for other in await repository.list_project_parties(db, company_id, [row.project_id]):
+            if other.role is ProjectRole.CLIENT and other.state is PartyState.SUGGESTED:
+                await repository.delete(db, other)
+    if "sender" in row.signals:
+        await _teach_senders(db, company_id, row)
+
+
+async def _teach_senders(db: AsyncSession, company_id: uuid.UUID, row: ProjectParty) -> None:
+    """The addresses of the mails that named the firm, kept as the firm's on the owner's word."""
+    mails = [
+        uuid.UUID(item["item_id"])
+        for item in row.evidence
+        if item.get("item_kind") == ItemKind.MESSAGE and item.get("signal") == "sender"
+    ]
+    senders = await conversations.mail_senders(db, company_id, mails)
+    addresses = {sender.address for sender in senders.values() if sender.inbound}
+    await parties.add_identifiers(
+        db,
+        company_id=company_id,
+        party_id=row.party_id,
+        identifiers=[parties.Identifier(IdentifierKind.EMAIL, each) for each in sorted(addresses)],
+        source=IdentifierSource.OWNER,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Suggestion:
+    """What names a firm in a role on a project: the kinds of signal, and the items each was read
+    from ({"item_kind", "item_id", "signal"})."""
+
+    signals: frozenset[str]
+    evidence: tuple[dict[str, str], ...]
+
+
+async def suggest_parties(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    project_id: uuid.UUID,
+    role: ProjectRole,
+    found: Mapping[uuid.UUID, Suggestion],
+) -> int:
+    """Code's suggestions of the firms in one role on a project, as signals name them now:
+    written where the owner said nothing of the firm in the role, brought up to date, and
+    dropped where nothing names it any more. A project whose client the owner set takes no
+    other. Returns how many were written new. Does not commit."""
+    # Locked: an answer the owner gives meanwhile waits, and is never deleted under them.
+    rows = [
+        row
+        for row in await repository.list_project_parties(
+            db, company_id, [project_id], for_update=True
+        )
+        if row.role is role
+    ]
+    # By firm: the owner may have answered for another card of one the signals name.
+    firm = await parties.one_per_firm(db, company_id, [row.party_id for row in rows])
+    answered = {firm[row.party_id] for row in rows if row.state is not PartyState.SUGGESTED}
+    if role is ProjectRole.CLIENT and any(row.state is PartyState.CONFIRMED for row in rows):
+        found = {}
+    current = {row.party_id: row for row in rows if row.state is PartyState.SUGGESTED}
+    for party_id, row in current.items():
+        if party_id not in found or firm[party_id] in answered:
+            await repository.delete(db, row)
+    written = 0
+    for party_id, suggestion in found.items():
+        if party_id in answered:
+            continue
+        row = current.get(party_id) or ProjectParty(
+            company_id=company_id,
+            project_id=project_id,
+            party_id=party_id,
+            role=role,
+            layer=0 if role is ProjectRole.CLIENT else 1,
+            state=PartyState.SUGGESTED,
+        )
+        if party_id not in current:
+            await repository.add(db, row)
+            written += 1
+        row.signals, row.evidence = sorted(suggestion.signals), list(suggestion.evidence)
+    await db.flush()
+    return written
 
 
 async def remove_project_party(db: AsyncSession, actor: Actor, project_party_id: uuid.UUID) -> None:
@@ -943,6 +1085,12 @@ async def _describe_parties(
             layer=row.layer,
             amount=row.amount,
             currency=row.currency,
+            state=row.state.value,
+            signals=row.signals,
+            evidence=[
+                ItemRef(item_kind=ItemKind(item["item_kind"]), item_id=uuid.UUID(item["item_id"]))
+                for item in row.evidence
+            ],
         )
         for row in rows
     ]
