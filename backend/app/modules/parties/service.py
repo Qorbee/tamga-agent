@@ -10,7 +10,7 @@ and never commit.
 import re
 import unicodedata
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -264,6 +264,8 @@ def name_key(name: str) -> str:
 _SHORTEST_FIRM_NAME: Final = 4
 # A word of a firm's name cut to this many letters is still that word ("NAK." for "NAKLİYAT").
 _SHORTEST_ABBREVIATION: Final = 3
+# A first word this short (an article, initials) does not tell two firms apart on its own.
+_SHORT_FIRST_WORD: Final = 3
 
 
 def same_firm(a: str, b: str) -> bool:
@@ -274,6 +276,17 @@ def same_firm(a: str, b: str) -> bool:
     if not short or len("".join(short)) < _SHORTEST_FIRM_NAME or short[0] != long[0]:
         return False
     return all(_one_word(x, y) for x, y in zip(short, long, strict=False))
+
+
+def named_alike(a: str, b: str) -> bool:
+    """Whether two names one identifier is given can be one firm's, however each is written out
+    ("ÖRNEKOĞLU ULUS.NAK." and "ÖRNEKOĞLU ULUSLAR ARASI NAKLİYAT"): their first words are one,
+    and their second ones too where the first is too short to tell ("THE", "HK"). Looser than
+    ``same_firm``, as it only checks that a shared number is not two firms' stand-in."""
+    x, y = name_key(a).split(), name_key(b).split()
+    if not x or not y or x[0] != y[0]:
+        return False
+    return len(x[0]) > _SHORT_FIRST_WORD or (len(x) > 1 and len(y) > 1 and _one_word(x[1], y[1]))
 
 
 def _one_word(a: str, b: str) -> bool:
@@ -296,18 +309,38 @@ async def one_per_firm(
     db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, uuid.UUID]:
     """For each of these parties, the one that stands for its firm: cards in the books that share
-    a tax id are one firm, kept under the oldest of them. A party sharing none stands for itself."""
+    a tax id and are named alike (``named_alike``) are one firm, kept under the oldest of them. A
+    tax id alone says nothing: books give one stand-in number to every firm that has none of its
+    own (a foreign firm, a person). A party sharing none stands for itself."""
     by_tax: dict[str, set[uuid.UUID]] = {}
     for party_id, tax_id in await repository.sharing_tax_ids(db, company_id, party_ids):
         by_tax.setdefault(tax_id, set()).add(party_id)
+    cards = list({card for shared in by_tax.values() for card in shared})
+    names = {party.id: party.name for party in await repository.get_many(db, company_id, cards)}
     firm = {party_id: party_id for party_id in party_ids}
-    for cards in by_tax.values():
-        # uuid7 ids sort by when they were made.
-        oldest = min(cards)
-        for card in cards:
-            if card in firm:
+    for shared in by_tax.values():
+        for group in _alike(sorted(shared), names):
+            # uuid7 ids sort by when they were made.
+            oldest = min(group)
+            for card in group & firm.keys():
                 firm[card] = min(firm[card], oldest)
     return firm
+
+
+def _alike(cards: Sequence[uuid.UUID], names: Mapping[uuid.UUID, str]) -> list[set[uuid.UUID]]:
+    """The cards in groups, each card with every card named alike to it or to one already in its
+    group ("HK ABCD", "HK ABC" and "HK ABCE" are one), so every card of a group stands for one
+    firm."""
+    groups: list[set[uuid.UUID]] = []
+    for card in cards:
+        touching = [
+            group
+            for group in groups
+            if any(named_alike(names.get(card, ""), names.get(other, "")) for other in group)
+        ]
+        merged = {card}.union(*touching)
+        groups = [group for group in groups if group not in touching] + [merged]
+    return groups
 
 
 async def writing_from(db: AsyncSession, company_id: uuid.UUID, address: str) -> list[Party]:

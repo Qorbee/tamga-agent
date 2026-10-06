@@ -259,7 +259,9 @@ async def _store_invoice(
     read: bool = True,
 ) -> bool:
     """Stores a record and makes its facts what it says now. Returns whether its facts changed."""
-    party_id = await _party_id(db, company_id, source, record.party_source_id, record.party_tax_id)
+    party_id = await _party_id(
+        db, company_id, source, record.party_source_id, record.party_tax_id, record.party_name
+    )
     invoice_id = await repository.upsert_invoice(
         db,
         {
@@ -333,7 +335,9 @@ async def placeable_invoices(db: AsyncSession, company_id: uuid.UUID) -> list[In
 async def _store_dispatch(
     db: AsyncSession, company_id: uuid.UUID, source: str, record: DispatchRecord
 ) -> None:
-    party_id = await _party_id(db, company_id, source, record.party_source_id, record.party_tax_id)
+    party_id = await _party_id(
+        db, company_id, source, record.party_source_id, record.party_tax_id, record.party_name
+    )
     await repository.upsert_dispatch(
         db,
         {
@@ -356,9 +360,12 @@ async def _party_id(
     source: str,
     card_id: str | None,
     tax_id: str | None,
+    name: str | None,
 ) -> uuid.UUID | None:
-    """The card's party, else the one confirmed party with this tax id. Never a guess: two
-    confirmed matches, or only unconfirmed ones, leave the record without a party."""
+    """The card's party, else the one confirmed party with this tax id named like the record's
+    firm. Never a guess: two confirmed matches, only unconfirmed ones, or another firm's name on
+    the one match (books give one stand-in number to every firm with none of its own) leave the
+    record without a party."""
     if card_id is not None:
         party = await parties.get_synced_party(db, company_id, source, card_id)
         if party is not None:
@@ -368,7 +375,7 @@ async def _party_id(
             db, company_id=company_id, identifier=Identifier(IdentifierKind.TAX_ID, tax_id)
         )
         confirmed = [match for match in matches if match.confirmed]
-        if len(confirmed) == 1:
+        if len(confirmed) == 1 and parties.named_alike(name or "", confirmed[0].party.name):
             return confirmed[0].party.id
     return None
 

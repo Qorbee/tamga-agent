@@ -260,3 +260,35 @@ async def test_a_bill_the_owner_puts_on_a_project_names_its_firm_on_the_next_run
 
     [party] = await on(client, project_id)
     assert (party["party_name"], party["signals"]) == ("ANVIL AG", ["invoice"])
+
+
+async def test_cards_sharing_a_stand_in_tax_id_are_one_firm_only_where_named_alike(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id = await guest_client(client)
+    stand_in = Identifier(IdentifierKind.TAX_ID, "9999999999")
+    # Books give one stand-in number to every foreign firm: the oldest card is another firm.
+    await card(company_id, "Anvil AG", stand_in)
+    stone = await card(company_id, "STONE GMBH", ADA, stand_in)
+    project_id = await placed(client, model, company_id, mail("<order@x>"))
+
+    [party] = await on(client, project_id)
+
+    assert (party["party_id"], party["party_name"]) == (str(stone), "STONE GMBH")
+
+
+async def test_cards_named_alike_through_another_card_are_one_firm(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    shared = Identifier(IdentifierKind.TAX_ID, "9999999999")
+    # "HK ABCD" and "HK ABCE" differ, but "HK ABC" may be short for either: one firm, three cards.
+    first = await card(company_id, "HK ABCD", shared)
+    middle = await card(company_id, "HK ABC", shared)
+    last = await card(company_id, "HK ABCE", shared)
+
+    async with open_session() as db:
+        firm = await parties.one_per_firm(db, company_id, [first, middle, last])
+
+    assert firm == {first: first, middle: first, last: first}
