@@ -1207,6 +1207,26 @@ export interface paths {
         patch: operations["shipments.update_shipment"];
         trace?: never;
     };
+    "/shipments/{shipment_id}/hitch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hitch Shipment
+         * @description Makes another truck's lone plate this truck's trailer; 409 when either changed since.
+         */
+        post: operations["shipments.hitch_shipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shipments/{shipment_id}/locations": {
         parameters: {
             query?: never;
@@ -1219,6 +1239,46 @@ export interface paths {
         put?: never;
         /** Add Location */
         post: operations["shipments.add_location"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shipments/{shipment_id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Split Shipment
+         * @description Makes the truck's trailer a truck of its own; returns the new truck.
+         */
+        post: operations["shipments.split_shipment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shipments/{shipment_id}/swap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Swap Plates
+         * @description Swaps the truck's plates as they stand; 409 when it has not both.
+         */
+        post: operations["shipments.swap_plates"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2768,6 +2828,25 @@ export interface components {
             total: number;
         };
         /**
+         * PlateSource
+         * @description Where code read one of a truck's plates: the item, and its name as a list shows it.
+         */
+        PlateSource: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "truck_plate" | "trailer_plate";
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            item_kind: components["schemas"]["ItemKind"];
+            /** Label */
+            label: string | null;
+        };
+        /**
          * PolicyChange
          * @description A new version of the company's policy with only these fields changed from the one in force
          *     when it is written: a screen that shows one setting never writes back another's stale value.
@@ -3159,6 +3238,16 @@ export interface components {
             /** Truck Plate */
             truck_plate?: string | null;
         };
+        /** ShipmentHitch */
+        ShipmentHitch: {
+            /**
+             * From Shipment Id
+             * Format: uuid
+             */
+            from_shipment_id: string;
+            /** Plate */
+            plate: string;
+        };
         /** ShipmentOut */
         ShipmentOut: {
             /**
@@ -3194,6 +3283,11 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["PlateSource"][];
             state: components["schemas"]["ShipmentState"];
             status: components["schemas"]["ShipmentStatus"];
             /** Subcontractor Id */
@@ -5950,6 +6044,41 @@ export interface operations {
             };
         };
     };
+    "shipments.hitch_shipment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shipment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShipmentHitch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShipmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "shipments.list_locations": {
         parameters: {
             query?: {
@@ -6006,6 +6135,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "shipments.split_shipment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shipment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShipmentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "shipments.swap_plates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shipment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShipmentOut"];
                 };
             };
             /** @description Validation Error */

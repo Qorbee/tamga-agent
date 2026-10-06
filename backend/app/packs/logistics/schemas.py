@@ -11,6 +11,7 @@ from app.packs.logistics.models import (
     ShipmentState,
     ShipmentStatus,
 )
+from app.platform.items import ItemKind
 
 
 class LocationOut(BaseModel):
@@ -69,6 +70,23 @@ class ShipmentUpdate(ShipmentFields):
     state: Literal["confirmed", "rejected"] | None = None
 
 
+class ShipmentHitch(BaseModel):
+    # The truck whose lone plate becomes this one's trailer, and that plate as the board showed
+    # it: one changed since is refused.
+    from_shipment_id: uuid.UUID
+    plate: str = Field(min_length=1, max_length=20)
+
+
+class PlateSource(BaseModel):
+    """Where code read one of a truck's plates: the item, and its name as a list shows it."""
+
+    field: Literal["truck_plate", "trailer_plate"]
+    item_kind: ItemKind
+    item_id: uuid.UUID
+    # A file's name, a mail's subject or its writer, a bill's number.
+    label: str | None
+
+
 class ShipmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -91,4 +109,6 @@ class ShipmentOut(BaseModel):
     field_sources: dict[str, FieldSource]
     # The newest reported position, if any.
     last_location: LocationOut | None
+    # Where code read the plates it wrote; none for a plate the owner typed.
+    sources: list[PlateSource] = []
     created_at: datetime

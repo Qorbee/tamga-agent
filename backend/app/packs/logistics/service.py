@@ -10,12 +10,14 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import date
 from enum import Enum
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.books import service as books
 from app.modules.companies import service as companies
+from app.modules.conversations import service as conversations
+from app.modules.documents import service as documents
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.modules.parties import service as parties
@@ -34,6 +36,7 @@ from app.packs.logistics.schemas import (
     LocationCreate,
     LocationOut,
     LocationPage,
+    PlateSource,
     ShipmentFields,
     ShipmentOut,
 )
@@ -45,7 +48,10 @@ from app.platform.pagination import PageParams
 
 _EDITORS: Final = (Role.OWNER, Role.OPS)
 _FIELDS: Final = frozenset(ShipmentFields.model_fields)
-_PLATES: Final = ("truck_plate", "trailer_plate")
+_PLATES: Final[tuple[Literal["truck_plate", "trailer_plate"], ...]] = (
+    "truck_plate",
+    "trailer_plate",
+)
 
 
 async def refuse_merge(
@@ -189,6 +195,82 @@ async def update_shipment(
     await _write(db, shipment, fields, FieldSource.OWNER, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [shipment]))[0]
+
+
+async def split_shipment(db: AsyncSession, actor: Actor, shipment_id: uuid.UUID) -> ShipmentOut:
+    """The owner's word that a truck's trailer is a truck of its own: it leaves the truck and
+    becomes another of the job, with the papers it was read from, in one step."""
+    actor.require(*_EDITORS)
+    truck = await _shipment(db, actor.company_id, shipment_id)
+    plate = truck.trailer_plate
+    if truck.state is ShipmentState.REJECTED or not truck.truck_plate or plate is None:
+        raise Conflict("This truck has no trailer to make a truck of")
+    other = await add_shipment(db, company_id=actor.company_id, project_id=truck.project_id)
+    other.evidence = await _read_as(db, actor.company_id, truck.evidence, plate)
+    await _write(db, other, {"truck_plate": plate}, FieldSource.OWNER, evidence=())
+    await _write(db, truck, {"trailer_plate": None}, FieldSource.OWNER, evidence=())
+    await db.commit()
+    return (await _describe(db, actor.company_id, [other]))[0]
+
+
+async def swap_plates(db: AsyncSession, actor: Actor, shipment_id: uuid.UUID) -> ShipmentOut:
+    """The truck's two plates the other way round, as they stand when it is locked: a plate
+    another tab wrote meanwhile is swapped, never written back over."""
+    actor.require(*_EDITORS)
+    truck = await _shipment(db, actor.company_id, shipment_id)
+    if not truck.truck_plate or not truck.trailer_plate:
+        raise Conflict("This truck has no trailer to swap with")
+    swapped = {"truck_plate": truck.trailer_plate, "trailer_plate": truck.truck_plate}
+    await _write(db, truck, swapped, FieldSource.OWNER, evidence=())
+    await db.commit()
+    return (await _describe(db, actor.company_id, [truck]))[0]
+
+
+async def hitch_shipment(
+    db: AsyncSession, actor: Actor, shipment_id: uuid.UUID, lone_id: uuid.UUID, shown: str
+) -> ShipmentOut:
+    """The owner's word that a lone plate on the job is another truck's trailer: the truck takes
+    it, and the row it stood on is no truck of the job. Refused when either changed since the
+    board showed them: the truck took a trailer, the plate is another than ``shown`` or got a
+    trailer, or one was rejected."""
+    actor.require(Role.OWNER)
+    if lone_id == shipment_id:
+        raise BadRequest("A truck cannot pull itself", field="from_shipment_id")
+    # Locked in the order of their ids: two such steps on one pair never wait on each other.
+    first, second = sorted((shipment_id, lone_id))
+    locked = {
+        first: await _shipment(db, actor.company_id, first),
+        second: await _shipment(db, actor.company_id, second),
+    }
+    truck, lone = locked[shipment_id], locked[lone_id]
+    plate = lone.truck_plate
+    if (
+        truck.project_id != lone.project_id
+        or ShipmentState.REJECTED in (truck.state, lone.state)
+        or not truck.truck_plate
+        or truck.trailer_plate is not None
+        or plate is None
+        or extractors.reference(plate) != extractors.reference(shown)
+        or lone.trailer_plate is not None
+    ):
+        raise Conflict("These trucks changed since they were shown")
+    truck.evidence = sorted(
+        {*truck.evidence, *await _read_as(db, actor.company_id, lone.evidence, plate)}
+    )
+    await _write(db, truck, {"trailer_plate": plate}, FieldSource.OWNER, evidence=())
+    await projects.take_off_trucks(db, actor.company_id, [lone.id])
+    lone.state = ShipmentState.REJECTED
+    await db.commit()
+    return (await _describe(db, actor.company_id, [truck]))[0]
+
+
+async def _read_as(
+    db: AsyncSession, company_id: uuid.UUID, evidence: Sequence[uuid.UUID], plate: str
+) -> list[uuid.UUID]:
+    """The facts among a truck's evidence that read this plate: where it was read goes with it."""
+    found = await facts.get_facts(db, company_id, list(evidence))
+    wanted = extractors.reference(plate)
+    return sorted(fact_id for fact_id, fact in found.items() if fact.normalised == wanted)
 
 
 async def propose_shipment_fields(
@@ -342,6 +424,7 @@ async def _describe(
         location.shipment_id: location
         for location in await repository.last_locations(db, company_id, [s.id for s in shipments])
     }
+    sources = await _plate_sources(db, company_id, shipments)
     return [
         ShipmentOut(
             id=s.id,
@@ -360,10 +443,70 @@ async def _describe(
             evidence=s.evidence,
             field_sources={k: FieldSource(v) for k, v in s.field_sources.items()},
             last_location=LocationOut.model_validate(last[s.id]) if s.id in last else None,
+            sources=sources.get(s.id, []),
             created_at=s.created_at,
         )
         for s in shipments
     ]
+
+
+async def _plate_sources(
+    db: AsyncSession, company_id: uuid.UUID, shipments: Sequence[Shipment]
+) -> dict[uuid.UUID, list[PlateSource]]:
+    """For each plate code wrote on a truck, the item among its evidence that names it."""
+    found = await facts.get_facts(
+        db, company_id, sorted({fact_id for s in shipments for fact_id in s.evidence})
+    )
+    read: dict[uuid.UUID, list[tuple[Literal["truck_plate", "trailer_plate"], Any]]] = {}
+    for s in shipments:
+        for field in _PLATES:
+            # An owner's plate shows a paper only where the truck's evidence reads that very
+            # plate: one the owner moved (a split, a trailer) keeps where it was read.
+            plate = getattr(s, field)
+            if not plate:
+                continue
+            fact = next(
+                (
+                    found[fact_id]
+                    for fact_id in s.evidence
+                    if fact_id in found and found[fact_id].normalised == extractors.reference(plate)
+                ),
+                None,
+            )
+            if fact is not None:
+                read.setdefault(s.id, []).append((field, fact))
+    items = [fact for pairs in read.values() for _, fact in pairs]
+    labels = await _labels(db, company_id, items)
+    return {
+        truck_id: [
+            PlateSource(
+                field=field,
+                item_kind=fact.item_kind,
+                item_id=fact.item_id,
+                label=labels.get((fact.item_kind, fact.item_id)),
+            )
+            for field, fact in pairs
+        ]
+        for truck_id, pairs in read.items()
+    }
+
+
+async def _labels(
+    db: AsyncSession, company_id: uuid.UUID, found: Sequence[Any]
+) -> dict[tuple[ItemKind, uuid.UUID], str | None]:
+    """Each item's name as a list shows it: a file's name, a mail's subject or writer, a bill's
+    number."""
+    ids: dict[ItemKind, list[uuid.UUID]] = {}
+    for fact in found:
+        ids.setdefault(fact.item_kind, []).append(fact.item_id)
+    labels: dict[tuple[ItemKind, uuid.UUID], str | None] = {}
+    files = await documents.filenames(db, company_id, ids.get(ItemKind.DOCUMENT, []))
+    labels |= {(ItemKind.DOCUMENT, i): name for i, name in files.items()}
+    mails = await conversations.mail_labels(db, company_id, ids.get(ItemKind.MESSAGE, []))
+    labels |= {(ItemKind.MESSAGE, i): mail.subject or mail.writer for i, mail in mails.items()}
+    numbers = await books.invoice_numbers(db, company_id, ids.get(ItemKind.INVOICE, []))
+    labels |= {(ItemKind.INVOICE, i): number for i, number in numbers.items()}
+    return labels
 
 
 async def proofs(

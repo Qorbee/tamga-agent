@@ -906,6 +906,29 @@ async def message_summaries(
 
 
 @dataclass(frozen=True, slots=True)
+class MailLabel:
+    """A mail as a line naming where something was read shows it."""
+
+    subject: str | None
+    # The writer's name, else their address.
+    writer: str | None
+    sent_at: datetime
+
+
+async def mail_labels(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, MailLabel]:
+    """These mails' subjects, writers and days alone, never their text."""
+    if not ids:
+        return {}
+    rows = await repository.mail_labels(db, company_id, ids)
+    return {
+        mail_id: MailLabel(subject, name or sender, sent_at)
+        for mail_id, subject, name, sender, sent_at in rows
+    }
+
+
+@dataclass(frozen=True, slots=True)
 class Carrier:
     """The first mail that brought a file."""
 

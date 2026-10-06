@@ -10,6 +10,7 @@ from app.packs.logistics.schemas import (
     LocationOut,
     LocationPage,
     ShipmentCreate,
+    ShipmentHitch,
     ShipmentOut,
     ShipmentUpdate,
 )
@@ -47,6 +48,26 @@ async def update_shipment(
     return await service.update_shipment(
         db, actor, shipment_id, body.model_dump(exclude_unset=True)
     )
+
+
+@shipments.post("/shipments/{shipment_id}/split", status_code=status.HTTP_201_CREATED)
+async def split_shipment(shipment_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> ShipmentOut:
+    """Makes the truck's trailer a truck of its own; returns the new truck."""
+    return await service.split_shipment(db, actor, shipment_id)
+
+
+@shipments.post("/shipments/{shipment_id}/hitch")
+async def hitch_shipment(
+    shipment_id: uuid.UUID, body: ShipmentHitch, actor: ActorDep, db: SessionDep
+) -> ShipmentOut:
+    """Makes another truck's lone plate this truck's trailer; 409 when either changed since."""
+    return await service.hitch_shipment(db, actor, shipment_id, body.from_shipment_id, body.plate)
+
+
+@shipments.post("/shipments/{shipment_id}/swap")
+async def swap_plates(shipment_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> ShipmentOut:
+    """Swaps the truck's plates as they stand; 409 when it has not both."""
+    return await service.swap_plates(db, actor, shipment_id)
 
 
 @shipments.get("/shipments/{shipment_id}/locations")

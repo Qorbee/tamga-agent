@@ -157,9 +157,19 @@ export const getParty = (id: string) => request<Party>(`/parties/${id}`);
 export type Shipment = Schemas["ShipmentOut"];
 export const listShipments = (projectIds: readonly string[]) =>
   request<Shipment[]>(`/shipments${query({ project_id: projectIds })}`);
+/** A truck the owner adds: theirs, confirmed, with the plates typed. */
+export const createShipment = (body: Schemas["ShipmentCreate"]) =>
+  request<Shipment>("/shipments", json("POST", body));
 /** The owner's edit of a truck, and their yes or no to one Tamga proposed (`state`). */
 export const updateShipment = (id: string, body: Schemas["ShipmentUpdate"]) =>
   request<Shipment>(`/shipments/${id}`, json("PATCH", body));
+/** The truck's trailer made a truck of its own, in one step; returns the new truck. */
+export const splitShipment = (id: string) => request<Shipment>(`/shipments/${id}/split`, { method: "POST" });
+/** The truck's plates the other way round, as they stand on the server. */
+export const swapShipment = (id: string) => request<Shipment>(`/shipments/${id}/swap`, { method: "POST" });
+/** Another truck's lone plate made this truck's trailer, in one step; 409 when either changed. */
+export const hitchShipment = (id: string, body: Schemas["ShipmentHitch"]) =>
+  request<Shipment>(`/shipments/${id}/hitch`, json("POST", body));
 
 // What a job and each of its trucks still lack, and the owner's marks over it.
 export type ChecklistItem = Schemas["ChecklistItemOut"];

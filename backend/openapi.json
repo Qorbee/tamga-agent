@@ -4384,6 +4384,46 @@
         "title": "PlacementPage",
         "type": "object"
       },
+      "PlateSource": {
+        "description": "Where code read one of a truck's plates: the item, and its name as a list shows it.",
+        "properties": {
+          "field": {
+            "enum": [
+              "truck_plate",
+              "trailer_plate"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "item_id": {
+            "format": "uuid",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "item_kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "required": [
+          "field",
+          "item_kind",
+          "item_id",
+          "label"
+        ],
+        "title": "PlateSource",
+        "type": "object"
+      },
       "PolicyChange": {
         "description": "A new version of the company's policy with only these fields changed from the one in force\nwhen it is written: a screen that shows one setting never writes back another's stale value.",
         "properties": {
@@ -5539,6 +5579,27 @@
         "title": "ShipmentCreate",
         "type": "object"
       },
+      "ShipmentHitch": {
+        "properties": {
+          "from_shipment_id": {
+            "format": "uuid",
+            "title": "From Shipment Id",
+            "type": "string"
+          },
+          "plate": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Plate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_shipment_id",
+          "plate"
+        ],
+        "title": "ShipmentHitch",
+        "type": "object"
+      },
       "ShipmentOut": {
         "properties": {
           "created_at": {
@@ -5648,6 +5709,14 @@
             "format": "uuid",
             "title": "Project Id",
             "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlateSource"
+            },
+            "title": "Sources",
+            "type": "array"
           },
           "state": {
             "$ref": "#/components/schemas/ShipmentState"
@@ -11069,6 +11138,65 @@
         ]
       }
     },
+    "/shipments/{shipment_id}/hitch": {
+      "post": {
+        "description": "Makes another truck's lone plate this truck's trailer; 409 when either changed since.",
+        "operationId": "shipments.hitch_shipment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shipment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Shipment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentHitch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Hitch Shipment",
+        "tags": [
+          "shipments"
+        ]
+      }
+    },
     "/shipments/{shipment_id}/locations": {
       "get": {
         "operationId": "shipments.list_locations",
@@ -11191,6 +11319,104 @@
           }
         ],
         "summary": "Add Location",
+        "tags": [
+          "shipments"
+        ]
+      }
+    },
+    "/shipments/{shipment_id}/split": {
+      "post": {
+        "description": "Makes the truck's trailer a truck of its own; returns the new truck.",
+        "operationId": "shipments.split_shipment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shipment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Shipment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Split Shipment",
+        "tags": [
+          "shipments"
+        ]
+      }
+    },
+    "/shipments/{shipment_id}/swap": {
+      "post": {
+        "description": "Swaps the truck's plates as they stand; 409 when it has not both.",
+        "operationId": "shipments.swap_plates",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shipment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Shipment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShipmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Swap Plates",
         "tags": [
           "shipments"
         ]

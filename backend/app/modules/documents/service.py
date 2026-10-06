@@ -1466,6 +1466,13 @@ async def get_documents(
     return {row.id: row for row in await repository.get_many(db, company_id, ids)}
 
 
+async def filenames(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """These files' names alone, for a list naming where something was read."""
+    return await repository.filenames(db, company_id, ids) if ids else {}
+
+
 async def document_outs(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, DocumentOut]:

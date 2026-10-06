@@ -75,6 +75,17 @@ async def get_many(
     return rows.all()
 
 
+async def filenames(
+    db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    rows = await db.execute(
+        select(Document.id, Document.filename).where(
+            Document.company_id == company_id, Document.id.in_(ids)
+        )
+    )
+    return {document_id: filename for document_id, filename in rows.tuples().all()}
+
+
 async def type_if_untyped(
     db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, key: str, source: TypeSource
 ) -> bool:

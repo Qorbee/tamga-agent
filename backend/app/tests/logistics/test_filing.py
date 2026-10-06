@@ -81,6 +81,11 @@ async def test_a_truck_paper_proposes_its_truck_and_is_placed_on_it(
     assert truck["state"] == "proposed" and truck["evidence"]
     assert {truck["truck_plate"], truck["trailer_plate"]} == {"AB 123 CD", "XY 987 ZW"}
     assert truck["field_sources"]["truck_plate"] == "extraction"
+    # Each plate says where it was read.
+    assert {(s["field"], s["item_kind"], s["label"]) for s in truck["sources"]} == {
+        ("truck_plate", "document", "CMR 4471.pdf"),
+        ("trailer_plate", "document", "CMR 4471.pdf"),
+    }
     [cmr] = (
         await client.get(
             "/project-links", params={"project_id": project_id, "item_kind": "document"}
@@ -681,3 +686,59 @@ async def test_rechecking_removes_codes_bills_by_plate_once_the_firm_differs(
     assert removed == 1
     kept = (await client.get("/project-links", params={"item_kind": "invoice"})).json()["items"]
     assert [link["id"] for link in kept] == [links[0]["id"]]
+
+
+async def test_a_trailer_split_off_and_hitched_back_keeps_where_it_was_read(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model, attach={"CMR 4471.pdf": CMR})
+    company_id, project_id = uuid.UUID(placement["company_id"]), placement["project_id"]
+    await documents.read_pending()
+    await filed(company_id)
+    [truck] = await trucks_of(client, project_id)
+
+    split = await client.post(f"/shipments/{truck['id']}/split")
+
+    assert split.status_code == 201
+    lone = split.json()
+    assert (lone["truck_plate"], lone["trailer_plate"]) == ("XY 987 ZW", None)
+    assert [(s["field"], s["label"]) for s in lone["sources"]] == [("truck_plate", "CMR 4471.pdf")]
+    assert plates_of(await trucks_of(client, project_id)) == [
+        ("AB 123 CD", None),
+        ("XY 987 ZW", None),
+    ]
+    # Split again from a board that still shows the trailer: nothing to split.
+    assert (await client.post(f"/shipments/{truck['id']}/split")).status_code == 409
+
+    # Shown a plate the row no longer has, the step is refused.
+    stale = await client.post(
+        f"/shipments/{truck['id']}/hitch",
+        json={"from_shipment_id": lone["id"], "plate": "XY 987 ZZ"},
+    )
+    assert stale.status_code == 409
+    hitched = await client.post(
+        f"/shipments/{truck['id']}/hitch",
+        json={"from_shipment_id": lone["id"], "plate": "XY 987 ZW"},
+    )
+
+    assert hitched.status_code == 200
+    assert (hitched.json()["truck_plate"], hitched.json()["trailer_plate"]) == (
+        "AB 123 CD",
+        "XY 987 ZW",
+    )
+    assert {(s["field"], s["label"]) for s in hitched.json()["sources"]} == {
+        ("truck_plate", "CMR 4471.pdf"),
+        ("trailer_plate", "CMR 4471.pdf"),
+    }
+    states = {t["id"]: t["state"] for t in await trucks_of(client, project_id)}
+    assert states[lone["id"]] == "rejected"
+    # The same step from a stale tab: the truck has its trailer now, and the plate is no truck.
+    again = await client.post(
+        f"/shipments/{truck['id']}/hitch",
+        json={"from_shipment_id": lone["id"], "plate": "XY 987 ZW"},
+    )
+    assert again.status_code == 409
+    # Swapped as they stand.
+    swapped = (await client.post(f"/shipments/{truck['id']}/swap")).json()
+    assert (swapped["truck_plate"], swapped["trailer_plate"]) == ("XY 987 ZW", "AB 123 CD")
