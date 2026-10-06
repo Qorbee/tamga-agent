@@ -14,6 +14,7 @@ from app.modules.facts.extractors import REGEX, after_label, is_quantity, is_ref
 from app.modules.facts.service import NewFact
 
 # A plate's role, where its label says it: the truck that pulls, or the trailer it pulls.
+PLATE: Final = "plate"
 TRUCK_ROLE: Final = "truck_plate"
 TRAILER_ROLE: Final = "trailer_plate"
 _CMR: Final = after_label(r"\bCMR")
@@ -46,7 +47,7 @@ def labelled_plates(text: str) -> Iterable[NewFact]:
         compact = reference(plate)
         # A plate has letters and digits; "Truck: 2" or "Trailer: TBC" are not plates.
         if 4 <= len(compact) <= 10 and any(c.isalpha() for c in compact) and is_reference(plate):
-            yield NewFact("plate", plate, compact, 0.75, REGEX)
+            yield NewFact(PLATE, plate, compact, 0.75, REGEX)
             label = match.group(0)[: match.start(1) - match.start(0)].lower()
             if "trailer" in label:
                 yield NewFact(TRAILER_ROLE, plate, compact, 0.75, REGEX)

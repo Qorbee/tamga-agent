@@ -369,6 +369,7 @@ function AddToProject({ messageIds }: { messageIds: string[] }) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["project-links"] });
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["plates"] });
     },
   });
 

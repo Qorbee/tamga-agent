@@ -386,15 +386,15 @@ async def get_invoices(
     return rows.all()
 
 
-async def invoice_numbers(
+async def invoice_labels(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, str | None]:
+) -> dict[uuid.UUID, tuple[str | None, date | None]]:
     rows = await db.execute(
-        select(Invoice.id, Invoice.number).where(
+        select(Invoice.id, Invoice.number, Invoice.issue_date).where(
             Invoice.company_id == company_id, Invoice.id.in_(ids)
         )
     )
-    return {invoice_id: number for invoice_id, number in rows.tuples().all()}
+    return {invoice_id: (number, issued) for invoice_id, number, issued in rows.tuples().all()}
 
 
 async def invoices_named(

@@ -187,7 +187,7 @@ leave it empty otherwise, never a guess:
 - subcontractor: the carrier the company gave the job on to.
 - consignee: the firm that receives the goods, which is often not the client.
 - origin, destination: where it is loaded and where it is delivered, as the town and the \
-country ("Bukovik, Serbia"), never a street address.
+country ("Novi Sad, Serbia"), never a street address.
 - cargo: the load in a few words. trucks: how many trucks the job is.
 - starts_on: the first day of loading. ends_on: the last day of delivery. A day the mail gives \
 without a year is in the year of that mail.

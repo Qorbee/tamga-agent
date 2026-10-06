@@ -930,6 +930,27 @@ export interface paths {
         patch: operations["placements.decide_placement"];
         trace?: never;
     };
+    "/plates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Plates
+         * @description The plates these projects' mail, papers and bills name, with where each was read and the
+         *     truck it is, if any.
+         */
+        get: operations["shipments.list_plates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/policy": {
         parameters: {
             query?: never;
@@ -1218,7 +1239,8 @@ export interface paths {
         put?: never;
         /**
          * Hitch Shipment
-         * @description Makes another truck's lone plate this truck's trailer; 409 when either changed since.
+         * @description Makes another truck's lone plate, or a plate seen on the job, this truck's trailer; 409
+         *     when a truck or the plate changed since it was shown.
          */
         post: operations["shipments.hitch_shipment"];
         delete?: never;
@@ -2272,6 +2294,24 @@ export interface components {
          */
         ItemKind: "message" | "document" | "invoice" | "location";
         /**
+         * ItemNamed
+         * @description An item something was read from, as a line naming it shows it.
+         */
+        ItemNamed: {
+            /** At */
+            at?: string | null;
+            /**
+             * Item Id
+             * Format: uuid
+             */
+            item_id: string;
+            item_kind: components["schemas"]["ItemKind"];
+            /** Label */
+            label: string | null;
+            /** Writer */
+            writer?: string | null;
+        };
+        /**
          * JobReading
          * @description What a model read in a conversation: a proposal for the owner, never a fact.
          */
@@ -2828,10 +2868,34 @@ export interface components {
             total: number;
         };
         /**
+         * PlateSeen
+         * @description A plate a project's mail, papers or bills name, with each item naming it, oldest first,
+         *     and the truck of the project it is, if any (a misread of its plate counts).
+         */
+        PlateSeen: {
+            /** Items */
+            items: components["schemas"]["ItemNamed"][];
+            /** Plate */
+            plate: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Rejected */
+            rejected: boolean;
+            /** Role */
+            role: ("truck" | "trailer") | null;
+            /** Shipment Id */
+            shipment_id: string | null;
+        };
+        /**
          * PlateSource
-         * @description Where code read one of a truck's plates: the item, and its name as a list shows it.
+         * @description Where code read one of a truck's plates.
          */
         PlateSource: {
+            /** At */
+            at?: string | null;
             /**
              * Field
              * @enum {string}
@@ -2845,6 +2909,8 @@ export interface components {
             item_kind: components["schemas"]["ItemKind"];
             /** Label */
             label: string | null;
+            /** Writer */
+            writer?: string | null;
         };
         /**
          * PolicyChange
@@ -3238,13 +3304,16 @@ export interface components {
             /** Truck Plate */
             truck_plate?: string | null;
         };
-        /** ShipmentHitch */
+        /**
+         * ShipmentHitch
+         * @description The trailer a truck that has none takes: a plate as the board showed it, with the truck row
+         *     it stands on when it is another truck's lone plate (that row is then no truck of the job, and
+         *     one whose plate changed since is refused), or none for a plate seen on the job's papers or
+         *     mail.
+         */
         ShipmentHitch: {
-            /**
-             * From Shipment Id
-             * Format: uuid
-             */
-            from_shipment_id: string;
+            /** From Shipment Id */
+            from_shipment_id?: string | null;
             /** Plate */
             plate: string;
         };
@@ -5289,6 +5358,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "shipments.list_plates": {
+        parameters: {
+            query: {
+                project_id: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlateSeen"][];
                 };
             };
             /** @description Validation Error */

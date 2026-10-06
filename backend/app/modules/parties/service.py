@@ -171,7 +171,7 @@ async def find_parties(
 class DomainFirms:
     # Firms with a mail address at the domain: the books say it is theirs.
     by_address: list[Party]
-    # Firms whose name starts with the name the domain was registered as ("denizcompany.com",
+    # Firms whose name starts with the name the domain was registered as ("atlascompany.com",
     # "ATLAS COMPANY OTOMOTİV …"): a hint, never proof, since names repeat.
     by_name: list[Party]
 

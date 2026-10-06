@@ -2718,6 +2718,60 @@
         "title": "ItemKind",
         "type": "string"
       },
+      "ItemNamed": {
+        "description": "An item something was read from, as a line naming it shows it.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "item_id": {
+            "format": "uuid",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "item_kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "writer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writer"
+          }
+        },
+        "required": [
+          "item_kind",
+          "item_id",
+          "label"
+        ],
+        "title": "ItemNamed",
+        "type": "object"
+      },
       "JobReading": {
         "description": "What a model read in a conversation: a proposal for the owner, never a fact.",
         "properties": {
@@ -4384,9 +4438,83 @@
         "title": "PlacementPage",
         "type": "object"
       },
-      "PlateSource": {
-        "description": "Where code read one of a truck's plates: the item, and its name as a list shows it.",
+      "PlateSeen": {
+        "description": "A plate a project's mail, papers or bills name, with each item naming it, oldest first,\nand the truck of the project it is, if any (a misread of its plate counts).",
         "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemNamed"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "plate": {
+            "title": "Plate",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "boolean"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "truck",
+                  "trailer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "shipment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Id"
+          }
+        },
+        "required": [
+          "project_id",
+          "plate",
+          "role",
+          "shipment_id",
+          "rejected",
+          "items"
+        ],
+        "title": "PlateSeen",
+        "type": "object"
+      },
+      "PlateSource": {
+        "description": "Where code read one of a truck's plates.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
           "field": {
             "enum": [
               "truck_plate",
@@ -4413,13 +4541,24 @@
               }
             ],
             "title": "Label"
+          },
+          "writer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Writer"
           }
         },
         "required": [
-          "field",
           "item_kind",
           "item_id",
-          "label"
+          "label",
+          "field"
         ],
         "title": "PlateSource",
         "type": "object"
@@ -5580,11 +5719,19 @@
         "type": "object"
       },
       "ShipmentHitch": {
+        "description": "The trailer a truck that has none takes: a plate as the board showed it, with the truck row\nit stands on when it is another truck's lone plate (that row is then no truck of the job, and\none whose plate changed since is refused), or none for a plate seen on the job's papers or\nmail.",
         "properties": {
           "from_shipment_id": {
-            "format": "uuid",
-            "title": "From Shipment Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Shipment Id"
           },
           "plate": {
             "maxLength": 20,
@@ -5594,7 +5741,6 @@
           }
         },
         "required": [
-          "from_shipment_id",
           "plate"
         ],
         "title": "ShipmentHitch",
@@ -9884,6 +10030,64 @@
         ]
       }
     },
+    "/plates": {
+      "get": {
+        "description": "The plates these projects' mail, papers and bills name, with where each was read and the\ntruck it is, if any.",
+        "operationId": "shipments.list_plates",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "minItems": 1,
+              "title": "Project Id",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlateSeen"
+                  },
+                  "title": "Response Shipments.List Plates",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Plates",
+        "tags": [
+          "shipments"
+        ]
+      }
+    },
     "/policy": {
       "get": {
         "description": "The company's policy in force; version 0 is the defaults, while the owner has set none.",
@@ -11140,7 +11344,7 @@
     },
     "/shipments/{shipment_id}/hitch": {
       "post": {
-        "description": "Makes another truck's lone plate this truck's trailer; 409 when either changed since.",
+        "description": "Makes another truck's lone plate, or a plate seen on the job, this truck's trailer; 409\nwhen a truck or the plate changed since it was shown.",
         "operationId": "shipments.hitch_shipment",
         "parameters": [
           {

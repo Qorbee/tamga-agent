@@ -18,6 +18,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { CanvasLink } from "@/components/canvas-link";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
@@ -39,14 +40,19 @@ import {
   deleteChecklistMark,
   hitchShipment,
   listChecklistItems,
+  listPlates,
   listShipments,
   setChecklistMark,
   splitShipment,
   swapShipment,
   updateShipment,
   type ChecklistItem,
+  type ItemNamed,
+  type PlateSeen,
   type Shipment,
 } from "@/lib/api";
+import type { CanvasView } from "@/lib/canvas-view";
+import { formatDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useCanEditProjects, useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
@@ -143,6 +149,7 @@ export function TruckBoard({
           ))
         )}
       </ul>
+      <PlatesSeen projectId={id} trucks={live} />
       {canEdit ? <AddTruck projectId={id} /> : null}
       {rejected > 0 ? <p className="text-muted-foreground px-1 text-xs">{t.project.rejectedTrucks(rejected)}</p> : null}
     </section>
@@ -196,13 +203,8 @@ function TruckRow({
           className="hover:bg-accent/40 grid min-w-0 flex-1 basis-56 gap-1 rounded-xl px-2 py-1 text-start transition-colors"
           onClick={onSelect}
         >
-          <Slot label={t.project.truckSlot} plate={pulls} read={readFrom(truck, "truck_plate")} />
-          <Slot
-            label={t.project.trailerSlot}
-            plate={pulled}
-            read={readFrom(truck, "trailer_plate")}
-            empty={t.project.noTrailer}
-          />
+          <Slot label={t.project.truckSlot} plate={pulls} />
+          <Slot label={t.project.trailerSlot} plate={pulled} empty={t.project.noTrailer} />
           <span className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             {proposed ? (
               <span className="bg-warning-soft text-warning-foreground rounded-full px-2 py-0.5 font-medium">
@@ -290,6 +292,7 @@ function TruckRow({
           ) : null}
         </span>
       </div>
+      <TruckSources truck={truck} />
       {editing ? (
         <PlatesForm
           truckPlate={pulls ?? ""}
@@ -311,31 +314,189 @@ function TruckRow({
   );
 }
 
-/** A labelled plate, the truck that pulls or the trailer it pulls, with where it was read. */
-function Slot({ label, plate, read, empty }: { label: string; plate: string | null; read?: string; empty?: string }) {
-  const { t } = useI18n();
+/** A labelled plate: the truck that pulls, or the trailer it pulls. */
+function Slot({ label, plate, empty }: { label: string; plate: string | null; empty?: string }) {
   return (
-    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+    <span className="flex min-w-0 items-baseline gap-2">
       <span className="text-muted-foreground w-14 shrink-0 text-xs">{label}</span>
       {plate ? (
         <span className="truncate font-mono text-sm">{plate}</span>
       ) : (
         <span className="text-muted-foreground text-sm">{empty ?? "—"}</span>
       )}
-      {plate && read ? (
-        <span className="text-muted-foreground min-w-0 truncate text-xs">{t.project.readFrom(read)}</span>
-      ) : null}
     </span>
   );
 }
 
-/** The item Tamga read one plate from, by name: the first of them, with how many more. */
-function readFrom(truck: Shipment, field: "truck_plate" | "trailer_plate"): string | undefined {
-  const labels = [
-    ...new Set((truck.sources ?? []).filter((source) => source.field === field).map((source) => source.label)),
-  ].filter((label): label is string => Boolean(label));
-  if (labels.length === 0) return undefined;
-  return labels.length > 1 ? `${labels[0]} +${labels.length - 1}` : labels[0];
+/** Where Tamga read each of a truck's plates, a tap away: once where one paper names both. */
+function TruckSources({ truck }: { truck: Shipment }) {
+  const { t } = useI18n();
+  const lines = (["truck_plate", "trailer_plate"] as const)
+    .map((field) => ({ field, items: (truck.sources ?? []).filter((source) => source.field === field) }))
+    .filter((line) => line.items.length > 0);
+  if (lines.length === 0) return null;
+  const [pulls, pulled] = lines.map((line) => new Set(line.items.map((item) => item.item_id)));
+  if (pulls && pulled && pulls.size === pulled.size && [...pulls].every((id) => pulled.has(id)))
+    return (
+      <span className="flex px-4">
+        <ReadFrom items={lines[0]?.items ?? []} />
+      </span>
+    );
+  return (
+    <span className="flex flex-wrap gap-x-4 gap-y-0.5 px-4">
+      {lines.map(({ field, items }) => (
+        <span key={field} className="flex min-w-0 items-baseline gap-1.5 text-xs">
+          <span className="text-muted-foreground shrink-0">
+            {field === "truck_plate" ? t.project.truckSlot : t.project.trailerSlot}
+          </span>
+          <ReadFrom items={items} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// The record each kind of item opens as; a truck's position opens none.
+const VIEWS: Partial<Record<ItemNamed["item_kind"], CanvasView["kind"]>> = {
+  message: "mail",
+  document: "document",
+  invoice: "invoice",
+};
+
+/** Where something was read: the first item that said it, opened in a tap, and how many more did. */
+function ReadFrom({ items }: { items: ItemNamed[] }) {
+  const { t, locale } = useI18n();
+  const unique = items.filter(
+    (item, at) => items.findIndex((other) => other.item_id === item.item_id) === at,
+  );
+  const [first, ...rest] = unique;
+  if (!first) return null;
+  const day = first.at ? formatDate(new Date(first.at), locale) : "";
+  const name =
+    first.item_kind === "message"
+      ? t.project.mailOf(first.writer ?? first.label ?? "", day)
+      : first.item_kind === "invoice"
+        ? t.project.billNumbered(first.label ?? "")
+        : (first.label ?? "");
+  const view = VIEWS[first.item_kind];
+  return (
+    <span className="text-muted-foreground flex min-w-0 items-baseline gap-1 text-xs">
+      {view ? (
+        <CanvasLink
+          view={{ kind: view, id: first.item_id }}
+          className="hover:text-foreground min-w-0 truncate underline decoration-dotted underline-offset-2"
+        >
+          {t.project.readFrom(name)}
+        </CanvasLink>
+      ) : (
+        <span className="min-w-0 truncate">{t.project.readFrom(name)}</span>
+      )}
+      {rest.length > 0 ? <span className="shrink-0 tabular-nums">+{rest.length}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * The plates the job's mail, papers or bills name that are on no truck: a plate only a mail named,
+ * or one past the job's count. Code proposes no truck from them; the owner adds one as a truck or as
+ * a truck's trailer, with where it was read kept, or leaves it.
+ */
+function PlatesSeen({ projectId, trucks }: { projectId: string; trucks: Shipment[] }) {
+  const { t } = useI18n();
+  const plates = useQuery({ queryKey: ["plates", projectId], queryFn: () => listPlates([projectId]) });
+  // Failed, it says so: an empty list would read as a job that names no other plate.
+  if (plates.isError)
+    return (
+      <p className="text-danger-foreground px-1 text-xs" role="alert">
+        {t.errors.load}
+      </p>
+    );
+  const loose = (plates.data ?? []).filter((plate) => !plate.shipment_id && !plate.rejected);
+  if (loose.length === 0) return null;
+  return (
+    <div className="grid gap-1">
+      <h5 className="text-muted-foreground px-1 text-xs font-medium">{t.project.platesSeen(loose.length)}</h5>
+      <ul className="divide-border border-border divide-y overflow-hidden rounded-2xl border border-dashed">
+        {loose.map((plate) => (
+          <SeenPlate key={plate.plate} projectId={projectId} plate={plate} trucks={trucks} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SeenPlate({ projectId, plate, trucks }: { projectId: string; plate: PlateSeen; trucks: Shipment[] }) {
+  const { t } = useI18n();
+  const canEdit = useCanEditProjects();
+  const refresh = useRefreshTrucks(projectId);
+  const change = useMutation({
+    mutationFn: (step: () => Promise<unknown>) => step(),
+    onSettled: refresh,
+  });
+  // A truck that has no trailer can take this plate as its trailer.
+  const pulling = trucks.filter((truck) => truck.truck_plate && !truck.trailer_plate);
+  return (
+    <li className="grid gap-0.5 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-mono text-sm">{plate.plate}</span>
+        {plate.role ? (
+          <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
+            {plate.role === "trailer" ? t.project.trailerSlot : t.project.truckSlot}
+          </span>
+        ) : null}
+        <span className="min-w-0 flex-1">
+          <ReadFrom items={plate.items} />
+        </span>
+        {canEdit ? (
+          <DropdownMenu modal={false}>
+            <Hint label={t.project.plateActions}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  aria-label={t.project.plateActions}
+                  disabled={change.isPending}
+                >
+                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
+                </Button>
+              </DropdownMenuTrigger>
+            </Hint>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onSelect={() =>
+                  change.mutate(() => createShipment({ project_id: projectId, truck_plate: plate.plate }))
+                }
+              >
+                {t.project.addAsTruck}
+              </DropdownMenuItem>
+              {pulling.length > 0 ? (
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>{t.project.trailerOf}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    {pulling.map((truck) => (
+                      <DropdownMenuItem
+                        key={truck.id}
+                        className="font-mono"
+                        onSelect={() => change.mutate(() => hitchShipment(truck.id, { plate: plate.plate }))}
+                      >
+                        {truck.truck_plate}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+      {change.error ? (
+        <p className="text-danger-foreground text-xs" role="alert">
+          {change.error instanceof Error ? change.error.message : t.errors.generic}
+        </p>
+      ) : null}
+    </li>
+  );
 }
 
 /** The truck's and the trailer's plates typed in place. */
@@ -441,6 +602,7 @@ function useRefreshTrucks(projectId: string) {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+    void queryClient.invalidateQueries({ queryKey: ["plates"] });
     void queryClient.invalidateQueries({ queryKey: checklistKey(projectId) });
     void queryClient.invalidateQueries({ queryKey: ["project-links"] });
   };

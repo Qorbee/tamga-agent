@@ -197,6 +197,12 @@ export const en = {
     trailerSlot: "Trailer",
     noTrailer: "No trailer",
     readFrom: (label: string) => `from ${label}`,
+    mailOf: (writer: string, day: string) => `${writer} (mail, ${day})`,
+    billNumbered: (number: string) => `bill ${number}`,
+    platesSeen: (count: number) =>
+      count === 1 ? "1 plate the job names, on no truck" : `${count} plates the job names, on no truck`,
+    plateActions: "Plate actions",
+    addAsTruck: "Add as a truck",
     truckActions: "Truck actions",
     editPlates: "Edit plates",
     addTrailer: "Add trailer",

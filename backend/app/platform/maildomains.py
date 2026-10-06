@@ -117,8 +117,8 @@ _SECOND_LEVEL: Final = frozenset(
 
 
 def name_of(domain: str) -> str:
-    """The label a domain was registered as, as it is read: "denizcompany" in
-    "ops.denizcompany.com", "yuzbasi" in "yuzbasi.com.tr", "yüzbaşı" in its IDNA form."""
+    """The label a domain was registered as, as it is read: "atlascompany" in
+    "ops.atlascompany.com", "yuzbasi" in "yuzbasi.com.tr", "yüzbaşı" in its IDNA form."""
     labels = spellings(domain)[-1].split(".")
     if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
         return labels[-3]

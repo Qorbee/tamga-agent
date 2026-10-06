@@ -163,11 +163,17 @@ export const createShipment = (body: Schemas["ShipmentCreate"]) =>
 /** The owner's edit of a truck, and their yes or no to one Tamga proposed (`state`). */
 export const updateShipment = (id: string, body: Schemas["ShipmentUpdate"]) =>
   request<Shipment>(`/shipments/${id}`, json("PATCH", body));
+/** The plates these projects' mail, papers and bills name, with where each was read and its truck. */
+export type PlateSeen = Schemas["PlateSeen"];
+export type ItemNamed = Schemas["ItemNamed"];
+export const listPlates = (projectIds: readonly string[]) =>
+  request<PlateSeen[]>(`/plates${query({ project_id: projectIds })}`);
+
 /** The truck's trailer made a truck of its own, in one step; returns the new truck. */
 export const splitShipment = (id: string) => request<Shipment>(`/shipments/${id}/split`, { method: "POST" });
 /** The truck's plates the other way round, as they stand on the server. */
 export const swapShipment = (id: string) => request<Shipment>(`/shipments/${id}/swap`, { method: "POST" });
-/** Another truck's lone plate made this truck's trailer, in one step; 409 when either changed. */
+/** Another truck's lone plate, or a plate seen on the job, made this truck's trailer; 409 when it changed. */
 export const hitchShipment = (id: string, body: Schemas["ShipmentHitch"]) =>
   request<Shipment>(`/shipments/${id}/hitch`, json("POST", body));
 

@@ -25,11 +25,14 @@ const READ_AGAIN: Record<CompanyEvent["kind"], QueryKey[]> = {
     ["project-links"],
     ["checklist-items"],
     ["shipments"],
+    ["plates"],
     ["field-proposals"],
   ],
-  documents: [["documents"], ["document"]],
+  // A file read names plates a job's board lists.
+  documents: [["documents"], ["document"], ["plates"]],
   threads: [["threads"], ["thread"], ["placements"]],
-  invoices: [["invoice"], ["invoices"], ["invoice-totals"], ["parties"]],
+  // A bill synced again may name other plates, or another day.
+  invoices: [["invoice"], ["invoices"], ["invoice-totals"], ["parties"], ["plates"]],
   decisions: [["decisions"], ["decision"], ["payments"], ["decision-events"], ["decision-chain"]],
 };
 

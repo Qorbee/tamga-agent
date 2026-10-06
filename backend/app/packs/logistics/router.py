@@ -4,11 +4,12 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.modules.identity.deps import ActorDep
-from app.packs.logistics import service
+from app.packs.logistics import filing, service
 from app.packs.logistics.schemas import (
     LocationCreate,
     LocationOut,
     LocationPage,
+    PlateSeen,
     ShipmentCreate,
     ShipmentHitch,
     ShipmentOut,
@@ -27,6 +28,17 @@ async def list_shipments(
     project_id: Annotated[list[uuid.UUID], Query(min_length=1, max_length=200)],
 ) -> list[ShipmentOut]:
     return await service.list_shipments(db, actor, project_id)
+
+
+@shipments.get("/plates")
+async def list_plates(
+    actor: ActorDep,
+    db: SessionDep,
+    project_id: Annotated[list[uuid.UUID], Query(min_length=1, max_length=200)],
+) -> list[PlateSeen]:
+    """The plates these projects' mail, papers and bills name, with where each was read and the
+    truck it is, if any."""
+    return await filing.plates_seen(db, actor.company_id, project_id)
 
 
 @shipments.post("/shipments", status_code=status.HTTP_201_CREATED)
@@ -60,8 +72,13 @@ async def split_shipment(shipment_id: uuid.UUID, actor: ActorDep, db: SessionDep
 async def hitch_shipment(
     shipment_id: uuid.UUID, body: ShipmentHitch, actor: ActorDep, db: SessionDep
 ) -> ShipmentOut:
-    """Makes another truck's lone plate this truck's trailer; 409 when either changed since."""
-    return await service.hitch_shipment(db, actor, shipment_id, body.from_shipment_id, body.plate)
+    """Makes another truck's lone plate, or a plate seen on the job, this truck's trailer; 409
+    when a truck or the plate changed since it was shown."""
+    if body.from_shipment_id is not None:
+        return await service.hitch_shipment(
+            db, actor, shipment_id, body.from_shipment_id, body.plate
+        )
+    return await service.hitch_plate(db, actor, shipment_id, body.plate)
 
 
 @shipments.post("/shipments/{shipment_id}/swap")

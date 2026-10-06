@@ -8,7 +8,8 @@ extraction never overwrites what the owner typed.
 
 import uuid
 from collections.abc import Mapping, Sequence
-from datetime import date
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time
 from enum import Enum
 from typing import Any, Final, Literal
 
@@ -20,11 +21,19 @@ from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
+from app.modules.facts.models import Fact
 from app.modules.parties import service as parties
 from app.modules.projects import checklist
 from app.modules.projects import service as projects
-from app.modules.projects.models import FieldSource, LinkMethod, LinkStatus, ProposalTarget
+from app.modules.projects.models import (
+    FieldSource,
+    LinkMethod,
+    LinkStatus,
+    ProjectLink,
+    ProposalTarget,
+)
 from app.packs.logistics import repository
+from app.packs.logistics.facts import PLATE, TRAILER_ROLE, TRUCK_ROLE
 from app.packs.logistics.models import (
     LocationContact,
     LocationSource,
@@ -33,6 +42,7 @@ from app.packs.logistics.models import (
     ShipmentState,
 )
 from app.packs.logistics.schemas import (
+    ItemNamed,
     LocationCreate,
     LocationOut,
     LocationPage,
@@ -47,6 +57,10 @@ from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
 _EDITORS: Final = (Role.OWNER, Role.OPS)
+# An item naming more plates than this is a fleet list or a rate sheet, no one job's trucks.
+MAX_PLATES: Final = 4
+# A bill has a day, not an hour: it is placed at noon UTC on its issue day.
+_NOON: Final = time(12)
 _FIELDS: Final = frozenset(ShipmentFields.model_fields)
 _PLATES: Final[tuple[Literal["truck_plate", "trailer_plate"], ...]] = (
     "truck_plate",
@@ -142,6 +156,48 @@ async def _keep_rejected(
     target.append(again)
 
 
+type Item = tuple[ItemKind, uuid.UUID]
+
+
+@dataclass(frozen=True, slots=True)
+class JobPlates:
+    """The plates each item names, as compared and as written, with the facts that say so; and
+    the role a label gives a plate on an item."""
+
+    of: dict[Item, dict[str, Fact]]
+    roles: dict[Item, dict[str, str]]
+
+
+async def job_plates(
+    db: AsyncSession, company_id: uuid.UUID, links: Sequence[ProjectLink]
+) -> JobPlates:
+    """The plates these linked items name. A purchase's are read on the e-invoice it was booked
+    from too, as that bill's."""
+    of: dict[Item, dict[str, Fact]] = {}
+    roles: dict[Item, dict[str, str]] = {}
+    for kind in (ItemKind.MESSAGE, ItemKind.DOCUMENT, ItemKind.INVOICE):
+        ids = [link.item_id for link in links if link.item_kind is kind]
+        record_of = {item_id: item_id for item_id in ids}
+        if kind is ItemKind.INVOICE:
+            booked = await books.booked_from(db, company_id, ids)
+            record_of |= {
+                record: bill for record, bill in booked.items() if record not in record_of
+            }
+        for fact in await facts.facts_of_items(
+            db, company_id=company_id, item_kind=kind, item_ids=list(record_of)
+        ):
+            item = (kind, record_of[fact.item_id])
+            if fact.kind == PLATE:
+                of.setdefault(item, {})[fact.normalised] = fact
+            elif fact.kind in (TRUCK_ROLE, TRAILER_ROLE):
+                roles.setdefault(item, {})[fact.normalised] = fact.kind
+    # A fleet list names no one job's trucks, nor their roles.
+    return JobPlates(
+        {item: found for item, found in of.items() if len(found) <= MAX_PLATES},
+        {item: found for item, found in roles.items() if len(of.get(item, {})) <= MAX_PLATES},
+    )
+
+
 def compared_plates(truck: Shipment) -> set[str]:
     """A truck's plates as facts compare them."""
     return {extractors.reference(p) for p in (truck.truck_plate, truck.trailer_plate) if p}
@@ -155,6 +211,7 @@ async def create_shipment(
         raise NotFound("No such project", field="project_id")
     shipment = await add_shipment(db, company_id=actor.company_id, project_id=project_id)
     await _write(db, shipment, values, FieldSource.OWNER, evidence=())
+    shipment.evidence = await _read_on_job(db, shipment, [])
     await db.commit()
     return (await _describe(db, actor.company_id, [shipment]))[0]
 
@@ -193,6 +250,8 @@ async def update_shipment(
             await projects.take_off_trucks(db, actor.company_id, [shipment.id])
         shipment.state = ShipmentState(state)
     await _write(db, shipment, fields, FieldSource.OWNER, evidence=())
+    if fields.keys() & set(_PLATES):
+        shipment.evidence = await _read_on_job(db, shipment, shipment.evidence)
     await db.commit()
     return (await _describe(db, actor.company_id, [shipment]))[0]
 
@@ -224,6 +283,46 @@ async def swap_plates(db: AsyncSession, actor: Actor, shipment_id: uuid.UUID) ->
     await _write(db, truck, swapped, FieldSource.OWNER, evidence=())
     await db.commit()
     return (await _describe(db, actor.company_id, [truck]))[0]
+
+
+async def hitch_plate(
+    db: AsyncSession, actor: Actor, shipment_id: uuid.UUID, plate: str
+) -> ShipmentOut:
+    """A plate seen on the job's papers or mail made a truck's trailer, with where it was read.
+    Refused when the truck took a trailer, or was rejected, since the board showed it."""
+    actor.require(*_EDITORS)
+    truck = await _shipment(db, actor.company_id, shipment_id)
+    if truck.state is ShipmentState.REJECTED or not truck.truck_plate or truck.trailer_plate:
+        raise Conflict("This truck changed since it was shown")
+    # It was on no truck when shown: another tab may have put it on one since.
+    if any(
+        extractors.reference(plate) in compared_plates(other)
+        for other in await repository.list_shipments(db, actor.company_id, [truck.project_id])
+        if other.state is not ShipmentState.REJECTED
+    ):
+        raise Conflict("This plate is on a truck now")
+    await _write(db, truck, {"trailer_plate": plate}, FieldSource.OWNER, evidence=())
+    truck.evidence = await _read_on_job(db, truck, truck.evidence)
+    await db.commit()
+    return (await _describe(db, actor.company_id, [truck]))[0]
+
+
+async def _read_on_job(
+    db: AsyncSession, truck: Shipment, evidence: Sequence[uuid.UUID]
+) -> list[uuid.UUID]:
+    """A truck's evidence, with the facts of its job's mail, papers and bills that read the
+    plates it has now: a plate the owner typed shows where the job named it, if it did."""
+    plates = compared_plates(truck)
+    links = [
+        link
+        for link in await projects.links_of_project(db, truck.company_id, truck.project_id)
+        if link.status is not LinkStatus.REJECTED
+    ]
+    named = await job_plates(db, truck.company_id, links)
+    read = {
+        fact.id for found in named.of.values() for plate, fact in found.items() if plate in plates
+    }
+    return sorted({*evidence, *read})
 
 
 async def hitch_shipment(
@@ -453,7 +552,7 @@ async def _describe(
 async def _plate_sources(
     db: AsyncSession, company_id: uuid.UUID, shipments: Sequence[Shipment]
 ) -> dict[uuid.UUID, list[PlateSource]]:
-    """For each plate code wrote on a truck, the item among its evidence that names it."""
+    """For each plate on a truck, the items among its evidence that name it, oldest first."""
     found = await facts.get_facts(
         db, company_id, sorted({fact_id for s in shipments for fact_id in s.evidence})
     )
@@ -465,48 +564,66 @@ async def _plate_sources(
             plate = getattr(s, field)
             if not plate:
                 continue
-            fact = next(
-                (
-                    found[fact_id]
-                    for fact_id in s.evidence
-                    if fact_id in found and found[fact_id].normalised == extractors.reference(plate)
-                ),
-                None,
-            )
-            if fact is not None:
-                read.setdefault(s.id, []).append((field, fact))
-    items = [fact for pairs in read.values() for _, fact in pairs]
-    labels = await _labels(db, company_id, items)
+            items: dict[Item, Fact] = {}
+            for fact_id in s.evidence:
+                fact = found.get(fact_id)
+                if fact is not None and fact.normalised == extractors.reference(plate):
+                    items.setdefault((fact.item_kind, fact.item_id), fact)
+            read.setdefault(s.id, []).extend((field, fact) for fact in items.values())
+    named = await named_items(
+        db,
+        company_id,
+        [(fact.item_kind, fact.item_id) for pairs in read.values() for _, fact in pairs],
+    )
+    latest = datetime.max.replace(tzinfo=UTC)
     return {
-        truck_id: [
-            PlateSource(
-                field=field,
-                item_kind=fact.item_kind,
-                item_id=fact.item_id,
-                label=labels.get((fact.item_kind, fact.item_id)),
-            )
-            for field, fact in pairs
-        ]
+        truck_id: sorted(
+            (
+                PlateSource(field=field, **named[fact.item_kind, fact.item_id].model_dump())
+                for field, fact in pairs
+                if (fact.item_kind, fact.item_id) in named
+            ),
+            key=lambda source: source.at or latest,
+        )
         for truck_id, pairs in read.items()
     }
 
 
-async def _labels(
-    db: AsyncSession, company_id: uuid.UUID, found: Sequence[Any]
-) -> dict[tuple[ItemKind, uuid.UUID], str | None]:
-    """Each item's name as a list shows it: a file's name, a mail's subject or writer, a bill's
-    number."""
+async def named_items(
+    db: AsyncSession, company_id: uuid.UUID, items: Sequence[tuple[ItemKind, uuid.UUID]]
+) -> dict[tuple[ItemKind, uuid.UUID], ItemNamed]:
+    """Each item by name and day, as a line naming where something was read shows it: a file's
+    name and its first mail's day, a mail's subject, writer and day, a bill's number and issue
+    day. Never a file's text or a mail's body. One that is gone is left out."""
     ids: dict[ItemKind, list[uuid.UUID]] = {}
-    for fact in found:
-        ids.setdefault(fact.item_kind, []).append(fact.item_id)
-    labels: dict[tuple[ItemKind, uuid.UUID], str | None] = {}
+    for kind, item_id in dict.fromkeys(items):
+        ids.setdefault(kind, []).append(item_id)
+    named: dict[tuple[ItemKind, uuid.UUID], ItemNamed] = {}
     files = await documents.filenames(db, company_id, ids.get(ItemKind.DOCUMENT, []))
-    labels |= {(ItemKind.DOCUMENT, i): name for i, name in files.items()}
+    carried = await conversations.first_carriers(db, company_id, list(files))
+    for file_id, name in files.items():
+        at = carried[file_id].sent_at if file_id in carried else None
+        named[ItemKind.DOCUMENT, file_id] = ItemNamed(
+            item_kind=ItemKind.DOCUMENT, item_id=file_id, label=name, at=at
+        )
     mails = await conversations.mail_labels(db, company_id, ids.get(ItemKind.MESSAGE, []))
-    labels |= {(ItemKind.MESSAGE, i): mail.subject or mail.writer for i, mail in mails.items()}
-    numbers = await books.invoice_numbers(db, company_id, ids.get(ItemKind.INVOICE, []))
-    labels |= {(ItemKind.INVOICE, i): number for i, number in numbers.items()}
-    return labels
+    for mail_id, mail in mails.items():
+        named[ItemKind.MESSAGE, mail_id] = ItemNamed(
+            item_kind=ItemKind.MESSAGE,
+            item_id=mail_id,
+            label=mail.subject or mail.writer,
+            writer=mail.writer,
+            at=mail.sent_at,
+        )
+    bills = await books.invoice_labels(db, company_id, ids.get(ItemKind.INVOICE, []))
+    for bill_id, (number, issued) in bills.items():
+        named[ItemKind.INVOICE, bill_id] = ItemNamed(
+            item_kind=ItemKind.INVOICE,
+            item_id=bill_id,
+            label=number,
+            at=datetime.combine(issued, _NOON, tzinfo=UTC) if issued else None,
+        )
+    return named
 
 
 async def proofs(

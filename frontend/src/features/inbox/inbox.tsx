@@ -58,6 +58,7 @@ function OpenProposals() {
       void queryClient.invalidateQueries({ queryKey: ["field-proposals"] });
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+      void queryClient.invalidateQueries({ queryKey: ["plates"] });
     },
   });
 

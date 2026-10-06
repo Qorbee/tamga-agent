@@ -1107,7 +1107,7 @@ def _from_model(
 
 
 def _town(place: str | None) -> str:
-    """A place as a name holds it: "Bukovik, Serbia" is Bukovik."""
+    """A place as a name holds it: "Novi Sad, Serbia" is Novi Sad."""
     return (place or "").split(",")[0].strip()[:60]
 
 

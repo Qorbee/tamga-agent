@@ -9,17 +9,19 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from app.modules.books import service as books
 from app.modules.books.models import InvoiceDirection, InvoiceKind
 from app.modules.books.sources import InvoiceRecord, PartyCard
 from app.modules.conversations import service as conversations
+from app.modules.conversations.models import Message
 from app.modules.documents import service as documents
 from app.modules.facts import repository as facts_repository
 from app.modules.parties import service as parties
 from app.modules.parties.models import PartyKind
 from app.modules.projects import service as projects
-from app.modules.projects.models import FieldSource
+from app.modules.projects.models import FieldSource, LinkMethod
 from app.modules.projects.schemas import ProjectJob
 from app.packs.logistics import filing
 from app.packs.logistics import repository as logistics_repository
@@ -303,7 +305,7 @@ async def test_codes_truck_never_overwrites_an_owners_answer_given_meanwhile(
     )
     async with open_session() as db:
         links = await projects.links_of_project(db, company_id, uuid.UUID(project_id))
-        plates = await filing._plates(db, company_id, links)
+        plates = await logistics.job_plates(db, company_id, links)
         trucks = await logistics_repository.list_shipments(db, company_id, [uuid.UUID(project_id)])
         [cmr] = [link for link in links if link.item_kind is ItemKind.DOCUMENT]
         # The owner answers between code's read and its write.
@@ -401,6 +403,11 @@ async def test_a_bill_pays_the_truck_only_its_e_invoice_names(client: httpx.Asyn
         billed = await logistics.trucks_billed(db, company_id, uuid.UUID(link["item_id"]))
 
     assert billed == [uuid.UUID(truck["id"])]
+    # The plate is shown read on the bill, though only the e-invoice it was booked from names it.
+    [seen] = (await client.get("/plates", params={"project_id": project_id})).json()
+    assert [(item["item_kind"], item["item_id"]) for item in seen["items"]] == [
+        ("invoice", link["item_id"])
+    ]
 
 
 def note(words: str) -> bytes:
@@ -473,6 +480,9 @@ async def test_no_more_trucks_than_the_job_has_the_best_shown_first(
     # The plate two notes name comes first; of the others, one.
     proposed_plates = [truck for truck, _ in plates_of(await trucks_of(client, project_id))]
     assert "AA 111 AA" in proposed_plates and len(proposed_plates) == 2
+    # It shows both notes that named it.
+    [named] = [t for t in await trucks_of(client, project_id) if t["truck_plate"] == "AA 111 AA"]
+    assert {source["label"] for source in named["sources"]} == {"CMR 1.pdf", "CMR 2.pdf"}
 
 
 async def test_a_misread_is_one_truck_and_two_plates_on_one_paper_are_two(
@@ -742,3 +752,97 @@ async def test_a_trailer_split_off_and_hitched_back_keeps_where_it_was_read(
     # Swapped as they stand.
     swapped = (await client.post(f"/shipments/{truck['id']}/swap")).json()
     assert (swapped["truck_plate"], swapped["trailer_plate"]) == ("XY 987 ZW", "AB 123 CD")
+
+
+async def test_a_plate_only_mail_named_is_shown_with_its_mail_and_kept_when_added(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model, attach={"CMR 4471.pdf": CMR})
+    company_id, project_id = uuid.UUID(placement["company_id"]), placement["project_id"]
+    await documents.read_pending()
+    replies = {
+        "<m2@x>": ("Second truck", "Truck: QQ 555 RR is on its way"),
+        "<m3@x>": ("Fleet", FLEET),
+        "<m4@x>": ("Its trailer", "Trailer: TT 111 KK goes with it"),
+        "<m5@x>": ("Loaded", "Truck: QQ 555 RR loaded"),
+        # Two vehicles one mail names together, though one plate reads like a misread of the other.
+        "<m6@x>": ("Both", "Truck: AB 123 CD and Truck: AB 213 CD"),
+    }
+    for uid, (key, (subject, body)) in enumerate(replies.items(), start=2):
+        sent = f"Mon, 03 Aug 2026 1{uid}:00:00 +0300"
+        reply = mail(key, subject=subject, body=body, date=sent, references="<order@x>")
+        await arrive(company_id, uid, reply, category=None)
+    async with open_session() as db:
+        mail_ids = await db.scalars(
+            select(Message.id).where(
+                Message.company_id == company_id, Message.rfc_message_id.in_(list(replies))
+            )
+        )
+        for mail_id in mail_ids.all():
+            await projects.link_item(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.MESSAGE,
+                item_id=mail_id,
+                project_id=uuid.UUID(project_id),
+                method=LinkMethod.SCORED,
+                confidence=0.6,
+            )
+        await db.commit()
+    await filed(company_id)
+    [truck] = await trucks_of(client, project_id)
+
+    seen = {
+        p["plate"]: p
+        for p in (await client.get("/plates", params={"project_id": project_id})).json()
+    }
+
+    # The note's two plates are the truck code proposed; a fleet list names none.
+    assert seen.keys() == {"AB 123 CD", "XY 987 ZW", "QQ 555 RR", "TT 111 KK", "AB 213 CD"}
+    assert seen["AB 123 CD"]["shipment_id"] == seen["XY 987 ZW"]["shipment_id"] == truck["id"]
+    assert seen["AB 213 CD"]["shipment_id"] is None
+    # Only mail named it: no truck, shown with the mails, for the owner to judge.
+    lone = seen["QQ 555 RR"]
+    assert (lone["shipment_id"], lone["rejected"], lone["role"]) == (None, False, "truck")
+    said, again = lone["items"]
+    assert (said["item_kind"], said["label"], again["label"]) == (
+        "message",
+        "Second truck",
+        "Loaded",
+    )
+    assert said["writer"] and said["at"]
+    assert seen["TT 111 KK"]["role"] == "trailer"
+
+    # Added by the owner, the truck shows every mail its plate was read from, oldest first; so
+    # does its trailer.
+    added = (
+        await client.post("/shipments", json={"project_id": project_id, "truck_plate": "QQ 555 RR"})
+    ).json()
+    assert [(s["field"], s["label"]) for s in added["sources"]] == [
+        ("truck_plate", "Second truck"),
+        ("truck_plate", "Loaded"),
+    ]
+    hitched = await client.post(f"/shipments/{added['id']}/hitch", json={"plate": "TT 111 KK"})
+    assert hitched.status_code == 200
+    assert {(s["field"], s["label"]) for s in hitched.json()["sources"]} == {
+        ("truck_plate", "Second truck"),
+        ("truck_plate", "Loaded"),
+        ("trailer_plate", "Its trailer"),
+    }
+    # A fleet list names none of the job's trucks, so the owner's plate is not shown read there.
+    fleet = (
+        await client.post("/shipments", json={"project_id": project_id, "truck_plate": "FL 101 AA"})
+    ).json()
+    assert fleet["sources"] == []
+    # From a stale board: the plate went on a truck in another tab.
+    taken = await client.post(f"/shipments/{fleet['id']}/hitch", json={"plate": "QQ 555 RR"})
+    assert taken.status_code == 409
+    # From a stale board: the truck has its trailer now.
+    again = await client.post(f"/shipments/{added['id']}/hitch", json={"plate": "TT 111 KK"})
+    assert again.status_code == 409
+    seen = {
+        p["plate"]: p
+        for p in (await client.get("/plates", params={"project_id": project_id})).json()
+    }
+    assert seen["QQ 555 RR"]["shipment_id"] == seen["TT 111 KK"]["shipment_id"] == added["id"]

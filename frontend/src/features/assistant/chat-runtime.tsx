@@ -359,6 +359,7 @@ function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
           // and checklists.
           invalidateRecords();
           void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+          void queryClient.invalidateQueries({ queryKey: ["plates"] });
         });
     }
     wasAnswering.current = answering;

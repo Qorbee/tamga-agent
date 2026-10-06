@@ -472,11 +472,12 @@ async def get_invoices(
     return [InvoiceOut.model_validate(row) for row in rows]
 
 
-async def invoice_numbers(
+async def invoice_labels(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, str | None]:
-    """These invoices' numbers alone, for a list naming where something was read."""
-    return await repository.invoice_numbers(db, company_id, ids) if ids else {}
+) -> dict[uuid.UUID, tuple[str | None, date | None]]:
+    """These invoices' numbers and issue days alone, for a list naming where something was
+    read."""
+    return await repository.invoice_labels(db, company_id, ids) if ids else {}
 
 
 async def get_invoice(db: AsyncSession, actor: Actor, invoice_id: uuid.UUID) -> InvoiceOut:

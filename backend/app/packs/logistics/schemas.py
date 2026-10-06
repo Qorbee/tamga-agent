@@ -71,20 +71,48 @@ class ShipmentUpdate(ShipmentFields):
 
 
 class ShipmentHitch(BaseModel):
-    # The truck whose lone plate becomes this one's trailer, and that plate as the board showed
-    # it: one changed since is refused.
-    from_shipment_id: uuid.UUID
+    """The trailer a truck that has none takes: a plate as the board showed it, with the truck row
+    it stands on when it is another truck's lone plate (that row is then no truck of the job, and
+    one whose plate changed since is refused), or none for a plate seen on the job's papers or
+    mail."""
+
     plate: str = Field(min_length=1, max_length=20)
+    from_shipment_id: uuid.UUID | None = None
 
 
-class PlateSource(BaseModel):
-    """Where code read one of a truck's plates: the item, and its name as a list shows it."""
+class ItemNamed(BaseModel):
+    """An item something was read from, as a line naming it shows it."""
 
-    field: Literal["truck_plate", "trailer_plate"]
     item_kind: ItemKind
     item_id: uuid.UUID
     # A file's name, a mail's subject or its writer, a bill's number.
     label: str | None
+    # A mail's writer, by name or address.
+    writer: str | None = None
+    # When it came: a mail sent, a file's first mail, noon UTC on a bill's issue day.
+    at: datetime | None = None
+
+
+class PlateSource(ItemNamed):
+    """Where code read one of a truck's plates."""
+
+    field: Literal["truck_plate", "trailer_plate"]
+
+
+class PlateSeen(BaseModel):
+    """A plate a project's mail, papers or bills name, with each item naming it, oldest first,
+    and the truck of the project it is, if any (a misread of its plate counts)."""
+
+    project_id: uuid.UUID
+    # As the oldest item wrote it.
+    plate: str
+    # What a label beside it said it is ("Dorse:"), where the items agree.
+    role: Literal["truck", "trailer"] | None
+    # The project's truck not rejected whose plates name it.
+    shipment_id: uuid.UUID | None
+    # Only a truck the owner rejected names it.
+    rejected: bool
+    items: list[ItemNamed]
 
 
 class ShipmentOut(BaseModel):
