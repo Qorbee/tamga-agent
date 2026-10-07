@@ -5,21 +5,6 @@
 # caught within hours. One genuinely needed fresh package: add it to minimumReleaseAgeExclude with a
 # comment saying why and when to remove it. Never lower this number.
 minimumReleaseAge: 10080
-minimumReleaseAgeExclude:
-  # next 16.3.8 (published 2026-09-30) fixes GHSA-cjq9-62q9-8jv4 (high: SSRF in Image Optimization),
-  # GHSA-f87g-xv8r-7p7x, GHSA-4jqv-mc3x-m676, GHSA-mcj8-r9mp-w47p, GHSA-3w37-wq28-93x7,
-  # GHSA-h694-7cp9-m8p3 (medium) and GHSA-39w2-rjm5-chcv (low), all in 16.3.7 and earlier. Remove
-  # after 2026-10-07, when 16.3.8 is older than the window.
-  - next@16.3.8
-  - "@next/env@16.3.8"
-  - "@next/swc-darwin-arm64@16.3.8"
-  - "@next/swc-darwin-x64@16.3.8"
-  - "@next/swc-linux-arm64-gnu@16.3.8"
-  - "@next/swc-linux-arm64-musl@16.3.8"
-  - "@next/swc-linux-x64-gnu@16.3.8"
-  - "@next/swc-linux-x64-musl@16.3.8"
-  - "@next/swc-win32-arm64-msvc@16.3.8"
-  - "@next/swc-win32-x64-msvc@16.3.8"
 
 # Refuse a version whose publishing trust got weaker than earlier releases (e.g. trusted publishing
 # with provenance, then a plain token upload) — the signature of a stolen maintainer token.
