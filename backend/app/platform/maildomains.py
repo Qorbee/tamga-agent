@@ -1,10 +1,10 @@
 """Mail domains: the one form they are compared in, and the public providers whose domain names no
 one.
 
-People write a domain as "Yuzbasi.com.tr", "@yuzbasi.com.tr", "www.yuzbasi.com.tr", a web address or a
-whole mail address; ``domain_of`` reduces each to "yuzbasi.com.tr". A name in another script keeps
-its IDNA (punycode) form, as mail carries it; ``folded`` gives the plain-letter spelling a keyboard
-may have meant ("yuzbası.com.tr" for "yuzbasi.com.tr").
+People write a domain as "Yuzbasi.com.tr", "@yuzbasi.com.tr", "www.yuzbasi.com.tr", a web address
+or a whole mail address; ``domain_of`` reduces each to "yuzbasi.com.tr". A name in another script
+keeps its IDNA (punycode) form, as mail carries it; ``folded`` gives the plain-letter spelling a
+keyboard may have meant ("yuzbası.com.tr" for "yuzbasi.com.tr").
 
 Anyone can have an address at a public provider, so its domain says nothing about who writes from
 it: it is never the company's, and never a firm's. Packs add their country's providers.

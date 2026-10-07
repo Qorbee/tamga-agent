@@ -49,6 +49,9 @@ Arc testnet; nothing touches a company's bank or real money.
   job and its simulated books, that expire after a day; every row belongs to one company.
 - **Company modes:** shadow, replay and live, checked where an effect would happen, and each
   company's own business time.
+- **Who the company is:** its tax number, legal name and mail domains, set in Settings rather than
+  hardcoded, and each checked before it is saved: against the company's own sent mail, its books
+  and the tax registry, through a country pack.
 - **Mail, read-only:** mailboxes read over IMAP every two minutes, grouped into conversations, shown
   as their senders laid them out (web pictures only on request), and searchable however a word is
   typed. Each mail is read once, copies from other mailboxes included, from what its writer typed
@@ -67,19 +70,32 @@ Arc testnet; nothing touches a company's bank or real money.
   so only work is read further.
 - **Parties:** the companies and people Tamga meets, recognised by phone, email, tax id and IBAN.
 - **The project file:** each job holds its mail, files and invoices on one timeline. A file
-  follows the mail that carried it, unless it is only a signature's picture or a logo. Code
+  follows the mail that carried it, unless it is only a signature's picture (a business card read
+  off a picture is one), a logo, or a file that holds nothing of a job. Code
   types the truck papers it recognises and a small model the rest (a weighbridge slip, a customs
   declaration, a packing list), so each row says what the paper is. Bills are
-  placed in their job by the numbers and plates they share with it. Code proposes the job's
-  trucks from its papers, and each truck shows what it still lacks: a loading photo, the CMR, the
-  proof of delivery, the subcontractor's invoice. Only the owner marks a file as a truck's proof
-  of delivery, in one tap; the owner edits a project where it is shown.
+  placed in their job by the numbers they share with it, and by a plate only where the job's firm
+  in that role is the bill's: a broker's trucks carry many clients' loads. A number printed on a
+  client's every load for weeks is no key. Code proposes the job's trucks only from its own papers
+  (a CMR, a dispatch note, a carrier's bill placed by more than its plate), within the job's days
+  and no more than its own count, and tells a truck from its trailer where a paper says which is
+  which. The truck board shows each truck with its trailer and where each plate was read; the
+  owner swaps, splits or hitches them in a tap, and the plates the job names on no truck are
+  listed with where each was read. Each truck shows what it still lacks: a loading photo, the
+  CMR, the proof of delivery, the subcontractor's invoice. Only the owner marks a file as a
+  truck's proof of delivery, in one tap; the owner edits a project where it is shown.
 - **Linking:** each work conversation is placed among the projects, by code where a shared number
   or its thread decides, else by an agent with read-only search tools, a small model first and a
   larger one for the hard cases. It links, proposes a new project, asks between two, or leaves the
   conversation unplaced, and writes its reason. Everything it writes waits for the owner, who
   confirms, rejects, moves a conversation or merges two projects in the Inbox, and reads the
-  reason in either language.
+  reason in either language. A reply follows its thread's project by code only when it names
+  nothing the job does not hold; otherwise it is read, and the next load can become a project of
+  its own. Past conversations are placed again in the order their mail came.
+- **Firms on projects:** a project's client and carriers are suggested from the signals that name
+  them — the reading, the sender's address, a bill on the project — and counted as the project's
+  only where two kinds agree; one signal alone is a question to the owner, whose answer teaches
+  the sender's address. Cards that share a tax id are one firm only where they are named alike.
 - **The chat:** chats are kept on the server, and the assistant answers in them from the
   company's own mail, projects, files, invoices and firms, streamed over AG-UI. When the owner
   asks, it changes Tamga's own records through the services the pages use: it confirms or
@@ -102,17 +118,19 @@ Arc testnet; nothing touches a company's bank or real money.
 - **The books:** a read-only accounting sync, through a country pack, and a page of the invoices,
   newest first or as sorted, open, overdue or all, with what each list adds up to per currency;
   and of the firms, each with the balance its account in the books shows (what it owes the
-  company, or what the company owes it).
+  company, or what the company owes it), laid on its open invoices newest first, so an invoice
+  paid on account reads as paid. Money is shown as a banking app shows it.
 - **Decisions:** each bill the company has to pay is evaluated by code, with no model: whether a
   confirmed job holds it, whether each truck it pays for has a proof of delivery the owner
-  confirmed, whether the client paid, whether it was paid before, and the vault's caps and
-  balance read from the chain, under the owner's versioned policy. A bill is mirrored as test
-  USDC at a fixed rate for its currency. The owner approves, holds, rejects or changes the amount
-  of the evaluation in force on the Payments page, or on the card under what Tamga writes about
-  the bill in the chat, and every evaluation and answer is a row in a hash-chained log. Beside
-  the rules, the controller, a model with no tools, gives its opinion on each bill that waits
-  for the owner: pay, pay part, wait or ask, with its reason, on the card and in the log. It
-  moves nothing: the rules have decided what can be approved, and the owner approves.
+  confirmed, whether the client paid, whether it was paid before, how much the firm's account in the
+  books still says is owed (how payments are recorded is a setting of the policy), and the vault's
+  caps and balance read from the chain, under the owner's versioned policy. A bill is mirrored as
+  test USDC at a fixed rate for its currency. The owner approves, holds, rejects or changes the
+  amount of the evaluation in force on the Payments page, or on the card under what Tamga writes
+  about the bill in the chat, and every evaluation and answer is a row in a hash-chained log. Beside
+  the rules, the controller, a model with no tools, gives its opinion on each bill that waits for
+  the owner: pay, pay part, wait or ask, with its reason, on the card and in the log. It moves
+  nothing: the rules have decided what can be approved, and the owner approves.
 - **Payments:** the executor pays each bill the owner approved from the company's vault to the
   subcontractor's wallet, under a key the vault pays once, and records the transaction's hash
   with its Arcscan link. A bill the vault refuses goes back to the owner. The Log page lists
@@ -131,8 +149,13 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, in this order: the draft cards; the replay of past projects with its score, and the
-playground's scenarios.
+Next, by Oct 17: the live demo; company memory and a short brief, so the chat knows the company
+across chats and fetches the rest only when asked; changes that matter as drafts the owner
+confirms on a card, a policy written from the owner's own words among them; Tamga speaking first
+on an overdue invoice, a new bill or a missing paper, and a morning brief; the treasury (cash, the
+vault, the next four weeks); models that quote what they relied on, checked by code and scored on
+the owner's own answers; the why behind every link, truck and firm; and the playground's
+scenarios.
 
 ## This repository
 
