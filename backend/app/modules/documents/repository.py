@@ -549,3 +549,22 @@ async def has_uploads(db: AsyncSession, company_id: uuid.UUID, document_id: uuid
         .limit(1)
     )
     return found is not None
+
+
+async def find_documents(
+    db: AsyncSession, company_id: uuid.UUID, words: Sequence[str], limit: int
+) -> Sequence[Document]:
+    filters: list[ColumnElement[bool]] = [Document.company_id == company_id]
+    for word in words:
+        like = f"%{escape_like(word)}%"
+        filters.append(
+            or_(
+                Document.filename.ilike(like, escape="\\"),
+                Document.description.ilike(like, escape="\\"),
+                Document.doc_type.ilike(like, escape="\\"),
+            )
+        )
+    found = await db.scalars(
+        select(Document).where(*filters).order_by(Document.created_at.desc()).limit(limit)
+    )
+    return found.all()

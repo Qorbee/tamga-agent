@@ -333,7 +333,7 @@ async def conversation_text(db: AsyncSession, company_id: uuid.UUID, thread: Thr
     return "\n\n---\n\n".join(parts)
 
 
-async def _summaries(db: AsyncSession, desk: Desk, threads: Sequence[ThreadRead]) -> list[str]:
+async def summaries(db: AsyncSession, desk: Desk, threads: Sequence[ThreadRead]) -> list[str]:
     """A line per conversation, with the handle to open it by and the projects its mails are
     tied to."""
     mail_ids = [mail.id for thread in threads for mail in thread.mails]
@@ -397,7 +397,7 @@ async def search_mail(
             until=_day(until, end=True),
             limit=_FOUND + 1,
         )
-        lines = await _summaries(db, desk, [t for t in found if t.id != desk.thread_id][:_FOUND])
+        lines = await summaries(db, desk, [t for t in found if t.id != desk.thread_id][:_FOUND])
     return llm.fenced_text("mail search results", "\n".join(lines) or "No conversation matches.")
 
 
@@ -451,7 +451,7 @@ async def open_project(context: RunContext[Desk], number: str) -> str:
         )
         threads = await conversations.threads_holding(db, desk.company_id, mails, limit=_FOUND)
         lines = [f"{project.number}: {project.name} ({project.status})", "Conversations:"]
-        lines += await _summaries(db, desk, threads) or ["none"]
+        lines += await summaries(db, desk, threads) or ["none"]
     lines += ["Invoices:", *(_invoice_line(invoice, []) for invoice in invoices)]
     if not invoices:
         lines.append("none")

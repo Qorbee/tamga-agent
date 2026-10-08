@@ -383,7 +383,11 @@ async def _speak(company: Company, finding: Finding) -> int:
         await db.commit()
 
     seat = Seat(
-        company_id=company.id, thread_id=None, actor=Actor.of_tamga(company.id), chat_id=chat_id
+        company_id=company.id,
+        thread_id=None,
+        actor=Actor.of_tamga(company.id),
+        chat_id=chat_id,
+        traces=companies.traces_content(company.kind),
     )
     usage = RunUsage()
     written: list[ModelMessage] = []

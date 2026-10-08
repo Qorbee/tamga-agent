@@ -1494,6 +1494,14 @@ async def get_documents(
     return {row.id: row for row in await repository.get_many(db, company_id, ids)}
 
 
+async def find_documents(
+    db: AsyncSession, company_id: uuid.UUID, q: str, limit: int
+) -> list[Document]:
+    """Files whose name, type or the line their reader left holds every word of ``q``, newest
+    first: what an agent's search finds them by."""
+    return list(await repository.find_documents(db, company_id, q.split(), limit))
+
+
 async def filenames(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, str]:

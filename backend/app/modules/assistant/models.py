@@ -9,6 +9,7 @@ from sqlalchemy import (
     Index,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -64,6 +65,12 @@ class Chat(CompanyScoped, Base):
             unique=True,
             postgresql_where=text("digest_on IS NOT NULL"),
         ),
+        Index(
+            "ix_chats_search_text",
+            "search_text",
+            postgresql_using="gin",
+            postgresql_ops={"search_text": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -83,6 +90,13 @@ class Chat(CompanyScoped, Base):
     # When the run it has in flight began; null when it has none. A chat takes one run at a
     # time, whichever process makes it.
     running_since: Mapped[datetime | None]
+    # A few lines on what it was about, written once it has gone quiet (ADR-0025): what a later
+    # chat's search finds it by. Empty until then; written again after new messages.
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Its title and summary folded for search (`platform/search.py`).
+    search_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # When the summary was written; behind ``last_message_at``, it is due again.
+    summarized_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

@@ -48,12 +48,12 @@ def _line(truck: Shipment) -> str:
 async def answer_truck(
     context: RunContext[Seat], truck: int, answer: Literal["confirmed", "rejected"]
 ) -> str:
-    """Confirms a truck Tamga proposed (t1, from project_file) as the job's, or rejects it: a
+    """Confirms a truck Tamga proposed (t1, from a project opened) as the job's, or rejects it: a
     rejected truck loses the papers Tamga put on it, and its plates are not proposed again."""
     seat = context.deps
     truck_id = seat.look("t", truck)
     if truck_id is None:
-        return "No such truck: use a handle that project_file returned."
+        return "No such truck: use a handle that open returned."
     async with open_session() as db:
         try:
             await service.update_shipment(db, seat.actor, truck_id, {"state": answer})

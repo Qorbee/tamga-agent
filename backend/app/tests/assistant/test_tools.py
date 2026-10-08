@@ -36,7 +36,7 @@ async def test_a_projects_file_shows_its_trucks_papers_and_what_it_lacks(
     model: Callable[..., Script],  # noqa: F811
 ) -> None:
     await the_sandbox(client)
-    script = model(("project_file", {"number": sandbox.SALE}), "One truck is proven.")
+    script = model(("open", {"handle": sandbox.SALE}), "One truck is proven.")
 
     answer = await ask(client, await new_chat(client), user("What does the Northwind job lack?"))
 
@@ -54,7 +54,7 @@ async def test_the_draft_tools_change_tamgas_records_as_the_owner(
 ) -> None:
     project_id = await the_sandbox(client)
     script = model(
-        ("project_file", {"number": sandbox.SALE}),
+        ("open", {"handle": sandbox.SALE}),
         # The client's invoice is the first invoice shown, after the one file.
         ("answer_link", {"link": 2, "answer": "rejected"}),
         ("add_truck", {"project": sandbox.SALE, "plate": "34 ABC 12", "driver": "A. Driver"}),
@@ -90,7 +90,7 @@ async def test_a_draft_tool_refused_by_the_service_says_so(
 ) -> None:
     await the_sandbox(client)
     script = model(
-        ("project_file", {"number": sandbox.SALE}),
+        ("open", {"handle": sandbox.SALE}),
         # A handle or a number the run was never given reaches nothing.
         ("answer_link", {"link": 99, "answer": "confirmed"}),
         ("update_project", {"number": "P-NOPE", "status": "closed"}),
@@ -99,5 +99,5 @@ async def test_a_draft_tool_refused_by_the_service_says_so(
 
     await ask(client, await new_chat(client), user("Confirm everything"))
 
-    assert script.returned(2) == "No such link: use a handle that project_file returned."
+    assert script.returned(2) == "No such link: use a handle that open returned."
     assert script.returned(3) == "No such project: use a number that a tool returned."

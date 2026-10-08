@@ -44,7 +44,7 @@ from app.modules.assistant.schemas import (
 from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
 from app.modules.projects import service as projects
-from app.platform import events, llm
+from app.platform import events, llm, search
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session, violated_constraint
@@ -56,7 +56,8 @@ logger = logging.getLogger(__name__)
 # The budget of requests (CHAT_REQUESTS_PER_DAY) counts those made in this long.
 RUN_WINDOW: Final = timedelta(days=1)
 # The most requests one answer may take: the searches before it and the answer itself. A run
-# that starts within the day's budget finishes, so a day can end this many requests past it.
+# that starts within the day's budget finishes, so a day can end this many requests past it. Its
+# helpers' runs are counted apart, and refused once the budget is spent (``helpers``).
 RUN_REQUESTS: Final = 15
 # What a reader is told of a run that failed, as the message and the code of the protocol's
 # error event: a client shows its own words for it.
@@ -160,6 +161,8 @@ async def update_chat(
         if not name:
             raise BadRequest("A chat's name has something in it", field="title")
         chat.title = name
+        if chat.summary:
+            chat.search_text = search.search_text(name, chat.summary)
     if archived is not None and archived != (chat.archived_at is not None):
         chat.archived_at = utcnow() if archived else None
     await db.commit()
@@ -305,7 +308,9 @@ async def run_chat(
         ),
         accept=request.headers.get("accept"),
     )
-    seat = Seat(company_id=actor.company_id, thread_id=None, actor=actor, chat_id=chat_id)
+    seat = Seat(
+        company_id=actor.company_id, thread_id=None, actor=actor, chat_id=chat_id, traces=traces
+    )
     usage = RunUsage()
     reader = _Reader()
 

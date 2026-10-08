@@ -72,8 +72,8 @@ async def test_the_owner_compacts_a_chat_and_its_runs_are_sent_notes_of_what_was
     await arrive(company_id, 1, mail("<a@x>", body=PLANTED), category=ThreadCategory.WORK)
     chat_id = await new_chat(client)
     first = model(
-        ("search_mail", {"words": "Munich"}),
-        ("open_conversation", {"conversation": 1}),
+        ("search", {"query": "Munich", "sources": ["mail"]}),
+        ("open", {"handle": "c1"}),
         "It asks for a truck for Monday.",
     )
     events(await ask(client, chat_id, user("What does the Munich mail say?")))
@@ -98,7 +98,7 @@ async def test_the_owner_compacts_a_chat_and_its_runs_are_sent_notes_of_what_was
     shown = sent(compactor, 0)
     assert "Owner: What does the Munich mail say?" in shown
     assert "Tamga: It asks for a truck for Monday." in shown
-    assert '[Tamga looked up: open_conversation {"conversation": 1}]' in shown
+    assert '[Tamga looked up: open {"handle": "c1"}]' in shown
     assert PLANTED not in shown and "And who wrote it?" not in shown
     assert compactor.infos[0].function_tools == []
     # A reader still sees every message, and where the chat was compacted.

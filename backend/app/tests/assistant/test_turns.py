@@ -30,16 +30,9 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("storage_bucket")
 
 READ_ONLY = {
     "waiting",
-    "search_mail",
-    "open_conversation",
-    "search_projects",
-    "open_project",
-    "search_invoices",
-    "project_file",
-    "open_file",
-    "search_parties",
-    # The company's memory, read; drafting into it (`remember`) is a person's.
-    "recall",
+    # Reading; a helper's run (investigate, read_file) and drafting are a person's.
+    "search",
+    "open",
 }
 
 
@@ -103,7 +96,7 @@ async def test_tamga_writes_first_about_a_project_it_proposes(
     proposal = await placement_of(company_id, "<order@x>")
     [project] = (await client.get("/projects")).json()["items"]
     script = tamga(
-        ("open_project", {"number": project["number"]}),
+        ("open", {"handle": project["number"]}),
         "Stone asks for a truck from Istanbul to Munich. It looks like a new job.",
     )
 
@@ -161,7 +154,7 @@ async def test_a_finding_goes_to_the_chat_that_holds_its_project_or_to_a_new_one
     second = await owner_project(company_id, "<b@x>", "Munich B")
     # The owner asked about the first project in a chat of their own, which now holds it.
     chat_id = (await client.post("/chats", json={})).json()["id"]
-    owner_asks(("open_project", {"number": first.number}), "It is a draft.")
+    owner_asks(("open", {"handle": first.number}), "It is a draft.")
     events(await ask(client, chat_id, user("How is Munich A?")))
     await arrive(company_id, 3, mail("<which@x>", subject="POD"), category=ThreadCategory.WORK)
     linker(
@@ -213,10 +206,10 @@ async def test_a_project_merged_into_another_gives_it_its_place_in_the_chats(
     # and which they also asked about in a chat of their own.
     await arrive(company_id, 2, mail("<b@x>", subject="Munich B"), category=ThreadCategory.WORK)
     stays = await owner_project(company_id, "<b@x>", "Munich B")
-    owner_asks(("open_project", {"number": stays.number}), "It is a draft.")
+    owner_asks(("open", {"handle": stays.number}), "It is a draft.")
     events(await ask(client, written["id"], user("Is it Munich B?")))
     own = (await client.post("/chats", json={})).json()["id"]
-    owner_asks(("open_project", {"number": proposed["number"]}), "It is proposed.")
+    owner_asks(("open", {"handle": proposed["number"]}), "It is proposed.")
     events(await ask(client, own, user("What is the proposed one?")))
 
     merged = await client.post(f"/projects/{proposed['id']}/merge", json={"into": str(stays.id)})
@@ -255,7 +248,7 @@ async def test_in_a_chat_tamga_opened_the_owner_asks_about_anything(
     assert await turns.speak_pending() == 1
     [chat] = await chats_of(client)
 
-    script = owner_asks(("open_project", {"number": other["number"]}), "Reed is a draft.")
+    script = owner_asks(("open", {"handle": other["number"]}), "Reed is a draft.")
     answered = await ask(client, chat["id"], user("And how is the Reed job?"))
 
     assert words(answered) == "Reed is a draft."
@@ -602,7 +595,7 @@ async def test_a_turn_into_a_chat_that_is_nearly_full_compacts_it_first(
     [project] = (await client.get("/projects")).json()["items"]
     # The owner asked about the project in a chat, which holds it and has grown full.
     chat_id = (await client.post("/chats", json={})).json()["id"]
-    owner_asks(("open_project", {"number": project["number"]}), "It is proposed.")
+    owner_asks(("open", {"handle": project["number"]}), "It is proposed.")
     events(await ask(client, chat_id, user("What is the new project?")))
     async with open_session() as db:
         await db.execute(

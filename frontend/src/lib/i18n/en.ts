@@ -482,6 +482,10 @@ export const en = {
     /** What Tamga looked at for an answer, by the name of its tool. */
     tools: {
       waiting: "Looked at what waits for you",
+      search: "Searched the records",
+      open: "Opened a record",
+      investigate: "Had a helper read the records",
+      read_file: "Had a helper read a file",
       search_projects: "Searched the projects",
       open_project: "Opened a project",
       search_mail: "Searched the mail",

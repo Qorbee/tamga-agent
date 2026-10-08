@@ -438,7 +438,7 @@ async def test_the_days_budget_bounds_the_chat_and_a_failed_run_is_counted(
     assert off.status_code == 429 and off.json()["error"]["code"] == "rate_limited"
 
     monkeypatch.setattr(get_settings(), "chat_requests_per_day", 2)
-    model(("search_projects", {"words": "Stone"}), RuntimeError("the provider fell over"))
+    model(("search", {"query": "Stone"}), RuntimeError("the provider fell over"))
     failed = await ask(client, chat_id, user("Find Stone's project"))
 
     errors = [event for event in events(failed) if event["type"] == "RUN_ERROR"]
@@ -591,8 +591,8 @@ async def test_a_chat_holds_the_records_its_runs_open(
     other = (await client.post("/projects", json={"name": "Reed, Izmir to Lyon"})).json()
     chat_id = await new_chat(client)
     script = model(
-        ("search_projects", {"words": ""}),
-        ("open_project", {"number": project["number"]}),
+        ("search", {"query": "", "sources": ["projects"]}),
+        ("open", {"handle": project["number"]}),
         "It is active.",
     )
 
@@ -617,15 +617,10 @@ async def test_a_chat_holds_the_records_its_runs_open(
     tools = {tool.name for tool in script.infos[0].function_tools}
     assert tools == {
         "waiting",
-        "search_mail",
-        "open_conversation",
-        "search_projects",
-        "open_project",
-        "search_invoices",
-        "project_file",
-        "open_file",
-        "search_parties",
-        "recall",
+        "search",
+        "open",
+        "investigate",
+        "read_file",
         "remember",
         "answer_link",
         "put_on_truck",

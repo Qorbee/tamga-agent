@@ -464,6 +464,10 @@ export const tr: Dictionary = {
     },
     tools: {
       waiting: "Sizi bekleyenlere baktı",
+      search: "Kayıtlarda aradı",
+      open: "Bir kaydı açtı",
+      investigate: "Kayıtları bir yardımcıya okuttu",
+      read_file: "Bir belgeyi bir yardımcıya okuttu",
       search_projects: "Projelerde aradı",
       open_project: "Bir projeyi açtı",
       search_mail: "E-postalarda aradı",

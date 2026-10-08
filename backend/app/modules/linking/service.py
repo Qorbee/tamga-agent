@@ -68,6 +68,9 @@ Desk = agents.Desk
 reading_tools = agents.reading_tools
 # A project's number as a run's desk keys it.
 bare = agents.bare
+# A conversation as a model reads it, and a line about each of several with its handle.
+conversation_text = agents.conversation_text
+summaries = agents.summaries
 # The kinds of record such a run opens (``Desk.opened``).
 PROJECT = agents.PROJECT
 CONVERSATION = agents.CONVERSATION

@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, and_, delete, func, select, text, tuple_, update
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select, text, true, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,8 @@ from app.modules.assistant.models import (
     MessageKind,
     Origin,
 )
-from app.platform.pagination import PageParams
+from app.platform import search
+from app.platform.pagination import PageParams, escape_like
 
 
 async def add(db: AsyncSession, row: Any) -> None:
@@ -402,3 +403,57 @@ async def requests_since(
         )
     )
     return int(spent or 0)
+
+
+async def quiet_chats(db: AsyncSession, before: datetime, limit: int) -> Sequence[Chat]:
+    """Chats of any company quiet since before then, that a person asked in, with no run in
+    flight, whose summary is missing or older than their last message: the oldest first."""
+    asked = (
+        select(ChatMessage.id)
+        .where(
+            ChatMessage.company_id == Chat.company_id,
+            ChatMessage.chat_id == Chat.id,
+            ChatMessage.began_by == Origin.OWNER,
+        )
+        .exists()
+    )
+    found = await db.scalars(
+        select(Chat)
+        .where(
+            Chat.last_message_at < before,
+            asked,
+            Chat.running_since.is_(None),
+            Chat.digest_on.is_(None),
+            or_(Chat.summarized_at.is_(None), Chat.summarized_at < Chat.last_message_at),
+        )
+        .order_by(Chat.last_message_at)
+        .limit(limit)
+    )
+    return found.all()
+
+
+async def find_summaries(
+    db: AsyncSession, company_id: uuid.UUID, q: str, *, leaving_out: uuid.UUID, limit: int
+) -> Sequence[Chat]:
+    """The company's summarized chats whose title or summary holds every term of the query,
+    the most recent first; ``leaving_out``, the chat that searches."""
+    terms = [_found(term) for term in search.terms(q)]
+    found = await db.scalars(
+        select(Chat)
+        .where(
+            Chat.company_id == company_id,
+            Chat.id != leaving_out,
+            Chat.summary != "",
+            and_(true(), *terms),
+        )
+        .order_by(Chat.last_message_at.desc())
+        .limit(limit)
+    )
+    return found.all()
+
+
+def _found(term: search.Term) -> ColumnElement[bool]:
+    if term.anywhere:
+        compact = func.replace(Chat.search_text, " ", "")
+        return compact.like(f"%{escape_like(term.compact)}%", escape="\\")
+    return Chat.search_text.like(f"% {escape_like(term.words)}%", escape="\\")
