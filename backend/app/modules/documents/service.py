@@ -820,6 +820,13 @@ async def type_files(
             db, company_id, chars=agents.TYPIST_TEXT, limit=limit, only=only
         )
         company = (await companies.get_companies(db, [company_id])).get(company_id)
+        # The owner's words for firms, places and people (ADR-0024), marked used only when the
+        # answers are kept. Imported here: the memory reads projects, which read documents.
+        from app.modules.memory import service as memory
+
+        words = await memory.words_for(db, company_id) if waiting else ""
+        if write:
+            await db.commit()
     trace_content = company is not None and companies.traces_content(company.kind)
     offered = [(each.key, each.label, each.hint) for each in registry.all_types()]
     answered: list[tuple[str, str | None]] = []
@@ -828,7 +835,7 @@ async def type_files(
         if write and not await _reserve(company_id, file.id):
             continue
         try:
-            key, made = await _typed(file, offered, trace_content=trace_content, usage=usage)
+            key, made = await _typed(file, offered, words, trace_content=trace_content, usage=usage)
         except Exception as error:
             # The error's type only: its text can carry what the file holds.
             logger.warning("typing document %s failed: %s", file.id, type(error).__name__)
@@ -873,6 +880,7 @@ async def _release(company_id: uuid.UUID, document_id: uuid.UUID) -> None:
 async def _typed(
     file: repository.Untyped,
     offered: Sequence[tuple[str, str, str]],
+    words: str,
     *,
     trace_content: bool,
     usage: RunUsage | None,
@@ -881,10 +889,11 @@ async def _typed(
     with nothing when its answer could not be used. What the run used is added to ``usage``."""
     # Its own count: the limits hold for one file, not for every file a caller adds up.
     spent = RunUsage()
+    typed = agents.typed(offered, file.filename, file.description, file.text)
     try:
         run = await llm.run(
             agents.typist,
-            agents.typed(offered, file.filename, file.description, file.text),
+            [words, *typed] if words else typed,
             deps=frozenset(key for key, _, _ in offered),
             limits=_TYPING_LIMITS,
             language=None,
@@ -1009,6 +1018,10 @@ async def read_with_vision(
             return 0
         filename, text = found[0].filename, found[0].text
         key = found[0].rendition_key or found[0].storage_key
+        from app.modules.memory import service as memory  # it reads projects, which read us
+
+        words = await memory.words_for(db, company_id)
+        await db.commit()
     data = await storage.get(key)
     is_pdf = filetypes.sniff(data) == filetypes.PDF
     scanned = _scanned_pages(text) if is_pdf else []
@@ -1030,6 +1043,8 @@ async def read_with_vision(
         seen = agents.Reading(shows="", pages=[])
     else:
         shown_to = agents.pictures(filename, pictures)
+        if words:
+            shown_to = [words, *shown_to]
         usage = RunUsage()
 
         async def ask(*, second: bool = False) -> agents.Reading:

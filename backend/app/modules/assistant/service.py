@@ -288,6 +288,8 @@ async def run_chat(
         if is_running(chat, now):
             raise Conflict("Tamga is still answering in this chat")
     history = await context.sent(db, actor.company_id, chat.id)
+    # The brief's part that changes, just before the question and never kept (ADR-0025).
+    now_is = ModelRequest(parts=[UserPromptPart(content=await agents.situation(db, actor))])
     adapter = AGUIAdapter(
         agent=agents.assistant,
         # Of what the client sent, only the run's id: its messages, and any tool, state or
@@ -313,7 +315,7 @@ async def run_chat(
     # Built before anything is written: a model that cannot be reached by its settings
     # fails here, with nothing reserved and no question left without its run.
     events = adapter.run_stream(
-        message_history=[*history, question],
+        message_history=[*history, now_is, question],
         conversation_id=str(chat_id),
         run_id=str(run_id),
         deps=seat,

@@ -95,13 +95,28 @@ class Script:
         return ModelResponse(parts=[ToolCallPart(tool_name=name, args=args)])
 
     def said(self, request: int) -> list[str]:
-        """What the users wrote, in order, in what the model was sent for ``request``."""
+        """What the users wrote, in order, in what the model was sent for ``request``: not the
+        brief's part code puts before the question (``agents.situation``)."""
         return [
             part.content
             for message in self.requests[request]
             if isinstance(message, ModelRequest)
             for part in message.parts
-            if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+            if isinstance(part, UserPromptPart)
+            and isinstance(part.content, str)
+            and not part.content.startswith(agents.SITUATION)
+        ]
+
+    def situations(self, request: int) -> list[str]:
+        """The brief's changing parts in what the model was sent for ``request``."""
+        return [
+            part.content
+            for message in self.requests[request]
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            and isinstance(part.content, str)
+            and part.content.startswith(agents.SITUATION)
         ]
 
     def returned(self, request: int) -> str:
@@ -610,6 +625,8 @@ async def test_a_chat_holds_the_records_its_runs_open(
         "project_file",
         "open_file",
         "search_parties",
+        "recall",
+        "remember",
         "answer_link",
         "put_on_truck",
         "answer_conversation",

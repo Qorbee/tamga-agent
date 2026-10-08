@@ -26,7 +26,7 @@ from datetime import timedelta
 from typing import Final
 
 from pydantic_ai import UsageLimits
-from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -374,6 +374,10 @@ async def _speak(company: Company, finding: Finding) -> int:
             db, company.id, run_id, began_by=Origin.TAMGA, requests=TURN_REQUESTS, at=now
         )
         history = await context.sent(db, company.id, chat.id)
+        # The brief's part that changes, after the history and never kept (ADR-0025).
+        now_is = ModelRequest(
+            parts=[UserPromptPart(content=await agents.situation(db, Actor.of_tamga(company.id)))]
+        )
         chat.running_since = now
         chat_id = chat.id
         await db.commit()
@@ -393,7 +397,7 @@ async def _speak(company: Company, finding: Finding) -> int:
             language=company.language,
             trace_content=companies.traces_content(company.kind),
             usage=usage,
-            history=history,
+            history=[*history, now_is],
             settings_name=agents.SPEAKER,
         )
         written = result.new_messages()

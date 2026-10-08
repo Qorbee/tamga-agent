@@ -8,8 +8,8 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from sqlalchemy import func, select, text
 
 from app.config import get_settings
-from app.modules.assistant import service, turns
-from app.modules.assistant.models import CardKind, Chat, ChatRecord, ChatRun, Origin
+from app.modules.assistant import agents, service, turns
+from app.modules.assistant.models import CardKind, Chat, ChatMessage, ChatRecord, ChatRun, Origin
 from app.modules.conversations.models import ThreadCategory
 from app.modules.linking import service as linking
 from app.modules.projects import service as projects
@@ -38,6 +38,8 @@ READ_ONLY = {
     "project_file",
     "open_file",
     "search_parties",
+    # The company's memory, read; drafting into it (`remember`) is a person's.
+    "recall",
 }
 
 
@@ -126,6 +128,14 @@ async def test_tamga_writes_first_about_a_project_it_proposes(
     # The run only reads, and what was found reached it as data from outside.
     assert {tool.name for tool in script.infos[0].function_tools} == READ_ONLY
     [told] = script.said(0)
+    # The brief's changing part came before what code told it, and was not kept.
+    assert len(script.situations(0)) == 1
+    async with open_session() as db:
+        kept = await db.scalars(
+            select(ChatMessage.message).where(ChatMessage.chat_id == uuid.UUID(chat["id"]))
+        )
+        stored = str(kept.all())
+    assert agents.SITUATION not in stored and proposal.reason in stored
     fence = told.index("BEGIN OUTSIDE DATA")
     assert fence < told.index(project["name"]) < told.index("END OUTSIDE DATA")
     assert proposal.reason in told

@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { MemorySection } from "@/components/memory";
 import { changePolicy, getMe, getPolicy, updateCompany, type WritingLanguage } from "@/lib/api";
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -72,6 +73,7 @@ export function SettingsDialog({
           </Row>
         </section>
         <CompanyIdentitySection />
+        <MemorySection />
         <PaymentsSection />
       </DialogContent>
     </Dialog>

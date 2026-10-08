@@ -272,6 +272,31 @@ export const listInvoiceTotals = (params: InvoiceTotalQuery) =>
   request<InvoiceTotal[]>(`/invoice-totals${query(params)}`);
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
 
+// The company's memory (ADR-0024): what the owner taught Tamga; only the owner makes it hold.
+export type MemoryEntry = Schemas["MemoryEntryOut"];
+export type MemoryPage = Schemas["MemoryPage"];
+export type MemoryKind = Schemas["MemoryKind"];
+type MemoryQuery = NonNullable<operations["memory.list_memory"]["parameters"]["query"]>;
+export const listMemory = (params: MemoryQuery) => request<MemoryPage>(`/memory${query(params)}`);
+/** Every entry the filters list, page by page: the owner sees and retires each one. */
+export async function listAllMemory(params: MemoryQuery): Promise<MemoryEntry[]> {
+  const items: MemoryEntry[] = [];
+  for (;;) {
+    const page = await listMemory({ ...params, offset: items.length, limit: 200 });
+    items.push(...page.items);
+    if (page.items.length === 0 || items.length >= page.total) return items;
+  }
+}
+export const getMemoryEntry = (id: string) => request<MemoryEntry>(`/memory/${id}`);
+/** An entry the owner writes: it holds at once. */
+export const writeMemoryEntry = (body: Schemas["MemoryIn"]) =>
+  request<MemoryEntry>("/memory", json("POST", body));
+/** The owner corrects, confirms (`held`) or retires an entry. */
+export const changeMemoryEntry = (id: string, body: Schemas["MemoryChange"]) =>
+  request<MemoryEntry>(`/memory/${id}`, json("PATCH", body));
+/** The owner throws away a draft; one that held is retired instead. */
+export const discardMemoryEntry = (id: string) => request<void>(`/memory/${id}`, { method: "DELETE" });
+
 // Decisions and payments (docs/architecture/05)
 export type Decision = Schemas["DecisionOut"];
 export type DecisionPage = Schemas["DecisionPage"];

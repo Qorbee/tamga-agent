@@ -65,6 +65,14 @@ def fenced_text(label: str, text: str) -> str:
     return f"BEGIN OUTSIDE DATA {marker}\n{label}\n{text}\nEND OUTSIDE DATA {marker}"
 
 
+def fenced_steady(label: str, text: str) -> str:
+    """Content fenced as ``fenced_text`` does it, with a marker drawn from the content itself
+    rather than at random: the same content is fenced the same way each time, so a prompt that
+    begins with it stays cached. Content cannot carry its own marker, which hashes all of it."""
+    marker = hashlib.sha256(f"{label}\n{text}".encode()).hexdigest()[:16]
+    return f"BEGIN OUTSIDE DATA {marker}\n{label}\n{text}\nEND OUTSIDE DATA {marker}"
+
+
 class NoAnswer(Exception):
     """The model was reached and gave nothing to use: its answer failed the output's checks after
     the retries, was filtered, ran past the run's limits, or the provider refused what it was

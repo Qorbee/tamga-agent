@@ -39,6 +39,7 @@ from app.modules.facts import service as facts
 from app.modules.linking import agents, firms, repository
 from app.modules.linking.models import Outcome, Placement
 from app.modules.linking.schemas import JobReading, PlacementOut, PlacementPage
+from app.modules.memory import service as memory
 from app.modules.parties import service as parties
 from app.modules.projects import service as projects
 from app.modules.projects.models import (
@@ -523,6 +524,9 @@ async def place_thread(
                 [found.named[project_id] for project_id in sorted(ties.refused)],
                 found.news,
             )
+            # The owner's words for firms, places and people, ahead of the mail (ADR-0024).
+            if words := await memory.words_for(db, company_id):
+                prompt = [words, *prompt]
             desk = _desk(company_id, thread_id, found)
             # Counted before it is made: a call that fails once the provider has the mail counts.
             await conversations.count_model_reads(db, company_id, agents.LINKER)

@@ -111,6 +111,15 @@ async def advice_asked(
     return {(decision_id, evaluation, inputs) for decision_id, evaluation, inputs in rows}
 
 
+async def count_awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> int:
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Decision)
+        .where(Decision.company_id == company_id, Decision.state == DecisionState.AWAITING_OWNER)
+    )
+    return count or 0
+
+
 async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
     rows = await db.scalars(
         select(Decision.company_id).where(Decision.state == DecisionState.AWAITING_OWNER).distinct()

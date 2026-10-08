@@ -786,6 +786,56 @@ export interface paths {
         patch: operations["me.update_company"];
         trace?: never;
     };
+    "/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memory
+         * @description The company's memory: what its owner taught Tamga, and what a chat drafted for the owner
+         *     to confirm.
+         */
+        get: operations["memory.list_memory"];
+        put?: never;
+        /**
+         * Write Memory Entry
+         * @description An entry the owner writes: it holds at once. The owner's only.
+         */
+        post: operations["memory.write_memory_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/memory/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Memory Entry */
+        get: operations["memory.get_memory_entry"];
+        put?: never;
+        post?: never;
+        /**
+         * Discard Memory Entry
+         * @description The owner throws away a draft; 409 for an entry that held, which is retired instead.
+         */
+        delete: operations["memory.discard_memory_entry"];
+        options?: never;
+        head?: never;
+        /**
+         * Change Memory Entry
+         * @description The owner corrects, confirms or retires an entry.
+         */
+        patch: operations["memory.change_memory_entry"];
+        trace?: never;
+    };
     "/messages": {
         parameters: {
             query?: never;
@@ -2549,6 +2599,96 @@ export interface components {
             company: components["schemas"]["CompanySummary"];
             role: components["schemas"]["Role"];
         };
+        /**
+         * MemoryChange
+         * @description The owner's change to an entry: only the fields given change. ``held`` confirms a draft or
+         *     takes a retired entry back; ``retired`` takes it out of every agent's reach. A firm or a
+         *     project sent as null is cleared.
+         */
+        MemoryChange: {
+            kind?: components["schemas"]["MemoryKind"] | null;
+            /** Party Id */
+            party_id?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** State */
+            state?: ("held" | "retired") | null;
+            /** Text */
+            text?: string | null;
+        };
+        /** MemoryEntryOut */
+        MemoryEntryOut: {
+            /** Chat Id */
+            chat_id: string | null;
+            /** Confirmed At */
+            confirmed_at: string | null;
+            /** Confirmed By */
+            confirmed_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["MemoryKind"];
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Party Id */
+            party_id: string | null;
+            /** Project Id */
+            project_id: string | null;
+            source: components["schemas"]["MemorySource"];
+            state: components["schemas"]["MemoryState"];
+            /** Text */
+            text: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Written By */
+            written_by: string | null;
+        };
+        /**
+         * MemoryIn
+         * @description An entry the owner writes in Settings: it holds as it is saved.
+         */
+        MemoryIn: {
+            kind: components["schemas"]["MemoryKind"];
+            /** Party Id */
+            party_id?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Text */
+            text: string;
+        };
+        /**
+         * MemoryKind
+         * @description What an entry of the company's memory is (ADR-0024).
+         * @enum {string}
+         */
+        MemoryKind: "term" | "alias" | "person" | "preference" | "practice";
+        /** MemoryPage */
+        MemoryPage: {
+            /** Items */
+            items: components["schemas"]["MemoryEntryOut"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * MemorySource
+         * @enum {string}
+         */
+        MemorySource: "chat" | "settings";
+        /**
+         * MemoryState
+         * @enum {string}
+         */
+        MemoryState: "proposed" | "held" | "retired";
         /** MergeOut */
         MergeOut: {
             /** Column */
@@ -5094,6 +5234,173 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "memory.list_memory": {
+        parameters: {
+            query?: {
+                state?: components["schemas"]["MemoryState"][] | null;
+                kind?: components["schemas"]["MemoryKind"][] | null;
+                party_id?: string | null;
+                project_id?: string | null;
+                chat_id?: string | null;
+                q?: string | null;
+                sort?: "-updated_at" | "-last_used_at" | "kind";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "memory.write_memory_entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "memory.get_memory_entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "memory.discard_memory_entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "memory.change_memory_entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryEntryOut"];
                 };
             };
             /** @description Validation Error */

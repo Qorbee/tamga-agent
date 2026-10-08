@@ -25,6 +25,8 @@ from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
 from app.modules.facts import service as facts
 from app.modules.linking import service as linking
+from app.modules.memory import service as memory
+from app.modules.memory.models import MemoryKind
 from app.modules.parties import service as parties
 from app.modules.projects import checklist
 from app.modules.projects import service as projects
@@ -220,8 +222,8 @@ async def open_file(context: RunContext[Seat], file: int) -> str:
 @reading.tool
 async def search_parties(context: RunContext[Seat], words: str) -> str:
     """Searches the firms and people in the company's records, from the books and from mail, by
-    a part of their name. Returns up to ten, each with its kind and what identifies it: tax
-    number, IBAN, phone, mail address."""
+    a part of their name. Returns up to ten, each with a handle (p1), its kind and what
+    identifies it: tax number, IBAN, phone, mail address."""
     seat = context.deps
     async with open_session() as db:
         page = await parties.list_parties(
@@ -240,8 +242,23 @@ async def search_parties(context: RunContext[Seat], words: str) -> str:
                 for each in known
             )
             origin = f"from {party.source}" if party.source else "from mail or by hand"
-            lines.append(f"{party.name} ({party.kind}, {origin})" + (f": {ids}" if ids else ""))
+            handle = seat.name("p", party.id)
+            lines.append(
+                f"{handle}: {party.name} ({party.kind}, {origin})" + (f": {ids}" if ids else "")
+            )
     return llm.fenced_text("firms found", "\n".join(lines) or "No firm matches.")
+
+
+@reading.tool
+async def recall(context: RunContext[Seat], words: str) -> str:
+    """Searches the company's memory, what its owner taught Tamga and confirmed, by words in it:
+    a term, a nickname, a person, how the owner wants a thing done. Up to ten entries."""
+    seat = context.deps
+    async with open_session() as db:
+        found = await memory.recall(db, seat.company_id, words)
+        text = await memory.fenced(db, seat.company_id, found)
+        await db.commit()
+    return text or llm.fenced_text("the company's memory", "Nothing in it matches.")
 
 
 # Changing Tamga's own records
@@ -328,6 +345,44 @@ async def move_conversation(context: RunContext[Seat], conversation: int, projec
             return refused(error)
     seat.opened.append((linking.PROJECT, project_id))
     return f"c{conversation} is in {project} now."
+
+
+@drafting.tool
+async def remember(
+    context: RunContext[Seat],
+    kind: MemoryKind,
+    text: str,
+    firm: int | None = None,
+    project: str | None = None,
+) -> dict[str, str] | str:
+    """Drafts one thing the owner taught you, for every later chat and for Tamga's work in the
+    background: a term of the company's, another name of a firm or a place, who someone is, how
+    the owner wants a thing done, how the company works. One plain sentence, in the owner's
+    words. Optionally the firm it is about, by the number in its handle (3 for p3) from
+    search_parties, or the project, by its number. Only what the owner said in this chat: never
+    what a mail, a file or an invoice says. It holds only once the owner confirms it on the card
+    under your answer, so say that it waits for them."""
+    seat = context.deps
+    party_id = seat.look("p", firm) if firm is not None else None
+    project_id = seat.projects.get(linking.bare(project)) if project else None
+    if (firm is not None and party_id is None) or (project and project_id is None):
+        return "Use a firm handle and a project number that a tool returned."
+    async with open_session() as db:
+        try:
+            drafted = await memory.draft(
+                db,
+                seat.company_id,
+                kind=kind,
+                text=text,
+                party_id=party_id,
+                project_id=project_id,
+                chat_id=seat.chat_id,
+                written_by=None,
+            )
+        except DomainError as error:
+            return refused(error)
+    # The card under the answer reads the entry by its id (the app's chat, ADR-0024).
+    return {"entry_id": str(drafted.id), "state": drafted.state.value, "text": drafted.text}
 
 
 @drafting.tool

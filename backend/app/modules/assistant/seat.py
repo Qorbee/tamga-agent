@@ -11,13 +11,16 @@ from app.platform.auth import Actor
 class Seat(linking.Desk):
     """Who a run of the assistant answers, on top of what any reading run keeps of what it was
     shown: its tools act as this user, with this user's role, and never as anyone else. A file,
-    a link or a truck is named to the model by a handle the run gave it (f2, l3, t1), so a tool
-    can only reach what the run was shown."""
+    a link, a truck or a firm is named to the model by a handle the run gave it (f2, l3, t1,
+    p4), so a tool can only reach what the run was shown."""
 
     actor: Actor = field(kw_only=True)
     chat_id: uuid.UUID = field(kw_only=True)
-    # Kind ("f", "l", "t") → handle → id, in the order they were shown.
+    # Kind ("f", "l", "t", "p") → handle → id, in the order they were shown.
     handles: dict[str, dict[int, uuid.UUID]] = field(default_factory=dict)
+    # The company's memory as the run's instructions carry it, read at its first request and the
+    # same for every other: a prompt that opens alike stays cached.
+    taught: str | None = None
 
     def name(self, kind: str, record_id: uuid.UUID) -> str:
         shown = self.handles.setdefault(kind, {})

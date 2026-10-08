@@ -485,6 +485,10 @@ async def awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> list[Decisi
     ]
 
 
+async def count_awaiting_owner(db: AsyncSession, company_id: uuid.UUID) -> int:
+    return await repository.count_awaiting_owner(db, company_id)
+
+
 async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
     """The one read across companies, of their ids alone."""
     return await repository.companies_awaiting_owner(db)

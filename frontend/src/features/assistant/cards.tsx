@@ -1,10 +1,11 @@
 "use client";
 
-import { makeAssistantDataUI, type AssistantDataUI, type DataMessagePartProps } from "@assistant-ui/react";
+import { makeAssistantDataUI, makeAssistantToolUI, type AssistantDataUI, type DataMessagePartProps } from "@assistant-ui/react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { DecisionRow } from "@/components/decision-card";
+import { DraftedEntry } from "@/components/memory";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProjectCard, Questions } from "@/components/waiting-cards";
 import {
@@ -130,6 +131,15 @@ function CompactedHere() {
 
 const Compacted = makeAssistantDataUI({ name: "agui-activity/compaction", render: CompactedHere });
 
+/** What the chat's `remember` drafted, as a card the owner confirms under Tamga's answer
+ * (ADR-0024); until the tool has answered, nothing. */
+const Remembered = makeAssistantToolUI<Record<string, unknown>, unknown>({
+  toolName: "remember",
+  // Shown on its own, not folded into the run's closed list of steps: the owner confirms here.
+  display: "standalone",
+  render: ({ result }) => (result === undefined ? null : <DraftedEntry result={result} />),
+});
+
 /** Registers the cards and the mark with the chat; rendered once, inside the chat's runtime. */
 export function ChatCards() {
   return (
@@ -138,6 +148,7 @@ export function ChatCards() {
         <Registered key={kind} />
       ))}
       <Compacted />
+      <Remembered />
     </>
   );
 }
