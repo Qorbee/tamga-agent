@@ -19,8 +19,11 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    one, and fill it in:
    - `POSTGRES_PASSWORD`: from `openssl rand -hex 24`;
    - `NPM_NETWORK`: NPM's network, from `docker network ls`.
-3. `install -m 600 backend/.env.example backend/.env`: it will hold the mailbox passwords and every
-   key. Set, besides the keys each feature needs (the root README, "What turns on what"):
+3. `backend/.env`, readable by its owner alone: it will hold the mailbox passwords and every key.
+   Copy the development machine's over SSH (`scp`, then `chmod 600`), which holds every key the
+   features need, and drop its `DATABASE_URL` and `CONVERTER_URL`; or start from
+   `install -m 600 backend/.env.example backend/.env` and add the keys each feature needs (the root
+   README, "What turns on what"). Either way, set:
    - `APP_ENV=production`;
    - `WEB_URL=https://tamga.qorbee.com`;
    - `CORS_ORIGINS=https://tamga.qorbee.com,https://play.tamga.qorbee.com`;
@@ -28,13 +31,18 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    - `FORWARDED_ALLOW_IPS`: NPM's network's subnet, from `docker network inspect <NPM_NETWORK>`,
      or every guest shares one address and one rate limit;
    - R2: `S3_ENDPOINT_URL` (`https://<account id>.r2.cloudflarestorage.com`), `S3_BUCKET`,
-     `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`.
+     `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`;
+   - `ARC_RPC_URL`: the team's own node (`arc-canteen rpc-url`); with the vault set, the settings
+     refuse the public one.
 
    `DATABASE_URL` and the worker's `CONVERTER_URL` come from `compose.yml`, and the settings refuse
    to start without the rest.
-4. `deploy/tamga up -d --build`. The first build pulls the converter's image (about 1.5 GB) and builds
-   the api and web images.
-5. In NPM, three proxy hosts, each with a Let's Encrypt certificate and HTTP/2:
+4. When a development machine already read a company's mail and books, move its data now
+   (below, "Moving the development data"). Then `deploy/tamga up -d --build`. The first build
+   pulls the converter's image (about 1.5 GB) and builds the api and web images.
+5. DNS: an A record for each host below (and AAAA if the server has IPv6) pointing at the
+   server, since Let's Encrypt checks them. Then, in NPM, three proxy hosts, each with a Let's
+   Encrypt certificate and HTTP/2:
 
    | Host | Forward to |
    |---|---|
@@ -45,14 +53,40 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    On `api.`, the advanced tab holds what a streamed chat and an upload need (nginx's own limit
    is 1 MB; `UPLOAD_MAX_BYTES` is 25 MB):
    `proxy_buffering off; proxy_read_timeout 3600s; client_max_body_size 30m;`.
-6. The first company and its owner:
+6. The first company and its owner, unless they came with the moved data:
    `deploy/tamga run --rm backend python scripts/create_company.py --name "…" --owner-email …`
    prints the invite link where the owner sets a password. Once its books are synced, its
    account on the vault: `deploy/tamga run --rm backend python scripts/open_vault_account.py
    <company id> --deposit … --per-payment-cap … --daily-cap … --timelock …` prints what it would
    register; the same with `--write` opens it, from the treasury's test USDC.
-7. The backups' folder, readable by root alone, and the daily dump (Backups, below):
+7. The executor's sign-in to Circle's CLI, in the worker (ADR-0017), with the same email as the
+   Agent Wallet the vault names as its executor (`AGENT_WALLET_ADDRESS`), so Circle reuses that
+   wallet: `deploy/tamga exec worker circle wallet login <email> --type agent --testnet`, then the
+   code Circle mails, and its terms when asked. `deploy/tamga exec worker circle wallet status`
+   shows it signed in. The session lasts seven days and lives on the `circle_session` volume, so a
+   new image keeps it; until it is renewed, payments wait and nothing is marked paid.
+8. The backups' folder, readable by root alone, and the daily dump (Backups, below):
    `sudo install -d -m 700 /var/backups/tamga`.
+
+## Moving the development data
+
+Once, at the first deploy, when the server takes over from a development machine that already read
+a company's mail and books: its database and files move, so nothing is read or paid for again.
+Stop the development machine's worker first and leave it stopped: two workers would read the same
+mailboxes into two databases, and both would anchor on the vault.
+
+1. On the development machine, from the repository root:
+   `docker compose exec -T postgres pg_dump -U postgres -Fc app > tamga.dump`, then `scp` it to the
+   server. It holds the company's mail: delete both copies once restored.
+2. On the server, before step 4's `up`: `deploy/tamga up -d postgres`, then
+   `deploy/tamga exec -T postgres pg_restore -U postgres -d app --no-owner < tamga.dump`. Step 4's
+   `migrate` brings it to the newest revision.
+3. The files, from the development machine into step 3's R2 bucket under the same keys, so each
+   row finds its file: `cd backend && uv run python scripts/copy_files.py --endpoint <R2 endpoint>
+   --bucket <bucket> --access-key-id <key id>`, which asks for the secret key. It reads this
+   machine's storage from `S3_*` in `backend/.env` or the environment; a stopped run is run again.
+4. Step 6 is skipped: the company and its owner came with the database, and the owner signs in
+   with the same password.
 
 ## Updating
 
@@ -68,7 +102,8 @@ succeeded. If it fails, they keep running the old image: `deploy/tamga logs migr
 
 - `curl https://api.tamga.qorbee.com/health/ready`: the database and the file storage;
 - `deploy/tamga ps`: every service up, `migrate` exited 0;
-- `deploy/tamga logs -f backend worker`.
+- `deploy/tamga logs -f backend worker`;
+- `deploy/tamga exec worker circle wallet status`: the executor signed in for testnet (step 7).
 
 ## Rolling back
 
@@ -79,7 +114,7 @@ alembic downgrade <revision before it>`. **A downgrade that drops a column drops
 ## Backups
 
 The database is the one thing here not kept elsewhere (files are in R2). Once a day, from root's
-crontab on the server (`sudo crontab -e`), into the folder step 7 made; `%` is cron's newline, so
+crontab on the server (`sudo crontab -e`), into the folder step 8 made; `%` is cron's newline, so
 it is escaped:
 
 ```bash

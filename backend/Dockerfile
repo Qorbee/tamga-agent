@@ -31,13 +31,27 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 
+# Circle's CLI, which the executor runs from the worker (ADR-0017): its tree exactly as the
+# committed lockfile has it, install scripts off. Node's major is the frontend's (.node-version);
+# Docker cannot read that file, so the two move together by hand.
+FROM node:24-trixie-slim AS circle
+
+WORKDIR /circle-cli
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=bind,source=circle-cli/package.json,target=package.json \
+    --mount=type=bind,source=circle-cli/package-lock.json,target=package-lock.json \
+    npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+
 FROM debian:trixie-slim
 
 # CA certificates for outbound HTTPS (external APIs); libpq for psycopg, the job queue's driver
 # (its pure-Python build loads the system library); libarchive for libarchive-c, which reads
-# archives in the locked child (ADR-0012). Nothing else from apt.
+# archives in the locked child (ADR-0012); libatomic for Node, copied in below without its own
+# image's packages, which it needs on ARM. Nothing else from apt.
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates libpq5 libarchive13t64 \
+    && apt-get install --yes --no-install-recommends \
+        ca-certificates libpq5 libarchive13t64 libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --uid 10001 --no-create-home app
@@ -45,8 +59,14 @@ RUN useradd --system --uid 10001 --no-create-home app
 # Same paths as the build stage: the virtualenv's interpreter links point into /python.
 COPY --from=build /python /python
 COPY --from=build /app /app
+# Node alone (no npm) and the CLI's tree. Its sign-in lives in CIRCLE_CLI_HOME, a volume of the
+# worker's, so a new image keeps it; the human signs in there (deploy/README.md).
+COPY --from=circle /usr/local/bin/node /usr/local/bin/node
+COPY --from=circle /circle-cli/node_modules /circle-cli/node_modules
+RUN install -d -o app /circle-session
 
-ENV PATH="/app/.venv/bin:$PATH" \
+ENV PATH="/app/.venv/bin:/circle-cli/node_modules/.bin:$PATH" \
+    CIRCLE_CLI_HOME=/circle-session \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app

@@ -135,6 +135,9 @@ audit() {
   (cd backend && uv export --locked --no-hashes --format requirements-txt > "$requirements")
   uvx --exclude-newer "7 days" pip-audit --disable-pip --no-deps -r "$requirements"
   (cd frontend && pnpm audit --prod --audit-level high)
+  # Circle's CLI tree holds high advisories it cannot take a fix for; each is named, with why, in
+  # scripts/audit_circle_cli.py, and any other high or critical one fails this.
+  (cd backend/circle-cli && npm audit --omit=dev --json || true) | python3 scripts/audit_circle_cli.py
 }
 
 jobs=("$@")

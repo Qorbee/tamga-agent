@@ -1,0 +1,8 @@
+{
+  "name": "tamga-circle-cli",
+  "private": true,
+  "description": "Circle's CLI, which the executor runs from the worker (ADR-0017). The image installs it with npm ci from package-lock.json, scripts off.",
+  "dependencies": {
+    "@circle-fin/cli": "1.1.4"
+  }
+}

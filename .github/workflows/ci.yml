@@ -212,3 +212,11 @@ jobs:
         if: needs.detect.outputs.frontend == 'true'
         working-directory: frontend
         run: pnpm audit --prod --audit-level high
+      # Circle's CLI, run by the worker as a short-lived subprocess against Circle's API (ADR-0017).
+      # Its tree is Circle's, locked as shipped, and holds high advisories it cannot take a fix
+      # for: each is named, with why, in scripts/audit_circle_cli.py, and any other high or
+      # critical one fails this.
+      - name: JavaScript (npm audit over backend/circle-cli/package-lock.json)
+        run: |
+          (cd backend/circle-cli && npm audit --omit=dev --json || true) > "$RUNNER_TEMP/circle-audit.json"
+          python3 scripts/audit_circle_cli.py < "$RUNNER_TEMP/circle-audit.json"

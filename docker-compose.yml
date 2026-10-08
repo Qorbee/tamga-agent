@@ -130,6 +130,9 @@ services:
       CONVERTER_URL: http://converter:3000
     # The one service besides the relay that reaches the converter: it sends the files.
     networks: [default, converter]
+    # The executor's sign-in to Circle's CLI (ADR-0017): kept across new images, renewed by hand.
+    volumes:
+      - circle_session:/circle-session
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,3 +169,4 @@ networks:
 volumes:
   postgres_data:
   storage_data:
+  circle_session:

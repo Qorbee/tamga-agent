@@ -16,6 +16,7 @@ The worker that runs background jobs is the same image with another command (`py
 | `scripts/` | `create_company.py`, `create_circle_wallets.py`, `deploy_policy_vault.py`, `set_vault_executor.py`, `open_vault_account.py`, `dump_openapi.py` |
 | `app/migrations/` | Alembic; models are discovered from `app/modules/*/models.py` and `app/packs/*/models.py` |
 | `openapi.json` | The API contract the frontend generates its types from. Generated, committed |
+| `circle-cli/` | Circle's CLI, which the executor runs from the worker (ADR-0017): its tree locked as Circle ships it, installed in the image with `npm ci` and scripts off. Moved by hand: `npm install --package-lock-only --ignore-scripts --before=<7 days ago>` |
 
 ## Start reading at
 
