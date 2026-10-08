@@ -246,7 +246,9 @@ function described(
           ? [words.ruleApproved, "done"]
           : body.state === "rejected"
             ? [words.ruleRejected, "stopped"]
-            : [words.ruleHeld, "stopped"];
+            : body.state === "paid_in_books"
+              ? [words.paidInBooks, "done"]
+              : [words.ruleHeld, "stopped"];
     case "edited":
       return [words.edited(money(body.from), money(body.to)), "quiet"];
     // Only an owner answers; the viewer may be another member, or another owner.

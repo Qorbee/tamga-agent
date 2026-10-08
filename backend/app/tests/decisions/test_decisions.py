@@ -292,7 +292,7 @@ async def test_what_changed_is_evaluated_again(client: httpx.AsyncClient, vault:
         await db.commit()
     await service.evaluate_pending()
     delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
-    assert delivered["state"] == "held" and failing(delivered)["amount"] == "hold"
+    assert delivered["state"] == "paid_in_books" and failing(delivered)["amount"] == "hold"
 
 
 async def test_without_the_vault_or_a_rate_nothing_waits_for_an_approval(
@@ -521,7 +521,7 @@ async def test_the_log_names_the_firm_each_entry_was_made_for(
     ]
 
 
-async def test_a_bill_the_firms_account_shows_paid_is_held_and_read_so(
+async def test_a_bill_the_firms_account_shows_paid_is_held_and_read_by_the_setting(
     client: httpx.AsyncClient, vault: Vault
 ) -> None:
     await a_sandbox(client)
@@ -537,10 +537,21 @@ async def test_a_bill_the_firms_account_shows_paid_is_held_and_read_so(
 
     await service.evaluate_pending()
 
-    held = (await by_bill(client))[sandbox.DELIVERED_BILL]
-    assert held["state"] == "held" and "on_account" in failing(held)
+    # Recorded on account, the books show it paid: nothing waits on anyone.
+    paid = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    assert paid["state"] == "paid_in_books" and "on_account" in failing(paid)
     bill = (await client.get(f"/invoices/{delivered['invoice_id']}")).json()
     assert (bill["settled"], bill["account_owed"]) == ("paid_on_account", "0.00")
+    refused = await client.patch(
+        f"/decisions/{paid['id']}", json={"action": "approve", "evaluation": paid["evaluation"]}
+    )
+    assert refused.status_code == 409
+
+    # Recorded per invoice, the open invoice and the account disagree: held for the owner.
+    await client.patch("/policy", json={"payments_recorded": "per_invoice"})
+    await service.evaluate_pending()
+    held = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    assert held["state"] == "held" and "on_account" in failing(held)
 
 
 async def test_a_policy_change_keeps_what_it_does_not_name(client: httpx.AsyncClient) -> None:

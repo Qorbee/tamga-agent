@@ -27,6 +27,9 @@ class DecisionState(StrEnum):
     HELD = "held"
     # A rule rejects it (a bill already paid), or the owner did.
     REJECTED = "rejected"
+    # A rule holds it because the books show it paid: the invoice itself, or, for a company that
+    # records payments on account, the firm's account (ADR-0022). Nothing waits on anyone.
+    PAID_IN_BOOKS = "paid_in_books"
     # The owner approved the evaluation it names; the executor pays it.
     APPROVED = "approved"
     # Paid from the vault; its payment holds the transaction's hash.

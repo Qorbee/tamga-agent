@@ -16,11 +16,12 @@ const PAGE = 50;
 const VIEWS = ["waiting", "held", "paid"] as const;
 type View = (typeof VIEWS)[number];
 /** What each tab lists: an approved decision waits for the executor beside those that wait for
- * the owner, since both are still to be paid. */
+ * the owner, since both are still to be paid; a bill the books show paid is paid, by the vault or
+ * not. */
 const STATES: Record<View, Decision["state"][]> = {
   waiting: ["awaiting_owner", "approved"],
   held: ["held", "failed", "rejected"],
-  paid: ["settled"],
+  paid: ["settled", "paid_in_books"],
 };
 // The chosen option is filled and in full ink; the others recede.
 const SEGMENT = "text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground";

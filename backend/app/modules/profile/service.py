@@ -223,22 +223,19 @@ async def _profile(db: AsyncSession, company_id: uuid.UUID) -> CompanyProfile:
 
 
 async def _domains(db: AsyncSession, company_id: uuid.UUID) -> list[OwnDomain]:
-    """Every domain the mail or the tax registry shows is the company's, and every one the owner
-    named, the company's first."""
+    """Every domain the mail shows is the company's, and every one the owner named, the company's
+    first; the tax registry backs one of them where its e-document address is at it."""
     company = await _company(db, company_id)
     mailboxes = await conversations.mailbox_domains(db, company_id)
     sent_from = await conversations.mail_by_sender_domain(db, company_id)
     words = {row.domain: row.ours for row in await companies.domain_words(db, company_id)}
-    # The registry's e-document address may be an e-invoice provider's: its domain counts only
-    # when it is named as the company is.
+    # The registry's e-document address is a label its e-invoice provider registered, named like
+    # the company or not, and no mail may ever come from it: it backs a domain the mail or the
+    # owner shows, and adds none.
     registry = company.tax_registry_domain if company.tax_id else None
-    if registry and not _domain_names_us(
-        registry, company.name, frozenset(mailboxes | set(sent_from))
-    ):
-        registry = None
     named = sorted(
         domain
-        for domain in mailboxes | set(sent_from) | set(words) | ({registry} if registry else set())
+        for domain in mailboxes | set(sent_from) | set(words)
         if not maildomains.is_shared(domain)
     )
     mail = await conversations.mail_by_sender_domain(db, company_id, named) if named else {}

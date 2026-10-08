@@ -1910,7 +1910,7 @@ export interface components {
          * DecisionState
          * @enum {string}
          */
-        DecisionState: "awaiting_owner" | "held" | "rejected" | "approved" | "settled" | "failed";
+        DecisionState: "awaiting_owner" | "held" | "rejected" | "paid_in_books" | "approved" | "settled" | "failed";
         /**
          * Direction
          * @enum {string}

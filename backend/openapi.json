@@ -1575,6 +1575,7 @@
           "awaiting_owner",
           "held",
           "rejected",
+          "paid_in_books",
           "approved",
           "settled",
           "failed"

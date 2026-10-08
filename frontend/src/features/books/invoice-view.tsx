@@ -110,12 +110,22 @@ function Left({ bill, money }: { bill: Invoice; money: (amount: string | null) =
           : bill.settled === "open" && bill.account_owed != null && Number(bill.account_owed) < left
             ? why.owed(money(bill.account_owed) ?? "", day)
             : null;
-  const owed = left > 0 && bill.settled !== "paid_on_account" && bill.settled !== "paid_with_difference";
+  // Read as paid, the books' open figure is a detail under it, never "left to pay".
+  const paid =
+    bill.settled === "paid_on_account"
+      ? t.books.settled.paidOnAccount
+      : bill.settled === "paid_with_difference"
+        ? t.books.settled.paidWithDifference
+        : null;
+  const owed = left > 0 && paid === null;
   return (
     <span className="grid gap-0.5">
       <span className={cn("text-sm tabular-nums", owed ? "text-warning-foreground" : "text-success-foreground")}>
-        {t.books.left}: {money(bill.remaining_amount)}
+        {paid ?? `${t.books.left}: ${money(bill.remaining_amount)}`}
       </span>
+      {paid ? (
+        <span className="text-muted-foreground text-xs tabular-nums">{t.books.openInBooks(money(bill.remaining_amount) ?? "")}</span>
+      ) : null}
       {said ? <span className="text-muted-foreground text-xs text-pretty">{said}</span> : null}
     </span>
   );

@@ -421,7 +421,11 @@ async def test_the_registry_may_place_the_number_at_a_domain(
 ) -> None:
     company_id = await guest_client(client)
     await read_mailbox(company_id)
-    places = {OURS: "acmelojistik.example", OTHER: "einvoice-provider.example"}
+    places = {
+        OURS: "acmelojistik.example",
+        OTHER: "einvoice-provider.example",
+        SIGNED: "acme.example",
+    }
 
     async def look_up(db: Any, company_id: uuid.UUID, tax_id: str) -> Taxpayer | None:
         return Taxpayer(tax_id=tax_id, domains=(places[tax_id],))
@@ -434,15 +438,20 @@ async def test_the_registry_may_place_the_number_at_a_domain(
     taken = await client.put("/company/profile/tax-id", json={"tax_id": OTHER, "confirm": True})
     assert "einvoice-provider.example" not in domains(taken.json()["profile"])
 
-    # One registered as the company's own name agrees, and becomes one of its domains.
+    # One registered as the company's own name agrees with the number, but is only a label no
+    # mail came from: never one of its domains.
     ours = (await client.put("/company/profile/tax-id", json={"tax_id": OURS})).json()
     assert ours["saved"] and ours["profile"]["tax_id"]["registry"] == "found"
     assert ours["profile"]["tax_id"]["registry_domain"] == "acmelojistik.example"
     assert ours["profile"]["legal_name"] is None  # the registry gave no name to take
-    found = domains(ours["profile"])["acmelojistik.example"]
-    assert (found["ours"], found["sources"]) == (True, ["registry"])
+    assert "acmelojistik.example" not in domains(ours["profile"])
     async with open_session() as db:
-        assert (await service.who_we_are(db, company_id)).writes_from("ali@acmelojistik.example")
+        ourselves = await service.who_we_are(db, company_id)
+    assert not ourselves.writes_from("ali@acmelojistik.example")
+
+    # At the domain the company's mail is from, the registry backs it.
+    mailed = (await client.put("/company/profile/tax-id", json={"tax_id": SIGNED})).json()
+    assert "registry" in domains(mailed["profile"])["acme.example"]["sources"]
 
 
 async def test_a_registry_name_decides_over_its_addresses_domain(

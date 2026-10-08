@@ -71,7 +71,10 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
   const stopping = decision.rules.filter((rule) => rule.outcome === "hold" || rule.outcome === "reject");
   const byOwner = decision.decided_by !== null;
   // The executor's, or done: nobody answers it any more.
-  const answered = decision.state === "approved" || decision.state === "settled";
+  const answered = decision.state === "approved" || decision.state === "settled" || decision.state === "paid_in_books";
+  // Paid outside the vault, the bill's own total is all there is to show: what is left on it is
+  // nothing, or what the firm's account already covers.
+  const vaultPays = decision.state !== "paid_in_books";
   // The owner's own hold or rejection is theirs to take back; a rule's is not.
   const approvable =
     usdc !== null &&
@@ -79,17 +82,21 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
     (decision.state === "awaiting_owner" ||
       ((decision.state === "held" || decision.state === "rejected") && byOwner));
   const status =
-    decision.state === "approved"
-      ? t.payments.beingPaid
-      : decision.state === "held" && byOwner
-        ? t.payments.heldByYou
-        : decision.state === "rejected"
-          ? byOwner
-            ? t.payments.rejectedByYou
-            : t.payments.rejected
-          : decision.state === "failed"
-            ? t.payments.refused
-            : null;
+    decision.state === "paid_in_books"
+      ? bill?.settled === "paid_on_account"
+        ? t.payments.paidOnAccount
+        : t.payments.paidInBooks
+      : decision.state === "approved"
+        ? t.payments.beingPaid
+        : decision.state === "held" && byOwner
+          ? t.payments.heldByYou
+          : decision.state === "rejected"
+            ? byOwner
+              ? t.payments.rejectedByYou
+              : t.payments.rejected
+            : decision.state === "failed"
+              ? t.payments.refused
+              : null;
   // The controller's opinion on the evaluation shown: it moves nothing, the owner answers.
   const advice = answered ? null : (decision.advice ?? null);
   const advised = advice
@@ -131,8 +138,14 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
           </span>
           {/* What moves is the stablecoin; the bill's own figure is beside it (07, Currency). */}
           <span className="shrink-0 text-end tabular-nums">
-            <span className="block text-sm font-medium">{usdc ?? "—"}</span>
-            <span className="text-muted-foreground block text-xs">{money(decision.amount)}</span>
+            {vaultPays ? (
+              <>
+                <span className="block text-sm font-medium">{usdc ?? "—"}</span>
+                <span className="text-muted-foreground block text-xs">{money(decision.amount)}</span>
+              </>
+            ) : (
+              <span className="block text-sm font-medium">{money(bill?.total_amount ?? decision.amount) ?? "—"}</span>
+            )}
             {decision.amount_edited && bill?.total_amount ? (
               <span className="text-muted-foreground block text-xs">{t.payments.partOf(money(bill.total_amount) ?? "")}</span>
             ) : null}

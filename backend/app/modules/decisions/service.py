@@ -54,6 +54,7 @@ from app.modules.decisions.schemas import (
 )
 from app.modules.parties import service as parties
 from app.modules.policy import service as policies
+from app.modules.policy.models import PaymentsRecorded
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 from app.modules.projects import service as projects
 from app.modules.settlement import service as settlement
@@ -137,7 +138,7 @@ async def evaluate_company(company_id: uuid.UUID) -> int:
             return 0
         bills = {bill.id: bill for bill in await books.open_payables(db, company_id)}
         # A bill no longer open whose decision still waits is evaluated too: paid or cancelled
-        # in the books meanwhile, it is held, not left waiting for an approval.
+        # in the books meanwhile, it is not left waiting for an approval.
         missing = [i for i in await repository.movable_invoices(db, company_id) if i not in bills]
         for bill in await books.get_invoices(db, company_id, missing):
             bills[bill.id] = bill
@@ -221,6 +222,7 @@ async def _decide(
     )
     picture = await _picture(db, company_id, bill, amount, account, policy, seen)
     outcome, results = policies.evaluate(picture, policy)
+    paid = outcome is Outcome.HOLD and _paid_in_books(bill, account, policy)
     # What the rules read, but the time, and what they gave: a timelock that runs out changes
     # the result, so the decision moves then. Whom it pays is part of it: a bill the books move
     # to another party is a new proposal, never an approval of the old one.
@@ -229,6 +231,9 @@ async def _decide(
         "policy": policy.version,
         "party": str(bill.party_id),
         "payee": seen.payees.get(bill.party_id) if bill.party_id else None,
+        # Present only when true: a bill whose books show it paid is evaluated anew, and no other
+        # bill's evaluation changes with it.
+        **({"paid_in_books": True} if paid else {}),
     }
     digest = _hash({**read, "rules": [asdict(result) for result in results]})
     if decision is not None and decision.picture_hash == digest and not force:
@@ -245,7 +250,7 @@ async def _decide(
             company_id=company_id, invoice_id=bill.id, party_id=bill.party_id, evaluation=0
         )
     decision.party_id = bill.party_id or decision.party_id
-    decision.state = _STATES[outcome]
+    decision.state = DecisionState.PAID_IN_BOOKS if paid else _STATES[outcome]
     decision.evaluation += 1
     decision.picture_hash = digest
     decision.policy_version = policy.version
@@ -281,6 +286,21 @@ async def _decide(
         at=now,
     )
     return True
+
+
+def _paid_in_books(bill: InvoiceOut, account: Account | None, policy: PolicyOut) -> bool:
+    """Whether the books show the bill paid, as the company's setting reads them (ADR-0022): with
+    nothing left on the invoice, or, recorded on account, with nothing the firm's account lays on
+    it. Read per invoice, an account that shows it paid is a doubt the owner looks at, and the
+    bill stays held."""
+    left = bill.remaining_amount
+    if bill.cancelled or left is None:
+        return False
+    if left <= 0:
+        return True
+    if policy.payments_recorded is not PaymentsRecorded.ON_ACCOUNT or account is None:
+        return False
+    return account.owed is not None and account.owed <= 0
 
 
 def _to_pay(bill: InvoiceOut, account: Account | None) -> Decimal:
