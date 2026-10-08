@@ -470,7 +470,7 @@ export const en = {
     },
     /** How full a chat is, and compacting it. */
     choice: {
-      label: "Model and reasoning",
+      menu: "Add a file, choose the model",
       model: "Model",
       effort: "Reasoning",
       efforts: { low: "Low", medium: "Medium", high: "High", xhigh: "Highest" },
@@ -478,7 +478,6 @@ export const en = {
     },
     context: {
       used: (percent: number) => `${percent}% of this chat's context is used`,
-      what: "Tamga is sent the whole chat with every question. Before it fills, the earlier part is written into notes by itself.",
       half: "This chat is more than half full. Compacting writes its earlier part into notes: answers stay quick, and nothing you see is removed.",
       compact: "Compact now",
       compacting: "Compacting…",

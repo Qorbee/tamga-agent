@@ -22,9 +22,10 @@ const AROUND = 2 * Math.PI * RADIUS;
 
 /**
  * How full the open chat is: what its next question would send Tamga, of what a chat may hold
- * (ADR-0018). A ring beside Send, with the share in figures from half, where compacting is
- * offered and may be left alone: the chat is compacted by itself before it fills. Compacting
- * removes nothing the reader sees.
+ * (ADR-0018). A ring beside Send from half full, with the share in figures, where compacting is
+ * offered and may be left alone: the chat is compacted by itself before it fills. Below half
+ * there is nothing to do about it, so nothing is shown. Compacting removes nothing the reader
+ * sees.
  */
 export function ContextMeter() {
   const id = useAuiState((s) => s.threadListItem.id);
@@ -32,7 +33,7 @@ export function ContextMeter() {
   // A chat put away is still opened, from the Archived group, and is as full as it was.
   const archived = useArchivedChats().data?.items;
   const chat = open?.find((item) => item.id === id) ?? archived?.find((item) => item.id === id);
-  if (!chat || chat.context_tokens === 0) return null;
+  if (!chat || chat.context_tokens < chat.context_window / 2) return null;
   // How a compaction went is one chat's to show: the next chat opened starts without it.
   return <Meter key={chat.id} chat={chat} />;
 }
@@ -55,7 +56,6 @@ function Meter({ chat }: { chat: Chat }) {
 
   const share = Math.min(1, chat.context_tokens / chat.context_window);
   const percent = Math.round(share * 100);
-  const half = share >= 0.5;
   const busy = compact.isPending || chat.running || answering;
   // Asked again with nothing said since, the server writes no notes and the chat comes back as
   // full as it was: said here, in place of an action that does nothing.
@@ -79,7 +79,7 @@ function Meter({ chat }: { chat: Chat }) {
             aria-label={label}
             className={cn(
               "hover:bg-accent focus-visible:ring-ring flex h-7 items-center gap-1 rounded-full px-1 outline-none focus-visible:ring-2",
-              compact.isError ? "text-danger-foreground" : half ? "text-warning-foreground" : "text-muted-foreground",
+              compact.isError ? "text-danger-foreground" : "text-warning-foreground",
             )}
           >
             <svg viewBox="0 0 20 20" className={cn("size-5 -rotate-90", compact.isPending && "animate-pulse")} aria-hidden>
@@ -92,18 +92,17 @@ function Meter({ chat }: { chat: Chat }) {
                 stroke="currentColor"
                 strokeWidth="2.5"
                 strokeLinecap="round"
-                // A chat that has just begun still shows a mark.
-                strokeDasharray={`${Math.max(share, 0.04) * AROUND} ${AROUND}`}
+                strokeDasharray={`${share * AROUND} ${AROUND}`}
               />
             </svg>
-            {half ? <span className="pe-1 text-xs tabular-nums">{percent}%</span> : null}
+            <span className="pe-1 text-xs tabular-nums">{percent}%</span>
           </button>
         </DropdownMenuTrigger>
       </Hint>
       <DropdownMenuContent align="end" side="top" className="w-72">
         <p className="px-2 pt-1.5 text-sm font-medium">{t.assistant.context.used(percent)}</p>
         <p className="text-muted-foreground px-2 pt-1 pb-2 text-xs text-pretty">
-          {half ? t.assistant.context.half : t.assistant.context.what}
+          {t.assistant.context.half}
         </p>
         {compact.isError ? (
           <p className="text-danger-foreground px-2 pb-2 text-xs" role="alert">

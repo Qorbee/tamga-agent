@@ -102,10 +102,10 @@ Arc testnet; nothing touches a company's bank or real money.
   rejects what Tamga tied to a job, puts a paper on a truck, adds a truck, opens or edits a
   project. It never moves money, sends anything or marks a proof of delivery. The
   history a run reads is the server's, never the browser's; an answer is finished and kept when
-  the page that asked is closed; unread is per person. A ring beside Send shows how full a chat
-  is, and before it fills its earlier part is written into notes; a model names each chat from
-  its first question, in one small request; whoever asks chooses the model and how long it
-  reasons.
+  the page that asked is closed; unread is per person. From half full, a ring beside Send shows
+  how full a chat is, and before it fills its earlier part is written into notes; a model names
+  each chat from its first question, in one small request; whoever asks chooses the model and
+  how long it reasons, in the composer's menu.
 - **Tamga writes first:** when it proposes a project or cannot choose one for a conversation, it
   writes to the owner in the chat that already holds that record, or opens a new one, and code
   puts a card under its message, on which the owner answers. Such a turn acts for the company

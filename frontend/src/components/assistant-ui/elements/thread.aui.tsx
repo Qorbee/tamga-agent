@@ -91,8 +91,10 @@ export type ThreadComponents = {
     | ComponentType<PropsWithChildren<{ group: ThreadGroupPart }>>
     | undefined;
   TaskGroup?: ComponentType<{ group: ThreadGroupPart }> | undefined;
-  /** Shown in the composer beside Send: what the app adds there (the model, how full the chat is). */
+  /** Shown in the composer beside Send: what the app adds there (how full the chat is). */
   ComposerTools?: ComponentType | undefined;
+  /** The composer's menu, in place of its add-a-file button (adding a file, the model). */
+  ComposerMenu?: ComponentType | undefined;
 };
 
 const messageGroupBy = groupPartByType({
@@ -465,11 +467,11 @@ const Composer: FC<{ autoFocus: boolean; placeholder: string }> = ({
 const ComposerAction: FC = () => {
   // 0.15.21 has no composer.submission (added in 0.15.22) — restore the registry version on upgrade.
   const { t } = useI18n();
-  const { ComposerTools } = useContext(ThreadComponentsContext);
+  const { ComposerTools, ComposerMenu } = useContext(ThreadComponentsContext);
 
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <ComposerAddAttachment />
+      {ComposerMenu ? <ComposerMenu /> : <ComposerAddAttachment />}
       <div className="flex items-center gap-1.5">
         {ComposerTools ? <ComposerTools /> : null}
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>

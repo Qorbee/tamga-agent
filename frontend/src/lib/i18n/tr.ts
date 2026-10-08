@@ -450,7 +450,7 @@ export const tr: Dictionary = {
       gone: "Bu artık burada değil.",
     },
     choice: {
-      label: "Model ve akıl yürütme",
+      menu: "Dosya ekle, model seç",
       model: "Model",
       effort: "Akıl yürütme",
       efforts: { low: "Düşük", medium: "Orta", high: "Yüksek", xhigh: "En yüksek" },
@@ -458,7 +458,6 @@ export const tr: Dictionary = {
     },
     context: {
       used: (percent: number) => `Bu sohbetin bağlamı %${percent} dolu`,
-      what: "Tamga her soruda sohbetin tamamını okur. Dolmadan önce eski kısmı kendiliğinden notlara yazılır.",
       half: "Bu sohbetin yarısından fazlası doldu. Sıkıştırmak eski kısmını notlara yazar: yanıtlar hızlı kalır, gördüklerinizden hiçbir şey silinmez.",
       compact: "Şimdi sıkıştır",
       compacting: "Sıkıştırılıyor…",
