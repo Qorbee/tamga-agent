@@ -230,9 +230,12 @@ async def run[DepsT, OutputT](
     usage: RunUsage | None = None,
     second: bool = False,
     history: Sequence[ModelMessage] | None = None,
+    settings_name: str | None = None,
 ) -> AgentRunResult[OutputT]:
     """Runs ``agent`` once on its configured model, or (``second``) on the one its hard cases
     go to; ``history`` is what was said before, for a run that continues a conversation.
+    ``settings_name`` reads the model, effort and tier under another name than the agent's, for
+    one agent that serves two kinds of run.
     ``language`` is the one its answer's own
     words are written in (the company's), or None for an agent that answers in the language it is
     written to. ``trace_content`` sends prompts and answers to
@@ -247,7 +250,7 @@ async def run[DepsT, OutputT](
         raise ValueError("an agent needs a name: its model and its traces are keyed on it")
     capabilities = _traced(trace_content)
     usage = usage if usage is not None else RunUsage()
-    name = agent.name
+    name = settings_name or agent.name
 
     async def ask(tier: Tier) -> AgentRunResult[OutputT]:
         # Over the agent's own settings (its timeout), which stay.

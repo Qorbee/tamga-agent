@@ -394,6 +394,7 @@ async def _speak(company: Company, finding: Finding) -> int:
             trace_content=companies.traces_content(company.kind),
             usage=usage,
             history=history,
+            settings_name=agents.SPEAKER,
         )
         written = result.new_messages()
     except llm.NoAnswer:

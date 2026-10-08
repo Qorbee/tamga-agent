@@ -23,6 +23,9 @@ from app.platform.db import open_session
 from app.platform.pagination import PageParams
 
 ASSISTANT: Final = "assistant"
+# What Tamga writes unasked is the same agent run under another name, so it has a model, effort
+# and tier of its own: short words on what code already found, cheaper than an owner's question.
+SPEAKER: Final = "speaker"
 # The kinds of record a chat holds, as the reading tools name what a run opened.
 PROJECT: Final = linking.PROJECT
 CONVERSATION: Final = linking.CONVERSATION

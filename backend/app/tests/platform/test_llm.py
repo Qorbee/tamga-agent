@@ -166,6 +166,40 @@ async def test_a_run_is_sent_its_effort_beside_the_agents_own_settings(
     assert sent[0].model_settings == {"timeout": 60}
 
 
+async def test_a_run_under_another_settings_name_takes_that_names_model_and_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[AgentInfo] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        sent.append(info)
+        return ModelResponse(parts=[TextPart(ANSWER)])
+
+    reasons = FunctionModel(respond, profile=ModelProfile(supports_thinking=True))
+    asked: list[str] = []
+
+    def model_for(name: str) -> FunctionModel:
+        asked.append(name)
+        return reasons
+
+    monkeypatch.setattr(llm, "model_for", model_for)
+    monkeypatch.setitem(get_settings().agent_efforts, "assistant", "high")
+    monkeypatch.setitem(get_settings().agent_efforts, "speaker", "low")
+    agent: Agent[None, str] = Agent(name="assistant")
+
+    await llm.run(
+        agent,
+        PROMPT,
+        deps=None,
+        limits=UsageLimits(request_limit=1),
+        language=None,
+        settings_name="speaker",
+    )
+
+    assert asked == ["speaker"]
+    assert sent[0].model_request_parameters.thinking == "low"
+
+
 async def test_a_background_agent_runs_on_the_cheaper_tier_and_on_the_standard_one_when_it_is_full(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
