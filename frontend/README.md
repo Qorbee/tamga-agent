@@ -79,8 +79,7 @@ re-apply them:
   looked things up sits close to the next one with no action bar. An answer that failed on the
   server (`run_failed`) is said in the reader's words. A message with no words (a card that
   stands alone) has no action bar either. `components` takes `ComposerTools`, drawn beside
-  Send (the chat's context meter), and `ComposerMenu`, drawn in place of the add-a-file button
-  (adding a file, the model and the effort).
+  Send (the model and effort chip, and the chat's context meter).
 - `thread.aui.tsx`, `attachment.aui.tsx`, `tool-fallback.aui.tsx`: written against
   `@assistant-ui/react` 0.15.21, which lacked `submission` and `dismissible`. The package is now
   0.15.22; the two are not put back, since nothing asks for an approval yet. When approvals come,

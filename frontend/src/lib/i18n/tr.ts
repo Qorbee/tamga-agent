@@ -450,7 +450,7 @@ export const tr: Dictionary = {
       gone: "Bu artık burada değil.",
     },
     choice: {
-      menu: "Dosya ekle, model seç",
+      label: "Model ve akıl yürütme",
       model: "Model",
       effort: "Akıl yürütme",
       efforts: { low: "Düşük", medium: "Orta", high: "Yüksek", xhigh: "En yüksek" },

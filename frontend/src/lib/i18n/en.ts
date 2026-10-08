@@ -470,7 +470,7 @@ export const en = {
     },
     /** How full a chat is, and compacting it. */
     choice: {
-      menu: "Add a file, choose the model",
+      label: "Model and reasoning",
       model: "Model",
       effort: "Reasoning",
       efforts: { low: "Low", medium: "Medium", high: "High", xhigh: "Highest" },
