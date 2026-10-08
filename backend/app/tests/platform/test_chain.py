@@ -1,11 +1,14 @@
 import json
 import stat
 import sys
+import traceback
 import uuid
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from pydantic import SecretStr
 
 from app.config import get_settings
 from app.platform import agent_wallet, chain, circle
@@ -95,6 +98,25 @@ async def test_a_paid_key_and_a_payees_date_are_read(
     assert await chain.payee_active_from(company_id, PAYEE) is None
     # The same parts are the same key, so the vault refuses them a second time.
     assert chain.payment_key("bill", "final") == key != chain.payment_key("bill", "part")
+
+
+async def test_a_node_that_fails_leaves_its_token_out_of_the_error_and_its_traceback(
+    vault: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        get_settings(), "arc_rpc_url", SecretStr("https://rpc.example/v1/secret-token")
+    )
+    client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(429))
+    monkeypatch.setattr(
+        httpx, "AsyncClient", lambda **kwargs: client(transport=transport, **kwargs)
+    )
+
+    with pytest.raises(chain.ChainError) as raised:
+        await chain.company_state(uuid.uuid4())
+
+    # A failed job is logged with its whole traceback, chained exceptions included.
+    assert "secret-token" not in "".join(traceback.format_exception(raised.value))
 
 
 async def test_nothing_is_read_without_a_vault(monkeypatch: pytest.MonkeyPatch) -> None:

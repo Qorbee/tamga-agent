@@ -7,12 +7,11 @@ Same image and settings as the api; a job gets its database session from
 """
 
 import asyncio
-import logging
 from typing import Final
 
 from app import packs
 from app.config import get_settings
-from app.platform import isolated, jobs, tracing
+from app.platform import isolated, jobs, logs, tracing
 from app.platform.db import dispose_db, init_db
 
 # Jobs run side by side. A scheduled job never overlaps itself (its lock), so these are different
@@ -22,7 +21,7 @@ CONCURRENCY: Final = 4
 
 async def main() -> None:
     settings = get_settings()
-    logging.basicConfig(level=settings.log_level)
+    logs.configure(settings.log_level)
     packs.register_all()
     jobs.import_all_tasks()
     init_db(str(settings.database_url))

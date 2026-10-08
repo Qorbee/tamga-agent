@@ -5,7 +5,6 @@ routers. No business logic lives here; that belongs in ``app/modules/``.
 """
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -29,7 +28,7 @@ from app.modules.projects import router as projects
 from app.modules.settlement import router as settlement
 from app.modules.translations import router as translations
 from app.packs.logistics import router as logistics
-from app.platform import events, isolated, tracing
+from app.platform import events, isolated, logs, tracing
 from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
 from app.platform.origin import OriginCheck
@@ -61,7 +60,7 @@ def operation_id(route: APIRoute) -> str:
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    logging.basicConfig(level=settings.log_level)
+    logs.configure(settings.log_level)
     packs.register_all()
 
     app = FastAPI(

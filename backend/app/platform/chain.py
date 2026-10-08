@@ -169,8 +169,9 @@ async def _post(request: dict[str, Any]) -> dict[str, Any]:
             response.raise_for_status()
             answer = response.json()
     except (httpx.HTTPError, ValueError) as error:
-        # The error's type only: its text can name the URL, and the URL holds a token.
-        raise ChainError(f"the node could not be asked: {type(error).__name__}") from error
+        # The error's type only, and not chained: its text names the URL, which holds a token,
+        # and a job's traceback prints every chained exception.
+        raise ChainError(f"the node could not be asked: {type(error).__name__}") from None
     if not isinstance(answer, dict):
         raise ChainError("the node's answer is not a JSON-RPC response")
     return answer
