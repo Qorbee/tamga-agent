@@ -6,8 +6,8 @@ root `docker-compose.yml`, which stays the one place the images and versions are
 production's differences: no published port, R2 instead of the local file storage, Postgres with a
 real password, the schema migrated before the api and the worker start, and restarts. `.env.example`
 holds the three variables Compose itself needs; the apps read only `backend/.env`. `tamga` is
-`docker compose` with both files, `deploy/.env` and the app profile, from any directory: every
-command below starts with it.
+`docker compose` with both files, `deploy/.env` and the app profile, from any directory, plus three
+commands of its own: `update`, `rollback` and `backup`. Every command below starts with it.
 
 ## Once per server
 
@@ -18,6 +18,8 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
 2. `install -m 600 deploy/.env.example deploy/.env`, readable by its owner alone like the next
    one, and fill it in:
    - `POSTGRES_PASSWORD`: from `openssl rand -hex 24`;
+   - `DOMAIN`: `tamga.qorbee.com`, the one place the addresses come from (below, Changing the
+     domain);
    - `NPM_NETWORK`: NPM's network, from `docker network ls`.
 3. `backend/.env`, readable by its owner alone: it will hold the mailbox passwords and every key.
    Copy the development machine's over SSH (`scp`, then `chmod 600`), which holds every key the
@@ -25,9 +27,6 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    `install -m 600 backend/.env.example backend/.env` and add the keys each feature needs (the root
    README, "What turns on what"). Either way, set:
    - `APP_ENV=production`;
-   - `WEB_URL=https://tamga.qorbee.com`;
-   - `CORS_ORIGINS=https://tamga.qorbee.com,https://play.tamga.qorbee.com`;
-   - `SESSION_COOKIE_DOMAIN=tamga.qorbee.com`, the parent the web and API hosts share;
    - `FORWARDED_ALLOW_IPS`: NPM's network's subnet, from `docker network inspect <NPM_NETWORK>`,
      or every guest shares one address and one rate limit;
    - R2: `S3_ENDPOINT_URL` (`https://<account id>.r2.cloudflarestorage.com`), `S3_BUCKET`,
@@ -35,8 +34,12 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    - `ARC_RPC_URL`: the team's own node (`arc-canteen rpc-url`); with the vault set, the settings
      refuse the public one.
 
-   `DATABASE_URL` and the worker's `CONVERTER_URL` come from `compose.yml`, and the settings refuse
-   to start without the rest.
+   `DATABASE_URL`, the worker's `CONVERTER_URL`, and `WEB_URL`, `CORS_ORIGINS` and
+   `SESSION_COOKIE_DOMAIN` (from `DOMAIN`) come from `compose.yml`, over any line `backend/.env`
+   has; the settings refuse to start without the rest.
+   - **The agents' models:** `AGENT_MODELS` and `AGENT_EFFORTS` as on the development machine,
+     which put the background agents, the summarizer and the chat's helpers on the small model;
+     an agent they leave out runs on `DEFAULT_MODEL`.
 4. When a development machine already read a company's mail and books, move its data now
    (below, "Moving the development data"). Then `deploy/tamga up -d --build`. The first build
    pulls the converter's image (about 1.5 GB) and builds the api and web images.
@@ -65,8 +68,8 @@ Needs Docker with Compose 2.24.4 or later (`docker compose version`), for the `!
    code Circle mails, and its terms when asked. `deploy/tamga exec worker circle wallet status`
    shows it signed in. The session lasts seven days and lives on the `circle_session` volume, so a
    new image keeps it; until it is renewed, payments wait and nothing is marked paid.
-8. The backups' folder, readable by root alone, and the daily dump (Backups, below):
-   `sudo install -d -m 700 /var/backups/tamga`.
+8. One dump by hand, `deploy/tamga backup --offsite`, to see it reach R2, then the daily one from
+   the crontab of the user that cloned the repository (Backups, below).
 
 ## Moving the development data
 
@@ -91,12 +94,25 @@ mailboxes into two databases, and both would anchor on the vault.
 ## Updating
 
 ```bash
-git pull
-deploy/tamga up -d --build
+deploy/tamga update            # origin/main; or a commit or tag: deploy/tamga update <ref>
 ```
 
-`migrate` runs `alembic upgrade head` first; the api and the worker start only once it has
-succeeded. If it fails, they keep running the old image: `deploy/tamga logs migrate` says why.
+In order, it:
+1. stops if the checkout has local changes;
+2. dumps the database (below, Backups);
+3. notes the last release that came up healthy in `deploy/.previous-release`;
+4. checks out the new one, detached, so a rollback is a checkout too;
+5. builds the images while the old containers still serve, and copies the dump to R2;
+6. runs the migration on its own, with the old containers still serving. If it fails, nothing
+   that serves has changed: the log says why, and `deploy/tamga rollback` checks the old code
+   out again;
+7. replaces the containers and waits up to a minute for `/health/ready`. Not healthy, it prints
+   the services and the last logs and stops. Healthy, it notes the release in
+   `deploy/.current-release`, which the next update goes back to.
+
+The data outlives every update: the database is the `postgres_data` volume and the Circle session
+the `circle_session` volume, which a new image or container keeps; the files are in R2. Only
+`deploy/tamga down -v` or removing a volume by hand loses them.
 
 ## Checking it
 
@@ -107,19 +123,51 @@ succeeded. If it fails, they keep running the old image: `deploy/tamga logs migr
 
 ## Rolling back
 
-Check out the previous commit and run `deploy/tamga up -d --build`. When the release being undone
-added a migration, first undo it with the new image, still built: `deploy/tamga run --rm migrate
-alembic downgrade <revision before it>`. **A downgrade that drops a column drops its data: back up first.**
+`deploy/tamga rollback` checks out the last release that came up healthy before the last update,
+and builds and starts it as `update` does. When the release being undone migrated the database,
+it stops and lists the revisions:
+- **Older code on a newer schema** works when the migration only added tables or columns:
+  `deploy/tamga rollback --keep-schema` starts the older code on the database as it is, with no
+  migration, since the older code does not know the newer revisions.
+- **Otherwise** undo the migration first, with the newer code still checked out:
+  `deploy/tamga run --rm migrate alembic downgrade <revision before it>`, then
+  `deploy/tamga rollback --keep-schema`. **A downgrade that drops a column drops its data:** the
+  dump `update` made before it is the way back (Backups, restoring).
 
 ## Backups
 
-The database is the one thing here not kept elsewhere (files are in R2). Once a day, from root's
-crontab on the server (`sudo crontab -e`), into the folder step 8 made; `%` is cron's newline, so
-it is escaped:
+The database is the one thing here not kept elsewhere (files are in R2). `deploy/tamga backup`
+writes a custom-format dump into `BACKUP_DIR` (`deploy/backups`, ignored by git and readable by
+its owner alone) and
+removes those older than `BACKUP_DAYS` (14); `--offsite` also copies it into the R2 bucket under
+`backups/` (`backend/scripts/store_backup.py`) and removes the copies there past the same age. The
+dump holds every company's mail, so it goes to no other place. `update` takes one first. Once a
+day, from the crontab of the user that cloned the repository (`crontab -e`):
 
 ```bash
-15 3 * * * /srv/tamga/deploy/tamga exec -T postgres pg_dump -U postgres app | gzip > /var/backups/tamga/app-$(date +\%F).sql.gz
+15 3 * * * /srv/tamga/deploy/tamga backup --offsite >> "$HOME/tamga-backup.log" 2>&1
 ```
 
-(`/srv/tamga` is where the repository was cloned.) Restore into an empty database with
-`gunzip -c <file> | deploy/tamga exec -T postgres psql -U postgres app`.
+(`/srv/tamga` is where the repository was cloned.)
+
+**Restoring** replaces everything since the dump. A dump kept only in R2 is downloaded first from
+the bucket's `backups/` (Cloudflare's dashboard). Stop what writes, make the database empty,
+restore in one transaction that stops at the first error, bring the schema up to the code, start
+again:
+
+```bash
+deploy/tamga stop backend worker
+deploy/tamga exec -T postgres dropdb -U postgres app
+deploy/tamga exec -T postgres createdb -U postgres app
+deploy/tamga exec -T postgres pg_restore -U postgres -d app --no-owner --single-transaction --exit-on-error < <dump>
+deploy/tamga run --rm migrate
+deploy/tamga start backend worker
+```
+
+## Changing the domain
+
+Every address comes from `DOMAIN` in `deploy/.env`: the web app on it and on `play.`, the API on
+`api.`, the invite links, the browsers allowed to call the API, and the session cookie's domain.
+To move: the DNS records and NPM's proxy hosts for the new names (step 5), the new `DOMAIN`, then
+`deploy/tamga update`, which builds the web image again since the API's address is in it. Every
+session ends, since its cookie belonged to the old domain.

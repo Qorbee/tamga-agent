@@ -2,8 +2,162 @@
 # docker compose for the deployment, from any directory: the root docker-compose.yml with
 # deploy/compose.yml laid over it, deploy/.env, and the app profile. deploy/README.md uses it:
 #
-#   deploy/tamga up -d --build
+#   deploy/tamga up -d --build      any docker compose command
+#   deploy/tamga update [ref]       back up, check out origin/main (or ref), build, migrate, start
+#   deploy/tamga rollback           back to the release before the last update
+#   deploy/tamga backup [--offsite] dump the database; --offsite copies the dump to R2 too
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-exec docker compose -f docker-compose.yml -f deploy/compose.yml --env-file deploy/.env --profile app "$@"
+
+compose() {
+  docker compose -f docker-compose.yml -f deploy/compose.yml --env-file deploy/.env --profile app "$@"
+}
+
+# A line of deploy/.env that only this script reads, without quotes around its value.
+setting() {
+  sed -n "s/^$1=//p" deploy/.env | tail -n 1 | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/"
+}
+
+backup_dir() {
+  local dir
+  dir="$(setting BACKUP_DIR)"
+  dir="${dir:-deploy/backups}"
+  install -d -m 700 "$dir"
+  (cd "$dir" && pwd)
+}
+
+backup_days() {
+  local days
+  days="$(setting BACKUP_DAYS)"
+  echo "${days:-14}"
+}
+
+# The database as one custom-format dump, written under a temporary name and renamed once whole,
+# so a dump cut short is never taken for a backup. Dumps older than BACKUP_DAYS go, and so do
+# pieces a failed dump left. Prints the dump's path.
+dump() {
+  local dir file
+  dir="$(backup_dir)"
+  file="$dir/app-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  # It holds every company's mail: readable by its owner alone.
+  (umask 077 && compose exec -T postgres pg_dump -U postgres -Fc app >"$file.part")
+  mv "$file.part" "$file"
+  find "$dir" -maxdepth 1 -name 'app-*.dump*' -mtime +"$(backup_days)" -delete
+  echo "$file"
+}
+
+# A dump copied into the bucket by the backend's image, which holds the bucket's keys
+# (backend/.env); sent on stdin, since the image's user cannot read the owner's folder.
+offsite() {
+  compose run --rm --no-deps -T backend python scripts/store_backup.py \
+    --name "$(basename "$1")" --days "$(backup_days)" <"$1"
+}
+
+backup() {
+  local file
+  file="$(dump)"
+  echo "backed up: $file"
+  if [[ "${1:-}" == "--offsite" ]]; then
+    offsite "$file"
+  fi
+}
+
+# Up when the API answers that its database and its file storage are ready: a minute at most.
+healthy() {
+  local tries=0
+  until compose exec -T backend python -c \
+    'import urllib.request; urllib.request.urlopen("http://localhost:8000/health/ready", timeout=5)' \
+    >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    if ((tries == 30)); then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+# Starts the checked-out release: built while the running one still serves, then migrated with
+# the running containers left alone, so a migration that fails changes nothing that serves.
+# --keep-schema starts the code on the database as it is, with no migration: older code cannot
+# run the newer revisions' upgrade.
+release() {
+  compose build
+  if [[ "${1:-}" == "--keep-schema" ]]; then
+    compose up -d --no-deps backend worker web
+  else
+    if ! compose run --rm migrate; then
+      compose logs --tail 50 migrate || true
+      echo "the migration failed: nothing that serves was changed; deploy/tamga rollback" \
+        "goes back to the release noted before" >&2
+      exit 1
+    fi
+    compose up -d --remove-orphans
+  fi
+  if ! healthy; then
+    compose ps || true
+    compose logs --tail 50 backend || true
+    echo "not healthy: read the logs above; deploy/tamga rollback goes back a release" >&2
+    exit 1
+  fi
+  # What the next update goes back to: a release that came up healthy.
+  git rev-parse HEAD >deploy/.current-release
+  echo "released $(git rev-parse --short HEAD)"
+}
+
+update() {
+  local ref="${1:-origin/main}" file
+  if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+    echo "the checkout has local changes: commit or drop them first" >&2
+    exit 1
+  fi
+  git fetch --quiet origin
+  git rev-parse --verify --quiet "$ref^{commit}" >/dev/null || {
+    echo "no such commit: $ref" >&2
+    exit 1
+  }
+  # Before anything changes: the dump to come back to.
+  file="$(dump)"
+  echo "backed up: $file"
+  # The last release that came up healthy, not a failed attempt this one retries.
+  if [[ -s deploy/.current-release ]]; then
+    cp deploy/.current-release deploy/.previous-release
+  else
+    git rev-parse HEAD >deploy/.previous-release
+  fi
+  git checkout --quiet --detach "$ref"
+  compose build
+  # With the new image, which has the script even when the release left had none.
+  offsite "$file"
+  release
+}
+
+rollback() {
+  local previous migrated
+  if [[ ! -s deploy/.previous-release ]]; then
+    echo "no release to go back to: deploy/tamga update writes it" >&2
+    exit 1
+  fi
+  previous="$(cat deploy/.previous-release)"
+  # Older code on a newer schema: an added table or column is ignored, but a migration that
+  # changed or dropped one needs its downgrade first (deploy/README.md, Rolling back).
+  migrated="$(git diff --name-only "$previous" HEAD -- backend/app/migrations/versions)"
+  if [[ -n "$migrated" && "${1:-}" != "--keep-schema" ]]; then
+    printf 'this release migrated the database since %s:\n%s\n' "$previous" "$migrated" >&2
+    echo "read deploy/README.md, Rolling back; then run it again with --keep-schema" >&2
+    exit 1
+  fi
+  git checkout --quiet --detach "$previous"
+  if [[ -n "$migrated" ]]; then
+    release --keep-schema
+  else
+    release
+  fi
+}
+
+case "${1:-}" in
+  update) shift; update "$@" ;;
+  rollback) shift; rollback "$@" ;;
+  backup) shift; backup "$@" ;;
+  *) compose "$@" ;;
+esac

@@ -11,6 +11,13 @@
 
 name: tamga
 
+# The company's addresses, all from one domain in deploy/.env (DOMAIN): the web app on it and on
+# play., the API on api. backend/.env does not set them; a line it has is overridden here.
+x-addresses: &addresses
+  WEB_URL: https://${DOMAIN:?set DOMAIN in deploy/.env}
+  CORS_ORIGINS: https://${DOMAIN},https://play.${DOMAIN}
+  SESSION_COOKIE_DOMAIN: ${DOMAIN}
+
 services:
   postgres:
     environment:
@@ -39,6 +46,7 @@ services:
     env_file:
       - path: backend/.env
     environment:
+      <<: *addresses
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/app
     depends_on:
       postgres:
@@ -47,8 +55,9 @@ services:
   backend:
     env_file: !override
       - path: backend/.env
-    # Local addresses reset: storage, CORS and invite links come from backend/.env.
+    # Local addresses reset: storage comes from backend/.env, CORS and invite links from DOMAIN.
     environment: !override
+      <<: *addresses
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/app
     ports: !reset []
     networks: [default, proxy]
@@ -61,6 +70,7 @@ services:
     env_file: !override
       - path: backend/.env
     environment: !override
+      <<: *addresses
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/app
       CONVERTER_URL: http://converter:3000
     restart: unless-stopped
@@ -74,7 +84,7 @@ services:
     build:
       args:
         # Inlined into the browser's JavaScript at build time: the API as the browser reaches it.
-        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in deploy/.env}
+        NEXT_PUBLIC_API_URL: https://api.${DOMAIN:?set DOMAIN in deploy/.env}
     ports: !reset []
     networks: [default, proxy]
     restart: unless-stopped

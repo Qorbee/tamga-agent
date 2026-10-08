@@ -66,3 +66,8 @@ OPTIMIZATIONS.md
 
 # The end-of-day reports to the owner (AGENTS.md, Working day by day): local only
 /reports/
+
+# What deploy/tamga update leaves to go back to, and its dumps.
+deploy/.previous-release
+deploy/.current-release
+deploy/backups/
