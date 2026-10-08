@@ -74,6 +74,9 @@ class Placement(CompanyScoped, Base):
     # What decided: "keys" (a number it shares with one project), "thread" (new mail in a
     # conversation already placed), "model:linker", or "unanswered" when the model gave no answer.
     placed_by: Mapped[str | None] = mapped_column(String(40))
+    # When a model placed it: its model, effort and prompt's fingerprint (llm.MadeBy.stored), so
+    # a placement made under an older prompt or setting can be found.
+    made_by: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     # The project it was linked to, or the one proposed for it.
     project_id: Mapped[uuid.UUID | None]
     # The projects the owner is asked to choose between.

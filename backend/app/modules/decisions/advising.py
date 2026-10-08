@@ -153,7 +153,7 @@ def _body(
         "proposal": advice.proposal,
         "amount": str(advice.amount) if advice.amount is not None else None,
         "reason": advice.reason,
-        "model": llm.model_name(agents.CONTROLLER),
+        **llm.made_by(agents.controller).stored(),
         "inputs": inputs,
         "trace_id": trace_id,
     }

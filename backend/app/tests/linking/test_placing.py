@@ -28,6 +28,7 @@ from app.modules.conversations.adapters.imap import FetchedMail
 from app.modules.conversations.models import MailModelRead, Message, Thread, ThreadCategory
 from app.modules.conversations.service import ThreadRead
 from app.modules.documents import service as documents
+from app.modules.linking import agents as linking_agents
 from app.modules.linking import repository, service
 from app.modules.linking.models import Outcome, Placement
 from app.modules.projects import service as projects
@@ -282,6 +283,12 @@ async def test_the_linker_proposes_a_project_and_ties_the_mails_as_suggestions(
     )
     assert placed.reason == "why" and placed.cited == [link.item_id] and not placed.waiting
     assert placed.reading == {"origin": "Istanbul", "cargo": "steel coils"}
+    # What gave it is kept with it, so a placement made under an older prompt can be found.
+    assert placed.made_by == {
+        "model": llm.model_name("linker"),
+        "effort": llm.effort("linker"),
+        "prompt": llm.fingerprint(linking_agents.linker),
+    }
     # Both requests were sent the mail, and both count against the day's budget.
     assert await reads(company_id) == 2
     # The conversation and what a tool returns are fenced as data; the tools only read.
@@ -406,6 +413,7 @@ async def test_a_shared_order_number_places_a_conversation_without_a_model(
     assert len(link.evidence) == 1
     placed = await placement(company_id, "<cmr@x>")
     assert (placed.outcome, placed.placed_by) == (Outcome.LINKED, "keys")
+    assert placed.made_by is None
     # The owner's own links stand as they were.
     [owned] = await links(company_id, "<order@x>")
     assert (owned.status, owned.method) == (LinkStatus.CONFIRMED, LinkMethod.OWNER)

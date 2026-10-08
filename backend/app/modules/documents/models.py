@@ -15,6 +15,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base, text_enum
@@ -89,6 +90,8 @@ class Document(CompanyScoped, Base):
     # When the typist was asked what the file is: once, whatever it answered. What a company's
     # budget for a day counts (TYPED_FILES_PER_DAY).
     typed_at: Mapped[datetime | None]
+    # When the typist gave the type: its model, effort and prompt's fingerprint (llm.MadeBy).
+    typed_by: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Reading it (documents/service.py, read_pending): asked for when it arrives as an attachment
@@ -122,6 +125,8 @@ class Document(CompanyScoped, Base):
     read_failures: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     read_failed_at: Mapped[datetime | None]
     read_at: Mapped[datetime | None]
+    # When the vision model read its pictures: its model, effort and prompt's fingerprint.
+    read_by: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class VisionRead(CompanyScoped, Base):

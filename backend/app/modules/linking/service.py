@@ -178,6 +178,8 @@ class _Decision:
     reason: str = ""
     cited: tuple[uuid.UUID, ...] = ()
     reading: dict[str, Any] | None = None
+    # The model and prompt that gave it, when a model did.
+    made: llm.MadeBy | None = None
 
 
 async def place_pending() -> int:
@@ -537,7 +539,9 @@ async def place_thread(
                 trace_content=trace_content,
                 usage=usage,
             )
-            decision = _from_model(run.output, desk, thread, found)
+            decision = replace(
+                _from_model(run.output, desk, thread, found), made=llm.made_by(agents.linker)
+            )
             if _contested(run.output, desk) and llm.second_model_name(agents.LINKER) is not None:
                 decision = await _second_opinion(
                     decision,
@@ -746,7 +750,9 @@ async def _second_opinion(
             "the second opinion on conversation %s failed: %s", thread.id, type(error).__name__
         )
         return first
-    return _from_model(run.output, desk, thread, found)
+    return replace(
+        _from_model(run.output, desk, thread, found), made=llm.made_by(agents.linker, second=True)
+    )
 
 
 async def _count(company_id: uuid.UUID, requests: int) -> None:
@@ -1387,6 +1393,7 @@ async def _apply(
     )
     placement.outcome = decision.outcome
     placement.placed_by = decision.placed_by
+    placement.made_by = decision.made.stored() if decision.made else None
     placement.project_id = project_id
     placement.alternatives = alternatives
     placement.reason = decision.reason
@@ -1654,6 +1661,7 @@ def _answered(placement: Placement, outcome: Outcome, project_id: uuid.UUID | No
     """The owner's answer replaces the reading: what the linker said of it no longer holds."""
     placement.outcome = outcome
     placement.placed_by = BY_OWNER
+    placement.made_by = None
     placement.project_id = project_id
     placement.alternatives = []
     placement.reason = ""

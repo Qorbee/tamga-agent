@@ -179,6 +179,7 @@ async def test_a_photo_is_read_by_the_vision_model_and_its_facts_say_so(
     document = await stored(company_id, photo)
     assert (document.read_state, document.text, document.description) == ("read", SCAN_TEXT, SHOWS)
     assert (document.vision_pages, document.needs_vision) == (1, True)
+    assert document.read_by == llm.made_by(agents.reader).stored()
     assert await counted(company_id) == 1
     # The photo went as it is, once.
     assert [(p.data, p.media_type) for p in seen.pictures()] == [(PNG, "image/png")]

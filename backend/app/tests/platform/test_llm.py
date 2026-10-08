@@ -319,3 +319,25 @@ def test_no_module_outside_the_model_layer_imports_a_provider_sdk() -> None:
             ):
                 offenders.append(relative)
     assert offenders == []
+
+
+def test_a_prompts_fingerprint_follows_its_instructions_and_answer_not_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    told: Agent[None, str] = Agent(name="probe", instructions="Name the job.")
+
+    assert llm.fingerprint(told) == llm.fingerprint(
+        Agent(name="probe", instructions="Name the job.")
+    )
+    assert llm.fingerprint(told) != llm.fingerprint(
+        Agent(name="probe", instructions="Name the job and its truck.")
+    )
+    assert llm.fingerprint(told) != llm.fingerprint(
+        Agent(name="probe", instructions="Name the job.", output_type=int)
+    )
+
+    monkeypatch.setitem(get_settings().agent_models, "probe", "openai:gpt-6-luna")
+    monkeypatch.setitem(get_settings().agent_efforts, "probe", "low")
+    monkeypatch.setitem(get_settings().agent_second_models, "probe", "openai:gpt-6.1-sol")
+    assert llm.made_by(told) == llm.MadeBy("openai:gpt-6-luna", "low", llm.fingerprint(told))
+    assert llm.made_by(told, second=True).model == "openai:gpt-6.1-sol"

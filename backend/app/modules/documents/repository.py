@@ -15,6 +15,7 @@ from app.modules.documents.models import (
     Upload,
     VisionRead,
 )
+from app.platform.llm import MadeBy
 from app.platform.pagination import PageParams, escape_like
 
 
@@ -86,10 +87,32 @@ async def filenames(
     return {document_id: filename for document_id, filename in rows.tuples().all()}
 
 
+async def answered_untyped(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, made: MadeBy
+) -> None:
+    """Keeps what gave the typist's "none of these" on a file nobody typed meanwhile."""
+    await db.execute(
+        update(Document)
+        .where(
+            Document.company_id == company_id,
+            Document.id == document_id,
+            Document.doc_type.is_(None),
+        )
+        .values(typed_by=made.stored())
+        .execution_options(synchronize_session=False)
+    )
+
+
 async def type_if_untyped(
-    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, key: str, source: TypeSource
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    document_id: uuid.UUID,
+    key: str,
+    source: TypeSource,
+    made: MadeBy | None = None,
 ) -> bool:
-    """Types a file only if its stored row has no type, in one statement."""
+    """Types a file only if its stored row has no type, in one statement; ``made`` is the model
+    and prompt that gave the type, when a model did."""
     typed = await db.execute(
         update(Document)
         .where(
@@ -97,7 +120,11 @@ async def type_if_untyped(
             Document.id == document_id,
             Document.doc_type.is_(None),
         )
-        .values(doc_type=key, doc_type_source=source)
+        .values(
+            doc_type=key,
+            doc_type_source=source,
+            typed_by=made.stored() if made else None,
+        )
         .execution_options(synchronize_session=False)
     )
     return bool(getattr(typed, "rowcount", 0))

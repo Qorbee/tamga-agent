@@ -16,9 +16,12 @@ Content from outside (a file, a mail) reaches a model only through ``fenced``, i
 an agent whose instructions end with ``OUTSIDE_DATA`` (ADR-0013).
 """
 
+import hashlib
+import json
 import secrets
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import cache
 from typing import Any, Final
 
@@ -124,6 +127,45 @@ def second_model_for(agent_name: str) -> Model:
     if name is None:
         raise ModelUnavailable(f"AGENT_SECOND_MODELS names no model for {agent_name!r}")
     return _model(name)
+
+
+@dataclass(frozen=True, slots=True)
+class MadeBy:
+    """What gave a model's output, kept with it: the model as settings name it, the effort it
+    reasoned at, and the prompt's fingerprint, so a score is tied to what was measured and a
+    reading made under an older prompt can be found and made again."""
+
+    model: str
+    effort: Effort
+    prompt: str
+
+    def stored(self) -> dict[str, str]:
+        return {"model": self.model, "effort": self.effort, "prompt": self.prompt}
+
+
+def fingerprint(agent: Agent[Any, Any]) -> str:
+    """A short hash of what an agent is told and the shape of what it must answer. Prompts live
+    in code, so a change to either is a new fingerprint; settings (the model, the effort) are not
+    part of it."""
+    # The library keeps an agent's fixed instructions only here; a function among them counts by
+    # its name, since what it writes changes from run to run.
+    told = [
+        each.instruction
+        if isinstance(each.instruction, str)
+        else getattr(each.instruction, "__qualname__", repr(each.instruction))
+        for each in agent._instructions
+    ]
+    shape = json.dumps(agent.output_json_schema(), sort_keys=True)
+    return hashlib.sha256(json.dumps([told, shape]).encode()).hexdigest()[:12]
+
+
+def made_by[DepsT, OutputT](
+    agent: Agent[DepsT, OutputT], *, second: bool = False, settings_name: str | None = None
+) -> MadeBy:
+    """What ``run`` gives an output, as its caller keeps it: the same model and effort."""
+    name = settings_name or agent.name or ""
+    model = second_model_name(name) if second else model_name(name)
+    return MadeBy(model=model or "", effort=effort(name), prompt=fingerprint(agent))
 
 
 def _no_room(error: ModelHTTPError) -> bool:

@@ -278,6 +278,7 @@ async def upload(
         document.doc_type is None or document.doc_type_source is not TypeSource.OWNER
     ):
         document.doc_type, document.doc_type_source = doc_type, TypeSource.OWNER
+        document.typed_by = None
     row = Upload(
         company_id=actor.company_id,
         document_id=document.id,
@@ -510,6 +511,8 @@ async def update_document(
         # Cleared, the type is unknown again, and code may tell it next time the file is read;
         # the owner's mark stays, so the typist's own "no type" is never confused with it.
         document.doc_type_source = TypeSource.OWNER
+        # What a model gave is no longer the file's type.
+        document.typed_by = None
         await db.flush()
         await _became_known(db, actor.company_id, document.id)
     if body.filename is not None:
@@ -825,7 +828,7 @@ async def type_files(
         if write and not await _reserve(company_id, file.id):
             continue
         try:
-            key = await _typed(file, offered, trace_content=trace_content, usage=usage)
+            key, made = await _typed(file, offered, trace_content=trace_content, usage=usage)
         except Exception as error:
             # The error's type only: its text can carry what the file holds.
             logger.warning("typing document %s failed: %s", file.id, type(error).__name__)
@@ -838,10 +841,15 @@ async def type_files(
                 await _release(company_id, file.id)
             raise
         answered.append((file.filename, key))
-        if not write or key is None:
+        if not write or made is None:
             continue
         async with open_session() as db:
-            if await repository.type_if_untyped(db, company_id, file.id, key, TypeSource.MODEL):
+            if key is None:
+                # "None of these" is an answer too, found again by what gave it.
+                await repository.answered_untyped(db, company_id, file.id, made)
+            elif await repository.type_if_untyped(
+                db, company_id, file.id, key, TypeSource.MODEL, made
+            ):
                 await _became_known(db, company_id, file.id)
                 await events.publish(db, company_id, events.EventKind.DOCUMENTS)
             await db.commit()
@@ -868,9 +876,9 @@ async def _typed(
     *,
     trace_content: bool,
     usage: RunUsage | None,
-) -> str | None:
-    """The typist's answer for one file: a type it was offered, or None, also when its answer
-    could not be used. What the run used is added to ``usage``."""
+) -> tuple[str | None, llm.MadeBy | None]:
+    """The typist's answer for one file: a type it was offered or None, with what gave it; None
+    with nothing when its answer could not be used. What the run used is added to ``usage``."""
     # Its own count: the limits hold for one file, not for every file a caller adds up.
     spent = RunUsage()
     try:
@@ -885,11 +893,11 @@ async def _typed(
         )
     except llm.NoAnswer as error:
         logger.warning("the typist gave no type for %s: %s", file.id, error)
-        return None
+        return None, None
     finally:
         if usage is not None:
             usage.incr(spent)
-    return run.output.type
+    return run.output.type, llm.made_by(agents.typist)
 
 
 async def holding_nothing(
@@ -1013,6 +1021,8 @@ async def read_with_vision(
     else:
         pictures = _photo(data) if _holds_writing(data) else []
     seen: agents.Reading | isolated.Reason
+    # The model and prompt behind the reading that stands, when a model read it.
+    made: llm.MadeBy | None = None
     spent = 0
     if isinstance(pictures, isolated.Reason):
         seen = pictures
@@ -1037,6 +1047,7 @@ async def read_with_vision(
 
         try:
             seen = await ask()
+            made = llm.made_by(agents.reader)
         except llm.NoAnswer as error:
             logger.warning("the vision model gave no reading of %s: %s", document_id, error)
             seen = isolated.Reason.UNSUPPORTED
@@ -1054,6 +1065,7 @@ async def read_with_vision(
             sent = 1
             try:
                 seen = await ask(second=True)
+                made = llm.made_by(agents.reader, second=True)
             except Exception as error:
                 logger.warning(
                     "the second reading of %s failed: %s", document_id, type(error).__name__
@@ -1076,6 +1088,7 @@ async def read_with_vision(
                 _unreadable(document, seen)
                 await _became_known(db, company_id, document_id)
             else:
+                document.read_by = made.stored() if made else None
                 await _keep_reading(
                     db, document, seen, shown if is_pdf else None, more=len(scanned) > len(shown)
                 )

@@ -14,7 +14,8 @@ from pydantic_ai.messages import UserPromptPart as UserPrompt
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.config import get_settings
-from app.modules.documents import registry, service
+from app.modules.documents import agents, registry, service
+from app.modules.documents.models import Document
 from app.platform import llm
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
@@ -84,6 +85,16 @@ async def test_a_file_code_could_not_type_is_typed_by_the_model_once(
     assert await service.type_pending() == 1
 
     assert await typed(client, document_id) == ("weighbridge_ticket", "model")
+    async with open_session() as db:
+        document = await db.get(Document, document_id)
+    assert document is not None
+    assert document.typed_by == llm.made_by(agents.typist).stored()
+    # The owner's type is the owner's: what the model gave no longer stands beside it.
+    owner = await client.patch(f"/documents/{document_id}", json={"doc_type": "cmr"})
+    assert owner.status_code == 200, owner.text
+    async with open_session() as db:
+        document = await db.get(Document, document_id)
+    assert document is not None and document.typed_by is None
     [prompt] = asked.prompts
     # The types it may answer, then the file fenced as data from outside.
     assert "- weighbridge_ticket: Weighbridge slip" in prompt
@@ -105,6 +116,11 @@ async def test_none_leaves_the_file_untyped_and_not_asked_again(
 
     assert await typed(client, document_id) == (None, None)
     assert len(asked.prompts) == 1
+    # "None of these" is an answer, kept with what gave it.
+    async with open_session() as db:
+        document = await db.get(Document, document_id)
+    assert document is not None
+    assert document.typed_by == llm.made_by(agents.typist).stored()
 
 
 async def test_a_type_it_was_not_offered_is_never_written(
