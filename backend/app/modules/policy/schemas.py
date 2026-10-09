@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.modules.policy.models import PaymentsRecorded
+from app.modules.policy.models import PaymentMethod, PaymentsRecorded
 
 
 class PolicyOut(BaseModel):
@@ -19,6 +20,11 @@ class PolicyOut(BaseModel):
     payments_recorded: PaymentsRecorded
     # A percentage of an invoice's total.
     remainder_tolerance: Decimal
+    methods: list[PaymentMethod]
+    default_method: PaymentMethod
+    reserve: Decimal
+    # Monday 0; None for any day.
+    payment_weekday: int | None
     created_at: datetime | None
 
 
@@ -30,6 +36,22 @@ class PolicyIn(BaseModel):
     pay_when_paid: bool
     payments_recorded: PaymentsRecorded = PaymentsRecorded.ON_ACCOUNT
     remainder_tolerance: Decimal = Field(default=Decimal("2.00"), ge=0, le=20, decimal_places=2)
+    # The ways the company pays (ADR-0027); without a vault method, crypto is off.
+    methods: list[PaymentMethod] = Field(
+        default_factory=lambda: [PaymentMethod.VAULT_USDC], min_length=1
+    )
+    default_method: PaymentMethod = PaymentMethod.VAULT_USDC
+    # What the bank and cash accounts must keep after a payment, in the policy's currency.
+    reserve: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    payment_weekday: int | None = Field(default=None, ge=0, le=6)
+
+    @model_validator(mode="after")
+    def _default_among_methods(self) -> Self:
+        if len(set(self.methods)) != len(self.methods):
+            raise ValueError("each method once")
+        if self.default_method not in self.methods:
+            raise ValueError("the default method is one of the methods")
+        return self
 
 
 class PolicyChange(BaseModel):
@@ -41,6 +63,11 @@ class PolicyChange(BaseModel):
     pay_when_paid: bool | None = None
     payments_recorded: PaymentsRecorded | None = None
     remainder_tolerance: Decimal | None = Field(default=None, ge=0, le=20, decimal_places=2)
+    methods: list[PaymentMethod] | None = Field(default=None, min_length=1)
+    default_method: PaymentMethod | None = None
+    reserve: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    # -1 clears it: any day.
+    payment_weekday: int | None = Field(default=None, ge=-1, le=6)
 
 
 # What the hard rules read and give (rules.py)

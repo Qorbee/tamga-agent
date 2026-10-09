@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 from typing import Final
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.companies import service as companies
 from app.modules.fx import service as fx
 from app.modules.policy import repository, rules
-from app.modules.policy.models import PaymentsRecorded, Policy
+from app.modules.policy.models import PaymentMethod, PaymentsRecorded, Policy
 from app.modules.policy.schemas import (
     Outcome,
     Picture,
@@ -35,6 +36,10 @@ DEFAULT: Final = PolicyOut(
     pay_when_paid=True,
     payments_recorded=PaymentsRecorded.ON_ACCOUNT,
     remainder_tolerance=Decimal("2.00"),
+    methods=[PaymentMethod.VAULT_USDC],
+    default_method=PaymentMethod.VAULT_USDC,
+    reserve=Decimal("0.00"),
+    payment_weekday=None,
     created_at=None,
 )
 # Country packs' defaults, under the rates in settings.
@@ -76,7 +81,15 @@ async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> P
     merged = current.model_dump(include=set(PolicyIn.model_fields)) | body.model_dump(
         exclude_none=True
     )
-    return await _put_in_force(db, actor, PolicyIn.model_validate(merged))
+    if merged.get("payment_weekday") == -1:
+        merged["payment_weekday"] = None
+    try:
+        body_in_force = PolicyIn.model_validate(merged)
+    except ValidationError as error:
+        # The change is valid alone, but not with what it keeps: the default method dropped
+        # from the methods, say.
+        raise BadRequest(error.errors()[0]["msg"]) from error
+    return await _put_in_force(db, actor, body_in_force)
 
 
 async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOut:
@@ -94,6 +107,10 @@ async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> Polic
         pay_when_paid=body.pay_when_paid,
         payments_recorded=body.payments_recorded,
         remainder_tolerance=body.remainder_tolerance,
+        methods=[method.value for method in body.methods],
+        default_method=body.default_method,
+        reserve=body.reserve,
+        payment_weekday=body.payment_weekday,
         created_by=actor.user_id,
     )
     await repository.add(db, policy)

@@ -3209,6 +3209,12 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * PaymentMethod
+         * @description How a bill is paid (ADR-0027).
+         * @enum {string}
+         */
+        PaymentMethod: "vault_usdc" | "bank_transfer";
         /** PaymentOut */
         PaymentOut: {
             /**
@@ -3385,11 +3391,18 @@ export interface components {
             approval_limit?: number | string | null;
             /** Currency */
             currency?: string | null;
+            default_method?: components["schemas"]["PaymentMethod"] | null;
+            /** Methods */
+            methods?: components["schemas"]["PaymentMethod"][] | null;
             /** Pay When Paid */
             pay_when_paid?: boolean | null;
+            /** Payment Weekday */
+            payment_weekday?: number | null;
             payments_recorded?: components["schemas"]["PaymentsRecorded"] | null;
             /** Remainder Tolerance */
             remainder_tolerance?: number | string | null;
+            /** Reserve */
+            reserve?: number | string | null;
         };
         /**
          * PolicyIn
@@ -3400,8 +3413,14 @@ export interface components {
             approval_limit: number | string;
             /** Currency */
             currency: string;
+            /** @default vault_usdc */
+            default_method: components["schemas"]["PaymentMethod"];
+            /** Methods */
+            methods?: components["schemas"]["PaymentMethod"][];
             /** Pay When Paid */
             pay_when_paid: boolean;
+            /** Payment Weekday */
+            payment_weekday?: number | null;
             /** @default on_account */
             payments_recorded: components["schemas"]["PaymentsRecorded"];
             /**
@@ -3409,6 +3428,11 @@ export interface components {
              * @default 2.00
              */
             remainder_tolerance: number | string;
+            /**
+             * Reserve
+             * @default 0.00
+             */
+            reserve: number | string;
         };
         /** PolicyOut */
         PolicyOut: {
@@ -3418,11 +3442,18 @@ export interface components {
             created_at: string | null;
             /** Currency */
             currency: string;
+            default_method: components["schemas"]["PaymentMethod"];
+            /** Methods */
+            methods: components["schemas"]["PaymentMethod"][];
             /** Pay When Paid */
             pay_when_paid: boolean;
+            /** Payment Weekday */
+            payment_weekday: number | null;
             payments_recorded: components["schemas"]["PaymentsRecorded"];
             /** Remainder Tolerance */
             remainder_tolerance: string;
+            /** Reserve */
+            reserve: string;
             /** Version */
             version: number;
         };

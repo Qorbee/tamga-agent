@@ -609,3 +609,36 @@ async def test_a_policy_change_keeps_what_it_does_not_name(client: httpx.AsyncCl
         "500.00",
         False,
     )
+
+
+async def test_the_policy_names_how_the_company_pays_and_what_it_keeps(
+    client: httpx.AsyncClient,
+) -> None:
+    await guest_client(client)
+    assert (await client.get("/policy")).json()["methods"] == ["vault_usdc"]
+
+    # A bank only: crypto off.
+    bank = await client.patch(
+        "/policy",
+        json={
+            "methods": ["bank_transfer"],
+            "default_method": "bank_transfer",
+            "reserve": "25000.00",
+            "payment_weekday": 3,
+        },
+    )
+    assert bank.status_code == 200, bank.text
+    policy = bank.json()
+    assert (policy["methods"], policy["default_method"]) == (["bank_transfer"], "bank_transfer")
+    assert (policy["reserve"], policy["payment_weekday"]) == ("25000.00", 3)
+
+    # The default is one of the methods, each method once; with what the change keeps too.
+    for wrong in (
+        {"methods": ["vault_usdc"]},
+        {"methods": ["bank_transfer", "bank_transfer"]},
+    ):
+        assert (await client.patch("/policy", json=wrong)).status_code == 400
+    assert (await client.patch("/policy", json={"methods": []})).status_code == 422
+    # Any day again; what it does not name stays.
+    anyday = (await client.patch("/policy", json={"payment_weekday": -1})).json()
+    assert anyday["payment_weekday"] is None and anyday["reserve"] == "25000.00"

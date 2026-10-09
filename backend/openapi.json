@@ -5054,6 +5054,15 @@
         "title": "PartyPage",
         "type": "object"
       },
+      "PaymentMethod": {
+        "description": "How a bill is paid (ADR-0027).",
+        "enum": [
+          "vault_usdc",
+          "bank_transfer"
+        ],
+        "title": "PaymentMethod",
+        "type": "string"
+      },
       "PaymentOut": {
         "properties": {
           "created_at": {
@@ -5569,6 +5578,31 @@
             ],
             "title": "Currency"
           },
+          "default_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentMethod"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Methods"
+          },
           "pay_when_paid": {
             "anyOf": [
               {
@@ -5579,6 +5613,19 @@
               }
             ],
             "title": "Pay When Paid"
+          },
+          "payment_weekday": {
+            "anyOf": [
+              {
+                "maximum": 6.0,
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Weekday"
           },
           "payments_recorded": {
             "anyOf": [
@@ -5606,6 +5653,22 @@
               }
             ],
             "title": "Remainder Tolerance"
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve"
           }
         },
         "title": "PolicyChange",
@@ -5632,9 +5695,34 @@
             "title": "Currency",
             "type": "string"
           },
+          "default_method": {
+            "$ref": "#/components/schemas/PaymentMethod",
+            "default": "vault_usdc"
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            },
+            "minItems": 1,
+            "title": "Methods",
+            "type": "array"
+          },
           "pay_when_paid": {
             "title": "Pay When Paid",
             "type": "boolean"
+          },
+          "payment_weekday": {
+            "anyOf": [
+              {
+                "maximum": 6.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Weekday"
           },
           "payments_recorded": {
             "$ref": "#/components/schemas/PaymentsRecorded",
@@ -5654,6 +5742,20 @@
             ],
             "default": "2.00",
             "title": "Remainder Tolerance"
+          },
+          "reserve": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0.00",
+            "title": "Reserve"
           }
         },
         "required": [
@@ -5687,9 +5789,30 @@
             "title": "Currency",
             "type": "string"
           },
+          "default_method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            },
+            "title": "Methods",
+            "type": "array"
+          },
           "pay_when_paid": {
             "title": "Pay When Paid",
             "type": "boolean"
+          },
+          "payment_weekday": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Weekday"
           },
           "payments_recorded": {
             "$ref": "#/components/schemas/PaymentsRecorded"
@@ -5697,6 +5820,11 @@
           "remainder_tolerance": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Remainder Tolerance",
+            "type": "string"
+          },
+          "reserve": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Reserve",
             "type": "string"
           },
           "version": {
@@ -5711,6 +5839,10 @@
           "pay_when_paid",
           "payments_recorded",
           "remainder_tolerance",
+          "methods",
+          "default_method",
+          "reserve",
+          "payment_weekday",
           "created_at"
         ],
         "title": "PolicyOut",
