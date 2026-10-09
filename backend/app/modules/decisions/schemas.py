@@ -49,6 +49,12 @@ class DecisionOut(BaseModel):
     # in USDC's smallest units (six decimals); None for a currency with no rate.
     rate: Decimal | None
     usdc_units: int | None
+    # The official reference rate the amount was compared with the policy's limits at: one unit
+    # of the bill's currency in the policy's, the day it was published for, and its source; None
+    # when the bill is in the policy's currency or no rate stands (ADR-0028).
+    reference_rate: Decimal | None
+    reference_rate_on: date | None
+    reference_source: str | None
     amount_edited: bool
     rules: list[RuleResult]
     # The bill's issue day at the last evaluation.

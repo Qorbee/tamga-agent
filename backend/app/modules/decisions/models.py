@@ -69,6 +69,12 @@ class Decision(CompanyScoped, Base):
     currency: Mapped[str | None] = mapped_column(String(3))
     rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
     usdc_units: Mapped[int | None] = mapped_column(BigInteger)
+    # The official reference rate the amount was compared with the policy's limits at, the day it
+    # was published for and its source (ADR-0028); None when the bill is in the policy's
+    # currency, or no rate stands.
+    reference_rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 10))
+    reference_rate_on: Mapped[date | None]
+    reference_source: Mapped[str | None] = mapped_column(String(20))
     # The owner set the amount (a part payment): kept through later evaluations.
     amount_edited: Mapped[bool] = mapped_column(default=False)
     # Each rule's result: ``{"rule", "outcome", "reason"}``, in the rules' order.

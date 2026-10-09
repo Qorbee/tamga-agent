@@ -125,7 +125,8 @@ Arc testnet; nothing touches a company's bank or real money.
   confirmed, whether the client paid, whether it was paid before, how much the firm's account in the
   books still says is owed (how payments are recorded is a setting of the policy), and the vault's
   caps and balance read from the chain, under the owner's versioned policy. A bill is mirrored as
-  test USDC at a fixed rate for its currency. The owner approves, holds, rejects or changes the
+  test USDC at a fixed rate for its currency; it is compared with the owner's limits at the
+  official reference rate of the company's country, with that rate's day and source. The owner approves, holds, rejects or changes the
   amount of the evaluation in force on the Payments page, or on the card under what Tamga writes
   about the bill in the chat, and every evaluation and answer is a row in a hash-chained log. Beside
   the rules, the controller, a model with no tools, gives its opinion on each bill that waits for
@@ -162,8 +163,10 @@ scenarios.
 The public copy of Tamga's private repository, generated at every merge: each commit here is one
 merged pull request, dated when it merged. It holds the core — the agents and the policy engine, mail
 and document intake, the logistics pack, the owner app and the judges' playground, Circle wallets and
-PolicyVault. Country integrations (a pilot's accounting system, national identifiers and e-documents)
-and the internal design documents stay in the private repository.
+PolicyVault. Country integrations (a pilot's accounting system, national identifiers and e-documents,
+a central bank's reference rates) and the internal design documents stay in the private repository.
+So this copy ships no reference-rate source: until a country pack registers one, a policy cannot be
+saved and a bill in another currency than the policy's is held, never compared at a guessed rate.
 
 ## Running locally
 

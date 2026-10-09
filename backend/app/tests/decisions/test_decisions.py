@@ -18,8 +18,10 @@ from app.modules.playground import service as playground
 from app.modules.settlement.models import AccountState, PayeeWallet, VaultAccount
 from app.packs.logistics import sandbox
 from app.platform import chain
+from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
+from app.tests.fx import rates
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("storage_bucket")]
 
@@ -307,10 +309,48 @@ async def test_without_the_vault_or_a_rate_nothing_waits_for_an_approval(
     assert delivered["state"] == "held" and delivered["usdc_units"] is None
     assert failing(delivered)["currency"] == "hold"
     assert failing(delivered)["vault_account"] == "hold"
+    # A policy is written in a currency the country's reference rates quote, or not at all.
     refused = await client.put(
-        "/policy", json={"currency": "EUR", "approval_limit": "0", "pay_when_paid": True}
+        "/policy", json={"currency": "XYZ", "approval_limit": "0", "pay_when_paid": True}
     )
     assert refused.status_code == 400
+
+
+async def test_a_days_rate_moves_a_decision_only_across_a_limit(
+    client: httpx.AsyncClient, vault: Vault
+) -> None:
+    today = utcnow().date()
+    await a_sandbox(client)
+    limit = {"currency": "USD", "approval_limit": "5000.00", "pay_when_paid": True}
+    assert (await client.put("/policy", json=limit)).status_code == 200
+    await service.evaluate_pending()
+    delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    # 1,900 euros are 2,204 dollars, within the limit: the rate, its day and source are kept.
+    assert failing(delivered) == {}
+    assert delivered["reference_rate"] == "1.1600000000"
+    assert (delivered["reference_rate_on"], delivered["reference_source"]) == (
+        today.isoformat(),
+        rates.NAME,
+    )
+
+    async def rate(euro: str) -> None:
+        async with open_session() as db:
+            await db.execute(
+                text("UPDATE fx_rates SET rate = :rate WHERE currency = 'EUR'"), {"rate": euro}
+            )
+            await db.commit()
+
+    # A new rate that keeps it within the limit opens no new evaluation, so an approval of the
+    # one in force still stands.
+    await rate("1.20")
+    assert await service.evaluate_pending() == 0
+    # One that takes them above does, the bill on the road too.
+    await rate("3.00")
+    assert await service.evaluate_pending() == 2
+    moved = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    assert moved["evaluation"] == delivered["evaluation"] + 1
+    assert failing(moved) == {"approval_limit": "propose"}
+    assert moved["reference_rate"] == "3.0000000000"
 
 
 async def test_a_bill_the_vault_paid_is_rejected(client: httpx.AsyncClient, vault: Vault) -> None:

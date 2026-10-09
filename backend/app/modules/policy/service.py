@@ -10,6 +10,8 @@ from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.modules.companies import service as companies
+from app.modules.fx import service as fx
 from app.modules.policy import repository, rules
 from app.modules.policy.models import PaymentsRecorded, Policy
 from app.modules.policy.schemas import (
@@ -35,7 +37,6 @@ DEFAULT: Final = PolicyOut(
     remainder_tolerance=Decimal("2.00"),
     created_at=None,
 )
-_CENT: Final = Decimal("0.01")
 # Country packs' defaults, under the rates in settings.
 _pack_rates: dict[str, Decimal] = {}
 
@@ -80,9 +81,10 @@ async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> P
 
 async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOut:
     """Under the caller's lock on the company's versions."""
-    if body.currency not in mirror_rates():
-        # Every amount of the policy is compared through this currency's rate.
-        raise BadRequest(f"No mirror rate for {body.currency}")
+    company = (await companies.get_companies(db, [actor.company_id]))[actor.company_id]
+    if not fx.quotes(company.country, body.currency):
+        # Every amount of the policy is compared through this currency's reference rate.
+        raise BadRequest(f"No reference rate for {body.currency}")
     before = await repository.current(db, actor.company_id)
     policy = Policy(
         company_id=actor.company_id,
@@ -115,16 +117,6 @@ def mirror(amount: Decimal, currency: str | None) -> Mirror | None:
         return None
     units = (amount * rate * chain.USDC_UNIT).to_integral_value(rounding=ROUND_DOWN)
     return Mirror(rate=rate, units=int(units))
-
-
-def convert(amount: Decimal, currency: str | None, into: str) -> Decimal | None:
-    """An amount in another currency, through the ratio of the two mirror rates, never figure
-    against figure; None when either has no rate."""
-    rates = mirror_rates()
-    source, target = rates.get(currency or ""), rates.get(into)
-    if source is None or target is None:
-        return None
-    return (amount * source / target).quantize(_CENT)
 
 
 def evaluate(picture: Picture, policy: PolicyOut) -> tuple[Outcome, list[Result]]:

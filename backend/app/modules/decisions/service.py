@@ -52,13 +52,14 @@ from app.modules.decisions.schemas import (
     DecisionPage,
     DecisionSort,
 )
+from app.modules.fx import service as fx
 from app.modules.parties import service as parties
 from app.modules.policy import service as policies
 from app.modules.policy.models import PaymentsRecorded
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 from app.modules.projects import service as projects
 from app.modules.settlement import service as settlement
-from app.platform import chain, events
+from app.platform import chain, clock, events
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -220,12 +221,23 @@ async def _decide(
         if decision is not None and decision.amount_edited
         else _to_pay(bill, account)
     )
-    picture = await _picture(db, company_id, bill, amount, account, policy, seen)
+    company = (await companies.get_companies(db, [company_id]))[company_id]
+    # At the company's own time: a sandbox skipped ahead compares at that day's rate.
+    reference = await fx.convert(
+        db,
+        amount,
+        bill.currency,
+        policy.currency,
+        on=clock.now(company).date(),
+        country=company.country,
+    )
+    picture = await _picture(db, company_id, bill, amount, account, policy, seen, reference)
     outcome, results = policies.evaluate(picture, policy)
     paid = outcome is Outcome.HOLD and _paid_in_books(bill, account, policy)
-    # What the rules read, but the time, and what they gave: a timelock that runs out changes
-    # the result, so the decision moves then. Whom it pays is part of it: a bill the books move
-    # to another party is a new proposal, never an approval of the old one.
+    # What the rules read, but the time and the converted amount, and what they gave: a timelock
+    # that runs out, or a day's rate that moves a bill across a limit, changes a result, so the
+    # decision moves then; a day's rate alone does not (ADR-0028). Whom it pays is part of it: a
+    # bill the books move to another party is a new proposal, never an approval of the old one.
     read = {
         "picture": _jsonable(asdict(picture) | {"now": None}),
         "policy": policy.version,
@@ -235,7 +247,13 @@ async def _decide(
         # bill's evaluation changes with it.
         **({"paid_in_books": True} if paid else {}),
     }
-    digest = _hash({**read, "rules": [asdict(result) for result in results]})
+    digest = _hash(
+        {
+            **read,
+            "picture": read["picture"] | {"in_policy_currency": None},
+            "rules": [asdict(result) for result in results],
+        }
+    )
     if decision is not None and decision.picture_hash == digest and not force:
         return False
 
@@ -258,6 +276,10 @@ async def _decide(
     decision.currency = bill.currency
     decision.rate = mirrored.rate if mirrored is not None else None
     decision.usdc_units = mirrored.units if mirrored is not None else None
+    converted = reference if reference is not None and reference.source is not None else None
+    decision.reference_rate = converted.rate if converted is not None else None
+    decision.reference_rate_on = converted.on if converted is not None else None
+    decision.reference_source = converted.source if converted is not None else None
     decision.rules = [asdict(result) | {"outcome": result.outcome.value} for result in results]
     decision.issued_on = bill.issue_date
     decision.decided_by, decision.decided_at = None, None
@@ -277,6 +299,11 @@ async def _decide(
             "currency": bill.currency,
             "rate": _text(decision.rate),
             "usdc_units": decision.usdc_units,
+            "reference_rate": _text(decision.reference_rate),
+            "reference_rate_on": (
+                decision.reference_rate_on.isoformat() if decision.reference_rate_on else None
+            ),
+            "reference_source": decision.reference_source,
             "policy_version": policy.version,
             "picture_hash": digest,
             **read,
@@ -319,6 +346,7 @@ async def _picture(
     account: Account | None,
     policy: PolicyOut,
     seen: _OnChain,
+    reference: fx.Converted | None,
 ) -> Picture:
     """What code knows of the bill, for the rules."""
     links = await projects.links_of_items(db, company_id, ItemKind.INVOICE, [bill.id])
@@ -349,7 +377,7 @@ async def _picture(
         party=bill.party_id is not None,
         currency=bill.currency,
         usdc_units=mirrored.units if mirrored is not None else None,
-        in_policy_currency=policies.convert(amount, bill.currency, policy.currency),
+        in_policy_currency=reference.amount if reference is not None else None,
         projects=len(jobs),
         trucks=trucks,
         client_invoices=len(clients),

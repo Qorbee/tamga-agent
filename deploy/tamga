@@ -92,6 +92,10 @@ release() {
         "goes back to the release noted before" >&2
       exit 1
     fi
+    # The day's reference rates before the worker's first pass: without them every bill in
+    # another currency than its policy's is held. A failure here waits for the hourly job.
+    compose run --rm --no-deps backend python scripts/refresh_rates.py ||
+      echo "the reference rates were not read now: the hourly job reads them" >&2
     compose up -d --remove-orphans
   fi
   if ! healthy; then

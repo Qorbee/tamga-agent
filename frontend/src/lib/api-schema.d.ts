@@ -1943,6 +1943,12 @@ export interface components {
             policy_version: number;
             /** Rate */
             rate: string | null;
+            /** Reference Rate */
+            reference_rate: string | null;
+            /** Reference Rate On */
+            reference_rate_on: string | null;
+            /** Reference Source */
+            reference_source: string | null;
             /** Rules */
             rules: components["schemas"]["RuleResult"][];
             state: components["schemas"]["DecisionState"];

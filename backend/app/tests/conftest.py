@@ -37,6 +37,7 @@ import pydantic_ai.models  # noqa: E402
 
 from app.config import get_settings  # noqa: E402  (the environment above must be set first)
 from app.main import create_app  # noqa: E402
+from app.platform.clock import utcnow  # noqa: E402
 from app.platform.db import Base, dispose_db, get_session, import_all_models, init_db  # noqa: E402
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
@@ -71,8 +72,10 @@ def migrated_database() -> None:
 
 
 @pytest.fixture
-async def database(migrated_database: None) -> AsyncIterator[None]:
-    """An empty database for each test, and the app's engine pointed at it."""
+async def database(migrated_database: None, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+    """An empty database for each test, and the app's engine pointed at it. Its companies convert
+    currencies through a test source with the day's rates, the same whatever packs are installed
+    and whatever the central bank published (ADR-0028)."""
     url = str(get_settings().database_url)
     import_all_models()
     # procrastinate_jobs has no model; CASCADE takes its events and periodic defers with it.
@@ -85,6 +88,10 @@ async def database(migrated_database: None) -> AsyncIterator[None]:
     await engine.dispose()
 
     init_db(url)
+    from app.tests.fx import rates
+
+    rates.use(monkeypatch)
+    await rates.store(utcnow().date(), EUR="1.16", GBP="1.34", TRY="0.024")
     yield
     await dispose_db()
 

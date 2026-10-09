@@ -180,7 +180,14 @@ def _caps(picture: Picture, policy: PolicyOut) -> Result:
 
 def _approval_limit(picture: Picture, policy: PolicyOut) -> Result:
     amount = picture.in_policy_currency
-    if amount is None or amount > policy.approval_limit:
+    if amount is None:
+        # Never compared at a guessed rate (ADR-0028).
+        return Result(
+            "approval_limit",
+            Outcome.HOLD,
+            "No reference rate to compare it with the owner's approval limit",
+        )
+    if amount > policy.approval_limit:
         return Result("approval_limit", Outcome.PROPOSE, "Above the owner's approval limit")
     return Result("approval_limit", Outcome.OK)
 

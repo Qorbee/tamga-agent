@@ -88,9 +88,11 @@ class Picture:
     # The books name the party the bill is from.
     party: bool
     currency: str | None
-    # The test USDC the amount is paid as, in USDC's smallest units, and the amount in the
-    # policy's currency; None when a currency has no mirror rate (ADR-0019).
+    # The test USDC the amount is paid as, in USDC's smallest units; None when a currency has no
+    # mirror rate (ADR-0019).
     usdc_units: int | None
+    # The amount in the policy's currency at the official reference rate; None when no rate
+    # stands (ADR-0028).
     in_policy_currency: Decimal | None
     # The projects that hold the bill as evidence (ADR-0010).
     projects: int

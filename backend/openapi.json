@@ -1506,6 +1506,41 @@
             ],
             "title": "Rate"
           },
+          "reference_rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Rate"
+          },
+          "reference_rate_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Rate On"
+          },
+          "reference_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Source"
+          },
           "rules": {
             "items": {
               "$ref": "#/components/schemas/RuleResult"
@@ -1539,6 +1574,9 @@
           "currency",
           "rate",
           "usdc_units",
+          "reference_rate",
+          "reference_rate_on",
+          "reference_source",
           "amount_edited",
           "rules",
           "issued_on",

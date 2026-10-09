@@ -95,6 +95,8 @@ def test_the_vault_bounds_what_can_be_paid_at_all() -> None:
 def test_an_amount_is_never_guessed() -> None:
     no_rate = dataclasses.replace(CLEAR, currency="XYZ", usdc_units=None, in_policy_currency=None)
     assert failed(no_rate)["currency"] == Outcome.HOLD
+    # With no reference rate, the limit cannot be read, and nothing is guessed.
+    assert failed(no_rate)["approval_limit"] == Outcome.HOLD
     assert failed(dataclasses.replace(CLEAR, left=None))["amount"] == Outcome.HOLD
     assert failed(dataclasses.replace(CLEAR, left=Decimal("0.00")))["amount"] == Outcome.HOLD
     more = dataclasses.replace(CLEAR, amount=Decimal("2000.00"))
@@ -106,8 +108,6 @@ def test_a_bill_is_mirrored_at_its_currencys_rate_rounded_down() -> None:
     mirrored = policies.mirror(Decimal("1900.00"), "EUR")
     assert mirrored is not None and mirrored.units == 220_400
     assert policies.mirror(Decimal("1900.00"), "XYZ") is None
-    # Compared through the ratio of the two rates, never figure against figure.
-    assert policies.convert(Decimal("1900.00"), "EUR", "USD") == Decimal("2204.00")
 
 
 def test_the_firms_account_narrows_what_is_paid_whatever_the_setting() -> None:
