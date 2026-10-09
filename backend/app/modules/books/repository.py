@@ -189,6 +189,28 @@ async def companies_with_payables(db: AsyncSession) -> list[uuid.UUID]:
     return list(rows)
 
 
+def _settled_in_part() -> ColumnElement[bool]:
+    return (
+        Invoice.kind.in_((InvoiceKind.SALES, InvoiceKind.PURCHASE, InvoiceKind.EXPENSE))
+        & Invoice.cancelled.is_(False)
+        & (Invoice.total_amount > 0)
+        & Invoice.remaining_amount.is_not(None)
+        & (Invoice.remaining_amount < Invoice.total_amount)
+    )
+
+
+async def settled_in_part(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Invoice]:
+    rows = await db.scalars(
+        select(Invoice).where(Invoice.company_id == company_id, _settled_in_part())
+    )
+    return rows.all()
+
+
+async def companies_with_settled(db: AsyncSession) -> list[uuid.UUID]:
+    rows = await db.scalars(select(Invoice.company_id).where(_settled_in_part()).distinct())
+    return list(rows)
+
+
 async def namesakes(db: AsyncSession, company_id: uuid.UUID, invoice: Invoice) -> list[uuid.UUID]:
     """Other purchases booked with the same e-document id, or with the same number from the same
     party: the same bill booked twice."""

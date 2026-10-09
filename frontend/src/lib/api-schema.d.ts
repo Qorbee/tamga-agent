@@ -890,6 +890,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/money/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Accounts
+         * @description The company's accounts: banks, cash boxes, the vault, and the books' estimate.
+         */
+        get: operations["money.list_accounts"];
+        put?: never;
+        /** Create Account */
+        post: operations["money.create_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/money/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change Account
+         * @description An account the owner keeps; 409 for one a source reads.
+         */
+        patch: operations["money.change_account"];
+        trace?: never;
+    };
+    "/money/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Holdings
+         * @description What the bank and cash accounts hold, and their total in ``currency`` at the reference
+         *     rate of the company's day, each rate with its day and source.
+         */
+        get: operations["money.holdings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/money/movements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Movements */
+        get: operations["money.list_movements"];
+        put?: never;
+        /**
+         * Add Movement
+         * @description A movement on an account the owner keeps; 409 for one a source reads.
+         */
+        post: operations["money.add_movement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/money/movements/{movement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change Movement */
+        patch: operations["money.change_movement"];
+        trace?: never;
+    };
     "/parties": {
         parameters: {
             query?: never;
@@ -1406,6 +1506,80 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AccountChange
+         * @description What the owner changes on an account they keep: its name, or what it holds now.
+         */
+        AccountChange: {
+            /** Balance */
+            balance?: number | string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /**
+         * AccountIn
+         * @description An account the owner keeps by hand: a cash box, or a bank not connected.
+         */
+        AccountIn: {
+            /** Balance */
+            balance?: number | string | null;
+            /** Bank */
+            bank?: string | null;
+            /** Currency */
+            currency: string;
+            /** Iban */
+            iban?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bank" | "cash";
+            /** Name */
+            name: string;
+        };
+        /**
+         * AccountKind
+         * @description Where a company's money is held (ADR-0026).
+         * @enum {string}
+         */
+        AccountKind: "bank" | "cash" | "vault" | "books";
+        /** AccountOut */
+        AccountOut: {
+            /** Balance */
+            balance: string | null;
+            /** Balance At */
+            balance_at: string | null;
+            /** Bank */
+            bank: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Currency */
+            currency: string;
+            /** Iban */
+            iban: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["AccountKind"];
+            /** Link Error */
+            link_error: string | null;
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+        };
+        /** AccountPage */
+        AccountPage: {
+            /** Items */
+            items: components["schemas"]["AccountOut"][];
+            /** Total */
+            total: number;
+        };
+        /**
          * AdviceOut
          * @description The controller's opinion on one evaluation: it moves nothing. The rules decide what can
          *     be approved, and the owner approves.
@@ -1492,6 +1666,11 @@ export interface components {
              */
             role: "activity";
         };
+        /**
+         * CategorySetBy
+         * @enum {string}
+         */
+        CategorySetBy: "code" | "owner";
         /** CellOut */
         CellOut: {
             /** Format */
@@ -2160,6 +2339,44 @@ export interface components {
          */
         Holder: "mail" | "project" | "archive";
         /**
+         * Holding
+         * @description One account's balance, in its own currency and in the one asked for.
+         */
+        Holding: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Balance */
+            balance: string;
+            /** Converted */
+            converted: string | null;
+            /** Currency */
+            currency: string;
+            /** Rate */
+            rate: string | null;
+            /** Rate On */
+            rate_on: string | null;
+            /** Rate Source */
+            rate_source: string | null;
+        };
+        /**
+         * Holdings
+         * @description What the company holds, account by account, and in total in one currency. Test USDC and
+         *     accounts with no known balance are not money held, so they are not here.
+         */
+        Holdings: {
+            /** Complete */
+            complete: boolean;
+            /** Currency */
+            currency: string;
+            /** Items */
+            items: components["schemas"]["Holding"][];
+            /** Total */
+            total: string;
+        };
+        /**
          * HtmlOut
          * @description A web page made safe to show, for a frame that runs no script.
          */
@@ -2810,6 +3027,93 @@ export interface components {
             subject: string | null;
             /** Thread Key */
             thread_key: string;
+        };
+        /**
+         * MovementCategory
+         * @enum {string}
+         */
+        MovementCategory: "client_receipt" | "subcontractor_payment" | "salary" | "tax" | "bank_fee" | "loan" | "own_transfer" | "partner_withdrawal" | "other";
+        /**
+         * MovementChange
+         * @description The owner's category for a movement; it stays through every later sync.
+         */
+        MovementChange: {
+            category: components["schemas"]["MovementCategory"];
+        };
+        /**
+         * MovementIn
+         * @description One movement the owner says happened: "a partner took 20,000 in cash".
+         */
+        MovementIn: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Amount */
+            amount: number | string;
+            /**
+             * Booked On
+             * Format: date
+             */
+            booked_on: string;
+            category?: components["schemas"]["MovementCategory"] | null;
+            /** Counterparty */
+            counterparty?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /** MovementOut */
+        MovementOut: {
+            /**
+             * Account Id
+             * Format: uuid
+             */
+            account_id: string;
+            /** Amount */
+            amount: string;
+            /**
+             * Booked On
+             * Format: date
+             */
+            booked_on: string;
+            category: components["schemas"]["MovementCategory"] | null;
+            category_by: components["schemas"]["CategorySetBy"] | null;
+            /** Counterparty */
+            counterparty: string | null;
+            /** Counterparty Iban */
+            counterparty_iban: string | null;
+            /** Counterparty Tax Id */
+            counterparty_tax_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Currency */
+            currency: string;
+            /** Description */
+            description: string | null;
+            /** Estimated */
+            estimated: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Invoice Id */
+            invoice_id: string | null;
+            /** Reference */
+            reference: string | null;
+            /** Source */
+            source: string;
+        };
+        /** MovementPage */
+        MovementPage: {
+            /** Items */
+            items: components["schemas"]["MovementOut"][];
+            /** Total */
+            total: number;
         };
         /** NumberingOut */
         NumberingOut: {
@@ -5505,6 +5809,245 @@ export interface operations {
                 };
                 content: {
                     "message/rfc822": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.list_accounts": {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["AccountKind"][] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.create_account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.change_account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.holdings": {
+        parameters: {
+            query: {
+                currency: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Holdings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.list_movements": {
+        parameters: {
+            query?: {
+                account_id?: string | null;
+                category?: components["schemas"]["MovementCategory"][] | null;
+                /** @description Only those with no category. */
+                uncategorised?: boolean;
+                since?: string | null;
+                until?: string | null;
+                /** @description True: estimates from the books; false: none of them. */
+                estimated?: boolean | null;
+                sort?: "-booked_on" | "booked_on" | "-amount" | "amount";
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.add_movement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MovementIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "money.change_movement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MovementChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementOut"];
                 };
             };
             /** @description Validation Error */

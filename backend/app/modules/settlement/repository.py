@@ -4,7 +4,13 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.settlement.models import PayeeWallet, Payment, VaultAccount
+from app.modules.settlement.models import (
+    AccountState,
+    PayeeWallet,
+    Payment,
+    PaymentState,
+    VaultAccount,
+)
 from app.platform.pagination import PageParams
 
 
@@ -82,3 +88,19 @@ async def list_payments(
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def settled_payments(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Payment]:
+    rows = await db.scalars(
+        select(Payment)
+        .where(Payment.company_id == company_id, Payment.state == PaymentState.SETTLED)
+        .order_by(Payment.finished_at, Payment.id)
+    )
+    return rows.all()
+
+
+async def companies_with_open_accounts(db: AsyncSession) -> list[uuid.UUID]:
+    rows = await db.scalars(
+        select(VaultAccount.company_id).where(VaultAccount.state == AccountState.OPEN)
+    )
+    return list(rows)

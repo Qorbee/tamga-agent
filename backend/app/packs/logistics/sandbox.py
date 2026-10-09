@@ -1,7 +1,7 @@
 """The freight scenario a judge's sandbox opens with: one job, a client and two subcontractors,
-two trucks, and the books behind them. The first truck has delivered, its CMR is in, and the
-client has paid; the second is still on the road. So the payment path has a bill it can pay and
-one it must hold.
+two trucks, the books behind them, and the company's bank accounts in three currencies with a
+month of their movements. The first truck has delivered, its CMR is in, and the client has paid;
+the second is still on the road. So the payment path has a bill it can pay and one it must hold.
 
 The books are stored as a books source would have given them, as fixed records that do not
 depend on how far back the pilot's sync reads; the project, its trucks and their links are
@@ -9,6 +9,7 @@ written as the owner would have confirmed them. Every date is set from the sandb
 once. The places and plates belong to no country pack: the copy judges read keeps them.
 """
 
+import dataclasses
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -20,6 +21,9 @@ from app.modules.books.models import InvoiceDirection, InvoiceKind
 from app.modules.books.sources import InvoiceRecord, PartyCard
 from app.modules.companies import service as companies
 from app.modules.documents import service as documents
+from app.modules.money import service as money
+from app.modules.money.models import AccountKind, MovementCategory
+from app.modules.money.schemas import AccountRecord, MovementRecord
 from app.modules.parties import service as parties
 from app.modules.parties.models import IdentifierKind, PartyKind
 from app.modules.parties.service import Identifier
@@ -256,6 +260,78 @@ async def seed(company_id: uuid.UUID) -> None:
                 confirm=True,
             )
         await db.commit()
+    await money.store(company_id, SOURCE, *banks(today, bills[_as_compared(SALE)]))
+
+
+# The company's banks, at example IBANs no real account holds.
+ACCOUNTS: Final = (
+    AccountRecord(
+        source_ref="eur",
+        kind=AccountKind.BANK,
+        name="Main account",
+        bank="Harbour Bank",
+        iban="NL91ABNA0417164300",
+        currency=_EUR,
+        balance=Decimal("18400.00"),
+    ),
+    AccountRecord(
+        source_ref="gbp",
+        kind=AccountKind.BANK,
+        name="Sterling account",
+        bank="Harbour Bank",
+        iban="GB29NWBK60161331926819",
+        currency="GBP",
+        balance=Decimal("4100.00"),
+    ),
+    AccountRecord(
+        source_ref="usd",
+        kind=AccountKind.BANK,
+        name="Dollar account",
+        bank="Meridian Bank",
+        iban="FR1420041010050500013M02606",
+        currency="USD",
+        balance=Decimal("6200.00"),
+    ),
+)
+
+
+def banks(today: date, sale_id: uuid.UUID) -> tuple[list[AccountRecord], list[MovementRecord]]:
+    """Three accounts and a month of what went through them: the client's payment of the sale,
+    and the money that is about no job, a salary, a tax, a fee, a partner's drawing, a transfer
+    between two of the company's own accounts."""
+    currencies = {account.source_ref: account.currency for account in ACCOUNTS}
+
+    def moved(
+        ref: str, account: str, days_ago: int, amount: str, category: MovementCategory, what: str
+    ) -> MovementRecord:
+        return MovementRecord(
+            source_ref=ref,
+            account_ref=account,
+            booked_on=today - timedelta(days=days_ago),
+            amount=Decimal(amount),
+            currency=currencies[account],
+            category=category,
+            description=what,
+        )
+
+    paid = dataclasses.replace(
+        moved("m6", "eur", 6, str(PRICE * 2), MovementCategory.CLIENT_RECEIPT, f"Payment {SALE}"),
+        counterparty=CLIENT.name,
+        counterparty_iban=CLIENT.iban,
+        counterparty_tax_id=CLIENT.tax_id,
+        reference=SALE,
+        invoice_id=sale_id,
+    )
+    return list(ACCOUNTS), [
+        moved("m1", "eur", 20, "-3200.00", MovementCategory.SALARY, "Salaries, last month"),
+        moved("m2", "eur", 20, "-45.00", MovementCategory.BANK_FEE, "Account fee"),
+        moved("m3", "eur", 12, "-1150.00", MovementCategory.TAX, "VAT payment"),
+        moved("m4", "usd", 10, "-640.00", MovementCategory.OTHER, "Fuel cards"),
+        moved("m5", "eur", 8, "-2000.00", MovementCategory.PARTNER_WITHDRAWAL, "Partner drawing"),
+        paid,
+        moved("m7", "eur", 4, "-1500.00", MovementCategory.OWN_TRANSFER, "To the sterling account"),
+        moved("m8", "gbp", 4, "1290.00", MovementCategory.OWN_TRANSFER, "From the main account"),
+    ]
 
 
 def _as_compared(number: str) -> str:

@@ -405,6 +405,19 @@ async def companies_with_payables(db: AsyncSession) -> list[uuid.UUID]:
     return await repository.companies_with_payables(db)
 
 
+async def settled_in_part(db: AsyncSession, company_id: uuid.UUID) -> list[InvoiceOut]:
+    """The booked sales, purchases and expenses the books show paid, in whole or in part: what
+    the money's estimate from the books is made of (ADR-0026). An incoming e-invoice is settled
+    as the purchase it is booked as."""
+    rows = await repository.settled_in_part(db, company_id)
+    return [InvoiceOut.model_validate(row) for row in rows]
+
+
+async def companies_with_settled(db: AsyncSession) -> list[uuid.UUID]:
+    """The companies whose books show something paid: ids alone, across companies."""
+    return await repository.companies_with_settled(db)
+
+
 async def namesakes(
     db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID
 ) -> list[uuid.UUID]:

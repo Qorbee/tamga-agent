@@ -379,6 +379,16 @@ async def list_payments(
     return PaymentPage(items=[_payment_out(row) for row in rows], total=total)
 
 
+async def companies_with_open_accounts(db: AsyncSession) -> list[uuid.UUID]:
+    """The companies whose account on the vault is open: ids alone, across companies."""
+    return await repository.companies_with_open_accounts(db)
+
+
+async def settled_payments(db: AsyncSession, company_id: uuid.UUID) -> list[PaymentOut]:
+    """Every payment the vault released for the company, the earliest first."""
+    return [_payment_out(row) for row in await repository.settled_payments(db, company_id)]
+
+
 def explorer_url(tx_hash: str) -> str:
     """The transaction's page on the chain's explorer."""
     return f"{get_settings().arc_explorer_url.rstrip('/')}/tx/{tx_hash}"
