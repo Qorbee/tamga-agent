@@ -120,6 +120,9 @@ the `circle_session` volume, which a new image or container keeps; the files are
 - `deploy/tamga ps`: every service up, `migrate` exited 0;
 - `deploy/tamga logs -f backend worker`;
 - `deploy/tamga exec worker circle wallet status`: the executor signed in for testnet (step 7).
+- `deploy/tamga run --rm --no-deps backend python scripts/judge_path.py --api https://api.<DOMAIN>
+  --web https://<DOMAIN>`: a judge's whole path on the live site, from a guest's sandbox to a bill
+  paid on Arc, each step timed. It opens a real sandbox and pays its bill in test USDC.
 
 ## Rolling back
 

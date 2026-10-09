@@ -13,7 +13,7 @@ The worker that runs background jobs is the same image with another command (`py
 | `app/routers/health.py` | `/health` (liveness, touches nothing) and `/health/ready` (checks Postgres) |
 | `app/modules/` | Business domains, one package each ([shape](app/modules/README.md)) |
 | `app/packs/` | Country (`tr`) and sector (`logistics`) packs; each `register.py` plugs into the core |
-| `scripts/` | `create_company.py`, `create_circle_wallets.py`, `deploy_policy_vault.py`, `set_vault_executor.py`, `open_vault_account.py`, `dump_openapi.py` |
+| `scripts/` | `create_company.py`, `create_circle_wallets.py`, `deploy_policy_vault.py`, `set_vault_executor.py`, `open_vault_account.py`, `dump_openapi.py`; `judge_path.py` walks a judge's path against a running API, `traction.py` counts the pilot's numbers for the traction updates |
 | `app/migrations/` | Alembic; models are discovered from `app/modules/*/models.py` and `app/packs/*/models.py` |
 | `openapi.json` | The API contract the frontend generates its types from. Generated, committed |
 | `circle-cli/` | Circle's CLI, which the executor runs from the worker (ADR-0017): its tree locked as Circle ships it, installed in the image with `npm ci` and scripts off. Moved by hand: `npm install --package-lock-only --ignore-scripts --before=<7 days ago>` |
