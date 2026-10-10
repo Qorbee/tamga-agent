@@ -71,3 +71,5 @@ OPTIMIZATIONS.md
 deploy/.previous-release
 deploy/.current-release
 deploy/backups/
+# The public key the off-server dumps are encrypted to: the server's own.
+deploy/backup-key.asc

@@ -5,7 +5,9 @@
 #   deploy/tamga up -d --build      any docker compose command
 #   deploy/tamga update [ref]       back up, check out origin/main (or ref), build, migrate, start
 #   deploy/tamga rollback           back to the release before the last update
-#   deploy/tamga backup [--offsite] dump the database; --offsite copies the dump to R2 too
+#   deploy/tamga backup [--offsite] dump the database; --offsite copies it to R2, encrypted
+#   deploy/tamga roles              the database roles the apps and the inspection sign in as
+#   deploy/tamga sql [query]        read-only SQL, from the arguments or stdin
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -47,20 +49,143 @@ dump() {
   echo "$file"
 }
 
-# A dump copied into the bucket by the backend's image, which holds the bucket's keys
-# (backend/.env); sent on stdin, since the image's user cannot read the owner's folder.
+# The public key a dump is encrypted to before it leaves the server. Its private key is the
+# owner's, kept off the server, so neither the bucket's keys nor the server can read a copy.
+backup_key() {
+  local key
+  key="$(setting BACKUP_KEY)"
+  key="${key:-deploy/backup-key.asc}"
+  if ! command -v gpg >/dev/null; then
+    echo "gpg is not installed: sudo apt install gnupg" >&2
+    exit 1
+  fi
+  if [[ ! -s "$key" ]]; then
+    echo "no backup key at $key: a dump leaves the server only encrypted" \
+      "(deploy/README.md, Backups)" >&2
+    exit 1
+  fi
+  echo "$key"
+}
+
+# A dump encrypted whole into a file of its own, then copied into the bucket by the backend's
+# image, which holds the bucket's keys (backend/.env); sent on stdin, since the image's user cannot
+# read the owner's folder. Encrypted first, so a gpg that fails midway never leaves a cut-short
+# copy in the bucket under a whole one's name. gpg gets a keyring of its own, so the user's is
+# never touched.
 offsite() {
-  compose run --rm --no-deps -T backend python scripts/store_backup.py \
-    --name "$(basename "$1")" --days "$(backup_days)" <"$1"
+  local key home sealed
+  key="$(backup_key)"
+  home="$(mktemp -d)"
+  sealed="$1.gpg"
+  if ! gpg --homedir "$home" --batch --quiet --yes --trust-model always --recipient-file "$key" \
+    --output "$sealed" --encrypt "$1" ||
+    ! compose run --rm --no-deps -T backend python scripts/store_backup.py \
+      --name "$(basename "$sealed")" --days "$(backup_days)" <"$sealed"; then
+    rm -rf "$home" "$sealed"
+    echo "the dump did not reach the bucket: $1 is still here" >&2
+    return 1
+  fi
+  rm -rf "$home" "$sealed"
 }
 
 backup() {
   local file
+  if [[ "${1:-}" == "--offsite" ]]; then
+    backup_key >/dev/null
+  fi
   file="$(dump)"
   echo "backed up: $file"
   if [[ "${1:-}" == "--offsite" ]]; then
     offsite "$file"
   fi
+}
+
+# The roles Postgres is signed in to as (deploy/README.md, Database roles): `tamga`, the apps'
+# own, which owns the database but is no superuser; `tamga_readonly`, which only reads, for looking
+# into what happened. Every release runs it, so Postgres checks the password deploy/.env holds.
+roles() {
+  local password
+  password="$(setting TAMGA_DB_PASSWORD)"
+  if [[ ! "$password" =~ ^[A-Za-z0-9]{24,}$ ]]; then
+    echo "set TAMGA_DB_PASSWORD in deploy/.env: openssl rand -hex 24" >&2
+    exit 1
+  fi
+  # Started when it is not running, never recreated: a changed configuration waits for the
+  # release's own `up`, so what serves keeps its database through the migration.
+  compose up -d --no-recreate --wait postgres >/dev/null
+  # On stdin, so the password is in no process's arguments.
+  compose exec -T postgres psql -U postgres -d app -X -q -v ON_ERROR_STOP=1 <<SQL
+SET client_min_messages = warning;
+SELECT 'CREATE ROLE tamga' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tamga') \gexec
+ALTER ROLE tamga WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD '$password';
+ALTER DATABASE app OWNER TO tamga;
+-- What postgres still owns in the schema becomes the apps' (a database restored without
+-- --role=tamga, or migrated as postgres): otherwise they could not read their own tables. Tables
+-- first, which take the sequences they own along; an extension's own objects stay its own.
+DO \$\$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT c.oid::regclass AS name,
+           CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'TABLE' END AS kind
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relowner = 'postgres'::regrole AND c.relkind IN ('r', 'p', 'v', 'm')
+       AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO tamga', r.kind, r.name);
+  END LOOP;
+  FOR r IN
+    SELECT c.oid::regclass AS name
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relowner = 'postgres'::regrole AND c.relkind = 'S'
+       AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.objid = c.oid AND d.deptype IN ('e', 'a', 'i'))
+  LOOP
+    EXECUTE format('ALTER SEQUENCE %s OWNER TO tamga', r.name);
+  END LOOP;
+  FOR r IN
+    SELECT p.oid::regprocedure AS name, CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS kind
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proowner = 'postgres'::regrole AND p.prokind IN ('f', 'p')
+       AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+  LOOP
+    EXECUTE format('ALTER %s %s OWNER TO tamga', r.kind, r.name);
+  END LOOP;
+  FOR r IN
+    SELECT t.oid::regtype AS name
+      FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+     WHERE n.nspname = 'public' AND t.typowner = 'postgres'::regrole
+       -- Enums, domains and standalone composites; a table's row type moves with its table.
+       AND (t.typtype IN ('e', 'd')
+            OR (t.typtype = 'c' AND (SELECT relkind FROM pg_class WHERE oid = t.typrelid) = 'c'))
+       AND NOT EXISTS (SELECT FROM pg_depend d WHERE d.objid = t.oid AND d.deptype = 'e')
+  LOOP
+    EXECUTE format('ALTER TYPE %s OWNER TO tamga', r.name);
+  END LOOP;
+END
+\$\$;
+SELECT 'CREATE ROLE tamga_readonly'
+  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tamga_readonly') \gexec
+-- No password: it signs in only from inside the container, so only through docker exec.
+ALTER ROLE tamga_readonly WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD NULL;
+GRANT pg_read_all_data TO tamga_readonly;
+ALTER ROLE tamga_readonly SET default_transaction_read_only = on;
+ALTER ROLE tamga_readonly SET statement_timeout = '30s';
+-- Each statement it runs lands in Postgres's log: deploy/tamga logs postgres.
+ALTER ROLE tamga_readonly SET log_statement = 'all';
+SQL
+}
+
+# Read-only SQL, as tamga_readonly: the query from the arguments, else from stdin. psql runs in
+# restricted mode under a key nobody sees, so no backslash command (\! runs a shell) gets through:
+# only SQL, which the role's privileges bound.
+sql() {
+  local key
+  key="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  {
+    echo "\\restrict $key"
+    if (($#)); then printf '%s\n' "$*"; else cat; fi
+  } | compose exec -T postgres psql -U tamga_readonly -d app -X -v ON_ERROR_STOP=1
 }
 
 # Up when the API answers that its database and its file storage are ready: a minute at most.
@@ -86,6 +211,7 @@ release() {
   if [[ "${1:-}" == "--keep-schema" ]]; then
     compose up -d --no-deps backend worker web
   else
+    roles
     if ! compose run --rm migrate; then
       compose logs --tail 50 migrate || true
       echo "the migration failed: nothing that serves was changed; deploy/tamga rollback" \
@@ -111,6 +237,8 @@ release() {
 
 update() {
   local ref="${1:-origin/main}" file
+  # The dump goes off the server below: stop now, before anything changes, if it cannot.
+  backup_key >/dev/null
   if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     echo "the checkout has local changes: commit or drop them first" >&2
     exit 1
@@ -120,9 +248,12 @@ update() {
     echo "no such commit: $ref" >&2
     exit 1
   }
-  # Before anything changes: the dump to come back to.
+  # Before anything changes: the dump to come back to, off the server too. Before the checkout,
+  # so this script's own offsite sends it, encrypted: after it, this shell would still run the
+  # functions it read, not the checked-out release's.
   file="$(dump)"
   echo "backed up: $file"
+  offsite "$file"
   # The last release that came up healthy, not a failed attempt this one retries.
   if [[ -s deploy/.current-release ]]; then
     cp deploy/.current-release deploy/.previous-release
@@ -130,9 +261,6 @@ update() {
     git rev-parse HEAD >deploy/.previous-release
   fi
   git checkout --quiet --detach "$ref"
-  compose build
-  # With the new image, which has the script even when the release left had none.
-  offsite "$file"
   release
 }
 
@@ -163,5 +291,7 @@ case "${1:-}" in
   update) shift; update "$@" ;;
   rollback) shift; rollback "$@" ;;
   backup) shift; backup "$@" ;;
+  roles) roles ;;
+  sql) shift; sql "$@" ;;
   *) compose "$@" ;;
 esac
