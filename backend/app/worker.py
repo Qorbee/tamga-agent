@@ -11,7 +11,7 @@ from typing import Final
 
 from app import packs
 from app.config import get_settings
-from app.platform import isolated, jobs, logs, tracing
+from app.platform import isolated, logs, tracing
 from app.platform.db import dispose_db, init_db
 
 # Jobs run side by side. A scheduled job never overlaps itself (its lock), so these are different
@@ -20,6 +20,10 @@ CONCURRENCY: Final = 4
 
 
 async def main() -> None:
+    # Here, not at the top: the isolated readers' children import this module again, with none of
+    # the settings in their environment (ADR-0012), and jobs reads them as it is imported.
+    from app.platform import jobs
+
     settings = get_settings()
     logs.configure(settings.log_level)
     packs.register_all()

@@ -9,8 +9,10 @@ import { ApiError, getMe } from "@/lib/api";
 /**
  * Sends a visitor with no session to sign-in. The session cookie belongs to the API's host, so only
  * the browser can tell; the API refuses every call without it anyway, so this is navigation, not the
- * boundary. An unreachable API is not a sign-out: the account menu says Tamga is offline. Sign-in
- * comes back to the whole address, the record open in the canvas (`?view=`) included.
+ * boundary. Nothing of the app shows until the API has answered, so a signed-out visitor never
+ * glimpses it on the way to sign-in. An unreachable API is not a sign-out: the app shows, and its
+ * account menu says Tamga is offline. Sign-in comes back to the whole address, the record open in
+ * the canvas (`?view=`) included.
  */
 export function RequireSession({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -24,5 +26,6 @@ export function RequireSession({ children }: { children: ReactNode }) {
     if (signedOut) router.replace(`/sign-in?next=${encodeURIComponent(here)}`);
   }, [signedOut, here, router]);
 
+  if (me.isPending || signedOut) return null;
   return children;
 }

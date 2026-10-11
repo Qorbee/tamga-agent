@@ -1,6 +1,8 @@
 import ast
 import asyncio
 import os
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -106,3 +108,20 @@ def test_a_reader_is_reached_only_through_run() -> None:
         isolated.registered()
     )
     assert reading.pdf_text.__module__ == "app.modules.documents.reading"
+
+
+def test_the_worker_module_reads_no_settings_as_it_is_imported() -> None:
+    """Each reader's child imports the worker's main module again, with none of the settings in its
+    environment (ADR-0012). A module there that reads them as it is imported fails every document
+    on the server, where no .env file stands in for the environment."""
+    code = (
+        "import app.config\n"
+        "def refused():\n"
+        "    raise SystemExit('the settings were read as app.worker was imported')\n"
+        "app.config.get_settings = refused\n"
+        "import app.worker\n"
+    )
+    done = subprocess.run(  # noqa: S603  (this interpreter, a fixed script)
+        [sys.executable, "-c", code], cwd=APP.parent, capture_output=True, text=True, timeout=60
+    )
+    assert done.returncode == 0, done.stderr
