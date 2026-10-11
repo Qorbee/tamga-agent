@@ -180,6 +180,20 @@ export const tr: Dictionary = {
   },
   project: {
     title: "Proje",
+    /** The project at a glance, above its trucks. */
+    brief: {
+      title: "Projeye bir bakışta",
+      invoiced: "Kesilen",
+      billed: "Taşeronlar",
+      margin: "Fark",
+      left: (amount: string) => `${amount} hâlâ açık`,
+      paid: "Tamamı ödendi",
+      noInvoice: "Müşteriye henüz fatura yok",
+      noBill: "Taşerondan henüz fatura yok",
+      mixed: "Birden çok para biriminde",
+      missing: (count: number) => `${count} evrak eksik`,
+      toConfirm: (count: number) => `${count} bağlantı onay bekliyor`,
+    },
     client: "Müşteri",
     subcontractor: "Taşeron",
     consignee: "Alıcı",
@@ -322,6 +336,7 @@ export const tr: Dictionary = {
     notFound: "Bu fatura artık burada değil.",
     views: { collect: "Alacaklar", pay: "Borçlar", firms: "Firmalar" },
     shown: { open: "Açık", overdue: "Vadesi geçen", all: "Tümü" },
+    shownLabel: "Hangi faturalar",
     sort: {
       label: "Sırala",
       options: {
@@ -345,6 +360,7 @@ export const tr: Dictionary = {
       unavailable: "Toplamlar yüklenemedi",
     },
     balances: { receivable: "Alacaklarımız", payable: "Borçlarımız", all: "Tümü" },
+    balancesLabel: "Hangi firmalar",
     balance: {
       receivable: (amount: string) => `Bize borcu ${amount}`,
       payable: (amount: string) => `Borcumuz ${amount}`,
@@ -498,7 +514,7 @@ export const tr: Dictionary = {
   },
   memory: {
     title: "Tamga'nın bildikleri",
-    hint: "Tamga'ya öğrettikleriniz: her sohbet ve postanız ile dosyalarınız üzerindeki işi bunları okur. Sohbetten gelen taslak, siz onaylayınca geçerli olur.",
+    hint: "Tamga'ya öğrettikleriniz: her sohbet ve postanız ile dosyalarınız üzerindeki işi bunları okur. Aşağıya kendi sözlerinizle yazın; Tamga kayıt taslakları hazırlar, her biri siz onaylayınca geçerli olur.",
     kinds: {
       term: "Terim",
       alias: "Diğer adı",
@@ -520,9 +536,17 @@ export const tr: Dictionary = {
     save: "Kaydet",
     cancel: "Vazgeç",
     add: "Ekle",
-    teach: "Tamga'ya bir şey öğret",
+    tell: "Tamga'nın hatırlamasını istediğinizi yazın…",
+    draft: "Taslak hazırla",
+    drafting: "Taslaklar hazırlanıyor…",
+    drafted: (count: number) => `${count} kayıt yukarıda onayınızı bekliyor.`,
+    nothingToKeep: "Bunda saklanacak bir şey yok.",
+    spent: "Bugünkü istek hakkı doldu. Kaydı aşağıda kendiniz yazın.",
+    failed: "Tamga bundan kayıt hazırlayamadı. Aşağıda kendiniz yazın.",
+    waitsCount: (count: number) => `Onayınızı bekliyor · ${count}`,
+    confirmAll: "Tümünü onayla",
     more: "Diğer",
-    none: "Henüz yok. Bir sohbette Tamga'ya söyleyin ya da burada öğretin.",
+    none: "Henüz yok. Aşağıda ya da bir sohbette Tamga'ya söyleyin.",
     noneRetired: "Kaldırılan yok.",
     showRetired: "Kaldırılanları göster",
     showHeld: "Geçerli olanları göster",

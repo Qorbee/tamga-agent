@@ -12,12 +12,15 @@ from app.modules.assistant.schemas import (
     ChatOut,
     ChatPage,
     ChatUpdate,
+    MemoryDrafts,
+    MemoryText,
 )
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
 from app.platform.pagination import PageDep
 
 chats = APIRouter(tags=["chats"])
+memory_drafts = APIRouter(tags=["memory"])
 
 
 @chats.get("/assistant")
@@ -113,3 +116,11 @@ async def compact_chat(chat_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> C
 async def stop_run(chat_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> None:
     """Stops the answer being written in the chat, when one is."""
     await service.stop_run(db, actor, chat_id)
+
+
+@memory_drafts.post("/memory/drafts", status_code=status.HTTP_201_CREATED)
+async def draft_memory_entries(body: MemoryText, actor: ActorDep, db: SessionDep) -> MemoryDrafts:
+    """Drafts what was written into entries of the company's memory, by a model: each one
+    waits for the owner's confirmation (`PATCH /memory/{id}` with `state: held`) before any
+    agent reads it. 429 when the chat's requests for today are spent."""
+    return await service.draft_memory(db, actor, body.text)

@@ -5,12 +5,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";
 
-import { Hint } from "@/components/hint";
 import { CanvasLink } from "@/components/canvas-link";
 import { Count } from "@/components/placement-rows";
+import { Segmented } from "@/components/segmented";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { T } from "@/components/translated";
 import { listProjects, listShipments, type Project, type ProjectStatus } from "@/lib/api";
 import { formatListDate } from "@/lib/format";
@@ -75,33 +74,25 @@ export function ProjectList() {
         <NewProjectDialog />
       </div>
 
-      <ToggleGroup
-        type="single"
+      <Segmented
+        fill
+        label={t.board.status}
         value={status}
-        aria-label={t.board.status}
-        className="w-full"
-        spacing={1}
-        onValueChange={(value) => {
-          if (value) setChosen(value as Shown);
-        }}
-      >
-        {STATUSES.map((value) => (
-          <Hint key={value} label={t.board.columns[value]}>
-            <ToggleGroupItem
-              value={value}
-              aria-label={t.board.columns[value]}
-              // Styled by `aria-checked`, the radio's own state: the hint around it takes over
-              // `data-state` with the tooltip's (open or closed).
-              className="group/status text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground min-w-0 gap-1.5 px-2 max-sm:aria-checked:flex-1 sm:flex-1"
-            >
+        onChange={setChosen}
+        options={STATUSES.map((value) => ({
+          value,
+          hint: t.board.columns[value],
+          className: "group/status gap-1.5 max-sm:flex-none max-sm:aria-checked:flex-1",
+          label: (
+            <>
               <HugeiconsIcon icon={STATUS_ICONS[value]} strokeWidth={1.75} className="shrink-0" />
               {/* On a phone only the chosen status is spelled out; the others are an icon and a count. */}
               <span className="truncate max-sm:group-aria-[checked=false]/status:sr-only">{t.board.columns[value]}</span>
               <span className="tabular-nums">{projects.data ? count(value) : ""}</span>
-            </ToggleGroupItem>
-          </Hint>
-        ))}
-      </ToggleGroup>
+            </>
+          ),
+        }))}
+      />
 
       {projects.isError ? (
         <p className="text-danger-foreground text-sm" role="alert">

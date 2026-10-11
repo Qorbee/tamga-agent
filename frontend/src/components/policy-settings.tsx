@@ -6,9 +6,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
+import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { changePolicy, type PaymentMethod, type Policy, type PolicyChange, type ReserveRule } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -20,9 +20,6 @@ import { cn } from "@/lib/utils";
  * the setup card on the chat home saves its three answers together, as one version of the policy.
  */
 
-// The chosen option is filled and in full ink; the others recede.
-export const SEGMENT =
-  "text-muted-foreground data-[state=on]:bg-accent data-[state=on]:text-accent-foreground";
 const METHODS: readonly PaymentMethod[] = ["bank_transfer", "vault_usdc"];
 const WEEK = [0, 1, 2, 3, 4, 5, 6] as const;
 
@@ -73,46 +70,29 @@ export function MethodsField({
   return (
     <>
       <Row label={words.methods} hint={words.methodsHint}>
-        <ToggleGroup
-          type="multiple"
-          variant="outline"
-          spacing={0}
+        <Segmented
+          multiple
+          options={METHODS.map((method) => ({ value: method, label: t.payments.methods[method] }))}
           value={methods}
-          aria-label={words.methods}
+          label={words.methods}
           disabled={disabled}
-          onValueChange={(value) => {
+          onChange={(value) => {
             const chosen = METHODS.filter((method) => value.includes(method));
-            if (chosen.length === 0) return;
             onChange(chosen, chosen.includes(first) ? first : chosen[0]!);
           }}
-        >
-          {METHODS.map((method) => (
-            <ToggleGroupItem key={method} value={method} className={SEGMENT}>
-              {t.payments.methods[method]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        />
       </Row>
       {methods.length > 1 ? (
         <Row label={words.first}>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            spacing={0}
+          <Segmented
+            options={methods.map((method) => ({ value: method, label: t.payments.methods[method] }))}
             value={first}
-            aria-label={words.first}
+            label={words.first}
             disabled={disabled}
-            onValueChange={(value) => {
-              const chosen = METHODS.find((method) => method === value);
-              if (chosen && chosen !== first) onChange(methods, chosen);
+            onChange={(chosen) => {
+              if (chosen !== first) onChange(methods, chosen);
             }}
-          >
-            {methods.map((method) => (
-              <ToggleGroupItem key={method} value={method} className={SEGMENT}>
-                {t.payments.methods[method]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          />
         </Row>
       ) : null}
     </>
@@ -133,29 +113,19 @@ export function PayDayField({
   const words = t.settings.howYouPay;
   return (
     <Row label={words.payDay} hint={words.payDayHint}>
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        spacing={0}
+      <Segmented
+        options={[
+          { value: "any", label: words.anyDay },
+          ...WEEK.map((day) => ({ value: String(day), label: words.weekdays[day], className: "px-2" })),
+        ]}
         value={value === null ? "any" : String(value)}
-        aria-label={words.payDay}
+        label={words.payDay}
         disabled={disabled}
-        className="flex-wrap"
-        onValueChange={(chosen) => {
-          if (!chosen) return;
+        onChange={(chosen) => {
           const day = chosen === "any" ? null : Number(chosen);
           if (day !== value) onChange(day);
         }}
-      >
-        <ToggleGroupItem value="any" className={SEGMENT}>
-          {words.anyDay}
-        </ToggleGroupItem>
-        {WEEK.map((day) => (
-          <ToggleGroupItem key={day} value={String(day)} className={cn(SEGMENT, "px-2")}>
-            {words.weekdays[day]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      />
     </Row>
   );
 }
@@ -327,21 +297,23 @@ export function ReserveEditor({
         </span>
       </Row>
       <Row label={words.onBreach}>
-        <ToggleGroup type="single" variant="outline" spacing={0} value={onBreach} aria-label={words.onBreach} onValueChange={(value) => {
-          if (value === "hold" || value === "ask") setOnBreach(value);
-        }}>
-          <ToggleGroupItem value="ask" className={SEGMENT}>{words.ask}</ToggleGroupItem>
-          <ToggleGroupItem value="hold" className={SEGMENT}>{words.hold}</ToggleGroupItem>
-        </ToggleGroup>
+        <Segmented
+          options={[
+            { value: "ask", label: words.ask },
+            { value: "hold", label: words.hold },
+          ]}
+          value={onBreach}
+          label={words.onBreach}
+          onChange={setOnBreach}
+        />
       </Row>
       <Row label={words.stance}>
-        <ToggleGroup type="single" variant="outline" spacing={0} value={stance} aria-label={words.stance} onValueChange={(value) => {
-          if (value === "careful" || value === "balanced" || value === "lean") setStance(value);
-        }}>
-          {(["careful", "balanced", "lean"] as const).map((value) => (
-            <ToggleGroupItem key={value} value={value} className={SEGMENT}>{words.stances[value]}</ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <Segmented
+          options={(["careful", "balanced", "lean"] as const).map((value) => ({ value, label: words.stances[value] }))}
+          value={stance}
+          label={words.stance}
+          onChange={setStance}
+        />
       </Row>
       <div className="flex gap-2 py-2">
         <Button type="submit" size="sm" disabled={!valid || pending}>

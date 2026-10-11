@@ -4106,6 +4106,22 @@
         "title": "MemoryChange",
         "type": "object"
       },
+      "MemoryDrafts": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryDrafts",
+        "type": "object"
+      },
       "MemoryEntryOut": {
         "properties": {
           "chat_id": {
@@ -4333,6 +4349,22 @@
         ],
         "title": "MemoryState",
         "type": "string"
+      },
+      "MemoryText": {
+        "description": "What someone wrote in Settings for Tamga to remember, in their own words: one fact or\nseveral, drafted into entries the owner confirms one by one.",
+        "properties": {
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "MemoryText",
+        "type": "object"
       },
       "MergeOut": {
         "properties": {
@@ -11509,6 +11541,53 @@
           }
         ],
         "summary": "Write Memory Entry",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/memory/drafts": {
+      "post": {
+        "description": "Drafts what was written into entries of the company's memory, by a model: each one\nwaits for the owner's confirmation (`PATCH /memory/{id}` with `state: held`) before any\nagent reads it. 429 when the chat's requests for today are spent.",
+        "operationId": "memory.draft_memory_entries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryText"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryDrafts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Draft Memory Entries",
         "tags": [
           "memory"
         ]

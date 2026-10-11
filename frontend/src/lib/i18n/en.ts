@@ -185,6 +185,20 @@ export const en = {
   },
   project: {
     title: "Project",
+    /** The project at a glance, above its trucks. */
+    brief: {
+      title: "The project at a glance",
+      invoiced: "Invoiced",
+      billed: "Subcontractors",
+      margin: "Margin",
+      left: (amount: string) => `${amount} still open`,
+      paid: "Paid in full",
+      noInvoice: "No invoice to the client yet",
+      noBill: "No subcontractor's bill yet",
+      mixed: "In more than one currency",
+      missing: (count: number) => (count === 1 ? "1 paper missing" : `${count} papers missing`),
+      toConfirm: (count: number) => (count === 1 ? "1 link to confirm" : `${count} links to confirm`),
+    },
     client: "Client",
     subcontractor: "Subcontractor",
     consignee: "Receiver",
@@ -330,6 +344,7 @@ export const en = {
     notFound: "This invoice is not here any more.",
     views: { collect: "To collect", pay: "To pay", firms: "Firms" },
     shown: { open: "Open", overdue: "Overdue", all: "All" },
+    shownLabel: "Which invoices",
     sort: {
       label: "Sort",
       options: {
@@ -357,6 +372,7 @@ export const en = {
     },
     /** Which firms the Firms tab lists, by the balance the books keep for each. */
     balances: { receivable: "Owe us", payable: "We owe", all: "All" },
+    balancesLabel: "Which firms",
     balance: {
       receivable: (amount: string) => `Owes us ${amount}`,
       payable: (amount: string) => `We owe ${amount}`,
@@ -515,7 +531,7 @@ export const en = {
   },
   memory: {
     title: "What Tamga knows",
-    hint: "What you taught Tamga: every chat and its work on your mail and files read it. A draft from a chat counts only once you confirm it.",
+    hint: "What you taught Tamga: every chat and its work on your mail and files read it. Tell it below in your own words; it drafts entries, and each counts once you confirm it.",
     kinds: {
       term: "Term",
       alias: "Another name",
@@ -537,9 +553,17 @@ export const en = {
     save: "Save",
     cancel: "Cancel",
     add: "Add",
-    teach: "Teach Tamga something",
+    tell: "Tell Tamga what to remember…",
+    draft: "Draft entries",
+    drafting: "Drafting entries…",
+    drafted: (count: number) => (count === 1 ? "1 entry waits for you above." : `${count} entries wait for you above.`),
+    nothingToKeep: "Nothing in that to keep.",
+    spent: "Today's requests are spent. Write the entry yourself below.",
+    failed: "Tamga could not draft entries from this. Write one yourself below.",
+    waitsCount: (count: number) => `Waits for you · ${count}`,
+    confirmAll: "Confirm all",
     more: "More",
-    none: "Nothing yet. Tell Tamga in a chat, or teach it here.",
+    none: "Nothing yet. Tell Tamga below, or in a chat.",
     noneRetired: "Nothing retired.",
     showRetired: "Show retired",
     showHeld: "Show what holds",

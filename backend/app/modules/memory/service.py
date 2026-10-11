@@ -181,6 +181,38 @@ async def draft(
     return MemoryEntryOut.model_validate(entry)
 
 
+async def draft_from_settings(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    facts: Sequence[tuple[MemoryKind, str]],
+    *,
+    written_by: uuid.UUID,
+) -> list[MemoryEntryOut]:
+    """What the memorist drafted from what someone wrote in Settings: every entry checked before
+    any is written, all ``proposed`` in one commit, so a refused one leaves none behind. Each
+    holds only when the owner confirms it."""
+    cleaned = [(kind, _text(text)) for kind, text in facts]
+    now = utcnow()
+    entries = [
+        await repository.add(
+            db,
+            MemoryEntry(
+                company_id=company_id,
+                kind=kind,
+                text=text,
+                search_text=search.search_text(text),
+                source=MemorySource.SETTINGS,
+                state=MemoryState.PROPOSED,
+                written_by=written_by,
+                updated_at=now,
+            ),
+        )
+        for kind, text in cleaned
+    ]
+    await db.commit()
+    return [MemoryEntryOut.model_validate(entry) for entry in entries]
+
+
 async def for_agents(
     db: AsyncSession, company_id: uuid.UUID, kinds: Sequence[MemoryKind] | None = None
 ) -> list[MemoryEntryOut]:

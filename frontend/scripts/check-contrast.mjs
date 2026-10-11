@@ -23,7 +23,7 @@ const NON_TEXT = 3; // icons, dots and fills (WCAG 1.4.11)
 
 // [foreground token, background tokens, minimum ratio]
 const pairs = [
-  ["foreground", ["background", "card", "muted", "accent", "success-soft", "warning-soft", "danger-soft"], TEXT],
+  ["foreground", ["background", "card", "muted", "accent", "segment", "success-soft", "warning-soft", "danger-soft"], TEXT],
   ["muted-foreground", ["background", "card", "muted", "success-soft", "warning-soft", "danger-soft"], TEXT],
   ["primary-foreground", ["primary"], TEXT],
   ["sidebar-foreground", ["sidebar", "sidebar-accent"], TEXT],
@@ -35,6 +35,8 @@ const pairs = [
   ["warning", ["background", "card"], NON_TEXT],
   ["danger", ["background", "card"], NON_TEXT],
   ["ring", ["background", "card"], NON_TEXT],
+  // The edge that marks a selector's chosen option on its track.
+  ["segment-border", ["muted"], NON_TEXT],
 ];
 // Terracotta passes as text only on the light surfaces; on charcoal it is used as a fill alone.
 const lightOnly = [["primary", ["background", "card"], TEXT]];

@@ -39,10 +39,12 @@ from app.modules.assistant.schemas import (
     ChatOut,
     ChatPage,
     CompactionMessage,
+    MemoryDrafts,
     RunChoice,
 )
 from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
+from app.modules.memory import service as memory
 from app.modules.projects import service as projects
 from app.platform import events, llm, search
 from app.platform.auth import Actor, Role
@@ -55,6 +57,8 @@ logger = logging.getLogger(__name__)
 
 # The budget of requests (CHAT_REQUESTS_PER_DAY) counts those made in this long.
 RUN_WINDOW: Final = timedelta(days=1)
+# What one drafting of memory in Settings may ask: an answer, and once more if it is unusable.
+MEMORIST_REQUESTS: Final = 2
 # The most requests one answer may take: the searches before it and the answer itself. A run
 # that starts within the day's budget finishes, so a day can end this many requests past it. Its
 # helpers' runs are counted apart, and refused once the budget is spent (``helpers``).
@@ -376,6 +380,49 @@ async def run_chat(
     # A reverse proxy must pass each event on as it comes (ADR-0006).
     response.headers["X-Accel-Buffering"] = "no"
     return response
+
+
+async def draft_memory(db: AsyncSession, actor: Actor, text: str) -> MemoryDrafts:
+    """What someone wrote in Settings, drafted by the memorist into entries of the company's
+    memory (ADR-0024): each ``proposed``, holding only once the owner confirms it. Its requests
+    come from the day's budget of the chat, taken before the model is called; it is charged
+    what was asked, however the call ends."""
+    actor.require(*_ASKERS)
+    now = utcnow()
+    run_id = uuid.uuid7()
+    company = (await companies.get_companies(db, [actor.company_id])).get(actor.company_id)
+    await repository.lock_budget(db, actor.company_id)
+    spent = await repository.requests_since(db, actor.company_id, Origin.OWNER, now - RUN_WINDOW)
+    if spent + MEMORIST_REQUESTS > get_settings().chat_requests_per_day:
+        raise TooManyRequests("The chat has no requests left today")
+    await repository.add_run(
+        db, actor.company_id, run_id, began_by=Origin.OWNER, requests=MEMORIST_REQUESTS, at=now
+    )
+    await db.commit()
+    usage = RunUsage()
+    try:
+        result = await llm.run(
+            agents.memorist,
+            agents.memorist_case(text),
+            deps=None,
+            limits=UsageLimits(request_limit=MEMORIST_REQUESTS),
+            # Entries are written in the language they were asked in.
+            language=None,
+            trace_content=company is not None and companies.traces_content(company.kind),
+            usage=usage,
+        )
+    except llm.NoAnswer as error:
+        raise Conflict("No entries could be drafted from this: write one as it is") from error
+    finally:
+        await repository.settle_run(db, actor.company_id, run_id, usage.requests)
+        await db.commit()
+    drafted = await memory.draft_from_settings(
+        db,
+        actor.company_id,
+        [(fact.kind, fact.text) for fact in result.output.entries],
+        written_by=actor.user_id,
+    )
+    return MemoryDrafts(items=drafted)
 
 
 async def compact_chat(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> ChatOut:

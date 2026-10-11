@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.config import Effort
 from app.modules.assistant.models import CardKind, Origin
+from app.modules.memory.schemas import MemoryEntryOut
 
 
 class ChatOut(BaseModel):
@@ -101,3 +102,15 @@ class RunChoice(BaseModel):
 
     model: str | None = None
     effort: Effort | None = None
+
+
+class MemoryText(BaseModel):
+    """What someone wrote in Settings for Tamga to remember, in their own words: one fact or
+    several, drafted into entries the owner confirms one by one."""
+
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class MemoryDrafts(BaseModel):
+    # Each ``proposed``; none when the text held nothing worth keeping.
+    items: list[MemoryEntryOut]

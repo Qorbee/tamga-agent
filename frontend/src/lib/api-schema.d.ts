@@ -811,6 +811,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/memory/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft Memory Entries
+         * @description Drafts what was written into entries of the company's memory, by a model: each one
+         *     waits for the owner's confirmation (`PATCH /memory/{id}` with `state: held`) before any
+         *     agent reads it. 429 when the chat's requests for today are spent.
+         */
+        post: operations["memory.draft_memory_entries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/memory/{entry_id}": {
         parameters: {
             query?: never;
@@ -3022,6 +3044,11 @@ export interface components {
             /** Text */
             text?: string | null;
         };
+        /** MemoryDrafts */
+        MemoryDrafts: {
+            /** Items */
+            items: components["schemas"]["MemoryEntryOut"][];
+        };
         /** MemoryEntryOut */
         MemoryEntryOut: {
             /** Chat Id */
@@ -3095,6 +3122,15 @@ export interface components {
          * @enum {string}
          */
         MemoryState: "proposed" | "held" | "retired";
+        /**
+         * MemoryText
+         * @description What someone wrote in Settings for Tamga to remember, in their own words: one fact or
+         *     several, drafted into entries the owner confirms one by one.
+         */
+        MemoryText: {
+            /** Text */
+            text: string;
+        };
         /** MergeOut */
         MergeOut: {
             /** Column */
@@ -6045,6 +6081,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryEntryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "memory.draft_memory_entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryText"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryDrafts"];
                 };
             };
             /** @description Validation Error */

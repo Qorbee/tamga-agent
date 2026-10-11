@@ -115,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(decisions.payment_runs)
     app.include_router(settlement.payments)
     app.include_router(assistant.chats)
+    app.include_router(assistant.memory_drafts)
     # Packs' routers: the core never imports a pack, the app factory does.
     app.include_router(logistics.shipments)
 

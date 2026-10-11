@@ -6,20 +6,30 @@ from collections.abc import Callable
 
 import httpx
 import pytest
-from pydantic_ai.messages import ModelRequest
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.modules.assistant import agents
 from app.modules.assistant.models import ChatMessage
 from app.modules.memory import service
 from app.modules.memory.models import MemoryKind
+from app.platform import llm
 from app.platform.db import open_session
 from app.tests.assistant.test_chats import (
     Script,
     ask,
     model,  # noqa: F401  (the fixture)
     new_chat,
+    requests_counted,
     user,
 )
 from app.tests.conftest import guest_client
@@ -184,3 +194,103 @@ async def test_an_entry_follows_its_project_into_the_one_it_is_merged_into(
     assert moved["project_id"] == two["id"]
     retired = await client.patch(f"/memory/{entry['id']}", json={"state": "retired"})
     assert retired.status_code == 200
+
+
+WRITTEN = (
+    "Hi! Mersin hattı is what we call the client's weekly Mersin to Erbil route. "
+    "Ayşe Hanım runs the client's warehouse, and I want every payment to a new firm asked first."
+)
+FACTS = [
+    {"kind": "alias", "text": "Mersin hattı is the client's weekly Mersin to Erbil route."},
+    {"kind": "person", "text": "Ayşe Hanım runs the client's warehouse."},
+    {"kind": "preference", "text": "Every payment to a new firm is asked of the owner first."},
+]
+
+
+def memorist(
+    monkeypatch: pytest.MonkeyPatch, *answers: list[dict[str, str]]
+) -> list[list[ModelMessage]]:
+    """Puts a stand-in in the memorist's place that drafts ``answers`` in turn; what it was sent
+    is returned, a list per request."""
+    sent: list[list[ModelMessage]] = []
+
+    def draft(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        sent.append(list(messages))
+        [output] = info.output_tools
+        entries = answers[min(len(sent), len(answers)) - 1]
+        return ModelResponse(parts=[ToolCallPart(output.name, {"entries": entries})])
+
+    stand_in = FunctionModel(draft)
+    monkeypatch.setattr(llm, "model_for", lambda agent: stand_in)
+    return sent
+
+
+async def test_what_is_written_in_settings_is_drafted_and_holds_only_when_confirmed(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    monkeypatch.setattr(get_settings(), "chat_requests_per_day", 5)
+    sent = memorist(monkeypatch, FACTS)
+
+    drafted = await client.post("/memory/drafts", json={"text": WRITTEN})
+
+    assert drafted.status_code == 201, drafted.text
+    items = drafted.json()["items"]
+    assert [(item["kind"], item["text"]) for item in items] == [
+        (fact["kind"], fact["text"]) for fact in FACTS
+    ]
+    me = (await client.get("/me")).json()["user"]["id"]
+    assert {
+        (item["state"], item["source"], item["chat_id"], item["written_by"]) for item in items
+    } == {("proposed", "settings", None, me)}
+    # What was written reached the model fenced, as data.
+    [first] = sent
+    prompt = "".join(
+        str(part.content)
+        for message in first
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    )
+    assert WRITTEN in prompt and "BEGIN OUTSIDE DATA" in prompt
+    # The chat's budget is charged what was asked; a draft reaches no agent.
+    assert await requests_counted(company_id) == 1
+    assert await words_for(company_id) == ""
+
+    alias = items[0]["id"]
+    assert (await client.patch(f"/memory/{alias}", json={"state": "held"})).status_code == 200
+    assert "Mersin hattı" in await words_for(company_id)
+
+
+async def test_drafting_waits_for_the_budget_and_too_many_entries_draft_none(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    sent = memorist(monkeypatch, [FACTS[0]] * (agents.MEMORIST_ENTRIES + 1))
+
+    # Less than one drafting's requests left: the model is never asked.
+    monkeypatch.setattr(get_settings(), "chat_requests_per_day", 1)
+    spent = await client.post("/memory/drafts", json={"text": WRITTEN})
+    assert spent.status_code == 429 and sent == []
+
+    # Asked for more than a few facts, twice: nothing is drafted, and both requests are paid.
+    monkeypatch.setattr(get_settings(), "chat_requests_per_day", 5)
+    refused = await client.post("/memory/drafts", json={"text": WRITTEN})
+    assert refused.status_code == 409 and len(sent) == 2
+    assert (await client.get("/memory")).json()["total"] == 0
+    assert await requests_counted(company_id) == 2
+
+
+async def test_an_entry_with_no_words_is_asked_again_and_nothing_is_half_kept(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await guest_client(client)
+    monkeypatch.setattr(get_settings(), "chat_requests_per_day", 5)
+    sent = memorist(monkeypatch, [FACTS[0], {"kind": "term", "text": " "}], [FACTS[0]])
+
+    drafted = await client.post("/memory/drafts", json={"text": WRITTEN})
+
+    assert drafted.status_code == 201, drafted.text
+    assert [item["text"] for item in drafted.json()["items"]] == [FACTS[0]["text"]]
+    assert len(sent) == 2 and await requests_counted(company_id) == 2
+    assert (await client.get("/memory")).json()["total"] == 1

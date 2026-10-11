@@ -11,6 +11,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { useCanEditProjects } from "@/lib/use-role";
 
 import { ProjectMenu } from "./project-actions";
+import { ProjectBrief } from "./project-brief";
 import { partiesKey, ProjectProperties, useProjectUpdate } from "./project-properties";
 import { linksKey, placementsKey, ProjectTimeline, readLinks, readPlacements } from "./project-timeline";
 import { TruckBoard } from "./truck-board";
@@ -88,6 +89,7 @@ export function ProjectView({ id }: { id: string }) {
       <header className="grid grid-cols-1 gap-4">
         <ProjectName project={project.data} />
         <ProjectProperties project={project.data} />
+        <ProjectBrief id={id} />
       </header>
 
       <TruckBoard id={id} selected={truck} onSelect={setTruck} />

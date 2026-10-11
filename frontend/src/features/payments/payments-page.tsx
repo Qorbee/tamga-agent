@@ -5,13 +5,12 @@ import { useState } from "react";
 
 import { DecisionRow } from "@/components/decision-card";
 import { PaymentRunCard } from "@/components/payment-run";
+import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { listDecisions, listPayments, type Decision, type Payment } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 import { usePagedList } from "@/lib/use-paged-list";
-import { cn } from "@/lib/utils";
 
 const PAGE = 50;
 const VIEWS = ["waiting", "held", "paid"] as const;
@@ -24,8 +23,6 @@ const STATES: Record<View, Decision["state"][]> = {
   held: ["held", "failed", "rejected"],
   paid: ["settled", "paid_in_books"],
 };
-// The chosen option is filled and in full ink; the others recede.
-const SEGMENT = "text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground";
 
 /**
  * The bills Tamga decided about (docs/architecture/05): what waits for the owner's approval, what
@@ -39,22 +36,13 @@ export function PaymentsPage() {
   return (
     <div className="grid gap-4">
       <PaymentRunCard />
-      <ToggleGroup
-        type="single"
+      <Segmented
+        fill
+        label={t.nav.payments}
         value={view}
-        spacing={1}
-        className="w-full"
-        aria-label={t.nav.payments}
-        onValueChange={(value) => {
-          if (value) setView(value as View);
-        }}
-      >
-        {VIEWS.map((value) => (
-          <ToggleGroupItem key={value} value={value} className={cn(SEGMENT, "min-w-0 flex-1 px-2")}>
-            <span className="truncate">{t.payments.views[value]}</span>
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+        onChange={setView}
+        options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.payments.views[value]}</span> }))}
+      />
       <Decisions view={view} />
       <p className="text-muted-foreground text-xs text-pretty">{t.payments.mirror}</p>
     </div>

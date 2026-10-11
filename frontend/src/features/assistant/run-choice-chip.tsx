@@ -5,8 +5,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Hint } from "@/components/hint";
+import { Segmented } from "@/components/segmented";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getAssistant } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 import { useAsks } from "@/lib/use-role";
@@ -72,27 +72,22 @@ export function RunChoiceChip() {
           </div>
         ) : null}
         <p className="text-muted-foreground px-2 pb-1.5 text-xs">{words.effort}</p>
-        <ToggleGroup
-          type="single"
+        <Segmented
+          fill
+          label={words.effort}
           value={effort}
-          onValueChange={(value) => value && saveChoice({ ...choice, effort: value })}
-          spacing={0}
-          variant="outline"
-          aria-label={words.effort}
-          className="w-full"
-        >
-          {offered.efforts.map((step, index) => (
-            <ToggleGroupItem
-              key={step}
-              value={step}
-              aria-label={words.efforts[step]}
-              className="h-auto flex-1 flex-col gap-1 py-2 text-xs"
-            >
-              <Bars of={offered.efforts.length} lit={index + 1} />
-              {words.efforts[step]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+          onChange={(value) => saveChoice({ ...choice, effort: value })}
+          options={offered.efforts.map((step, index) => ({
+            value: step,
+            className: "flex-col gap-1 py-2 text-xs",
+            label: (
+              <>
+                <Bars of={offered.efforts.length} lit={index + 1} />
+                {words.efforts[step]}
+              </>
+            ),
+          }))}
+        />
         <p className="text-muted-foreground px-2 pt-2 pb-1 text-xs text-pretty">{words.what}</p>
       </PopoverContent>
     </Popover>

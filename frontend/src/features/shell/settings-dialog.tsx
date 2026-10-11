@@ -1,10 +1,18 @@
 "use client";
 
-import { ComputerIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
+import {
+  Brain02Icon,
+  Building03Icon,
+  ComputerIcon,
+  Moon02Icon,
+  Settings02Icon,
+  Sun03Icon,
+  Wallet01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import {
   Dialog,
@@ -17,8 +25,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { MemorySection } from "@/components/memory";
+import { Segmented } from "@/components/segmented";
 import {
   copyOf,
   MethodsField,
@@ -26,7 +34,6 @@ import {
   ReserveChoices,
   ReserveEditor,
   Row,
-  SEGMENT,
   usePolicyChange,
 } from "@/components/policy-settings";
 import {
@@ -42,7 +49,6 @@ import {
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
-import { cn } from "@/lib/utils";
 
 import { CompanyIdentity } from "./company-identity";
 import { allowNotifications, canNotify } from "./notify";
@@ -53,10 +59,37 @@ const themeIcons: Record<Theme, IconSvgElement> = {
   dark: Moon02Icon,
 };
 
+const TABS = ["general", "company", "payments", "memory"] as const;
+const tabIcons: Record<(typeof TABS)[number], IconSvgElement> = {
+  general: Settings02Icon,
+  company: Building03Icon,
+  payments: Wallet01Icon,
+  memory: Brain02Icon,
+};
+
+// Where the parts become a side menu (Tailwind's `sm`): below it they are a row.
+const SIDE_MENU = "(min-width: 640px)";
+
+function onWidth(onChange: () => void) {
+  const query = window.matchMedia(SIDE_MENU);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+/** Whether the parts are laid out down the side, so the arrow keys follow what is seen. */
+function useSideMenu(): boolean {
+  return useSyncExternalStore(
+    onWidth,
+    () => window.matchMedia(SIDE_MENU).matches,
+    () => true,
+  );
+}
+
 /**
- * Settings, opened from the account menu, in tabs: how the app looks and reads on this device; the
- * company, and the language Tamga writes in for it; how it pays (the ways, the reserve, the pay
- * day) and how its books record payments; and what Tamga remembers.
+ * Settings, opened from the account menu: a menu down the left and the chosen part beside it, as
+ * the chat apps the owner knows lay theirs out (a row of tabs on a phone). How the app looks and
+ * reads on this device; the company, and the language Tamga writes in for it; how it pays (the
+ * ways, the reserve, the pay day) and how its books record payments; and what Tamga remembers.
  */
 export function SettingsDialog({
   open,
@@ -69,52 +102,71 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+        <DialogHeader className="sr-only">
           <DialogTitle>{t.settings.title}</DialogTitle>
           <DialogDescription>{t.settings.description}</DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="general">
-          <TabsList className="w-full">
-            {(["general", "company", "payments", "memory"] as const).map((tab) => (
-              <TabsTrigger key={tab} value={tab}>
-                {t.settings.tabs[tab]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          {/* Every tab stays mounted, hidden when not chosen: a draft typed in one survives a look
+        <Tabs defaultValue="general" orientation={useSideMenu() ? "vertical" : "horizontal"} className="min-h-0 flex-1 gap-0 sm:flex-row">
+          <nav aria-label={t.settings.title} className="border-border shrink-0 border-b sm:w-56 sm:border-e sm:border-b-0">
+            <p className="text-muted-foreground px-5 pt-5 pb-2 text-xs font-medium max-sm:hidden">{t.settings.title}</p>
+            {/* On a phone the parts are a row that scrolls, clear of the dialog's close button. */}
+            <TabsList className="w-full justify-start gap-1 rounded-none bg-transparent p-3 max-sm:overflow-x-auto max-sm:pe-14 sm:flex-col sm:items-stretch sm:pt-0">
+              {TABS.map((tab) => (
+                <TabsTrigger
+                  key={tab}
+                  value={tab}
+                  className="text-muted-foreground hover:text-foreground data-[state=active]:bg-segment data-[state=active]:text-foreground flex-none justify-start gap-2.5 rounded-xl px-3 py-2 text-sm font-normal data-[state=active]:shadow-none sm:w-full"
+                >
+                  <HugeiconsIcon icon={tabIcons[tab]} strokeWidth={1.75} />
+                  {t.settings.tabs[tab]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </nav>
+          {/* Every part stays mounted, hidden when not chosen: a draft typed in one survives a look
               at another. */}
-          <TabsContent forceMount value="general" className="grid gap-4 data-[state=inactive]:hidden">
-            <section className="flex flex-col">
-              <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.appearance}</h3>
-              <Row label={t.settings.theme}>
-                <ThemePicker />
-              </Row>
-              <Row label={t.settings.language}>
-                <LanguagePicker />
-              </Row>
-            </section>
-            <NotificationsSection />
-          </TabsContent>
-          <TabsContent forceMount value="company" className="grid gap-4 data-[state=inactive]:hidden">
-            <section className="flex flex-col">
-              <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.company}</h3>
-              <Row label={t.settings.writesIn} hint={t.settings.writesInHint}>
-                <WritingLanguagePicker />
-              </Row>
-            </section>
-            <CompanyIdentitySection />
-          </TabsContent>
-          <TabsContent forceMount value="payments" className="grid gap-4 data-[state=inactive]:hidden">
-            <HowYouPaySection />
-            <PaymentsSection />
-          </TabsContent>
-          <TabsContent forceMount value="memory" className="data-[state=inactive]:hidden">
-            <MemorySection />
-          </TabsContent>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:pt-12">
+            <TabsContent forceMount value="general" className="grid gap-8 data-[state=inactive]:hidden">
+              <Part title={t.settings.appearance}>
+                <Row label={t.settings.theme}>
+                  <ThemePicker />
+                </Row>
+                <Row label={t.settings.language}>
+                  <LanguagePicker />
+                </Row>
+              </Part>
+              <NotificationsSection />
+            </TabsContent>
+            <TabsContent forceMount value="company" className="grid gap-8 data-[state=inactive]:hidden">
+              <Part title={t.settings.company}>
+                <Row label={t.settings.writesIn} hint={t.settings.writesInHint}>
+                  <WritingLanguagePicker />
+                </Row>
+              </Part>
+              <CompanyIdentitySection />
+            </TabsContent>
+            <TabsContent forceMount value="payments" className="grid gap-8 data-[state=inactive]:hidden">
+              <HowYouPaySection />
+              <PaymentsSection />
+            </TabsContent>
+            <TabsContent forceMount value="memory" className="data-[state=inactive]:hidden">
+              <MemorySection />
+            </TabsContent>
+          </div>
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** A part of a settings page: its heading, then its rows. */
+function Part({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col">
+      <h3 className="pb-2 text-base font-medium">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -153,7 +205,7 @@ function HowYouPaySection() {
 
   return (
     <section className="flex flex-col">
-      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
+      <h3 className="pb-2 text-base font-medium">{words.title}</h3>
       <MethodsField
         methods={current.methods}
         first={current.default_method}
@@ -283,26 +335,17 @@ function PaymentsSection() {
 
   return (
     <section className="flex flex-col">
-      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
+      <h3 className="pb-2 text-base font-medium">{words.title}</h3>
       <Row label={words.recorded} hint={words.recordedHint}>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          spacing={0}
+        <Segmented
+          options={RECORDED.map((value) => ({ value, label: words[value] }))}
           value={policy.data.payments_recorded}
-          aria-label={words.recorded}
+          label={words.recorded}
           disabled={!owner || change.isPending}
-          onValueChange={(value) => {
-            const chosen = RECORDED.find((each) => each === value);
-            if (chosen && chosen !== policy.data?.payments_recorded) change.mutate({ payments_recorded: chosen });
+          onChange={(chosen) => {
+            if (chosen !== policy.data?.payments_recorded) change.mutate({ payments_recorded: chosen });
           }}
-        >
-          {RECORDED.map((value) => (
-            <ToggleGroupItem key={value} value={value} className={SEGMENT}>
-              {words[value]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        />
       </Row>
       <Row label={words.tolerance} hint={words.toleranceHint}>
         <form
@@ -351,7 +394,7 @@ function NotificationsSection() {
   if (!canNotify()) return null;
   return (
     <section className="flex flex-col">
-      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.notifications}</h3>
+      <h3 className="pb-2 text-base font-medium">{t.settings.notifications}</h3>
       <Row label={t.settings.notifyHere} hint={t.settings.notifyHint}>
         <BrowserNotifications />
       </Row>
@@ -389,26 +432,25 @@ function ThemePicker() {
   );
 
   return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      spacing={0}
+    <Segmented
+      options={themes.map((value) => ({
+        value,
+        className: "gap-1.5",
+        label: (
+          <>
+            <HugeiconsIcon icon={themeIcons[value]} strokeWidth={1.75} />
+            {t.settings.themes[value]}
+          </>
+        ),
+      }))}
       value={theme}
-      aria-label={t.settings.theme}
-      onValueChange={(value) => {
-        if (!value) return;
+      label={t.settings.theme}
+      onChange={(value) => {
         const next = readTheme(value);
         setTheme(next);
         applyTheme(next);
       }}
-    >
-      {themes.map((value) => (
-        <ToggleGroupItem key={value} value={value} className={cn(SEGMENT, "gap-1.5")}>
-          <HugeiconsIcon icon={themeIcons[value]} strokeWidth={1.75} />
-          {t.settings.themes[value]}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    />
   );
 }
 
@@ -417,25 +459,17 @@ function LanguagePicker() {
   const router = useRouter();
 
   return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      spacing={0}
+    <Segmented
+      options={locales.map((value) => ({ value, label: localeNames[value], lang: value }))}
       value={locale}
-      aria-label={t.settings.language}
-      onValueChange={(value) => {
+      label={t.settings.language}
+      onChange={(value) => {
         if (!isLocale(value) || value === locale) return;
         document.cookie = `${LOCALE_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax`;
         // The server resolves the language, so it renders the app again in the new one.
         router.refresh();
       }}
-    >
-      {locales.map((value) => (
-        <ToggleGroupItem key={value} value={value} lang={value} className={SEGMENT}>
-          {localeNames[value]}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+    />
   );
 }
 
@@ -452,23 +486,15 @@ function WritingLanguagePicker() {
 
   return (
     <div className="grid justify-items-end gap-1">
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        spacing={0}
-        value={me.data?.company.language ?? ""}
-        aria-label={t.settings.writesIn}
+      <Segmented
+        options={locales.map((value) => ({ value, label: localeNames[value], lang: value }))}
+        value={me.data?.company.language ?? "en"}
+        label={t.settings.writesIn}
         disabled={!owner || change.isPending}
-        onValueChange={(value) => {
+        onChange={(value) => {
           if (isLocale(value) && value !== me.data?.company.language) change.mutate(value);
         }}
-      >
-        {locales.map((value) => (
-          <ToggleGroupItem key={value} value={value} lang={value} className={SEGMENT}>
-            {localeNames[value]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      />
       {me.data && !owner ? <span className="text-muted-foreground text-xs">{t.settings.ownerOnly}</span> : null}
       {change.isError ? (
         <span className="text-danger-foreground text-xs" role="alert">

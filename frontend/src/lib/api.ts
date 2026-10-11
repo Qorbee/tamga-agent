@@ -300,6 +300,9 @@ export const getMemoryEntry = (id: string) => request<MemoryEntry>(`/memory/${id
 /** An entry the owner writes: it holds at once. */
 export const writeMemoryEntry = (body: Schemas["MemoryIn"]) =>
   request<MemoryEntry>("/memory", json("POST", body));
+/** What someone wrote, drafted by a model into entries that wait for the owner's confirmation. */
+export const draftMemoryEntries = (body: Schemas["MemoryText"]) =>
+  request<Schemas["MemoryDrafts"]>("/memory/drafts", json("POST", body));
 /** The owner corrects, confirms (`held`) or retires an entry. */
 export const changeMemoryEntry = (id: string, body: Schemas["MemoryChange"]) =>
   request<MemoryEntry>(`/memory/${id}`, json("PATCH", body));

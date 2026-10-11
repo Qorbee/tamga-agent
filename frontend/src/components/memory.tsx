@@ -1,19 +1,22 @@
 "use client";
 
-import { MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { MoreHorizontalIcon, SentIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Hint } from "@/components/hint";
+import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ApiError,
   changeMemoryEntry,
   discardMemoryEntry,
+  draftMemoryEntries,
   getMemoryEntry,
   getParty,
   getProject,
@@ -23,7 +26,7 @@ import {
   type MemoryKind,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
-import { useIsOwner } from "@/lib/use-role";
+import { useAsks, useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 const KINDS: MemoryKind[] = ["term", "alias", "person", "preference", "practice"];
@@ -42,7 +45,7 @@ function useRefresh() {
  * owner's answers. A draft from a chat reaches no agent until the owner confirms it here; one
  * that holds is corrected or retired, never deleted, so what agents were given stays traceable.
  */
-export function MemoryRow({ entry }: { entry: MemoryEntry }) {
+export function MemoryRow({ entry, grouped = false }: { entry: MemoryEntry; grouped?: boolean }) {
   const { t } = useI18n();
   const words = t.memory;
   const owner = useIsOwner();
@@ -64,7 +67,8 @@ export function MemoryRow({ entry }: { entry: MemoryEntry }) {
           <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
             <span className="font-medium">{words.kinds[entry.kind]}</span>
             <Subject entry={entry} />
-            {draft ? <span className="text-warning-foreground">{words.waits}</span> : null}
+            {/* Among the drafts, their heading already says they wait. */}
+            {draft && !grouped ? <span className="text-warning-foreground">{words.waits}</span> : null}
             {entry.state === "retired" ? <span>{words.retired}</span> : null}
           </p>
           {editing ? null : (
@@ -209,72 +213,181 @@ function EntryForm({
 
 /**
  * Settings → What Tamga knows: the drafts that wait for the owner, then what holds, and what the
- * owner retired on request. The owner writes an entry here, and it holds at once.
+ * owner retired on request. At the bottom, a box to tell Tamga something in one's own words: a
+ * model drafts it into entries (`POST /memory/drafts`), each waiting above for the owner's
+ * confirmation (ADR-0024). When it cannot draft, the owner writes the entry as it is.
  */
 export function MemorySection() {
   const { t } = useI18n();
   const words = t.memory;
   const owner = useIsOwner();
+  const asks = useAsks();
   const refresh = useRefresh();
   const [retired, setRetired] = useState(false);
-  const [adding, setAdding] = useState(false);
   const states = retired ? (["retired"] as const) : (["proposed", "held"] as const);
   const entries = useQuery({
     queryKey: ["memory", { states }],
     queryFn: () => listAllMemory({ state: [...states], sort: "-updated_at" }),
   });
-  const write = useMutation({
-    mutationFn: writeMemoryEntry,
-    onSuccess: () => setAdding(false),
+  const drafts = (entries.data ?? []).filter((entry) => entry.state === "proposed");
+  const shown = (entries.data ?? []).filter((entry) => entry.state !== "proposed");
+  const confirmAll = useMutation({
+    mutationFn: () => Promise.all(drafts.map((entry) => changeMemoryEntry(entry.id, { state: "held" }))),
     onSettled: refresh,
   });
-  const shown = [...(entries.data ?? [])].sort(
-    (a, b) => Number(b.state === "proposed") - Number(a.state === "proposed"),
-  );
 
   return (
-    <section className="flex flex-col">
-      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
-      <p className="text-muted-foreground text-xs text-pretty">{words.hint}</p>
+    <section className="flex flex-col gap-3">
+      <header>
+        <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
+        <p className="text-muted-foreground text-xs text-pretty">{words.hint}</p>
+      </header>
+      {drafts.length ? (
+        <div className="border-border bg-card rounded-2xl border px-4 pt-2.5 pb-1">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-warning-foreground text-xs font-medium">{words.waitsCount(drafts.length)}</h4>
+            {owner && drafts.length > 1 ? (
+              <Button size="xs" variant="ghost" disabled={confirmAll.isPending} onClick={() => confirmAll.mutate()}>
+                {words.confirmAll}
+              </Button>
+            ) : null}
+          </div>
+          <div className="divide-border divide-y">
+            {drafts.map((entry) => (
+              <MemoryRow key={entry.id} entry={entry} grouped />
+            ))}
+          </div>
+        </div>
+      ) : null}
       {entries.isPending ? (
-        <Skeleton className="mt-2 h-16 rounded-xl" />
+        <Skeleton className="h-16 rounded-xl" />
       ) : shown.length ? (
         <div className="divide-border divide-y">
           {shown.map((entry) => (
             <MemoryRow key={entry.id} entry={entry} />
           ))}
         </div>
-      ) : (
-        <p className="text-muted-foreground py-3 text-sm">{retired ? words.noneRetired : words.none}</p>
+      ) : drafts.length ? null : (
+        <p className="text-muted-foreground py-1 text-sm">{retired ? words.noneRetired : words.none}</p>
       )}
-      {owner && adding ? (
-        <div className="border-border border-t pt-3">
-          <EntryForm
-            kind="term"
-            text=""
-            busy={write.isPending}
-            submit={words.add}
-            onCancel={() => setAdding(false)}
-            onSubmit={(kind, text) => write.mutate({ kind, text })}
+      {/* Hidden, never unmounted, while the retired are shown: what was typed stays. */}
+      {asks ? (
+        <div hidden={retired}>
+          <MemoryComposer owner={owner} onChange={refresh} />
+        </div>
+      ) : null}
+      <Button size="sm" variant="ghost" className="text-muted-foreground self-start" onClick={() => setRetired(!retired)}>
+        {retired ? words.showHeld : words.showRetired}
+      </Button>
+    </section>
+  );
+}
+
+/** The longest text one drafting reads (`MemoryText`). */
+const TOLD = 2000;
+
+function MemoryComposer({ owner, onChange }: { owner: boolean; onChange: () => void }) {
+  const { t } = useI18n();
+  const words = t.memory;
+  const [text, setText] = useState("");
+  const [said, setSaid] = useState("");
+  // What could not be drafted, for the owner to write as it is.
+  const [asIs, setAsIs] = useState<string | null>(null);
+  const drafting = useMutation({
+    mutationFn: (told: string) => draftMemoryEntries({ text: told }),
+    onMutate: () => {
+      setSaid("");
+      setAsIs(null);
+    },
+    onSuccess: (drafted, told) => {
+      if (drafted.items.length) {
+        setText("");
+        setSaid(words.drafted(drafted.items.length));
+        return;
+      }
+      // Nothing drafted: the words stay, and the owner may still keep them as they are.
+      setSaid(words.nothingToKeep);
+      if (owner) setAsIs(told.slice(0, LONGEST));
+    },
+    onError: (_error, told) => {
+      if (owner) setAsIs(told.slice(0, LONGEST));
+    },
+    onSettled: onChange,
+  });
+  const write = useMutation({
+    mutationFn: writeMemoryEntry,
+    onSuccess: () => {
+      setAsIs(null);
+      setText("");
+    },
+    onSettled: onChange,
+  });
+  const told = text.trim();
+  const send = () => {
+    if (told && !drafting.isPending) drafting.mutate(told);
+  };
+  const spent = drafting.error instanceof ApiError && drafting.error.status === 429;
+
+  return (
+    <div className="grid gap-2">
+      <form
+        className="border-border bg-card focus-within:border-ring rounded-2xl border p-2 transition-colors"
+        onSubmit={(event) => {
+          event.preventDefault();
+          send();
+        }}
+      >
+        <Textarea
+          value={text}
+          maxLength={TOLD}
+          rows={2}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter drafts, Shift+Enter starts a new line, as in the chat.
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              send();
+            }
+          }}
+          placeholder={words.tell}
+          aria-label={words.tell}
+          className="max-h-48 min-h-14 resize-none border-0 bg-transparent px-2 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+        />
+        <div className="flex items-center justify-between gap-2 ps-2">
+          <span className="text-muted-foreground min-w-0 text-xs text-pretty" role="status">
+            {drafting.isPending ? words.drafting : said}
+          </span>
+          <IconButton
+            icon={SentIcon}
+            label={words.draft}
+            type="submit"
+            variant="default"
+            className="shrink-0 rounded-full"
+            disabled={!told || drafting.isPending}
           />
         </div>
+      </form>
+      {drafting.isError ? (
+        <p className="text-danger-foreground text-xs" role="alert">
+          {owner ? (spent ? words.spent : words.failed) : t.errors.generic}
+        </p>
+      ) : null}
+      {asIs !== null ? (
+        <EntryForm
+          kind="practice"
+          text={asIs}
+          busy={write.isPending}
+          submit={words.add}
+          onCancel={() => setAsIs(null)}
+          onSubmit={(kind, entry) => write.mutate({ kind, text: entry })}
+        />
       ) : null}
       {write.isError ? (
         <p className="text-danger-foreground text-xs" role="alert">
           {t.errors.generic}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 pt-2">
-        {owner && !adding && !retired ? (
-          <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-            {words.teach}
-          </Button>
-        ) : null}
-        <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setRetired(!retired)}>
-          {retired ? words.showHeld : words.showRetired}
-        </Button>
-      </div>
-    </section>
+    </div>
   );
 }
 

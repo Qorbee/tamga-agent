@@ -16,6 +16,7 @@ import { useDeferredValue, useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { IconButton } from "@/components/icon-button";
+import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,7 +27,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   getMe,
   getParty,
@@ -61,8 +61,6 @@ type Sort = (typeof SORTS)[number];
 /** Which firms the Firms tab lists: those that owe the company, those it owes, or every one. */
 const BALANCES = ["receivable", "payable", "all"] as const;
 type Balances = (typeof BALANCES)[number];
-// The chosen option is filled and in full ink; the others recede.
-const SEGMENT = "text-muted-foreground aria-checked:bg-secondary aria-checked:text-foreground";
 /** What a figure is to the company, and its colour from the palette's soft tones: money coming in
  * is sage, money going out ochre, what is late terracotta; anything else stays neutral. */
 type Tone = "in" | "out" | "late" | "plain";
@@ -130,22 +128,14 @@ export function BooksPage() {
 
   return (
     <div className="grid gap-4">
-      <ToggleGroup
-        type="single"
-        value={view === "both" ? "" : view}
-        spacing={1}
-        className="w-full"
-        aria-label={t.nav.books}
-        onValueChange={(value) => {
-          if (value) choose(value as View);
-        }}
-      >
-        {VIEWS.map((value) => (
-          <ToggleGroupItem key={value} value={value} className={cn(SEGMENT, "min-w-0 flex-1 px-2")}>
-            <span className="truncate">{t.books.views[value]}</span>
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      {/* Nothing chosen while one firm's both sides are shown. */}
+      <Segmented
+        fill
+        label={t.nav.books}
+        value={view === "both" ? null : view}
+        onChange={choose}
+        options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.books.views[value]}</span> }))}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-48 flex-1">
@@ -164,10 +154,10 @@ export function BooksPage() {
           />
         </div>
         {view === "firms" ? (
-          <Segments value={balances} options={BALANCES} words={t.books.balances} onChange={setBalances} />
+          <Segments label={t.books.balancesLabel} value={balances} options={BALANCES} words={t.books.balances} onChange={setBalances} />
         ) : (
           <>
-            <Segments value={shown} options={SHOWN} words={t.books.shown} onChange={setShown} />
+            <Segments label={t.books.shownLabel} value={shown} options={SHOWN} words={t.books.shown} onChange={setShown} />
             <SortMenu value={sort} onChange={setSort} />
           </>
         )}
@@ -201,33 +191,25 @@ export function BooksPage() {
 }
 
 function Segments<T extends string>({
+  label,
   value,
   options,
   words,
   onChange,
 }: {
+  label: string;
   value: T;
   options: readonly T[];
   words: Record<T, string>;
   onChange: (next: T) => void;
 }) {
   return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      spacing={0}
+    <Segmented
+      label={label}
       value={value}
-      onValueChange={(next) => {
-        const option = options.find((each) => each === next);
-        if (option) onChange(option);
-      }}
-    >
-      {options.map((option) => (
-        <ToggleGroupItem key={option} value={option} className={SEGMENT}>
-          {words[option]}
-        </ToggleGroupItem>
-      ))}
-    </ToggleGroup>
+      onChange={onChange}
+      options={options.map((option) => ({ value: option, label: words[option] }))}
+    />
   );
 }
 

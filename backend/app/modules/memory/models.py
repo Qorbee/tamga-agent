@@ -25,7 +25,7 @@ class MemoryKind(StrEnum):
 
 
 class MemoryState(StrEnum):
-    # Drafted in a chat: no agent reads it until the owner confirms it.
+    # Drafted in a chat or in Settings: no agent reads it until the owner confirms it.
     PROPOSED = "proposed"
     # The owner wrote or confirmed it: every agent of the company reads it, as data.
     HELD = "held"
@@ -36,7 +36,7 @@ class MemoryState(StrEnum):
 class MemorySource(StrEnum):
     # Drafted by the chat's `remember`, in the chat and message it names.
     CHAT = "chat"
-    # Written by the owner in Settings.
+    # Written by the owner in Settings, or drafted there from what someone wrote.
     SETTINGS = "settings"
 
 
