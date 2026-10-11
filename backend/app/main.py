@@ -25,6 +25,7 @@ from app.modules.linking import router as linking
 from app.modules.memory import router as memory
 from app.modules.money import router as money
 from app.modules.parties import router as parties
+from app.modules.playground import router as playground
 from app.modules.policy import router as policy
 from app.modules.profile import router as profile
 from app.modules.projects import router as projects
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.documents)
     app.include_router(books.invoices)
     app.include_router(policy.policy)
+    app.include_router(playground.playground)
     app.include_router(fx.fx)
     app.include_router(memory.memory)
     app.include_router(money.money)

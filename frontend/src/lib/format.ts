@@ -63,11 +63,6 @@ export function todayIso(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** Whether a calendar day the API gives is before today, here. */
-export function isBeforeToday(day: string, now: Date = new Date()): boolean {
-  return localDay(day) < new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
 /** A job's days: one day, or the span from the first to the last ("10 – 14 Aug 2026"). */
 export function formatDays(start: string | null, end: string | null, locale: Locale): string {
   const format = new Intl.DateTimeFormat(intlLocale[locale], { day: "numeric", month: "short", year: "numeric" });

@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -23,6 +23,14 @@ async def get_many(db: AsyncSession, ids: Sequence[uuid.UUID]) -> list[Company]:
 
 async def set_language(db: AsyncSession, company_id: uuid.UUID, language: Language) -> None:
     await db.execute(update(Company).where(Company.id == company_id).values(language=language))
+
+
+async def advance_clock(db: AsyncSession, company_id: uuid.UUID, by: timedelta) -> None:
+    await db.execute(
+        update(Company)
+        .where(Company.id == company_id, Company.kind == CompanyKind.SANDBOX)
+        .values(clock_offset=Company.clock_offset + by)
+    )
 
 
 async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:

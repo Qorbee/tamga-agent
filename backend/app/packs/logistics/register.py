@@ -25,7 +25,8 @@ checklists.register(checklist.ITEMS, checklist.read)
 # Its trucks' tools are added to the assistant's when `assistant` is imported, above.
 tools.name_trucks_with(assistant.name_trucks)
 decisions.register_delivery(service.delivered)
-playground.register_seed(sandbox.seed)
+for scenario in sandbox.SCENARIOS:
+    playground.register_scenario(scenario)
 
 extractors.register("logistics.cmr_number", facts.cmr_numbers)
 extractors.register("logistics.plate", facts.labelled_plates)

@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  getMe,
   getParty,
   listInvoices,
   listInvoiceTotals,
@@ -36,7 +37,7 @@ import {
   type InvoiceTotal,
   type Party,
 } from "@/lib/api";
-import { formatDays, formatMoney, isBeforeToday, todayIso } from "@/lib/format";
+import { formatDays, formatMoney, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { usePagedList } from "@/lib/use-paged-list";
 import { cn } from "@/lib/utils";
@@ -274,10 +275,12 @@ function Invoices({
   firm: Party | null;
 }) {
   const { t } = useI18n();
+  // Overdue by the company's day, which a sandbox's skips move.
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   const filters = {
     kind: KINDS[view],
     outstanding: shown === "all" ? undefined : true,
-    due_before: shown === "overdue" ? todayIso() : undefined,
+    due_before: shown === "overdue" ? (me.data?.today ?? todayIso()) : undefined,
     q: q || undefined,
     party_id: firm?.id,
   };
@@ -387,13 +390,14 @@ function ShowMore({ list }: { list: { more: (() => void) | null; loadingMore: bo
  * firm is the page's, so the row names the kind of invoice instead. */
 function InvoiceRow({ bill, bothSides, ofFirm }: { bill: Invoice; bothSides: boolean; ofFirm: boolean }) {
   const { t, locale } = useI18n();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   const money = (amount: string | null) =>
     amount !== null && bill.currency ? formatMoney(Number(amount), bill.currency, locale) : null;
   const left = bill.remaining_amount !== null && !bill.cancelled ? Number(bill.remaining_amount) : null;
   // Paid on the firm's account, or all but a fee: open in the books, not owed (ADR-0022).
   const settled = bill.settled === "paid_on_account" || bill.settled === "paid_with_difference";
   const overdue =
-    !settled && left !== null && left > 0 && bill.due_date !== null && isBeforeToday(bill.due_date);
+    !settled && left !== null && left > 0 && bill.due_date !== null && bill.due_date < (me.data?.today ?? todayIso());
   const paid = left === 0;
   const partly = !settled && left !== null && left > 0 && bill.remaining_amount !== bill.total_amount;
   const owedOnAccount =

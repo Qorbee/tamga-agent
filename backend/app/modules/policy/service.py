@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.companies import service as companies
+from app.modules.companies.models import CompanyKind
 from app.modules.fx import service as fx
 from app.modules.policy import repository, reserve, rules
 from app.modules.policy.models import PaymentMethod, PaymentsRecorded, Policy
@@ -84,7 +85,7 @@ async def set_policy(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOu
     next pass, since the version is part of what they were made from. Commits."""
     actor.require(Role.OWNER)
     await repository.lock_versions(db, actor.company_id)
-    return await _put_in_force(db, actor, body)
+    return await _put_in_force(db, actor.company_id, body, actor.user_id)
 
 
 async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> PolicyOut:
@@ -112,21 +113,34 @@ async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> P
         # The change is valid alone, but not with what it keeps: the default method dropped
         # from the methods, say.
         raise BadRequest(error.errors()[0]["msg"]) from error
-    return await _put_in_force(db, actor, body_in_force)
+    return await _put_in_force(db, actor.company_id, body_in_force, actor.user_id)
 
 
-async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOut:
+async def seed_policy(db: AsyncSession, company_id: uuid.UUID, body: PolicyIn) -> None:
+    """A sandbox scenario's policy, as its owner would have set it, written by nobody. Only a
+    sandbox, and only before any version: an owner's own policy is never replaced. Commits."""
+    company = (await companies.get_companies(db, [company_id]))[company_id]
+    if company.kind is not CompanyKind.SANDBOX:
+        raise ValueError("only a sandbox scenario seeds a policy")
+    await repository.lock_versions(db, company_id)
+    if await repository.current(db, company_id) is None:
+        await _put_in_force(db, company_id, body, None)
+
+
+async def _put_in_force(
+    db: AsyncSession, company_id: uuid.UUID, body: PolicyIn, created_by: uuid.UUID | None
+) -> PolicyOut:
     """Under the caller's lock on the company's versions."""
-    company = (await companies.get_companies(db, [actor.company_id]))[actor.company_id]
+    company = (await companies.get_companies(db, [company_id]))[company_id]
     if not fx.quotes(company.country, body.currency):
         # Every amount of the policy is compared through this currency's reference rate.
         raise BadRequest(f"No reference rate for {body.currency}")
-    before = await repository.current(db, actor.company_id)
+    before = await repository.current(db, company_id)
     in_force = reserve.resolve(body.reserve_rule, body.reserve_rules)
     if in_force is None:  # PolicyIn checks it; here for the type
         raise BadRequest("No such reserve rule")
     policy = Policy(
-        company_id=actor.company_id,
+        company_id=company_id,
         version=1 if before is None else before.version + 1,
         currency=body.currency,
         approval_limit=body.approval_limit,
@@ -138,7 +152,7 @@ async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> Polic
         reserve=in_force.model_dump(mode="json"),
         reserve_rules=[rule.model_dump(mode="json") for rule in body.reserve_rules],
         payment_weekday=body.payment_weekday,
-        created_by=actor.user_id,
+        created_by=created_by,
     )
     await repository.add(db, policy)
     await db.commit()

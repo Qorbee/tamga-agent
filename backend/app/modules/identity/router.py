@@ -6,6 +6,7 @@ from app.modules.identity import service
 from app.modules.identity.deps import ActorDep
 from app.modules.identity.schemas import (
     CompanySwitch,
+    GuestStart,
     InviteAccept,
     InviteCreate,
     InviteCreated,
@@ -56,8 +57,12 @@ async def sign_in(body: SignIn, request: Request, db: SessionDep, response: Resp
 
 
 @sessions.post("/sessions/guest", status_code=status.HTTP_201_CREATED)
-async def create_guest_session(request: Request, db: SessionDep, response: Response) -> Me:
-    opened = await service.create_guest_session(db, client=_client(request))
+async def create_guest_session(
+    request: Request, db: SessionDep, response: Response, body: GuestStart | None = None
+) -> Me:
+    opened = await service.create_guest_session(
+        db, client=_client(request), scenario=body.scenario if body else None
+    )
     _set_session_cookie(response, opened)
     return opened.me
 

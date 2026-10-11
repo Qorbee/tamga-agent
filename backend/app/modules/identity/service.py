@@ -29,7 +29,7 @@ from app.modules.identity.schemas import (
 )
 from app.modules.playground import service as playground
 from app.modules.settlement import service as settlement
-from app.platform import storage
+from app.platform import clock, storage
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -145,9 +145,12 @@ async def update_company(db: AsyncSession, actor: Actor, *, language: Language) 
     return await get_me(db, actor)
 
 
-async def create_guest_session(db: AsyncSession, *, client: str) -> OpenedSession:
+async def create_guest_session(
+    db: AsyncSession, *, client: str, scenario: str | None = None
+) -> OpenedSession:
     """A judge's one click: a sandbox company, a guest who owns it, and a session (ADR-0004)."""
     settings = get_settings()
+    chosen = playground.chosen(scenario)
     if not _guest_limiter().allow(client):
         raise TooManyRequests("Too many new sandboxes from this address. Try again later")
     now = utcnow()
@@ -162,7 +165,7 @@ async def create_guest_session(db: AsyncSession, *, client: str) -> OpenedSessio
     user = await repository.add_user(db, User(is_guest=True))
     await repository.add_membership(db, user_id=user.id, company_id=company.id, role=Role.OWNER)
     opened = await _open_session(db, user, company.id, expires_at)
-    await playground.seed_later(db, company.id)
+    await playground.seed_later(db, company.id, chosen)
     await db.commit()
     return opened
 
@@ -317,6 +320,7 @@ async def _describe(db: AsyncSession, user: User, company_id: uuid.UUID) -> Me:
         company=current.company,
         role=current.role,
         memberships=listed,
+        today=clock.now(by_id[company_id]).date(),
     )
 
 

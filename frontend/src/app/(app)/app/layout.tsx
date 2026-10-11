@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { TranslateProvider } from "@/components/translated";
 import { ChatRuntime } from "@/features/assistant/chat-runtime";
+import { PlaygroundBar, PlaygroundProvider, WorldPanel } from "@/features/playground/playground";
 import { RequireSession } from "@/features/session/require-session";
 import { AppShell } from "@/features/shell/app-shell";
 import { CANVAS_SIZE, SIDEBAR_OPEN_COOKIE, SIDEBAR_SIZE, readSize } from "@/lib/panel-sizes";
@@ -24,6 +25,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
     <RequireSession>
       <ChatRuntime>
         <TranslateProvider initial={jar.get(TRANSLATE_COOKIE)?.value === "on"}>
+        <PlaygroundProvider>
         <AppShell
           sidebarOpen={jar.get(SIDEBAR_OPEN_COOKIE)?.value !== "false"}
           sidebarWidth={readSize(SIDEBAR_SIZE, jar.get(SIDEBAR_SIZE.cookie)?.value)}
@@ -32,9 +34,12 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
               <CanvasOutlet initialWidth={readSize(CANVAS_SIZE, jar.get(CANVAS_SIZE.cookie)?.value)} />
             </Suspense>
           }
+          bar={<PlaygroundBar />}
+          beside={<WorldPanel />}
         >
           {children}
         </AppShell>
+        </PlaygroundProvider>
         </TranslateProvider>
       </ChatRuntime>
     </RequireSession>

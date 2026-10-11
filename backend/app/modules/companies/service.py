@@ -6,7 +6,7 @@ and never commit; the operation that called them commits once.
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,6 +81,12 @@ async def set_domain_word(
 
 async def forget_domain_word(db: AsyncSession, company_id: uuid.UUID, domain: str) -> None:
     await repository.forget_domain_word(db, company_id, domain)
+
+
+async def advance_clock(db: AsyncSession, company_id: uuid.UUID, by: timedelta) -> None:
+    """Moves a sandbox's business time forward ("skip 24 hours"); any other company's clock is
+    the wall clock, and is left as it is."""
+    await repository.advance_clock(db, company_id, by)
 
 
 async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:

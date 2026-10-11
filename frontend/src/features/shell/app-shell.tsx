@@ -14,16 +14,22 @@ import { ShellActionsContext } from "./shell-actions";
  * The owner app's frame: sidebar, the page, and the canvas, plus the two dialogs any part of it
  * opens (Search, Settings), and the company event stream that keeps them current. The sizes come from the layout, which reads them from cookies, so the
  * first render already has the owner's widths. `canvas` is the canvas, sized by the layout too.
+ * `bar` sits above the page and `beside` next to it, inside what the canvas leaves the page: the
+ * playground's bar and World panel, in a sandbox.
  */
 export function AppShell({
   sidebarOpen,
   sidebarWidth,
   canvas,
+  bar,
+  beside,
   children,
 }: {
   sidebarOpen: boolean;
   sidebarWidth: number;
   canvas: ReactNode;
+  bar?: ReactNode;
+  beside?: ReactNode;
   children: ReactNode;
 }) {
   const [width, setWidth] = useState(sidebarWidth);
@@ -65,7 +71,14 @@ export function AppShell({
         className="h-dvh min-h-0 overflow-hidden"
       >
         <AppSidebar width={width} onWidthChange={setWidth} />
-        <SidebarInset className="min-w-0 overflow-y-auto [scrollbar-gutter:stable]">{children}</SidebarInset>
+        <div className="flex min-w-0 flex-1">
+          <SidebarInset className="min-w-0 overflow-y-auto [scrollbar-gutter:stable]">
+            {bar}
+            {/* The page fills what the bar leaves, so a page as tall as the screen stays so. */}
+            <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+          </SidebarInset>
+          {beside}
+        </div>
         {canvas}
       </SidebarProvider>
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />

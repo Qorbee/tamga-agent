@@ -32,12 +32,15 @@ const READ_AGAIN: Record<CompanyEvent["kind"], QueryKey[]> = {
   ],
   // A file read names plates a job's board lists.
   documents: [["documents"], ["document"], ["plates"]],
-  threads: [["threads"], ["thread"], ["placements"]],
+  threads: [["threads"], ["thread"], ["placements"], ["world-messages"]],
   // A source's sync, the owner's own account or category, or a movement matched to a bill.
   money: [["money-accounts"], ["money-holdings"], ["money-movements"]],
   // A bill synced again may name other plates, or another day.
   invoices: [["invoice"], ["invoices"], ["invoice-totals"], ["parties"], ["plates"]],
-  decisions: [["decisions"], ["decision"], ["payments"], ["decision-events"], ["decision-chain"]],
+  // A policy version (a sandbox's scenario seeds one) is evaluated again into the decisions.
+  decisions: [["decisions"], ["decision"], ["payments"], ["decision-events"], ["decision-chain"], ["policy"]],
+  // A sandbox's day moved, from this tab or another: what counts from it is read again.
+  clock: [["me"], ["world"]],
 };
 
 const CHAT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

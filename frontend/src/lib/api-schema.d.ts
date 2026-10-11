@@ -1101,6 +1101,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/playground/scenarios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Scenarios
+         * @description What a judge can open a sandbox with; asked before anyone signs in.
+         */
+        get: operations["playground.list_scenarios"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/playground/world": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get World */
+        get: operations["playground.get_world"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/playground/world/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Say As */
+        post: operations["playground.say_as"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/playground/world/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Skip */
+        post: operations["playground.skip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/policy": {
         parameters: {
             query?: never;
@@ -2372,13 +2443,18 @@ export interface components {
          * EventKind
          * @enum {string}
          */
-        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices" | "decisions" | "money";
+        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices" | "decisions" | "money" | "clock";
         /**
          * FieldSource
          * @description Where an editable field's value came from; the owner's always wins (ADR-0010).
          * @enum {string}
          */
         FieldSource: "owner" | "extraction" | "suggestion";
+        /** GuestStart */
+        GuestStart: {
+            /** Scenario */
+            scenario?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2876,6 +2952,11 @@ export interface components {
             /** Memberships */
             memberships: components["schemas"]["MembershipOut"][];
             role: components["schemas"]["Role"];
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
             user: components["schemas"]["UserOut"];
         };
         /** MembershipOut */
@@ -3352,6 +3433,19 @@ export interface components {
          * @enum {string}
          */
         PaymentsRecorded: "per_invoice" | "on_account";
+        /** PersonaOut */
+        PersonaOut: {
+            /** Address */
+            address: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+            /** Thread Key */
+            thread_key: string;
+        };
         /**
          * PlacementDecision
          * @description The owner's answer, one of two. ``links``: every link that waits between the conversation's
@@ -3895,6 +3989,26 @@ export interface components {
             rule: string;
         };
         /**
+         * Said
+         * @description What the judge types as a persona: it arrives as that persona's message, through the
+         *     same intake as theirs.
+         */
+        Said: {
+            /** Persona */
+            persona: string;
+            /** Text */
+            text: string;
+        };
+        /** ScenarioOut */
+        ScenarioOut: {
+            /** Key */
+            key: string;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * Settled
          * @description What is read of an invoice the books show open, beside its own figures.
          * @enum {string}
@@ -4053,6 +4167,14 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /** Skip */
+        Skip: {
+            /**
+             * Days
+             * @default 1
+             */
+            days: number;
         };
         /**
          * Stance
@@ -4214,6 +4336,28 @@ export interface components {
             omitted: number;
             /** Sheets */
             sheets: components["schemas"]["SheetOut"][];
+        };
+        /**
+         * WorldOut
+         * @description A sandbox's world: its scenario, its clock, who plays in it, and what the script holds.
+         */
+        WorldOut: {
+            /** Days Skipped */
+            days_skipped: number;
+            /**
+             * Now
+             * Format: date-time
+             */
+            now: string;
+            /** Personas */
+            personas: components["schemas"]["PersonaOut"][];
+            /** Played */
+            played: number;
+            /** Ready */
+            ready: boolean;
+            scenario: components["schemas"]["ScenarioOut"] | null;
+            /** Steps */
+            steps: number;
         };
         /**
          * Outcome
@@ -6457,6 +6601,110 @@ export interface operations {
             };
         };
     };
+    "playground.list_scenarios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScenarioOut"][];
+                };
+            };
+        };
+    };
+    "playground.get_world": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldOut"];
+                };
+            };
+        };
+    };
+    "playground.say_as": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Said"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "playground.skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Skip"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorldOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "policy.get_policy": {
         parameters: {
             query?: never;
@@ -7131,7 +7379,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GuestStart"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -7140,6 +7392,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

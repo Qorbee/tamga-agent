@@ -51,6 +51,7 @@ class EventKind(StrEnum):
     INVOICES = "invoices"  # the accounting records were read
     DECISIONS = "decisions"  # a payable was evaluated, answered or paid
     MONEY = "money"  # accounts or movements were read, written or categorised
+    CLOCK = "clock"  # a sandbox's day moved: every page counts from it
 
 
 class CompanyEvent(BaseModel):

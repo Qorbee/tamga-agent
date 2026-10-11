@@ -65,7 +65,7 @@ from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 from app.modules.projects import service as projects
 from app.modules.settlement import service as settlement
 from app.modules.settlement.schemas import PaymentOut
-from app.platform import chain, clock, events
+from app.platform import chain, clock, events, jobs
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -202,6 +202,19 @@ async def evaluate_pending() -> int:
                 "evaluating the payables of %s failed: %s", company_id, type(error).__name__
             )
     return moved
+
+
+async def evaluate_later(db: AsyncSession, company_id: uuid.UUID) -> None:
+    """Has one company's bills weighed within the minute, in the caller's transaction: a
+    sandbox that just opened, or whose day just moved, does not wait for the next pass."""
+    from app.modules.decisions import tasks
+
+    await jobs.defer(
+        db,
+        tasks.evaluate_one,
+        args={"company_id": str(company_id)},
+        lock=f"decisions:{company_id}",
+    )
 
 
 async def evaluate_company(company_id: uuid.UUID) -> int:

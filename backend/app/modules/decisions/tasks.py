@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from app.modules.decisions import advising, anchoring, service
 from app.platform import jobs
@@ -17,6 +18,12 @@ async def evaluate(timestamp: int) -> None:
     moved = await service.evaluate_pending()
     if moved:
         logger.info("%d decisions were made or moved", moved)
+
+
+@jobs.task("decisions.evaluate_one", retry=1)
+async def evaluate_one(company_id: str) -> None:
+    """One company's bills, weighed now rather than on the next pass."""
+    await service.evaluate_company(uuid.UUID(company_id))
 
 
 # Two minutes after each evaluation pass, so what it moved is weighed in the same five minutes.

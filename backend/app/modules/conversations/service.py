@@ -307,6 +307,30 @@ async def ingest_mail(
     return new
 
 
+async def ingest_simulated(db: AsyncSession, company_id: uuid.UUID, raw: bytes) -> bool:
+    """Stores one message a sandbox's world sent (a persona, or the judge typing as one), as a
+    mail: the same parsing, threading, files and reading as a real mailbox's, on the simulated
+    channel, so nothing it says can reach a real person. True when it is new to the company: one
+    whose Message-ID is stored already (a script's step played again) is not. Runs in the
+    caller's transaction and does not commit."""
+    content_hash = hashlib.sha256(raw).digest()
+    if await repository.get_message_by_hash(db, company_id, content_hash) is not None:
+        return False
+    message_id = parse_mail(raw).message_id
+    if message_id is not None and await repository.thread_of(db, company_id, message_id):
+        return False
+    await _store_new_mail(
+        db,
+        company_id,
+        content_hash,
+        FetchedMail(uid=0, raw=raw, internaldate=None),
+        outbound_from=set(),
+        sent=False,
+        channel=Channel.SIMULATED,
+    )
+    return True
+
+
 async def _store_new_mail(
     db: AsyncSession,
     company_id: uuid.UUID,
@@ -315,6 +339,7 @@ async def _store_new_mail(
     *,
     outbound_from: set[str],
     sent: bool,
+    channel: Channel = Channel.EMAIL,
 ) -> Message:
     try:
         parsed = parse_mail(fetched.raw)
@@ -332,7 +357,7 @@ async def _store_new_mail(
         new_id = None
     candidate = Message(
         company_id=company_id,
-        channel=Channel.EMAIL,
+        channel=channel,
         direction=(
             Direction.OUTBOUND if sent or parsed.sender in outbound_from else Direction.INBOUND
         ),

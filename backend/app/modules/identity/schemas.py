@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
@@ -38,6 +38,13 @@ class Me(BaseModel):
     company: CompanySummary
     role: Role
     memberships: list[MembershipOut]
+    # The company's business day: a sandbox's runs ahead by every skip (app/platform/clock.py).
+    today: date
+
+
+class GuestStart(BaseModel):
+    # A scenario's key (GET /playground/scenarios); the first registered when none is given.
+    scenario: str | None = Field(default=None, max_length=40)
 
 
 class CompanySwitch(BaseModel):

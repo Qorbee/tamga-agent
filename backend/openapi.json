@@ -2458,7 +2458,8 @@
           "threads",
           "invoices",
           "decisions",
-          "money"
+          "money",
+          "clock"
         ],
         "title": "EventKind",
         "type": "string"
@@ -2472,6 +2473,24 @@
         ],
         "title": "FieldSource",
         "type": "string"
+      },
+      "GuestStart": {
+        "properties": {
+          "scenario": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario"
+          }
+        },
+        "title": "GuestStart",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3969,6 +3988,11 @@
           "role": {
             "$ref": "#/components/schemas/Role"
           },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          },
           "user": {
             "$ref": "#/components/schemas/UserOut"
           }
@@ -3977,7 +4001,8 @@
           "user",
           "company",
           "role",
-          "memberships"
+          "memberships",
+          "today"
         ],
         "title": "Me",
         "type": "object"
@@ -5434,6 +5459,39 @@
         ],
         "title": "PaymentsRecorded",
         "type": "string"
+      },
+      "PersonaOut": {
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "thread_key": {
+            "title": "Thread Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "role",
+          "address",
+          "thread_key"
+        ],
+        "title": "PersonaOut",
+        "type": "object"
       },
       "PlacementDecision": {
         "description": "The owner's answer, one of two. ``links``: every link that waits between the conversation's\nmails and its project is confirmed or rejected. ``project_id``: the conversation belongs to\nthis project, whatever was suggested; with ``from_project_id`` it is moved there.",
@@ -7047,6 +7105,51 @@
         "title": "RuleResult",
         "type": "object"
       },
+      "Said": {
+        "description": "What the judge types as a persona: it arrives as that persona's message, through the\nsame intake as theirs.",
+        "properties": {
+          "persona": {
+            "maxLength": 40,
+            "title": "Persona",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "persona",
+          "text"
+        ],
+        "title": "Said",
+        "type": "object"
+      },
+      "ScenarioOut": {
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "summary"
+        ],
+        "title": "ScenarioOut",
+        "type": "object"
+      },
       "Settled": {
         "description": "What is read of an invoice the books show open, beside its own figures.",
         "enum": [
@@ -7643,6 +7746,19 @@
         "title": "SignIn",
         "type": "object"
       },
+      "Skip": {
+        "properties": {
+          "days": {
+            "default": 1,
+            "maximum": 7.0,
+            "minimum": 1.0,
+            "title": "Days",
+            "type": "integer"
+          }
+        },
+        "title": "Skip",
+        "type": "object"
+      },
       "Stance": {
         "description": "How the controller leans when it weighs a bill the rules allow.",
         "enum": [
@@ -8049,6 +8165,60 @@
           "font_size"
         ],
         "title": "WorkbookOut",
+        "type": "object"
+      },
+      "WorldOut": {
+        "description": "A sandbox's world: its scenario, its clock, who plays in it, and what the script holds.",
+        "properties": {
+          "days_skipped": {
+            "title": "Days Skipped",
+            "type": "integer"
+          },
+          "now": {
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "personas": {
+            "items": {
+              "$ref": "#/components/schemas/PersonaOut"
+            },
+            "title": "Personas",
+            "type": "array"
+          },
+          "played": {
+            "title": "Played",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "scenario": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScenarioOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steps": {
+            "title": "Steps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scenario",
+          "now",
+          "days_skipped",
+          "personas",
+          "ready",
+          "played",
+          "steps"
+        ],
+        "title": "WorldOut",
         "type": "object"
       },
       "app__modules__linking__models__Outcome": {
@@ -12496,6 +12666,143 @@
         ]
       }
     },
+    "/playground/scenarios": {
+      "get": {
+        "description": "What a judge can open a sandbox with; asked before anyone signs in.",
+        "operationId": "playground.list_scenarios",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioOut"
+                  },
+                  "title": "Response Playground.List Scenarios",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scenarios",
+        "tags": [
+          "playground"
+        ]
+      }
+    },
+    "/playground/world": {
+      "get": {
+        "operationId": "playground.get_world",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get World",
+        "tags": [
+          "playground"
+        ]
+      }
+    },
+    "/playground/world/messages": {
+      "post": {
+        "operationId": "playground.say_as",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Said"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Say As",
+        "tags": [
+          "playground"
+        ]
+      }
+    },
+    "/playground/world/skip": {
+      "post": {
+        "operationId": "playground.skip",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Skip"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Skip",
+        "tags": [
+          "playground"
+        ]
+      }
+    },
     "/policy": {
       "get": {
         "description": "The company's policy in force; version 0 is the defaults, while the owner has set none.",
@@ -13646,6 +13953,23 @@
     "/sessions/guest": {
       "post": {
         "operationId": "sessions.create_guest_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GuestStart"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {
@@ -13656,6 +13980,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Create Guest Session",

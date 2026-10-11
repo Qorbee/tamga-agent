@@ -83,7 +83,9 @@ const PAGE = 200;
 // Sign-in (ADR-0004): each answers with the session cookie and who is now signed in.
 export type SignIn = Schemas["SignIn"];
 export const signIn = (body: SignIn) => request<Me>("/sessions", json("POST", body));
-export const createGuestSession = () => request<Me>("/sessions/guest", { method: "POST" });
+/** A judge's sandbox, opened with the scenario they picked (the default when none). */
+export const createGuestSession = (scenario?: string) =>
+  request<Me>("/sessions/guest", json("POST", { scenario: scenario ?? null }));
 export type InvitePreview = Schemas["InvitePreview"];
 export const previewInvite = (token: string) =>
   request<InvitePreview>("/invites/lookup", json("POST", { token }));
@@ -346,7 +348,13 @@ export type MessageSummary = Schemas["MessageSummary"];
 export type MessagePage = Schemas["MessagePage"];
 export type Message = Schemas["MessageOut"];
 export type Attachment = Schemas["AttachmentOut"];
-export const listMessages = (params: { q?: string; thread_key?: string; limit?: number; offset?: number }) =>
+export const listMessages = (params: {
+  q?: string;
+  thread_key?: string;
+  channel?: Message["channel"];
+  limit?: number;
+  offset?: number;
+}) =>
   request<MessagePage>(`/messages${query({ ...params, limit: params.limit ?? 30 })}`);
 export const getMessage = (id: string) => request<Message>(`/messages/${id}`);
 /** The original mail (.eml). A link, not a fetch: the browser downloads it with the session cookie. */
@@ -436,3 +444,13 @@ export const getChatMessages = (id: string) => request<ChatMessages>(`/chats/${i
 export const runChat = (id: string, init: RequestInit) => send(`/chats/${id}/runs`, init);
 /** Stops the answer being written in a chat, when one is. */
 export const stopChatRun = (id: string) => request<void>(`/chats/${id}/runs/current`, { method: "DELETE" });
+
+// The playground: a sandbox's scenario, its clock and the world around it.
+export type Scenario = Schemas["ScenarioOut"];
+export const listScenarios = () => request<Scenario[]>("/playground/scenarios");
+export type World = Schemas["WorldOut"];
+export type Persona = Schemas["PersonaOut"];
+export const getWorld = () => request<World>("/playground/world");
+export const skipDays = (days: number) => request<World>("/playground/world/skip", json("POST", { days }));
+export type Said = Schemas["Said"];
+export const sayAs = (body: Said) => request<void>("/playground/world/messages", json("POST", body));

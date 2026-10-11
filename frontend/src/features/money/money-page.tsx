@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   changeMovement,
   getHoldings,
+  getMe,
   getPolicy,
   listInvoiceTotals,
   listMoneyAccounts,
@@ -152,18 +153,20 @@ function detail(account: MoneyAccount, words: { estimated: string; stale: string
   return parts.filter(Boolean).join(" · ");
 }
 
-/** The day `days` after today, as the API writes one. */
-function dayAfter(days: number): string {
-  const day = new Date();
-  day.setDate(day.getDate() + days);
-  return todayIso(day);
+/** The day `days` after `today` (the company's day, which a sandbox's skips move), as the API
+ * writes one. */
+function dayAfter(today: string, days: number): string {
+  const [year = 1970, month = 1, date = 1] = today.split("-").map(Number);
+  return todayIso(new Date(year, month - 1, date + days));
 }
 
 /** What is due in and out: overdue, then each of the next four weeks, by currency. The books'
  * totals are read up to each week's end and subtracted, so no list is cut short by a page. */
 function Outlook() {
   const { t, locale } = useI18n();
-  const cutoffs = [0, 7, 14, 21, 28].map(dayAfter);
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const today = me.data?.today ?? todayIso();
+  const cutoffs = [0, 7, 14, 21, 28].map((days) => dayAfter(today, days));
   const sides = ["receivable", "payable"] as const;
   const totals = useQueries({
     queries: sides.flatMap((direction) =>
