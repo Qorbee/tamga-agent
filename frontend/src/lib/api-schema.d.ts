@@ -1130,6 +1130,26 @@ export interface paths {
         patch: operations["policy.change_policy"];
         trace?: never;
     };
+    "/policy/reserve-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reserve Presets
+         * @description The reserve rules every company can pick, each one a start for a rule of the owner's own.
+         */
+        get: operations["policy.reserve_presets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/project-links": {
         parameters: {
             query?: never;
@@ -1272,6 +1292,26 @@ export interface paths {
          * @description Returns the project that stays.
          */
         post: operations["projects.merge_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reference-currencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Reference Currencies
+         * @description The currencies the company's official reference rates convert, the base first.
+         */
+        get: operations["fx.reference_currencies"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2009,19 +2049,27 @@ export interface components {
         /**
          * DecisionAction
          * @description The owner's answer to the evaluation it names: one for an evaluation since replaced is
-         *     refused. ``edit`` changes the amount, which is a new proposal: every rule runs again, and it
-         *     comes back to the owner.
+         *     refused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:
+         *     every rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it
+         *     in the bank, for what left their account (ADR-0027).
          */
         DecisionAction: {
             /**
              * Action
              * @enum {string}
              */
-            action: "approve" | "hold" | "reject" | "edit";
+            action: "approve" | "hold" | "reject" | "edit" | "pay_by" | "mark_paid";
             /** Amount */
             amount?: number | string | null;
             /** Evaluation */
             evaluation: number;
+            method?: components["schemas"]["PaymentMethod"] | null;
+            /** Paid On */
+            paid_on?: string | null;
+            /** Pay Amount */
+            pay_amount?: number | string | null;
+            /** Pay Currency */
+            pay_currency?: string | null;
         };
         /**
          * DecisionChainOut
@@ -2113,11 +2161,24 @@ export interface components {
             invoice_id: string;
             /** Issued On */
             issued_on: string | null;
+            method: components["schemas"]["PaymentMethod"];
             /**
              * Party Id
              * Format: uuid
              */
             party_id: string;
+            /** Pay Amount */
+            pay_amount: string | null;
+            /** Pay Chosen */
+            pay_chosen: boolean;
+            /** Pay Currency */
+            pay_currency: string | null;
+            /** Pay Rate */
+            pay_rate: string | null;
+            /** Pay Rate On */
+            pay_rate_on: string | null;
+            /** Pay Rate Source */
+            pay_rate_source: string | null;
             /** Policy Version */
             policy_version: number;
             /** Rate */
@@ -2311,7 +2372,7 @@ export interface components {
          * EventKind
          * @enum {string}
          */
-        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices" | "decisions";
+        EventKind: "chat" | "projects" | "documents" | "threads" | "invoices" | "decisions" | "money";
         /**
          * FieldSource
          * @description Where an editable field's value came from; the owner's always wins (ADR-0010).
@@ -2805,7 +2866,7 @@ export interface components {
          * LogEvent
          * @enum {string}
          */
-        LogEvent: "proposed" | "advised" | "edited" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release";
+        LogEvent: "proposed" | "advised" | "edited" | "pay_by" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release";
         /**
          * Me
          * @description Who is signed in, the company this session acts for, and every company they belong to.
@@ -3210,6 +3271,11 @@ export interface components {
             total: number;
         };
         /**
+         * PaymentKind
+         * @enum {string}
+         */
+        PaymentKind: "payment" | "mirror";
+        /**
          * PaymentMethod
          * @description How a bill is paid (ADR-0027).
          * @enum {string}
@@ -3245,15 +3311,27 @@ export interface components {
              * Format: uuid
              */
             invoice_id: string;
+            kind: components["schemas"]["PaymentKind"];
+            /** Marked By */
+            marked_by: string | null;
+            method: components["schemas"]["PaymentMethod"];
+            /** Movement Id */
+            movement_id: string | null;
+            /** Paid On */
+            paid_on: string | null;
+            /** Pay Amount */
+            pay_amount: string | null;
+            /** Pay Currency */
+            pay_currency: string | null;
             /** Payee */
-            payee: string;
+            payee: string | null;
             /** Payment Key */
-            payment_key: string;
+            payment_key: string | null;
             state: components["schemas"]["PaymentState"];
             /** Tx Hash */
             tx_hash: string | null;
             /** Usdc Units */
-            usdc_units: number;
+            usdc_units: number | null;
         };
         /** PaymentPage */
         PaymentPage: {
@@ -3401,8 +3479,11 @@ export interface components {
             payments_recorded?: components["schemas"]["PaymentsRecorded"] | null;
             /** Remainder Tolerance */
             remainder_tolerance?: number | string | null;
-            /** Reserve */
-            reserve?: number | string | null;
+            /** Remove Rule */
+            remove_rule?: string | null;
+            /** Reserve Rule */
+            reserve_rule?: string | null;
+            save_rule?: components["schemas"]["ReserveRule-Input"] | null;
         };
         /**
          * PolicyIn
@@ -3429,10 +3510,12 @@ export interface components {
              */
             remainder_tolerance: number | string;
             /**
-             * Reserve
-             * @default 0.00
+             * Reserve Rule
+             * @default off
              */
-            reserve: number | string;
+            reserve_rule: string;
+            /** Reserve Rules */
+            reserve_rules?: components["schemas"]["ReserveRule-Input"][];
         };
         /** PolicyOut */
         PolicyOut: {
@@ -3452,8 +3535,9 @@ export interface components {
             payments_recorded: components["schemas"]["PaymentsRecorded"];
             /** Remainder Tolerance */
             remainder_tolerance: string;
-            /** Reserve */
-            reserve: string;
+            reserve: components["schemas"]["ReserveRule-Output"];
+            /** Reserve Rules */
+            reserve_rules: components["schemas"]["ReserveRule-Output"][];
             /** Version */
             version: number;
         };
@@ -3746,6 +3830,48 @@ export interface components {
          * @enum {string}
          */
         RegistryStatus: "found" | "not_found" | "not_asked";
+        /** ReserveRule */
+        "ReserveRule-Input": {
+            /** Active */
+            active: boolean;
+            /** Based On */
+            based_on?: string | null;
+            /** Cover Weeks */
+            cover_weeks: number;
+            /** Floor */
+            floor: number | string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * On Breach
+             * @enum {string}
+             */
+            on_breach: "hold" | "ask";
+            stance: components["schemas"]["Stance"];
+        };
+        /** ReserveRule */
+        "ReserveRule-Output": {
+            /** Active */
+            active: boolean;
+            /** Based On */
+            based_on?: string | null;
+            /** Cover Weeks */
+            cover_weeks: number;
+            /** Floor */
+            floor: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * On Breach
+             * @enum {string}
+             */
+            on_breach: "hold" | "ask";
+            stance: components["schemas"]["Stance"];
+        };
         /**
          * Role
          * @enum {string}
@@ -3928,6 +4054,12 @@ export interface components {
              */
             password: string;
         };
+        /**
+         * Stance
+         * @description How the controller leans when it weighs a bill the rules allow.
+         * @enum {string}
+         */
+        Stance: "careful" | "balanced" | "lean";
         /**
          * TaxIdEvidence
          * @description Where a tax number was seen in the company's own records.
@@ -6411,6 +6543,26 @@ export interface operations {
             };
         };
     };
+    "policy.reserve_presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReserveRule-Output"][];
+                };
+            };
+        };
+    };
     "project_links.list_links": {
         parameters: {
             query?: {
@@ -6864,6 +7016,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "fx.reference_currencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
         };

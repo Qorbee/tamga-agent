@@ -4,9 +4,10 @@ import dataclasses
 from datetime import date
 from decimal import Decimal
 
+from app.modules.policy import reserve
 from app.modules.policy import service as policies
-from app.modules.policy.models import PaymentsRecorded
-from app.modules.policy.schemas import Outcome, Picture, Vault
+from app.modules.policy.models import PaymentMethod, PaymentsRecorded
+from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 
 POLICY = policies.DEFAULT
 
@@ -87,7 +88,7 @@ def test_the_vault_bounds_what_can_be_paid_at_all() -> None:
     assert failed(dataclasses.replace(CLEAR, vault=vault))["vault_caps"] == Outcome.HOLD
     assert failed(dataclasses.replace(CLEAR, vault=None))["vault_account"] == Outcome.HOLD
     assert failed(dataclasses.replace(CLEAR, payee=False))["vault_account"] == Outcome.HOLD
-    assert failed(dataclasses.replace(CLEAR, party=False))["vault_account"] == Outcome.HOLD
+    assert failed(dataclasses.replace(CLEAR, party=False))["party"] == Outcome.HOLD
     # A wallet listed a moment ago waits out its timelock.
     assert failed(dataclasses.replace(CLEAR, payee_active_from=300))["timelock"] == Outcome.HOLD
 
@@ -136,3 +137,59 @@ def test_an_account_that_cannot_speak_is_noted_only_where_payments_go_on_account
     per_invoice = POLICY.model_copy(update={"payments_recorded": PaymentsRecorded.PER_INVOICE})
     _, results = policies.evaluate(silent, per_invoice)
     assert [r.outcome for r in results if r.rule == "on_account"] == [Outcome.OK]
+
+
+BANK = POLICY.model_copy(
+    update={
+        "methods": [PaymentMethod.VAULT_USDC, PaymentMethod.BANK_TRANSFER],
+        "default_method": PaymentMethod.BANK_TRANSFER,
+        "approval_limit": Decimal("5000.00"),
+    }
+)
+BY_BANK = dataclasses.replace(
+    CLEAR, method=PaymentMethod.BANK_TRANSFER, iban=True, usdc_units=None, vault=None, payee=False
+)
+
+
+def results(picture: Picture, policy: PolicyOut = BANK) -> dict[str, Outcome]:
+    _, given = policies.evaluate(picture, policy)
+    return {result.rule: result.outcome for result in given}
+
+
+def test_the_vaults_rules_never_hold_a_bill_paid_by_bank() -> None:
+    # No mirror rate, no vault, no wallet: none of it is asked of a bank transfer.
+    ran = results(BY_BANK)
+    assert set(ran).isdisjoint({"currency", "usdc_minimum", "vault_account", "timelock"})
+    assert all(outcome is Outcome.OK for outcome in ran.values())
+    # No IBAN in the books: the owner pays the account they know, and is told.
+    assert results(dataclasses.replace(BY_BANK, iban=False))["iban"] is Outcome.PROPOSE
+    # Turned off in the settings, a way to pay holds whatever it was chosen for.
+    vault_only = BANK.model_copy(
+        update={"methods": [PaymentMethod.VAULT_USDC], "default_method": PaymentMethod.VAULT_USDC}
+    )
+    assert results(BY_BANK, vault_only)["method"] is Outcome.HOLD
+    # And a vault bill too small for test USDC is the vault's to hold, by its own rule.
+    assert results(dataclasses.replace(CLEAR, usdc_units=0))["usdc_minimum"] is Outcome.HOLD
+
+
+def test_the_reserve_keeps_the_bills_due_and_its_floor() -> None:
+    steady = BANK.model_copy(update={"reserve": reserve.resolve("steady", [])})
+    careful = BANK.model_copy(update={"reserve": reserve.resolve("careful", [])})
+    # 2,204 of the policy's currency to pay, 10,000 in the accounts.
+    rich = dataclasses.replace(BY_BANK, balance=Decimal("10000"), committed=Decimal("5000"))
+    assert results(rich, steady)["reserve"] is Outcome.OK
+    # What the other bills due need is kept: under it, Steady asks and Careful holds.
+    short = dataclasses.replace(rich, committed=Decimal("9000"))
+    assert results(short, steady)["reserve"] is Outcome.PROPOSE
+    assert results(short, careful)["reserve"] is Outcome.HOLD
+    # A floor of the owner's own, in a rule duplicated from a preset.
+    own = reserve.ReserveRule.model_validate(
+        reserve.resolve("steady", []).model_dump()  # type: ignore[union-attr]
+        | {"key": "own:a1", "name": "Mine", "based_on": "steady", "floor": Decimal("3000")}
+    )
+    assert results(rich, steady.model_copy(update={"reserve": own}))["reserve"] is Outcome.PROPOSE
+    # Not known is never taken as enough, nor as too little: the owner is asked.
+    unknown = dataclasses.replace(BY_BANK, balance=None)
+    assert results(unknown, careful)["reserve"] is Outcome.PROPOSE
+    # Off: the accounts are not read at all.
+    assert results(short)["reserve"] is Outcome.OK

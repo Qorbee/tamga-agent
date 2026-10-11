@@ -623,22 +623,45 @@ async def test_the_policy_names_how_the_company_pays_and_what_it_keeps(
         json={
             "methods": ["bank_transfer"],
             "default_method": "bank_transfer",
-            "reserve": "25000.00",
+            "reserve_rule": "careful",
             "payment_weekday": 3,
         },
     )
     assert bank.status_code == 200, bank.text
     policy = bank.json()
     assert (policy["methods"], policy["default_method"]) == (["bank_transfer"], "bank_transfer")
-    assert (policy["reserve"], policy["payment_weekday"]) == ("25000.00", 3)
+    assert (policy["reserve"]["key"], policy["payment_weekday"]) == ("careful", 3)
+    assert policy["reserve"]["on_breach"] == "hold"
 
     # The default is one of the methods, each method once; with what the change keeps too.
     for wrong in (
         {"methods": ["vault_usdc"]},
         {"methods": ["bank_transfer", "bank_transfer"]},
+        {"reserve_rule": "own:nope"},
     ):
         assert (await client.patch("/policy", json=wrong)).status_code == 400
     assert (await client.patch("/policy", json={"methods": []})).status_code == 422
     # Any day again; what it does not name stays.
     anyday = (await client.patch("/policy", json={"payment_weekday": -1})).json()
-    assert anyday["payment_weekday"] is None and anyday["reserve"] == "25000.00"
+    assert anyday["payment_weekday"] is None and anyday["reserve"]["key"] == "careful"
+
+    # A rule of the owner's own, duplicated from a preset and changed, put in force.
+    presets = (await client.get("/policy/reserve-presets")).json()
+    assert [preset["key"] for preset in presets] == ["off", "light", "steady", "careful"]
+    mine = presets[2] | {"key": "own:1", "name": "Two weeks and 5k", "based_on": "steady"}
+    mine["floor"] = "5000.00"
+    own = await client.patch("/policy", json={"save_rule": mine, "reserve_rule": "own:1"})
+    assert own.status_code == 200, own.text
+    assert own.json()["reserve"] == own.json()["reserve_rules"][0]
+    assert own.json()["reserve"]["floor"] == "5000.00"
+    # Rules are saved one at a time: a second screen's rule never drops the first.
+    other = presets[3] | {"key": "own:2", "name": "Four weeks", "based_on": "careful"}
+    both = (await client.patch("/policy", json={"save_rule": other})).json()
+    assert [rule["key"] for rule in both["reserve_rules"]] == ["own:1", "own:2"]
+    assert both["reserve"]["key"] == "own:1"
+    # The rule in force is never taken away from under it; another is.
+    assert (await client.patch("/policy", json={"remove_rule": "own:1"})).status_code == 400
+    left = (await client.patch("/policy", json={"remove_rule": "own:2"})).json()
+    assert [rule["key"] for rule in left["reserve_rules"]] == ["own:1"]
+    # What a policy may be written in: the company's reference source's currencies.
+    assert (await client.get("/reference-currencies")).json() == ["USD", "EUR", "TRY"]

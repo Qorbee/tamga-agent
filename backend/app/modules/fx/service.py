@@ -15,8 +15,10 @@ from typing import Final, Protocol
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.companies import service as companies
 from app.modules.fx import repository
 from app.modules.fx.models import FxRate
+from app.platform.auth import Actor
 from app.platform.db import open_session
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,16 @@ def register(country: str, source: RateSource) -> None:
 
 def source_for(country: str) -> RateSource | None:
     return _sources.get(country)
+
+
+async def reference_currencies(db: AsyncSession, actor: Actor) -> list[str]:
+    """The currencies the company's reference source converts, its base first: what a policy may
+    be written in. None without a source for its country."""
+    country = (await companies.get_companies(db, [actor.company_id]))[actor.company_id].country
+    source = _sources.get(country)
+    if source is None:
+        return []
+    return [source.base, *sorted(set(source.currencies) - {source.base})]
 
 
 def quotes(country: str, currency: str) -> bool:

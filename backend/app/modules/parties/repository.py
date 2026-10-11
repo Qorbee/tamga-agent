@@ -155,6 +155,24 @@ async def get_identifiers(
     return identifiers.all()
 
 
+async def identifiers_of(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    party_ids: Sequence[uuid.UUID],
+    kinds: Sequence[IdentifierKind],
+) -> Sequence[PartyIdentifier]:
+    if not party_ids:
+        return []
+    rows = await db.scalars(
+        select(PartyIdentifier).where(
+            PartyIdentifier.company_id == company_id,
+            PartyIdentifier.party_id.in_(party_ids),
+            PartyIdentifier.kind.in_(kinds),
+        )
+    )
+    return rows.all()
+
+
 async def get_by_source(
     db: AsyncSession, company_id: uuid.UUID, source: str, source_id: str
 ) -> Party | None:

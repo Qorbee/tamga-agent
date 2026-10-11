@@ -10,7 +10,7 @@ mirror of a payment, never money held, so it is listed and never counted.
 import logging
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Final
@@ -46,7 +46,7 @@ from app.modules.money.schemas import (
     MovementSort,
 )
 from app.modules.settlement import service as settlement
-from app.platform import chain, clock
+from app.platform import chain, clock, events
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -102,11 +102,58 @@ async def list_movements(
 async def holdings(db: AsyncSession, actor: Actor, currency: str) -> Holdings:
     """Each bank and cash account's balance, and their total in ``currency`` at the reference rate
     of the company's own day. One with no rate is listed and left out of the total."""
-    company = (await companies.get_companies(db, [actor.company_id]))[actor.company_id]
+    return await holdings_of(db, actor.company_id, currency)
+
+
+@dataclass(frozen=True, slots=True)
+class Position:
+    """What the payment path reads of the company's money: the bank and cash accounts' total in
+    one currency, None when none has a balance or one has no rate; and the currencies the
+    company holds an account in."""
+
+    total: Decimal | None
+    currencies: frozenset[str]
+
+
+async def position(db: AsyncSession, company_id: uuid.UUID, currency: str) -> Position:
+    held = await holdings_of(db, company_id, currency)
+    accounts = await repository.list_accounts(
+        db, company_id, kinds=[AccountKind.BANK, AccountKind.CASH]
+    )
+    return Position(
+        total=held.total if held.items and held.complete else None,
+        currencies=frozenset(account.currency for account in accounts),
+    )
+
+
+async def outgoing(db: AsyncSession, company_id: uuid.UUID, since: date) -> list[MovementOut]:
+    """Money out of a bank or cash account since the day, linked to no bill yet."""
+    return [
+        MovementOut.model_validate(row) for row in await repository.outgoing(db, company_id, since)
+    ]
+
+
+async def link_to_bill(
+    db: AsyncSession, company_id: uuid.UUID, movement_id: uuid.UUID, invoice_id: uuid.UUID
+) -> None:
+    """A movement proven to pay a bill: it replaces the bill's estimate from the books on the
+    next sync, and is a subcontractor's payment unless the owner said otherwise. No commit."""
+    movement = await repository.get_movement(db, company_id, movement_id)
+    if movement is None:
+        return
+    movement.invoice_id = invoice_id
+    await events.publish(db, company_id, events.EventKind.MONEY)
+    if movement.category_by is not CategorySetBy.OWNER:
+        movement.category = MovementCategory.SUBCONTRACTOR_PAYMENT
+        movement.category_by = CategorySetBy.CODE
+
+
+async def holdings_of(db: AsyncSession, company_id: uuid.UUID, currency: str) -> Holdings:
+    company = (await companies.get_companies(db, [company_id]))[company_id]
     today = clock.now(company).date()
     items: list[Holding] = []
     for account in await repository.list_accounts(
-        db, actor.company_id, kinds=[AccountKind.BANK, AccountKind.CASH]
+        db, company_id, kinds=[AccountKind.BANK, AccountKind.CASH]
     ):
         if account.balance is None:
             continue
@@ -158,6 +205,7 @@ async def create_account(db: AsyncSession, actor: Actor, body: AccountIn) -> Acc
         source_ref=str(uuid.uuid7()),
     )
     await repository.add(db, account)
+    await events.publish(db, actor.company_id, events.EventKind.MONEY)
     await db.commit()
     return AccountOut.model_validate(account)
 
@@ -173,6 +221,7 @@ async def change_account(
         account.name = body.name
     if body.balance is not None:
         account.balance, account.balance_at = body.balance, utcnow()
+    await events.publish(db, actor.company_id, events.EventKind.MONEY)
     await db.commit()
     return AccountOut.model_validate(account)
 
@@ -196,6 +245,7 @@ async def add_movement(db: AsyncSession, actor: Actor, body: MovementIn) -> Move
         category_by=CategorySetBy.OWNER if body.category is not None else None,
     )
     await repository.add(db, movement)
+    await events.publish(db, actor.company_id, events.EventKind.MONEY)
     await db.commit()
     return MovementOut.model_validate(movement)
 
@@ -209,6 +259,7 @@ async def change_movement(
     if movement is None:
         raise NotFound("No such movement")
     movement.category, movement.category_by = body.category, CategorySetBy.OWNER
+    await events.publish(db, actor.company_id, events.EventKind.MONEY)
     await db.commit()
     return MovementOut.model_validate(movement)
 
@@ -262,6 +313,7 @@ async def store(
             await repository.delete_others(
                 db, company_id, source, [record.source_ref for record in movements]
             )
+        await events.publish(db, company_id, events.EventKind.MONEY)
         await db.commit()
 
 
@@ -359,6 +411,7 @@ async def _sync_vault(company_id: uuid.UUID) -> None:
             await repository.mark_link_error(
                 db, company_id, VAULT, ref, f"The chain could not be read: {type(error).__name__}"
             )
+            await events.publish(db, company_id, events.EventKind.MONEY)
             await db.commit()
         raise
     account = AccountRecord(
@@ -385,6 +438,7 @@ async def _sync_vault(company_id: uuid.UUID) -> None:
                 invoice_id=payment.invoice_id,
             )
             for payment in payments
+            if payment.usdc_units is not None
         ],
         whole=True,
     )

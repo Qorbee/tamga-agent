@@ -1,7 +1,8 @@
 """The executor's payments (ADR-0002, ADR-0017): each decision the owner approved is released
 from the company's vault to the subcontractor's wallet, for the test USDC its evaluation names.
 
-This is the only path by which a bill is paid. It reads what to pay from an approved decision
+This is the only path by which Tamga pays a bill; a bill paid by bank transfer is the owner's to
+pay, and the executor never touches it (ADR-0027). It reads what to pay from an approved decision
 and nothing else: no message, prompt or model output reaches it. The payment's idempotency key
 is written before the call is sent, so a call sent again (a timeout, a crash, the executor
 signed out) is the same Circle transaction, and the vault pays a bill's key once. A decision is
@@ -19,6 +20,7 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.decisions import service as decisions
 from app.modules.decisions.schemas import DecisionOut
+from app.modules.policy import service as policies
 from app.modules.settlement import repository
 from app.modules.settlement.models import Payment, PaymentState
 from app.modules.settlement.service import payee_addresses
@@ -44,6 +46,8 @@ async def pay_approved() -> int:
         if company is None:
             continue
         for decision in approved:
+            if not policies.tamga_pays(decision.method):
+                continue
             try:
                 paid += await _pay(company_id, company.mode, decision)
             except Exception as error:  # one payment that fails never stops the others
@@ -78,6 +82,9 @@ async def _pay(company_id: uuid.UUID, mode: CompanyMode, decision: DecisionOut) 
                 decision_id=decision.id,
                 evaluation=decision.evaluation,
                 invoice_id=decision.invoice_id,
+                method=decision.method,
+                pay_currency="USDC",
+                pay_amount=chain.usdc(decision.usdc_units),
                 payee=payee,
                 usdc_units=decision.usdc_units,
                 payment_key=key,
@@ -99,7 +106,7 @@ async def _pay(company_id: uuid.UUID, mode: CompanyMode, decision: DecisionOut) 
         sending = payment.state is PaymentState.SUBMITTING
         idempotency_key, units = payment.idempotency_key, payment.usdc_units
         await db.commit()
-    if not sending or vault is None:
+    if not sending or vault is None or idempotency_key is None or units is None:
         return 0
 
     try:
@@ -138,6 +145,7 @@ async def _pay(company_id: uuid.UUID, mode: CompanyMode, decision: DecisionOut) 
             payment.state = PaymentState.SETTLED
             payment.tx_hash, payment.circle_transaction_id = done.tx_hash, done.transaction_id
             payment.finished_at = utcnow()
+            payment.paid_on = payment.finished_at.date()
         await decisions.record_paid(
             db,
             company_id,

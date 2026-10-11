@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.books.schemas import InvoiceOut
 from app.modules.decisions.models import DecisionState, LogEvent
+from app.modules.policy.models import PaymentMethod
 from app.modules.policy.schemas import Outcome
 
 
@@ -56,6 +57,17 @@ class DecisionOut(BaseModel):
     reference_rate_on: date | None
     reference_source: str | None
     amount_edited: bool
+    # How it is paid, whether the owner chose it, and what leaves the company's account: the
+    # currency, the amount expected at the reference rate of the evaluation's day, one unit of
+    # the bill's currency in it, that day and the rate's source (ADR-0027). None where no rate
+    # stands.
+    method: PaymentMethod
+    pay_chosen: bool
+    pay_currency: str | None
+    pay_amount: Decimal | None
+    pay_rate: Decimal | None
+    pay_rate_on: date | None
+    pay_rate_source: str | None
     rules: list[RuleResult]
     # The bill's issue day at the last evaluation.
     issued_on: date | None
@@ -79,17 +91,33 @@ class DecisionPage(BaseModel):
 
 class DecisionAction(BaseModel):
     """The owner's answer to the evaluation it names: one for an evaluation since replaced is
-    refused. ``edit`` changes the amount, which is a new proposal: every rule runs again, and it
-    comes back to the owner."""
+    refused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:
+    every rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it
+    in the bank, for what left their account (ADR-0027)."""
 
-    action: Literal["approve", "hold", "reject", "edit"]
+    action: Literal["approve", "hold", "reject", "edit", "pay_by", "mark_paid"]
     evaluation: int = Field(ge=1)
     amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    # With pay_by: the method, and the currency it leaves the account in (unchanged if none).
+    method: PaymentMethod | None = None
+    # With pay_by, or with mark_paid and what was paid, on the day it was paid (today if none).
+    pay_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    pay_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
+    paid_on: date | None = None
 
     @model_validator(mode="after")
-    def _amount_with_edit(self) -> Self:
+    def _fields_with_their_action(self) -> Self:
         if (self.action == "edit") != (self.amount is not None):
             raise ValueError("an amount is given with edit, and only with it")
+        if (self.action == "pay_by") != (self.method is not None):
+            raise ValueError("a method is given with pay_by, and only with it")
+        paid = self.pay_amount is not None
+        if (self.action == "mark_paid") != paid or (paid and self.pay_currency is None):
+            raise ValueError("what was paid, and its currency, come with mark_paid, and only it")
+        if self.paid_on is not None and self.action != "mark_paid":
+            raise ValueError("a day paid comes with mark_paid")
+        if self.pay_currency is not None and self.action not in ("pay_by", "mark_paid"):
+            raise ValueError("a pay currency comes with pay_by or mark_paid")
         return self
 
 

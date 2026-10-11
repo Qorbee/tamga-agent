@@ -207,6 +207,24 @@ async def get_identifiers(
     return await repository.get_identifiers(db, company_id, party_id)
 
 
+def normalised(kind: IdentifierKind, value: str, *, country: str) -> str | None:
+    """An identifier as parties keep it, for comparing one read elsewhere (a bank movement's)."""
+    return normalise(kind, value, country=country)
+
+
+async def identifiers_of(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    party_ids: Sequence[uuid.UUID],
+    kinds: Sequence[IdentifierKind],
+) -> dict[uuid.UUID, set[tuple[IdentifierKind, str]]]:
+    """Each party's identifiers of these kinds, normalised (an IBAN without its spaces)."""
+    found: dict[uuid.UUID, set[tuple[IdentifierKind, str]]] = {}
+    for row in await repository.identifiers_of(db, company_id, party_ids, kinds):
+        found.setdefault(row.party_id, set()).add((row.kind, row.normalised))
+    return found
+
+
 async def _country(db: AsyncSession, company_id: uuid.UUID) -> str:
     return (await companies.get_companies(db, [company_id]))[company_id].country
 

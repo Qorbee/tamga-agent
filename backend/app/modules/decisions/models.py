@@ -16,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.modules.policy.models import PaymentMethod
 from app.platform.db import Base, text_enum
 from app.platform.tenancy import CompanyScoped
 
@@ -30,9 +31,11 @@ class DecisionState(StrEnum):
     # A rule holds it because the books show it paid: the invoice itself, or, for a company that
     # records payments on account, the firm's account (ADR-0022). Nothing waits on anyone.
     PAID_IN_BOOKS = "paid_in_books"
-    # The owner approved the evaluation it names; the executor pays it.
+    # The owner approved the evaluation it names: the executor pays it from the vault, or the
+    # owner pays it in the bank, which a matched movement or the owner's word settles.
     APPROVED = "approved"
-    # Paid from the vault; its payment holds the transaction's hash.
+    # Paid; its payment holds the proof: the transaction's hash, the bank's movement, or the
+    # owner who marked it paid.
     SETTLED = "settled"
     # The vault refused it; ``decision_log`` holds the reason. With ``decided_by`` kept, for a
     # reason another evaluation will not change; without, it is evaluated again.
@@ -77,6 +80,21 @@ class Decision(CompanyScoped, Base):
     reference_source: Mapped[str | None] = mapped_column(String(20))
     # The owner set the amount (a part payment): kept through later evaluations.
     amount_edited: Mapped[bool] = mapped_column(default=False)
+    # How it is paid (ADR-0027): proposed by code from the policy and the payee, unless the owner
+    # chose it, with the pay currency, which is then kept through later evaluations.
+    method: Mapped[PaymentMethod] = mapped_column(
+        text_enum(PaymentMethod, "decisions_method_check", length=20),
+        server_default=PaymentMethod.VAULT_USDC.value,
+    )
+    pay_chosen: Mapped[bool] = mapped_column(default=False, server_default="false")
+    # What leaves the company's account: in the bill's currency, another the owner pays from, or
+    # test USDC; the amount expected at the reference rate of the evaluation's day, its rate,
+    # day and source. None where no rate stands.
+    pay_currency: Mapped[str | None] = mapped_column(String(4))
+    pay_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    pay_rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    pay_rate_on: Mapped[date | None]
+    pay_rate_source: Mapped[str | None] = mapped_column(String(20))
     # Each rule's result: ``{"rule", "outcome", "reason"}``, in the rules' order.
     rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     # The bill's issue day as the books gave it at the last evaluation, which lists are sorted by.
@@ -97,11 +115,14 @@ class LogEvent(StrEnum):
     # The controller's opinion on a proposal that waits for the owner.
     ADVISED = "advised"
     EDITED = "edited"
+    # The owner chose another way to pay it, or another currency to pay it from.
+    PAY_BY = "pay_by"
     APPROVED = "approved"
     HELD = "held"
     REJECTED = "rejected"
-    # The executor's: paid, with the transaction's hash; refused, with the reason; and what a
-    # replay company would have released, never sent (ADR-0009).
+    # Paid, with its proof: the executor's transaction, the bank movement matched to it, or the
+    # owner's word; refused, with the reason; and what a replay company would have released,
+    # never sent (ADR-0009).
     SETTLED = "settled"
     FAILED = "failed"
     WOULD_RELEASE = "would_release"

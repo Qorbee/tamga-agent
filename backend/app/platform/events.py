@@ -50,6 +50,7 @@ class EventKind(StrEnum):
     THREADS = "threads"  # mail came in or was sorted
     INVOICES = "invoices"  # the accounting records were read
     DECISIONS = "decisions"  # a payable was evaluated, answered or paid
+    MONEY = "money"  # accounts or movements were read, written or categorised
 
 
 class CompanyEvent(BaseModel):

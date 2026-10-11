@@ -5,8 +5,8 @@ import type { Locale } from "@/lib/i18n";
 /**
  * The only place money, numbers and dates are formatted.
  *
- * Currency rule (docs/architecture/07-web-app.md): documents keep the currency they were issued in;
- * anything about moving money leads with the stablecoin, with the document currency secondary.
+ * Currency rule (ADR-0027, point 8): every amount keeps its own currency, a bill's first; how it is
+ * paid follows, in test USDC only for the vault. A figure converted into another currency says so.
  * Stablecoins are not ISO 4217 codes — `Intl` throws on "USDC" — so they are formatted as a figure
  * followed by the token.
  */

@@ -9,7 +9,11 @@ logger = logging.getLogger(__name__)
 @jobs.periodic("decisions.evaluate", cron="*/5 * * * *")
 async def evaluate(timestamp: int) -> None:
     """Every payable evaluated again within minutes of what is known of it changing; one whose
-    picture did not change keeps its evaluation."""
+    picture did not change keeps its evaluation. First, the bills the owner paid by bank whose
+    movement came in are settled, so they are no longer counted as owed."""
+    settled = await service.settle_matched()
+    if settled:
+        logger.info("%d bank transfers were matched to their bills", settled)
     moved = await service.evaluate_pending()
     if moved:
         logger.info("%d decisions were made or moved", moved)

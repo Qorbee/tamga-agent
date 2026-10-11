@@ -2,6 +2,7 @@ import {
   Folder01Icon,
   InboxIcon,
   Invoice03Icon,
+  Money03Icon,
   TransactionHistoryIcon,
   Upload01Icon,
   Wallet01Icon,
@@ -19,6 +20,7 @@ export type Page = { href: string; label: keyof Dictionary["nav"]; icon: IconSvg
 export const pages: readonly Page[] = [
   { href: "/app/projects", label: "projects", icon: Folder01Icon },
   { href: "/app/payments", label: "payments", icon: Wallet01Icon },
+  { href: "/app/money", label: "money", icon: Money03Icon },
   { href: "/app/books", label: "books", icon: Invoice03Icon },
   { href: "/app/inbox", label: "inbox", icon: InboxIcon },
   { href: "/app/upload", label: "upload", icon: Upload01Icon },

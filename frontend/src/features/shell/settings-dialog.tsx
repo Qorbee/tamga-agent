@@ -4,7 +4,7 @@ import { ComputerIcon, Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 import {
   Dialog,
@@ -15,9 +15,30 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { MemorySection } from "@/components/memory";
-import { changePolicy, getMe, getPolicy, updateCompany, type WritingLanguage } from "@/lib/api";
+import {
+  copyOf,
+  MethodsField,
+  PayDayField,
+  ReserveChoices,
+  ReserveEditor,
+  Row,
+  SEGMENT,
+  usePolicyChange,
+} from "@/components/policy-settings";
+import {
+  changePolicy,
+  getMe,
+  getPolicy,
+  getReferenceCurrencies,
+  getReservePresets,
+  updateCompany,
+  type ReserveRule,
+  type WritingLanguage,
+} from "@/lib/api";
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
@@ -26,10 +47,6 @@ import { cn } from "@/lib/utils";
 import { CompanyIdentity } from "./company-identity";
 import { allowNotifications, canNotify } from "./notify";
 
-// The chosen option is filled and in full ink; the others recede.
-const SEGMENT =
-  "text-muted-foreground data-[state=on]:bg-accent data-[state=on]:text-accent-foreground";
-
 const themeIcons: Record<Theme, IconSvgElement> = {
   system: ComputerIcon,
   light: Sun03Icon,
@@ -37,8 +54,9 @@ const themeIcons: Record<Theme, IconSvgElement> = {
 };
 
 /**
- * Settings, opened from the account menu: how the app looks and reads on this device, and the
- * language Tamga writes in for the whole company.
+ * Settings, opened from the account menu, in tabs: how the app looks and reads on this device; the
+ * company, and the language Tamga writes in for it; how it pays (the ways, the reserve, the pay
+ * day) and how its books record payments; and what Tamga remembers.
  */
 export function SettingsDialog({
   open,
@@ -56,25 +74,45 @@ export function SettingsDialog({
           <DialogTitle>{t.settings.title}</DialogTitle>
           <DialogDescription>{t.settings.description}</DialogDescription>
         </DialogHeader>
-        <section className="flex flex-col">
-          <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.appearance}</h3>
-          <Row label={t.settings.theme}>
-            <ThemePicker />
-          </Row>
-          <Row label={t.settings.language}>
-            <LanguagePicker />
-          </Row>
-        </section>
-        <NotificationsSection />
-        <section className="flex flex-col">
-          <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.company}</h3>
-          <Row label={t.settings.writesIn} hint={t.settings.writesInHint}>
-            <WritingLanguagePicker />
-          </Row>
-        </section>
-        <CompanyIdentitySection />
-        <MemorySection />
-        <PaymentsSection />
+        <Tabs defaultValue="general">
+          <TabsList className="w-full">
+            {(["general", "company", "payments", "memory"] as const).map((tab) => (
+              <TabsTrigger key={tab} value={tab}>
+                {t.settings.tabs[tab]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {/* Every tab stays mounted, hidden when not chosen: a draft typed in one survives a look
+              at another. */}
+          <TabsContent forceMount value="general" className="grid gap-4 data-[state=inactive]:hidden">
+            <section className="flex flex-col">
+              <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.appearance}</h3>
+              <Row label={t.settings.theme}>
+                <ThemePicker />
+              </Row>
+              <Row label={t.settings.language}>
+                <LanguagePicker />
+              </Row>
+            </section>
+            <NotificationsSection />
+          </TabsContent>
+          <TabsContent forceMount value="company" className="grid gap-4 data-[state=inactive]:hidden">
+            <section className="flex flex-col">
+              <h3 className="text-muted-foreground pb-1 text-xs font-medium">{t.settings.company}</h3>
+              <Row label={t.settings.writesIn} hint={t.settings.writesInHint}>
+                <WritingLanguagePicker />
+              </Row>
+            </section>
+            <CompanyIdentitySection />
+          </TabsContent>
+          <TabsContent forceMount value="payments" className="grid gap-4 data-[state=inactive]:hidden">
+            <HowYouPaySection />
+            <PaymentsSection />
+          </TabsContent>
+          <TabsContent forceMount value="memory" className="data-[state=inactive]:hidden">
+            <MemorySection />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
@@ -84,6 +122,134 @@ export function SettingsDialog({
 function CompanyIdentitySection() {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   return <CompanyIdentity owner={me.data?.role === "owner"} />;
+}
+
+/** How the company pays (ADR-0027): the ways, the limit and its currency, the reserve, the pay
+ * day. Each change is a new version of the policy, with only that field changed. */
+function HowYouPaySection() {
+  const { t } = useI18n();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
+  const presets = useQuery({ queryKey: ["reserve-presets"], queryFn: getReservePresets, staleTime: Infinity });
+  const currencies = useQuery({ queryKey: ["reference-currencies"], queryFn: getReferenceCurrencies, staleTime: Infinity });
+  const [limit, setLimit] = useState<string | null>(null);
+  // The rule open in the editor, and whether it is a copy (saved and put in use) or one of the
+  // owner's changed (saved, and in use only if it was).
+  const [editing, setEditing] = useState<{ rule: ReserveRule; copy: boolean } | null>(null);
+  const change = usePolicyChange((sent) => {
+    if (sent.approval_limit !== undefined) setLimit(null);
+    if (sent.save_rule) setEditing(null);
+  });
+  if (!policy.data) return null;
+  const owner = me.data?.role === "owner";
+  const words = t.settings.howYouPay;
+  const current = policy.data;
+  const typed = limit ?? String(Number(current.approval_limit));
+  const valid = /^\d{1,12}(\.\d{1,2})?$/.test(typed);
+  const own = current.reserve_rules;
+  // One rule at a time, merged on the server with the list in force: another screen's rule stays.
+  const save = (rule: ReserveRule) =>
+    change.mutate(editing?.copy ? { save_rule: rule, reserve_rule: rule.key } : { save_rule: rule });
+
+  return (
+    <section className="flex flex-col">
+      <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
+      <MethodsField
+        methods={current.methods}
+        first={current.default_method}
+        disabled={!owner || change.isPending}
+        onChange={(methods, first) => change.mutate({ methods, default_method: first })}
+      />
+      <Row label={words.currency} hint={words.currencyHint}>
+        {/* What the company's reference rates convert, from its country's pack. */}
+        <Select
+          value={current.currency}
+          disabled={!owner || change.isPending}
+          onValueChange={(value) => {
+            if (value !== current.currency) change.mutate({ currency: value });
+          }}
+        >
+          <SelectTrigger className="w-28" aria-label={words.currency}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[...new Set([current.currency, ...(currencies.data ?? [])])].map((currency) => (
+              <SelectItem key={currency} value={currency}>
+                {currency}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Row>
+      <Row label={words.limit} hint={words.limitHint}>
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid) change.mutate({ approval_limit: typed });
+          }}
+        >
+          <Input
+            inputMode="decimal"
+            value={typed}
+            onChange={(event) => setLimit(event.target.value)}
+            disabled={!owner || change.isPending}
+            aria-label={words.limit}
+            aria-invalid={!valid}
+            className="w-32 text-end tabular-nums"
+          />
+          <span className="text-muted-foreground text-sm">{current.currency}</span>
+          {limit !== null ? (
+            <Button type="submit" size="sm" disabled={!owner || !valid || change.isPending}>
+              {t.settings.payments.save}
+            </Button>
+          ) : null}
+        </form>
+      </Row>
+      <div className="border-border grid gap-2 border-t py-3">
+        <span className="text-sm">
+          {words.reserve}
+          <span className="text-muted-foreground block text-xs text-pretty">{words.reserveHint}</span>
+        </span>
+        {editing ? (
+          <ReserveEditor
+            // A new draft for each rule opened: never one rule's fields saved under another's key.
+            key={editing.rule.key}
+            initial={editing.rule}
+            putInUse={editing.copy}
+            currency={current.currency}
+            pending={change.isPending}
+            onCancel={() => setEditing(null)}
+            onSave={save}
+          />
+        ) : null}
+        <ReserveChoices
+          presets={presets.data ?? []}
+          own={own}
+          inUse={current.reserve.key}
+          currency={current.currency}
+          disabled={!owner || change.isPending}
+          onUse={(key) => change.mutate({ reserve_rule: key })}
+          onEdit={(rule, copy) => {
+            const name = rule.key.startsWith("own:") ? rule.name : (words.presets[rule.key]?.name ?? rule.name);
+            setEditing(copy ? { rule: copyOf(rule, words.copyName(name)), copy } : { rule, copy });
+          }}
+          onRemove={(key) => change.mutate({ remove_rule: key })}
+        />
+      </div>
+      <PayDayField
+        value={current.payment_weekday}
+        disabled={!owner || change.isPending}
+        onChange={(day) => change.mutate({ payment_weekday: day ?? -1 })}
+      />
+      {me.data && !owner ? <span className="text-muted-foreground text-xs">{t.settings.ownerOnly}</span> : null}
+      {change.isError ? (
+        <span className="text-danger-foreground text-xs" role="alert">
+          {t.errors.generic}
+        </span>
+      ) : null}
+    </section>
+  );
 }
 
 const RECORDED = ["per_invoice", "on_account"] as const;
@@ -177,17 +343,6 @@ function PaymentsSection() {
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="border-border flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t py-3 first-of-type:border-t-0">
-      <span className="min-w-0 flex-1 basis-48 text-sm">
-        {label}
-        {hint ? <span className="text-muted-foreground block text-xs text-pretty">{hint}</span> : null}
-      </span>
-      {children}
-    </div>
-  );
-}
 
 /** Rendered only while the dialog is open, in the browser; a browser with no notifications has
  * nothing to show here. */

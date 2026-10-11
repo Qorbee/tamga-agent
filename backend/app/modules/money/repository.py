@@ -103,6 +103,25 @@ async def list_movements(
     return rows.all(), total or 0
 
 
+async def outgoing(db: AsyncSession, company_id: uuid.UUID, since: date) -> Sequence[MoneyMovement]:
+    """Money out of a bank or cash account since the day, as the account's source gave it: no
+    estimate, and none already linked to a bill."""
+    rows = await db.scalars(
+        select(MoneyMovement)
+        .join(MoneyAccount, MoneyAccount.id == MoneyMovement.account_id)
+        .where(
+            MoneyMovement.company_id == company_id,
+            MoneyMovement.booked_on >= since,
+            MoneyMovement.amount < 0,
+            MoneyMovement.estimated.is_(False),
+            MoneyMovement.invoice_id.is_(None),
+            MoneyAccount.kind.in_([AccountKind.BANK, AccountKind.CASH]),
+        )
+        .order_by(MoneyMovement.booked_on, MoneyMovement.id)
+    )
+    return rows.all()
+
+
 async def upsert_account(
     db: AsyncSession, company_id: uuid.UUID, source: str, values: dict[str, Any]
 ) -> uuid.UUID:
@@ -138,7 +157,9 @@ async def upsert_account(
 async def upsert_movements(
     db: AsyncSession, company_id: uuid.UUID, source: str, rows: Sequence[dict[str, Any]]
 ) -> None:
-    """A source's movements, by the source's own id. A category the owner set is kept."""
+    """A source's movements, by the source's own id. A category the owner set is kept, and a bill
+    or a category Tamga linked a movement to (a bank transfer matched to its bill) stays while
+    the source gives none."""
     if not rows:
         return
     statement = insert(MoneyMovement).values(
@@ -160,11 +181,17 @@ async def upsert_movements(
                 "counterparty_tax_id": excluded.counterparty_tax_id,
                 "reference": excluded.reference,
                 "estimated": excluded.estimated,
-                "invoice_id": excluded.invoice_id,
+                "invoice_id": func.coalesce(excluded.invoice_id, MoneyMovement.invoice_id),
                 # The owner's word stays (ADR-0026).
-                "category": case((owners, MoneyMovement.category), else_=excluded.category),
+                "category": case(
+                    (owners, MoneyMovement.category),
+                    (excluded.category.is_(None), MoneyMovement.category),
+                    else_=excluded.category,
+                ),
                 "category_by": case(
-                    (owners, MoneyMovement.category_by), else_=excluded.category_by
+                    (owners, MoneyMovement.category_by),
+                    (excluded.category.is_(None), MoneyMovement.category_by),
+                    else_=excluded.category_by,
                 ),
             },
         )

@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.modules.companies import service as companies
 from app.modules.fx import service as fx
-from app.modules.policy import repository, rules
+from app.modules.policy import repository, reserve, rules
 from app.modules.policy.models import PaymentMethod, PaymentsRecorded, Policy
+from app.modules.policy.reserve import ReserveRule
 from app.modules.policy.schemas import (
     Outcome,
     Picture,
@@ -38,10 +39,24 @@ DEFAULT: Final = PolicyOut(
     remainder_tolerance=Decimal("2.00"),
     methods=[PaymentMethod.VAULT_USDC],
     default_method=PaymentMethod.VAULT_USDC,
-    reserve=Decimal("0.00"),
+    reserve=reserve.OFF,
+    reserve_rules=[],
     payment_weekday=None,
     created_at=None,
 )
+# The methods Tamga pays by itself, through the executor (ADR-0027); the others the owner pays,
+# and Tamga records.
+TAMGA_PAYS: Final = frozenset({PaymentMethod.VAULT_USDC})
+
+
+def tamga_pays(method: PaymentMethod) -> bool:
+    return method in TAMGA_PAYS
+
+
+def reserve_presets() -> list[ReserveRule]:
+    return list(reserve.PRESETS)
+
+
 # Country packs' defaults, under the rates in settings.
 _pack_rates: dict[str, Decimal] = {}
 
@@ -78,8 +93,16 @@ async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> P
     actor.require(Role.OWNER)
     await repository.lock_versions(db, actor.company_id)
     current = await current_policy(db, actor.company_id)
-    merged = current.model_dump(include=set(PolicyIn.model_fields)) | body.model_dump(
-        exclude_none=True
+    own = [rule for rule in current.reserve_rules if rule.key != body.remove_rule]
+    if body.save_rule is not None:
+        own = [rule for rule in own if rule.key != body.save_rule.key] + [body.save_rule]
+    kept = current.model_dump(include=set(PolicyIn.model_fields)) | {
+        "reserve_rule": current.reserve.key
+    }
+    merged = (
+        kept
+        | body.model_dump(exclude_none=True, exclude={"save_rule", "remove_rule"})
+        | {"reserve_rules": [rule.model_dump() for rule in own]}
     )
     if merged.get("payment_weekday") == -1:
         merged["payment_weekday"] = None
@@ -99,6 +122,9 @@ async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> Polic
         # Every amount of the policy is compared through this currency's reference rate.
         raise BadRequest(f"No reference rate for {body.currency}")
     before = await repository.current(db, actor.company_id)
+    in_force = reserve.resolve(body.reserve_rule, body.reserve_rules)
+    if in_force is None:  # PolicyIn checks it; here for the type
+        raise BadRequest("No such reserve rule")
     policy = Policy(
         company_id=actor.company_id,
         version=1 if before is None else before.version + 1,
@@ -109,7 +135,8 @@ async def _put_in_force(db: AsyncSession, actor: Actor, body: PolicyIn) -> Polic
         remainder_tolerance=body.remainder_tolerance,
         methods=[method.value for method in body.methods],
         default_method=body.default_method,
-        reserve=body.reserve,
+        reserve=in_force.model_dump(mode="json"),
+        reserve_rules=[rule.model_dump(mode="json") for rule in body.reserve_rules],
         payment_weekday=body.payment_weekday,
         created_by=actor.user_id,
     )

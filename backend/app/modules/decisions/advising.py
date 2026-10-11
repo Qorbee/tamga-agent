@@ -30,7 +30,9 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.decisions import agents, repository, service
 from app.modules.decisions.models import Decision
+from app.modules.policy import reserve
 from app.modules.policy import service as policies
+from app.modules.policy.models import PaymentMethod
 from app.modules.policy.schemas import PolicyOut
 from app.modules.projects import service as projects
 from app.modules.projects.schemas import ProjectOut
@@ -171,12 +173,24 @@ def _shown(
     currency = decision.currency or ""
     usdc = (
         f" (paid as {chain.usdc(decision.usdc_units)} test USDC)"
-        if decision.usdc_units is not None
+        if decision.usdc_units is not None and decision.method is PaymentMethod.VAULT_USDC
         else ""
+    )
+    by = (
+        "from the vault in test USDC"
+        if decision.method is PaymentMethod.VAULT_USDC
+        else "by bank transfer, which the owner makes"
+        + (
+            f", about {decision.pay_amount} {decision.pay_currency}"
+            if decision.pay_amount is not None and decision.pay_currency != decision.currency
+            else ""
+        )
     )
     code = [
         f"To pay: {decision.amount} {currency}{usdc}"
         + (", an amount the owner set" if decision.amount_edited else ""),
+        f"Paid {by}",
+        f"Reserve: {policy.reserve.name}. {reserve.STANCES[policy.reserve.stance]}",
         f"Policy: approval limit {policy.approval_limit} {policy.currency}; "
         + (
             "pay-when-paid, a job's subcontractor paid once its client paid"

@@ -171,7 +171,12 @@ function Entry({ event }: { event: DecisionEvent }) {
   const units = typeof event.body.usdc_units === "number" ? event.body.usdc_units : null;
   const money = (amount: unknown) =>
     typeof amount === "string" && bill?.currency ? formatMoney(Number(amount), bill.currency, locale) : String(amount);
-  const [label, tone] = described(event, t.log.events, money, yours);
+  const [label, tone] = described(event, t.log.events, t.payments.methods, money, yours);
+  // A bank transfer's figure is what left the owner's account, in its own currency.
+  const paid =
+    event.event === "settled" && typeof event.body.pay_amount === "string" && typeof event.body.pay_currency === "string"
+      ? formatMoney(Number(event.body.pay_amount), event.body.pay_currency, locale)
+      : null;
   const content: ReactNode = (
     <>
       <span className={cn("mt-2 size-2 shrink-0 rounded-full", DOT[tone])} aria-hidden />
@@ -196,7 +201,9 @@ function Entry({ event }: { event: DecisionEvent }) {
           #{event.seq} · {event.hash.slice(0, SEAL)}
         </span>
       </span>
-      {units !== null ? (
+      {paid !== null && event.body.method === "bank_transfer" ? (
+        <span className="shrink-0 text-sm font-medium tabular-nums">{paid}</span>
+      ) : units !== null ? (
         <span className="shrink-0 text-sm font-medium tabular-nums">{formatUsdc(units, locale)}</span>
       ) : null}
     </>
@@ -234,6 +241,7 @@ function Entry({ event }: { event: DecisionEvent }) {
 function described(
   event: DecisionEvent,
   words: Dictionary["log"]["events"],
+  methods: Record<string, string>,
   money: (amount: unknown) => string,
   yours: boolean,
 ): [string, Tone] {
@@ -251,6 +259,11 @@ function described(
               : [words.ruleHeld, "stopped"];
     case "edited":
       return [words.edited(money(body.from), money(body.to)), "quiet"];
+    case "pay_by": {
+      const to = (body.to ?? {}) as { method?: unknown; pay_currency?: unknown };
+      const how = methods[String(to.method)] ?? String(to.method);
+      return [words.payBy(typeof to.pay_currency === "string" && to.method === "bank_transfer" ? `${how}, ${to.pay_currency}` : how), "quiet"];
+    }
     // Only an owner answers; the viewer may be another member, or another owner.
     case "approved":
       return [yours ? words.approved : words.approvedByOwner, "done"];
@@ -259,7 +272,9 @@ function described(
     case "rejected":
       return [yours ? words.rejected : words.rejectedByOwner, "stopped"];
     case "settled":
-      return [words.settled, "done"];
+      if (body.method !== "bank_transfer") return [words.settled, "done"];
+      if (body.movement_id) return [words.settledByBank, "done"];
+      return [yours ? words.markedPaid : words.markedPaidByOwner, "done"];
     case "failed":
       return [body.evaluated_again ? words.sentBack : words.failed, "stopped"];
     case "would_release":

@@ -18,8 +18,9 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,8 +28,15 @@ from app.config import get_settings
 from app.modules.books import service as books
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind, CompanyMode
+from app.modules.policy.models import PaymentMethod
 from app.modules.settlement import repository
-from app.modules.settlement.models import AccountState, PayeeWallet, Payment, VaultAccount
+from app.modules.settlement.models import (
+    AccountState,
+    PayeeWallet,
+    Payment,
+    PaymentState,
+    VaultAccount,
+)
 from app.modules.settlement.schemas import PaymentOut, PaymentPage
 from app.platform import agent_wallet, chain, circle, jobs
 from app.platform.auth import Actor
@@ -46,6 +54,19 @@ _WAIT: Final = 300.0
 _ABANDONED: Final = 3600
 # An allowance no treasury balance reaches.
 _ANY_AMOUNT: Final = 2**128
+
+
+class DecisionPaid(Protocol):
+    """What a bank payment is recorded against: the decision's evaluation the owner paid."""
+
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def evaluation(self) -> int: ...
+    @property
+    def invoice_id(self) -> uuid.UUID: ...
+    @property
+    def method(self) -> PaymentMethod: ...
 
 
 class SettlementError(Exception):
@@ -385,8 +406,47 @@ async def companies_with_open_accounts(db: AsyncSession) -> list[uuid.UUID]:
 
 
 async def settled_payments(db: AsyncSession, company_id: uuid.UUID) -> list[PaymentOut]:
-    """Every payment the vault released for the company, the earliest first."""
+    """Every payment the vault released for the company, mirrors too, the earliest first."""
     return [_payment_out(row) for row in await repository.settled_payments(db, company_id)]
+
+
+async def record_bank_payment(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    decision: DecisionPaid,
+    *,
+    pay_amount: Decimal,
+    pay_currency: str,
+    paid_on: date,
+    movement_id: uuid.UUID | None = None,
+    marked_by: uuid.UUID | None = None,
+) -> PaymentOut:
+    """A bill the owner paid in the bank, settled by the movement matched to it or by the owner's
+    word (ADR-0027): recorded, never sent. In the caller's transaction."""
+    if (movement_id is None) == (marked_by is None):
+        raise ValueError("a bank payment is proven by a movement or by the owner, one of them")
+    now = utcnow()
+    payment = Payment(
+        company_id=company_id,
+        decision_id=decision.id,
+        evaluation=decision.evaluation,
+        invoice_id=decision.invoice_id,
+        method=decision.method,
+        pay_currency=pay_currency,
+        pay_amount=pay_amount,
+        paid_on=paid_on,
+        movement_id=movement_id,
+        marked_by=marked_by,
+        state=PaymentState.SETTLED,
+        finished_at=now,
+    )
+    await repository.add(db, payment)
+    return _payment_out(payment)
+
+
+async def matched_movements(db: AsyncSession, company_id: uuid.UUID) -> set[uuid.UUID]:
+    """The bank movements already proving a payment: each pays one bill."""
+    return await repository.matched_movements(db, company_id)
 
 
 def explorer_url(tx_hash: str) -> str:

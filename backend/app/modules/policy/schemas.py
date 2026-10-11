@@ -6,7 +6,9 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.modules.policy import reserve
 from app.modules.policy.models import PaymentMethod, PaymentsRecorded
+from app.modules.policy.reserve import ReserveRule
 
 
 class PolicyOut(BaseModel):
@@ -22,8 +24,10 @@ class PolicyOut(BaseModel):
     remainder_tolerance: Decimal
     methods: list[PaymentMethod]
     default_method: PaymentMethod
-    reserve: Decimal
-    # Monday 0; None for any day.
+    # The reserve rule in force, and the owner's own rules.
+    reserve: ReserveRule
+    reserve_rules: list[ReserveRule]
+    # The day the owner likes to pay on, Monday 0; None for any day. Never a rule.
     payment_weekday: int | None
     created_at: datetime | None
 
@@ -41,16 +45,22 @@ class PolicyIn(BaseModel):
         default_factory=lambda: [PaymentMethod.VAULT_USDC], min_length=1
     )
     default_method: PaymentMethod = PaymentMethod.VAULT_USDC
-    # What the bank and cash accounts must keep after a payment, in the policy's currency.
-    reserve: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    # The key of the reserve rule in force: a preset's, or one of ``reserve_rules``.
+    reserve_rule: str = "off"
+    reserve_rules: list[ReserveRule] = Field(default_factory=list)
     payment_weekday: int | None = Field(default=None, ge=0, le=6)
 
     @model_validator(mode="after")
-    def _default_among_methods(self) -> Self:
+    def _consistent(self) -> Self:
         if len(set(self.methods)) != len(self.methods):
             raise ValueError("each method once")
         if self.default_method not in self.methods:
             raise ValueError("the default method is one of the methods")
+        wrong = reserve.check_own(self.reserve_rules)
+        if wrong:
+            raise ValueError(wrong)
+        if reserve.resolve(self.reserve_rule, self.reserve_rules) is None:
+            raise ValueError("the reserve rule in force is a preset or one of your own")
         return self
 
 
@@ -65,7 +75,12 @@ class PolicyChange(BaseModel):
     remainder_tolerance: Decimal | None = Field(default=None, ge=0, le=20, decimal_places=2)
     methods: list[PaymentMethod] | None = Field(default=None, min_length=1)
     default_method: PaymentMethod | None = None
-    reserve: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    reserve_rule: str | None = None
+    # One rule of the owner's own, added or replacing the one with its key; and one taken away.
+    # One at a time, merged with the list in force under the lock, so two screens editing two
+    # rules never undo each other.
+    save_rule: ReserveRule | None = None
+    remove_rule: str | None = None
     # -1 clears it: any day.
     payment_weekday: int | None = Field(default=None, ge=-1, le=6)
 
@@ -138,3 +153,11 @@ class Picture:
     payee: bool
     payee_active_from: int | None
     now: int
+    # How it is to be paid, and whether the books give the party an IBAN to pay by bank.
+    method: PaymentMethod = PaymentMethod.VAULT_USDC
+    iban: bool = False
+    # What the bank and cash accounts hold, in the policy's currency, and what the reserve rule
+    # keeps for other bills: those due within its weeks or overdue, and those approved and not
+    # paid. None where it is not known: no account with a balance, or an amount with no rate.
+    balance: Decimal | None = None
+    committed: Decimal | None = None

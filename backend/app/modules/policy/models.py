@@ -2,9 +2,10 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import CheckConstraint, Numeric, String, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.db import Base, text_enum
@@ -65,9 +66,13 @@ class Policy(CompanyScoped, Base):
         text_enum(PaymentMethod, "policies_default_method_check", length=20),
         server_default=PaymentMethod.VAULT_USDC.value,
     )
-    # What the bank and cash accounts must keep, in the policy's currency, after a payment.
-    reserve: Mapped[Decimal] = mapped_column(Numeric(16, 2), server_default="0")
-    # The day of the week bills are paid on, Monday 0; None for any day.
+    # The reserve rule in force, a copy of it (``reserve.ReserveRule``): a preset changed later
+    # never changes what this version decided under.
+    reserve: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # The owner's own reserve rules, each duplicated from a preset and changed.
+    reserve_rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
+    # The day of the week the owner likes to pay on, Monday 0; None for any day. A preference
+    # for gathering payments, never a rule: nothing is held for the day.
     payment_weekday: Mapped[int | None]
     created_by: Mapped[uuid.UUID | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

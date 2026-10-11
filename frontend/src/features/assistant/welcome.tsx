@@ -2,8 +2,11 @@
 
 import { useI18n } from "@/lib/i18n/client";
 
+import { SetupCard } from "./setup-card";
+
 /**
- * The chat's empty state: a greeting and the Today strip (cash, approvals waiting, next run), which
+ * The chat's empty state: a greeting, the owner's first answers on how Tamga pays until they are
+ * given, and the Today strip (cash, approvals waiting, next run), which
  * replaces a separate dashboard. Figures come from the backend; until the books are imported the
  * strip shows dashes and says why, rather than numbers that are not real.
  */
@@ -14,6 +17,7 @@ export function Welcome() {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 fill-mode-both mb-8 flex flex-col gap-6 duration-300">
       <h1 className="text-xl font-medium tracking-tight text-balance">{t.assistant.greeting}</h1>
+      <SetupCard />
       <section aria-label={t.today.title} className="border-border bg-card rounded-2xl border">
         <dl className="divide-border grid grid-cols-3 divide-x">
           {cells.map((label) => (

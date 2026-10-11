@@ -262,6 +262,13 @@ export const getPolicy = () => request<Policy>("/policy");
  * only. */
 export const changePolicy = (body: Schemas["PolicyChange"]) =>
   request<Policy>("/policy", json("PATCH", body));
+export type PolicyChange = Schemas["PolicyChange"];
+export type PaymentMethod = Schemas["PaymentMethod"];
+export type ReserveRule = Schemas["ReserveRule-Output"];
+/** The currencies the company's official reference rates convert, the base first. */
+export const getReferenceCurrencies = () => request<string[]>("/reference-currencies");
+/** The reserve rules every company can pick, each a start for one of the owner's own. */
+export const getReservePresets = () => request<ReserveRule[]>("/policy/reserve-presets");
 export type InvoicePage = Schemas["InvoicePage"];
 type InvoiceQuery = NonNullable<operations["invoices.list_invoices"]["parameters"]["query"]>;
 export const listInvoices = (params: InvoiceQuery) => request<InvoicePage>(`/invoices${query(params)}`);
@@ -318,6 +325,21 @@ export const listDecisionEvents = (params: DecisionEventQuery) =>
   request<DecisionEventPage>(`/decision-events${query(params)}`);
 export type DecisionChain = Schemas["DecisionChainOut"];
 export const getDecisionChain = () => request<DecisionChain>("/decision-chain");
+
+// Money (ADR-0026): accounts, their movements, and what the company holds
+export type MoneyAccount = Schemas["AccountOut"];
+export type Movement = Schemas["MovementOut"];
+export type MovementPage = Schemas["MovementPage"];
+export type MovementCategory = NonNullable<Movement["category"]>;
+export type Holdings = Schemas["Holdings"];
+export const listMoneyAccounts = () => request<Schemas["AccountPage"]>("/money/accounts");
+type MovementQuery = NonNullable<operations["money.list_movements"]["parameters"]["query"]>;
+export const listMovements = (params: MovementQuery) => request<MovementPage>(`/money/movements${query(params)}`);
+/** Each bank and cash account's balance, and their total in one currency at the reference rate. */
+export const getHoldings = (currency: string) => request<Holdings>(`/money/holdings${query({ currency })}`);
+/** The owner's category for a movement, which no sync overwrites. */
+export const changeMovement = (id: string, body: Schemas["MovementChange"]) =>
+  request<Movement>(`/money/movements/${id}`, json("PATCH", body));
 
 // Messages
 export type MessageSummary = Schemas["MessageSummary"];

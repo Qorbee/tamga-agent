@@ -1,12 +1,22 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import BigInteger, ForeignKeyConstraint, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKeyConstraint,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.modules.policy.models import PaymentMethod
 from app.platform.db import Base, text_enum
 from app.platform.tenancy import CompanyScoped
 
@@ -79,27 +89,59 @@ class PaymentState(StrEnum):
     WOULD_RELEASE = "would_release"
 
 
+class PaymentKind(StrEnum):
+    # What settles the bill.
+    PAYMENT = "payment"
+    # Test USDC released beside a bank transfer in shadow mode: a record, never the bill's
+    # payment (ADR-0027).
+    MIRROR = "mirror"
+
+
 class Payment(CompanyScoped, Base):
-    """One release the executor makes for an approved evaluation of a decision (05, Data). Its
-    idempotency key is written before the call is sent, so a call sent again is the same Circle
-    transaction; the vault pays the bill's key once, so no bill is paid twice."""
+    """One payment of an approved evaluation of a decision (05, Data): a release the executor
+    makes from the vault, or a bank transfer the owner made. A release's idempotency key is
+    written before the call is sent, so a call sent again is the same Circle transaction; the
+    vault pays the bill's key once, so no bill is paid twice."""
 
     __tablename__ = "payments"
     __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
-        UniqueConstraint("company_id", "decision_id", "evaluation"),
+        UniqueConstraint("company_id", "decision_id", "evaluation", "kind"),
         UniqueConstraint("idempotency_key"),
+        # One movement pays one bill.
+        UniqueConstraint("company_id", "movement_id"),
+        CheckConstraint(
+            "(method <> 'vault_usdc' AND kind <> 'mirror') OR (payee IS NOT NULL AND "
+            "usdc_units IS NOT NULL AND payment_key IS NOT NULL AND idempotency_key IS NOT NULL)",
+            name="payments_vault_fields_check",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     decision_id: Mapped[uuid.UUID]
     evaluation: Mapped[int]
     invoice_id: Mapped[uuid.UUID]
-    payee: Mapped[str] = mapped_column(String(42))
-    usdc_units: Mapped[int] = mapped_column(BigInteger)
+    kind: Mapped[PaymentKind] = mapped_column(
+        text_enum(PaymentKind, "payments_kind_check"), server_default=PaymentKind.PAYMENT.value
+    )
+    method: Mapped[PaymentMethod] = mapped_column(
+        text_enum(PaymentMethod, "payments_method_check", length=20),
+        server_default=PaymentMethod.VAULT_USDC.value,
+    )
+    # What left the company's account, in its own currency: the test USDC released, the bank
+    # movement's amount, or what the owner said they paid.
+    pay_currency: Mapped[str | None] = mapped_column(String(4))
+    pay_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    paid_on: Mapped[date | None]
+    # The proof of a bank transfer: the movement matched to it, or the owner who marked it paid.
+    movement_id: Mapped[uuid.UUID | None]
+    marked_by: Mapped[uuid.UUID | None]
+    # The vault's, for a vault method or a mirror (the CHECK above).
+    payee: Mapped[str | None] = mapped_column(String(42))
+    usdc_units: Mapped[int | None] = mapped_column(BigInteger)
     # The bill's key on the vault, as sent: 0x and 64 hex digits.
-    payment_key: Mapped[str] = mapped_column(String(66))
-    idempotency_key: Mapped[uuid.UUID]
+    payment_key: Mapped[str | None] = mapped_column(String(66))
+    idempotency_key: Mapped[uuid.UUID | None]
     state: Mapped[PaymentState] = mapped_column(
         text_enum(PaymentState, "payments_state_check", length=20)
     )

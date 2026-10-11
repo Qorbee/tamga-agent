@@ -19,6 +19,7 @@ from app.modules.books import router as books
 from app.modules.conversations import router as conversations
 from app.modules.decisions import router as decisions
 from app.modules.documents import router as documents
+from app.modules.fx import router as fx
 from app.modules.identity import router as identity
 from app.modules.linking import router as linking
 from app.modules.memory import router as memory
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.documents)
     app.include_router(books.invoices)
     app.include_router(policy.policy)
+    app.include_router(fx.fx)
     app.include_router(memory.memory)
     app.include_router(money.money)
     app.include_router(profile.profile)

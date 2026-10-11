@@ -1428,14 +1428,16 @@
         "type": "object"
       },
       "DecisionAction": {
-        "description": "The owner's answer to the evaluation it names: one for an evaluation since replaced is\nrefused. ``edit`` changes the amount, which is a new proposal: every rule runs again, and it\ncomes back to the owner.",
+        "description": "The owner's answer to the evaluation it names: one for an evaluation since replaced is\nrefused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:\nevery rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it\nin the bank, for what left their account (ADR-0027).",
         "properties": {
           "action": {
             "enum": [
               "approve",
               "hold",
               "reject",
-              "edit"
+              "edit",
+              "pay_by",
+              "mark_paid"
             ],
             "title": "Action",
             "type": "string"
@@ -1460,6 +1462,56 @@
             "minimum": 1.0,
             "title": "Evaluation",
             "type": "integer"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paid_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid On"
+          },
+          "pay_amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Amount"
+          },
+          "pay_currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Currency"
           }
         },
         "required": [
@@ -1731,10 +1783,75 @@
             ],
             "title": "Issued On"
           },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
           "party_id": {
             "format": "uuid",
             "title": "Party Id",
             "type": "string"
+          },
+          "pay_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Amount"
+          },
+          "pay_chosen": {
+            "title": "Pay Chosen",
+            "type": "boolean"
+          },
+          "pay_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Currency"
+          },
+          "pay_rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Rate"
+          },
+          "pay_rate_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Rate On"
+          },
+          "pay_rate_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Rate Source"
           },
           "policy_version": {
             "title": "Policy Version",
@@ -1824,6 +1941,13 @@
           "reference_rate_on",
           "reference_source",
           "amount_edited",
+          "method",
+          "pay_chosen",
+          "pay_currency",
+          "pay_amount",
+          "pay_rate",
+          "pay_rate_on",
+          "pay_rate_source",
           "rules",
           "issued_on",
           "decided_by",
@@ -2333,7 +2457,8 @@
           "documents",
           "threads",
           "invoices",
-          "decisions"
+          "decisions",
+          "money"
         ],
         "title": "EventKind",
         "type": "string"
@@ -3817,6 +3942,7 @@
           "proposed",
           "advised",
           "edited",
+          "pay_by",
           "approved",
           "held",
           "rejected",
@@ -5054,6 +5180,14 @@
         "title": "PartyPage",
         "type": "object"
       },
+      "PaymentKind": {
+        "enum": [
+          "payment",
+          "mirror"
+        ],
+        "title": "PaymentKind",
+        "type": "string"
+      },
       "PaymentMethod": {
         "description": "How a bill is paid (ADR-0027).",
         "enum": [
@@ -5123,13 +5257,92 @@
             "title": "Invoice Id",
             "type": "string"
           },
+          "kind": {
+            "$ref": "#/components/schemas/PaymentKind"
+          },
+          "marked_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marked By"
+          },
+          "method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "movement_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movement Id"
+          },
+          "paid_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid On"
+          },
+          "pay_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Amount"
+          },
+          "pay_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay Currency"
+          },
           "payee": {
-            "title": "Payee",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payee"
           },
           "payment_key": {
-            "title": "Payment Key",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Key"
           },
           "state": {
             "$ref": "#/components/schemas/PaymentState"
@@ -5146,8 +5359,15 @@
             "title": "Tx Hash"
           },
           "usdc_units": {
-            "title": "Usdc Units",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usdc Units"
           }
         },
         "required": [
@@ -5155,6 +5375,13 @@
           "decision_id",
           "evaluation",
           "invoice_id",
+          "kind",
+          "method",
+          "pay_currency",
+          "pay_amount",
+          "paid_on",
+          "movement_id",
+          "marked_by",
           "payee",
           "usdc_units",
           "payment_key",
@@ -5654,21 +5881,37 @@
             ],
             "title": "Remainder Tolerance"
           },
-          "reserve": {
+          "remove_rule": {
             "anyOf": [
               {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Reserve"
+            "title": "Remove Rule"
+          },
+          "reserve_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Rule"
+          },
+          "save_rule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReserveRule-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "PolicyChange",
@@ -5743,19 +5986,17 @@
             "default": "2.00",
             "title": "Remainder Tolerance"
           },
-          "reserve": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
-                "type": "string"
-              }
-            ],
-            "default": "0.00",
-            "title": "Reserve"
+          "reserve_rule": {
+            "default": "off",
+            "title": "Reserve Rule",
+            "type": "string"
+          },
+          "reserve_rules": {
+            "items": {
+              "$ref": "#/components/schemas/ReserveRule-Input"
+            },
+            "title": "Reserve Rules",
+            "type": "array"
           }
         },
         "required": [
@@ -5823,9 +6064,14 @@
             "type": "string"
           },
           "reserve": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Reserve",
-            "type": "string"
+            "$ref": "#/components/schemas/ReserveRule-Output"
+          },
+          "reserve_rules": {
+            "items": {
+              "$ref": "#/components/schemas/ReserveRule-Output"
+            },
+            "title": "Reserve Rules",
+            "type": "array"
           },
           "version": {
             "title": "Version",
@@ -5842,6 +6088,7 @@
           "methods",
           "default_method",
           "reserve",
+          "reserve_rules",
           "payment_weekday",
           "created_at"
         ],
@@ -6593,6 +6840,142 @@
         "title": "RegistryStatus",
         "type": "string"
       },
+      "ReserveRule-Input": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "based_on": {
+            "anyOf": [
+              {
+                "pattern": "^(off|light|steady|careful)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Based On"
+          },
+          "cover_weeks": {
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Cover Weeks",
+            "type": "integer"
+          },
+          "floor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Floor"
+          },
+          "key": {
+            "pattern": "^(off|light|steady|careful|own:[a-z0-9]{1,12})$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on_breach": {
+            "enum": [
+              "hold",
+              "ask"
+            ],
+            "title": "On Breach",
+            "type": "string"
+          },
+          "stance": {
+            "$ref": "#/components/schemas/Stance"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "active",
+          "cover_weeks",
+          "floor",
+          "on_breach",
+          "stance"
+        ],
+        "title": "ReserveRule",
+        "type": "object"
+      },
+      "ReserveRule-Output": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "based_on": {
+            "anyOf": [
+              {
+                "pattern": "^(off|light|steady|careful)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Based On"
+          },
+          "cover_weeks": {
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Cover Weeks",
+            "type": "integer"
+          },
+          "floor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+            "title": "Floor",
+            "type": "string"
+          },
+          "key": {
+            "pattern": "^(off|light|steady|careful|own:[a-z0-9]{1,12})$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "on_breach": {
+            "enum": [
+              "hold",
+              "ask"
+            ],
+            "title": "On Breach",
+            "type": "string"
+          },
+          "stance": {
+            "$ref": "#/components/schemas/Stance"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "active",
+          "cover_weeks",
+          "floor",
+          "on_breach",
+          "stance"
+        ],
+        "title": "ReserveRule",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "owner",
@@ -7259,6 +7642,16 @@
         ],
         "title": "SignIn",
         "type": "object"
+      },
+      "Stance": {
+        "description": "How the controller leans when it weighs a bill the rules allow.",
+        "enum": [
+          "careful",
+          "balanced",
+          "lean"
+        ],
+        "title": "Stance",
+        "type": "string"
       },
       "TaxIdEvidence": {
         "description": "Where a tax number was seen in the company's own records.",
@@ -12220,6 +12613,37 @@
         ]
       }
     },
+    "/policy/reserve-presets": {
+      "get": {
+        "description": "The reserve rules every company can pick, each one a start for a rule of the owner's own.",
+        "operationId": "policy.reserve_presets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReserveRule-Output"
+                  },
+                  "title": "Response Policy.Reserve Presets",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Reserve Presets",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
     "/project-links": {
       "get": {
         "operationId": "project_links.list_links",
@@ -13079,6 +13503,37 @@
         "summary": "Merge Project",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/reference-currencies": {
+      "get": {
+        "description": "The currencies the company's official reference rates convert, the base first.",
+        "operationId": "fx.reference_currencies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Fx.Reference Currencies",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Reference Currencies",
+        "tags": [
+          "fx"
         ]
       }
     },

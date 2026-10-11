@@ -5,12 +5,15 @@ books, the confirmed links and the chain, and a rule reads nothing else.
 A rule that fails says what it would take; the worst result decides: ``reject`` over ``hold``
 over ``propose`` over ``ok``. What the owner decides beyond them is the decision's state
 (``decisions``), never a rule's.
+
+The core rules run for every way of paying; each payment method adds its own (ADR-0027): what is
+about test USDC runs only for the vault, and a bank transfer needs an IBAN.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Final
 
-from app.modules.policy.models import PaymentsRecorded
+from app.modules.policy.models import PaymentMethod, PaymentsRecorded
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Result
 from app.platform import chain
 
@@ -40,9 +43,72 @@ def _amount(picture: Picture, policy: PolicyOut) -> Result:
         return Result("amount", Outcome.HOLD, "Nothing is left to pay on it in the books")
     if picture.amount <= 0 or picture.amount > picture.left:
         return Result("amount", Outcome.HOLD, "The amount is more than is left to pay on it")
-    if picture.usdc_units == 0:
-        return Result("amount", Outcome.HOLD, "Too small to be paid in test USDC")
     return Result("amount", Outcome.OK)
+
+
+def _usdc_minimum(picture: Picture, policy: PolicyOut) -> Result:
+    if picture.usdc_units == 0:
+        return Result("usdc_minimum", Outcome.HOLD, "Too small to be paid in test USDC")
+    return Result("usdc_minimum", Outcome.OK)
+
+
+def _party(picture: Picture, policy: PolicyOut) -> Result:
+    if not picture.party:
+        return Result("party", Outcome.HOLD, "The books name nobody to pay for it")
+    return Result("party", Outcome.OK)
+
+
+def _method(picture: Picture, policy: PolicyOut) -> Result:
+    if picture.method not in policy.methods:
+        return Result(
+            "method", Outcome.HOLD, "The way it is to be paid is turned off in the settings"
+        )
+    return Result("method", Outcome.OK)
+
+
+def _reserve(picture: Picture, policy: PolicyOut) -> Result:
+    """After this payment, the accounts keep what the reserve rule asks: the bills due within its
+    weeks, the approved ones, and its floor. The figures are left out of the reason, so a balance
+    that moves changes a decision only when it crosses the line."""
+    rule = policy.reserve
+    if not rule.active:
+        return Result("reserve", Outcome.OK)
+    if picture.balance is None:
+        return Result(
+            "reserve",
+            Outcome.PROPOSE,
+            "No bank balance is known, so the reserve cannot be checked",
+        )
+    if picture.committed is None or picture.in_policy_currency is None:
+        return Result(
+            "reserve", Outcome.PROPOSE, "A bill with no reference rate: the reserve is not checked"
+        )
+    left = picture.balance - picture.committed - picture.in_policy_currency
+    if left >= rule.floor:
+        return Result("reserve", Outcome.OK)
+    kept = (
+        f"the bills due in the next {rule.cover_weeks} weeks"
+        if rule.cover_weeks
+        else "nothing below zero"
+    )
+    return Result(
+        "reserve",
+        Outcome.HOLD if rule.on_breach == "hold" else Outcome.PROPOSE,
+        f"Paying it would leave less than the reserve keeps ({kept}"
+        + (f", and {rule.floor} {policy.currency}" if rule.floor else "")
+        + ")",
+    )
+
+
+def _iban(picture: Picture, policy: PolicyOut) -> Result:
+    """The owner pays a bank transfer from their own bank, where the firm's account is kept, so a
+    missing IBAN is the owner's to look at, never a hold: what settles the bill is the owner's
+    word, or a movement matched by the firm's tax number too."""
+    if not picture.iban:
+        return Result(
+            "iban", Outcome.PROPOSE, "The books give no IBAN for the firm: pay the account you know"
+        )
+    return Result("iban", Outcome.OK)
 
 
 def _on_account(picture: Picture, policy: PolicyOut) -> Result:
@@ -129,8 +195,6 @@ def _client_paid(picture: Picture, policy: PolicyOut) -> Result:
 
 
 def _vault_account(picture: Picture, policy: PolicyOut) -> Result:
-    if not picture.party:
-        return Result("vault_account", Outcome.HOLD, "The books name nobody to pay for it")
     if picture.vault is None:
         return Result("vault_account", Outcome.HOLD, "The company is not on the vault yet")
     if not picture.payee:
@@ -192,24 +256,29 @@ def _approval_limit(picture: Picture, policy: PolicyOut) -> Result:
     return Result("approval_limit", Outcome.OK)
 
 
+# Every way of paying.
 RULES: Final[tuple[Rule, ...]] = (
-    _currency,
     _amount,
     _on_account,
     _duplicate,
+    _party,
     _project,
     _proof_of_delivery,
     _client_paid,
-    _vault_account,
-    _timelock,
-    _caps,
+    _method,
+    _reserve,
     _approval_limit,
 )
+# What each way of paying adds; a new method is a new entry, the decisions unchanged.
+METHOD_RULES: Final[Mapping[PaymentMethod, tuple[Rule, ...]]] = {
+    PaymentMethod.VAULT_USDC: (_currency, _usdc_minimum, _vault_account, _timelock, _caps),
+    PaymentMethod.BANK_TRANSFER: (_iban,),
+}
 
 
 def evaluate(picture: Picture, policy: PolicyOut) -> list[Result]:
-    """Every rule's result, in the order above."""
-    return [rule(picture, policy) for rule in RULES]
+    """Every rule's result: the core rules, then the method's, in the orders above."""
+    return [rule(picture, policy) for rule in (*RULES, *METHOD_RULES[picture.method])]
 
 
 def verdict(results: list[Result]) -> Outcome:

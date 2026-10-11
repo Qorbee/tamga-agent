@@ -5,8 +5,10 @@ Each payable is evaluated again whenever what code knows of it changed: its pict
 the books, the confirmed links, what a sector pack says of its delivery and the vault on the
 chain; the hard rules (``policy``) give the outcome; and an evaluation that differs from the last
 one is a new proposal, logged. The owner answers the evaluation in force (approve, hold, reject,
-or a new amount, which is evaluated again). No model takes part, and nothing here moves money:
-the executor pays an approved decision (``settlement``).
+or a new amount or way to pay, which is evaluated again). No model takes part, and nothing here
+moves money: the executor pays an approved decision from the vault (``settlement``), and one paid
+by bank transfer is the owner's to pay, settled by the bank movement matched to it or by the
+owner marking it paid (ADR-0027).
 
 The log is one hash chain per company: each row holds the hash of its content and of the row
 before it.
@@ -53,17 +55,21 @@ from app.modules.decisions.schemas import (
     DecisionSort,
 )
 from app.modules.fx import service as fx
+from app.modules.money import service as money
+from app.modules.money.schemas import MovementOut
 from app.modules.parties import service as parties
+from app.modules.parties.models import IdentifierKind
 from app.modules.policy import service as policies
-from app.modules.policy.models import PaymentsRecorded
+from app.modules.policy.models import PaymentMethod, PaymentsRecorded
 from app.modules.policy.schemas import Outcome, Picture, PolicyOut, Vault
 from app.modules.projects import service as projects
 from app.modules.settlement import service as settlement
+from app.modules.settlement.schemas import PaymentOut
 from app.platform import chain, clock, events
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
-from app.platform.errors import Conflict, NotFound
+from app.platform.errors import BadRequest, Conflict, NotFound
 from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
@@ -73,6 +79,7 @@ logger = logging.getLogger(__name__)
 GENESIS: Final = "0" * 64
 # What ADVICE_PER_DAY counts the controller's requests over.
 ADVICE_WINDOW: Final = timedelta(hours=24)
+_CENT: Final = Decimal("0.01")
 
 # For a bill: each truck it pays for, and whether its delivery is proven.
 DeliveryCheck = Callable[[AsyncSession, uuid.UUID, uuid.UUID], Awaitable[list[bool]]]
@@ -112,6 +119,73 @@ class _OnChain:
     paid: set[uuid.UUID] = field(default_factory=set)
 
 
+@dataclass(slots=True)
+class _Standing:
+    """The company's money this pass, read under one policy: what the reserve rule and the pay
+    currency read. Amounts are in the policy's currency, None where a rate is missing."""
+
+    policy: PolicyOut
+    today: date
+    # The bank and cash accounts' total, None where unknown; the currencies they are held in.
+    balance: Decimal | None = None
+    currencies: frozenset[str] = frozenset()
+    # Each open payable's due day and what is left of it.
+    dues: dict[uuid.UUID, tuple[date | None, Decimal | None]] = field(default_factory=dict)
+    # The bills approved and not paid yet.
+    approved: dict[uuid.UUID, Decimal | None] = field(default_factory=dict)
+
+    def committed(self, bill_id: uuid.UUID) -> Decimal | None:
+        """What the reserve keeps for bills other than this one: the approved ones, and those due
+        within its weeks or overdue."""
+        horizon = self.today + timedelta(weeks=self.policy.reserve.cover_weeks)
+        kept = [amount for invoice_id, amount in self.approved.items() if invoice_id != bill_id]
+        kept += [
+            amount
+            for invoice_id, (due, amount) in self.dues.items()
+            if invoice_id != bill_id
+            and invoice_id not in self.approved
+            and due is not None
+            and due <= horizon
+        ]
+        if any(amount is None for amount in kept):
+            return None
+        return sum((amount for amount in kept if amount is not None), Decimal(0))
+
+
+async def _standing(db: AsyncSession, company_id: uuid.UUID, policy: PolicyOut) -> _Standing:
+    company = (await companies.get_companies(db, [company_id]))[company_id]
+    today = clock.now(company).date()
+    position = await money.position(db, company_id, policy.currency)
+    rates: dict[str | None, Decimal | None] = {}
+
+    async def in_policy(amount: Decimal, currency: str | None) -> Decimal | None:
+        if currency not in rates:
+            one = await fx.convert(
+                db, Decimal(1), currency, policy.currency, on=today, country=company.country
+            )
+            rates[currency] = one.rate if one is not None else None
+        rate = rates[currency]
+        return None if rate is None else (amount * rate).quantize(_CENT)
+
+    dues = {
+        bill.id: (bill.due_date, await in_policy(bill.remaining_amount, bill.currency))
+        for bill in await books.open_payables(db, company_id)
+        if not bill.cancelled and bill.remaining_amount is not None and bill.remaining_amount > 0
+    }
+    approved = {
+        row.invoice_id: await in_policy(row.amount, row.currency)
+        for row in await repository.approved(db, company_id)
+    }
+    return _Standing(
+        policy=policy,
+        today=today,
+        balance=position.total,
+        currencies=position.currencies,
+        dues=dues,
+        approved=approved,
+    )
+
+
 async def evaluate_pending() -> int:
     """Evaluates every company's payables, and the bills of decisions no owner has answered yet.
     Returns how many decisions were made or moved. A company whose chain cannot be read waits
@@ -146,6 +220,8 @@ async def evaluate_company(company_id: uuid.UUID) -> int:
     if not bills:
         return 0
     seen = await _on_chain(company_id, list(bills.values()))
+    async with open_session() as db:
+        standing = await _standing(db, company_id, await policies.current_policy(db, company_id))
     moved = 0
     for bill in bills.values():
         async with open_session() as db:
@@ -155,7 +231,7 @@ async def evaluate_company(company_id: uuid.UUID) -> int:
                 # The list sorts by the bill's date, which the books may correct in any state.
                 decision.issued_on = bill.issue_date
             if (decision is None or _movable(decision)) and await _decide(
-                db, company_id, bill, decision, seen
+                db, company_id, bill, decision, seen, standing
             ):
                 moved += 1
             await db.commit()
@@ -205,6 +281,7 @@ async def _decide(
     bill: InvoiceOut,
     decision: Decision | None,
     seen: _OnChain,
+    standing: _Standing,
     *,
     force: bool = False,
 ) -> bool:
@@ -212,6 +289,9 @@ async def _decide(
     ``force``, after the owner's edit): a new evaluation number, the state the rules give, and a
     ``proposed`` row in the log. Returns whether it did. Under the caller's lock; no commit."""
     policy = await policies.current_policy(db, company_id)
+    if policy.version != standing.policy.version:
+        # Changed since the pass began: its amounts may be in another currency.
+        standing = await _standing(db, company_id, policy)
     readings = await books.account_readings(
         db, company_id, [bill.party_id] if bill.party_id else []
     )
@@ -231,8 +311,33 @@ async def _decide(
         on=clock.now(company).date(),
         country=company.country,
     )
-    picture = await _picture(db, company_id, bill, amount, account, policy, seen, reference)
+    payee = seen.payees.get(bill.party_id) if bill.party_id else None
+    ibans = (
+        await parties.identifiers_of(db, company_id, [bill.party_id], [IdentifierKind.IBAN])
+        if bill.party_id
+        else {}
+    )
+    iban = bool(ibans.get(bill.party_id)) if bill.party_id else False
+    method = (
+        decision.method
+        if decision is not None and decision.pay_chosen
+        else _propose_method(policy, vault=payee is not None, bank=iban)
+    )
+    picture = await _picture(
+        db, company_id, bill, amount, account, policy, seen, reference, method, iban, standing
+    )
     outcome, results = policies.evaluate(picture, policy)
+    mirrored = policies.mirror(amount, bill.currency)
+    pay = await _pay(
+        db,
+        bill,
+        amount,
+        method,
+        mirrored,
+        chosen=decision.pay_currency if decision is not None and decision.pay_chosen else None,
+        standing=standing,
+        country=company.country,
+    )
     paid = outcome is Outcome.HOLD and _paid_in_books(bill, account, policy)
     # What the rules read, but the time and the converted amount, and what they gave: a timelock
     # that runs out, or a day's rate that moves a bill across a limit, changes a result, so the
@@ -242,7 +347,9 @@ async def _decide(
         "picture": _jsonable(asdict(picture) | {"now": None}),
         "policy": policy.version,
         "party": str(bill.party_id),
-        "payee": seen.payees.get(bill.party_id) if bill.party_id else None,
+        "payee": payee,
+        "method": method.value,
+        "pay_currency": pay.currency,
         # Present only when true: a bill whose books show it paid is evaluated anew, and no other
         # bill's evaluation changes with it.
         **({"paid_in_books": True} if paid else {}),
@@ -250,14 +357,16 @@ async def _decide(
     digest = _hash(
         {
             **read,
-            "picture": read["picture"] | {"in_policy_currency": None},
+            # The figures that move with a day's rate or a balance: what they change is in the
+            # rules' results.
+            "picture": read["picture"]
+            | {"in_policy_currency": None, "balance": None, "committed": None},
             "rules": [asdict(result) for result in results],
         }
     )
     if decision is not None and decision.picture_hash == digest and not force:
         return False
 
-    mirrored = policies.mirror(amount, bill.currency)
     now = utcnow()
     if decision is None:
         # A bill from nobody the books know is never proposed; one whose party the books
@@ -280,6 +389,9 @@ async def _decide(
     decision.reference_rate = converted.rate if converted is not None else None
     decision.reference_rate_on = converted.on if converted is not None else None
     decision.reference_source = converted.source if converted is not None else None
+    decision.method = method
+    decision.pay_currency, decision.pay_amount = pay.currency, pay.amount
+    decision.pay_rate, decision.pay_rate_on, decision.pay_rate_source = pay.rate, pay.on, pay.source
     decision.rules = [asdict(result) | {"outcome": result.outcome.value} for result in results]
     decision.issued_on = bill.issue_date
     decision.decided_by, decision.decided_at = None, None
@@ -304,6 +416,10 @@ async def _decide(
                 decision.reference_rate_on.isoformat() if decision.reference_rate_on else None
             ),
             "reference_source": decision.reference_source,
+            "pay_amount": _text(pay.amount),
+            "pay_rate": _text(pay.rate),
+            "pay_rate_on": pay.on.isoformat() if pay.on else None,
+            "pay_rate_source": pay.source,
             "policy_version": policy.version,
             "picture_hash": digest,
             **read,
@@ -347,6 +463,9 @@ async def _picture(
     policy: PolicyOut,
     seen: _OnChain,
     reference: fx.Converted | None,
+    method: PaymentMethod,
+    iban: bool,
+    standing: _Standing,
 ) -> Picture:
     """What code knows of the bill, for the rules."""
     links = await projects.links_of_items(db, company_id, ItemKind.INVOICE, [bill.id])
@@ -392,7 +511,74 @@ async def _picture(
         payee=payee is not None,
         payee_active_from=seen.active_from.get(payee) if payee is not None else None,
         now=int(utcnow().timestamp()),
+        method=method,
+        iban=iban,
+        balance=standing.balance,
+        committed=standing.committed(bill.id),
     )
+
+
+def _propose_method(policy: PolicyOut, *, vault: bool, bank: bool) -> PaymentMethod:
+    """The policy's default, unless the payee can take only another of its methods: no wallet on
+    the vault, or no IBAN (ADR-0027). Code chooses it; no model does."""
+    can = {PaymentMethod.VAULT_USDC: vault, PaymentMethod.BANK_TRANSFER: bank}
+    if can[policy.default_method]:
+        return policy.default_method
+    return next((method for method in policy.methods if can[method]), policy.default_method)
+
+
+@dataclass(frozen=True, slots=True)
+class _Pay:
+    """What leaves the company's account, expected: the currency, the amount at the reference
+    rate of the company's day, one unit of the bill's currency in it, that day and the source."""
+
+    currency: str | None
+    amount: Decimal | None
+    rate: Decimal | None
+    on: date | None
+    source: str | None
+
+
+async def _pay(
+    db: AsyncSession,
+    bill: InvoiceOut,
+    amount: Decimal,
+    method: PaymentMethod,
+    mirrored: policies.Mirror | None,
+    *,
+    chosen: str | None,
+    standing: _Standing,
+    country: str,
+) -> _Pay:
+    """From the vault, test USDC at the mirror rate (ADR-0019). By bank: the currency the owner
+    chose, else the bill's own when the company holds an account in it (or none is known), else
+    the policy's when held, else one it holds."""
+    if method is PaymentMethod.VAULT_USDC:
+        if mirrored is None:
+            return _Pay("USDC", None, None, None, None)
+        return _Pay("USDC", _six(chain.usdc(mirrored.units)), mirrored.rate, None, "mirror")
+    held = standing.currencies
+    if chosen is not None and len(chosen) == 3:
+        currency: str | None = chosen
+    elif not held or bill.currency in held:
+        currency = bill.currency
+    elif standing.policy.currency in held:
+        currency = standing.policy.currency
+    else:
+        currency = sorted(held)[0]
+    if currency is None:
+        return _Pay(None, None, None, None, None)
+    converted = await fx.convert(
+        db, amount, bill.currency, currency, on=standing.today, country=country
+    )
+    if converted is None:
+        return _Pay(currency, None, None, None, None)
+    return _Pay(currency, _six(converted.amount), converted.rate, converted.on, converted.source)
+
+
+def _six(amount: Decimal) -> Decimal:
+    """As ``pay_amount`` keeps it, so an answer reads the same as the row read back."""
+    return amount.quantize(Decimal("0.000001"))
 
 
 def _client_paid(invoice: InvoiceOut, account: Account | None, policy: PolicyOut) -> bool:
@@ -412,8 +598,9 @@ async def act(
     db: AsyncSession, actor: Actor, decision_id: uuid.UUID, body: DecisionAction
 ) -> DecisionOut:
     """The owner answers the evaluation in force. Approving needs every rule to allow it; a hold
-    or a rejection by the owner stands until the owner answers again; a new amount is a new
-    proposal, every rule run again, back to the owner. Commits."""
+    or a rejection by the owner stands until the owner answers again; a new amount or way to pay
+    is a new proposal, every rule run again, back to the owner; marking it paid settles a bill the
+    owner pays in the bank, never one Tamga pays from the vault. Commits."""
     actor.require(Role.OWNER)
     decision = await repository.get(db, actor.company_id, decision_id)
     if decision is None:
@@ -423,7 +610,7 @@ async def act(
         raise NotFound("No such bill")
     bill = bills[0]
     # Read before the lock is taken: the chain is not asked with the company's decisions held.
-    rests = body.action in ("edit", "approve")
+    rests = body.action in ("edit", "approve", "pay_by", "mark_paid")
     seen = await _on_chain(actor.company_id, [bill]) if rests else _OnChain()
 
     await repository.lock_decisions(db, actor.company_id)
@@ -431,7 +618,9 @@ async def act(
     await db.refresh(decision)
     if body.evaluation != decision.evaluation:
         raise Conflict("It was evaluated again since: answer the evaluation in force")
-    if decision.state in _EXECUTORS:
+    if decision.state is DecisionState.SETTLED:
+        raise Conflict("It is paid already")
+    if decision.state is DecisionState.APPROVED and body.action != "mark_paid":
         raise Conflict("It is approved already")
     if (
         body.action == "approve"
@@ -439,8 +628,13 @@ async def act(
         and decision.decided_by is not None
     ):
         raise Conflict("The vault refused it for good: it waits for someone to look at it")
+    standing = (
+        await _standing(db, actor.company_id, await policies.current_policy(db, actor.company_id))
+        if rests
+        else None
+    )
     now = utcnow()
-    if body.action == "edit" and body.amount is not None:
+    if body.action == "edit" and body.amount is not None and standing is not None:
         await _log(
             db,
             decision,
@@ -454,46 +648,282 @@ async def act(
             at=now,
         )
         decision.amount, decision.amount_edited = body.amount, True
-        await _decide(db, actor.company_id, bill, decision, seen, force=True)
+        await _decide(db, actor.company_id, bill, decision, seen, standing, force=True)
+    elif body.action == "pay_by" and body.method is not None and standing is not None:
+        to_currency = body.pay_currency if body.method is PaymentMethod.BANK_TRANSFER else "USDC"
+        await _log(
+            db,
+            decision,
+            LogEvent.PAY_BY,
+            {
+                "evaluation": decision.evaluation,
+                "from": {"method": decision.method.value, "pay_currency": decision.pay_currency},
+                "to": {"method": body.method.value, "pay_currency": to_currency},
+            },
+            user_id=actor.user_id,
+            at=now,
+        )
+        decision.method, decision.pay_chosen = body.method, True
+        # None: the bank's default currency, worked out by the evaluation.
+        decision.pay_currency = to_currency
+        await _decide(db, actor.company_id, bill, decision, seen, standing, force=True)
+    elif body.action == "mark_paid" and standing is not None:
+        await _mark_paid(db, actor, decision, bill, body, seen, standing, now)
     else:
-        if body.action == "approve":
-            # What it rests on is read again under the lock: the books, the links, the proof,
-            # the chain, and whether another booking of the bill was approved since (so two
-            # approvals in a row never pay it twice), also for a decision the owner held, which
-            # no pass evaluates. Changed, it is a new evaluation, which the owner answers anew.
-            if await _decide(db, actor.company_id, bill, decision, seen):
-                await db.commit()
-                raise Conflict("It was evaluated again since: answer the evaluation in force")
-            if not _approvable(decision):
-                raise Conflict("A rule holds or rejects it: it cannot be approved")
+        if body.action == "approve" and standing is not None:
+            await _rests_unchanged(db, actor.company_id, bill, decision, seen, standing)
         decision.state = {
             "approve": DecisionState.APPROVED,
             "hold": DecisionState.HELD,
             "reject": DecisionState.REJECTED,
         }[body.action]
         decision.decided_by, decision.decided_at = actor.user_id, now
-        await _log(
-            db,
-            decision,
-            LogEvent(decision.state.value),
-            {
-                "evaluation": decision.evaluation,
-                "amount": str(decision.amount),
-                "usdc_units": decision.usdc_units,
-            },
-            user_id=actor.user_id,
-            at=now,
-        )
+        await _log_answer(db, decision, actor, now)
     await db.commit()
     return DecisionOut.model_validate(decision)
 
 
-def _approvable(decision: Decision) -> bool:
-    """Every rule passed or left it to the owner, and its test USDC is known."""
-    held = {Outcome.HOLD.value, Outcome.REJECT.value}
-    return decision.usdc_units is not None and not any(
-        result["outcome"] in held for result in decision.rules
+async def _rests_unchanged(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    bill: InvoiceOut,
+    decision: Decision,
+    seen: _OnChain,
+    standing: _Standing,
+) -> None:
+    """What an approval rests on is read again under the lock: the books, the links, the proof,
+    the chain, the accounts, and whether another booking of the bill was approved since (so two
+    approvals in a row never pay it twice), also for a decision the owner held, which no pass
+    evaluates. Changed, it is a new evaluation, which the owner answers anew."""
+    if await _decide(db, company_id, bill, decision, seen, standing):
+        await db.commit()
+        raise Conflict("It was evaluated again since: answer the evaluation in force")
+    if not _approvable(decision):
+        raise Conflict("A rule holds or rejects it: it cannot be approved")
+
+
+async def _log_answer(db: AsyncSession, decision: Decision, actor: Actor, at: datetime) -> None:
+    await _log(
+        db,
+        decision,
+        LogEvent(decision.state.value),
+        {
+            "evaluation": decision.evaluation,
+            "amount": str(decision.amount),
+            "usdc_units": decision.usdc_units,
+            "method": decision.method.value,
+        },
+        user_id=actor.user_id,
+        at=at,
     )
+
+
+async def _mark_paid(
+    db: AsyncSession,
+    actor: Actor,
+    decision: Decision,
+    bill: InvoiceOut,
+    body: DecisionAction,
+    seen: _OnChain,
+    standing: _Standing,
+    now: datetime,
+) -> None:
+    """The owner paid it in the bank: approved first if it waited for them, then settled for what
+    left their account (ADR-0027)."""
+    if policies.tamga_pays(decision.method):
+        raise Conflict("Tamga pays it from the vault: it is paid when the vault releases it")
+    if body.pay_amount is None or body.pay_currency is None:
+        raise BadRequest("What was paid, and its currency")
+    paid_on = body.paid_on or standing.today
+    if paid_on > standing.today:
+        raise BadRequest("A payment is marked on the day it was made, never later")
+    if decision.state is not DecisionState.APPROVED:
+        if decision.state is not DecisionState.AWAITING_OWNER and decision.decided_by is None:
+            raise Conflict("A rule holds or rejects it: it cannot be marked paid")
+        await _rests_unchanged(db, actor.company_id, bill, decision, seen, standing)
+        decision.state = DecisionState.APPROVED
+        decision.decided_by, decision.decided_at = actor.user_id, now
+        await _log_answer(db, decision, actor, now)
+    payment = await settlement.record_bank_payment(
+        db,
+        actor.company_id,
+        decision,
+        pay_amount=body.pay_amount,
+        pay_currency=body.pay_currency,
+        paid_on=paid_on,
+        marked_by=actor.user_id,
+    )
+    await _settle_by_bank(db, decision, payment, {"marked_by": str(actor.user_id)}, now)
+
+
+async def _settle_by_bank(
+    db: AsyncSession,
+    decision: Decision,
+    payment: PaymentOut,
+    proof: dict[str, str],
+    at: datetime,
+) -> None:
+    """A bank transfer settled: what was paid, the proof, the rate the bank used and how far it
+    was from the reference (ADR-0027). What the bill owed is settled in its own currency."""
+    paid, currency = payment.pay_amount or Decimal(0), payment.pay_currency
+    expected = decision.pay_amount if decision.pay_currency == currency else None
+    decision.state = DecisionState.SETTLED
+    await _log(
+        db,
+        decision,
+        LogEvent.SETTLED,
+        {
+            "evaluation": decision.evaluation,
+            "method": decision.method.value,
+            "pay_amount": str(paid),
+            "pay_currency": currency,
+            "paid_on": payment.paid_on.isoformat() if payment.paid_on else None,
+            **proof,
+            "expected_amount": _text(expected),
+            "reference_rate": _text(decision.pay_rate),
+            # One payment settles the bill, so the bank's rate is what was paid over what it owed.
+            "actual_rate": (
+                str((paid / decision.amount).quantize(Decimal("0.000001")))
+                if currency != decision.currency and decision.amount
+                else None
+            ),
+            "fx_difference": _text(paid - expected) if expected is not None else None,
+        },
+        user_id=None if "movement_id" in proof else payment.marked_by,
+        at=at,
+    )
+
+
+def _approvable(decision: Decision) -> bool:
+    """Every rule passed or left it to the owner, and what leaves the account is known: the test
+    USDC from the vault, the amount at the reference rate by bank (never a guessed rate)."""
+    held = {Outcome.HOLD.value, Outcome.REJECT.value}
+    known = (
+        decision.usdc_units is not None
+        if policies.tamga_pays(decision.method)
+        else decision.pay_amount is not None
+    )
+    return known and not any(result["outcome"] in held for result in decision.rules)
+
+
+# Bank transfers the owner made, matched to the bills they pay
+
+
+async def settle_matched() -> int:
+    """Settles each approved bill the owner pays by bank whose movement came in: from the firm,
+    by its IBAN or tax number, and for its amount within FX_MATCH_TOLERANCE at the movement day's
+    reference rate, after the approval (ADR-0027). Two that could be it, or none, leave it to the
+    owner. Returns how many were settled."""
+    async with open_session() as db:
+        company_ids = await repository.companies_with_approved(db)
+    settled = 0
+    for company_id in company_ids:
+        try:
+            settled += await _settle_matched(company_id)
+        except Exception as error:  # one company never stops the others
+            logger.warning("matching the bank of %s failed: %s", company_id, type(error).__name__)
+    return settled
+
+
+async def _settle_matched(company_id: uuid.UUID) -> int:
+    async with open_session() as db:
+        company = (await companies.get_companies(db, [company_id])).get(company_id)
+        if company is None or company.mode is CompanyMode.REPLAY:
+            return 0
+        await repository.lock_decisions(db, company_id)
+        waiting = [
+            row
+            for row in await repository.approved(db, company_id)
+            if not policies.tamga_pays(row.method) and row.decided_at is not None
+        ]
+        if not waiting:
+            return 0
+        since = min(row.decided_at.date() for row in waiting if row.decided_at is not None)
+        taken = await settlement.matched_movements(db, company_id)
+        movements = [m for m in await money.outgoing(db, company_id, since) if m.id not in taken]
+        known = await parties.identifiers_of(
+            db,
+            company_id,
+            sorted({row.party_id for row in waiting}),
+            [IdentifierKind.IBAN, IdentifierKind.TAX_ID],
+        )
+        rates: dict[tuple[str, str, date], Decimal | None] = {}
+        candidates: dict[uuid.UUID, list[MovementOut]] = {}
+        for decision in waiting:
+            if decision.decided_at is None:
+                continue
+            approved_on = decision.decided_at.date()
+            candidates[decision.id] = [
+                movement
+                for movement in movements
+                if movement.booked_on >= approved_on
+                and _from_firm(movement, known.get(decision.party_id, set()), company.country)
+                and await _pays(db, movement, decision, company.country, rates)
+            ]
+        # A movement that could pay two bills pays neither: the owner says which.
+        claims: dict[uuid.UUID, int] = {}
+        for found in candidates.values():
+            for movement in found:
+                claims[movement.id] = claims.get(movement.id, 0) + 1
+        settled = 0
+        for decision in waiting:
+            found = candidates.get(decision.id, [])
+            if len(found) != 1 or claims[found[0].id] != 1:
+                continue
+            movement = found[0]
+            payment = await settlement.record_bank_payment(
+                db,
+                company_id,
+                decision,
+                pay_amount=abs(movement.amount),
+                pay_currency=movement.currency,
+                paid_on=movement.booked_on,
+                movement_id=movement.id,
+            )
+            await money.link_to_bill(db, company_id, movement.id, decision.invoice_id)
+            await _settle_by_bank(
+                db, decision, payment, {"movement_id": str(movement.id)}, utcnow()
+            )
+            settled += 1
+        await db.commit()
+    return settled
+
+
+def _from_firm(movement: MovementOut, known: set[tuple[IdentifierKind, str]], country: str) -> bool:
+    """The first signal: the movement names the firm's IBAN or tax number."""
+    read = [
+        (kind, parties.normalised(kind, value, country=country))
+        for kind, value in (
+            (IdentifierKind.IBAN, movement.counterparty_iban),
+            (IdentifierKind.TAX_ID, movement.counterparty_tax_id),
+        )
+        if value
+    ]
+    return any(normalised is not None and (kind, normalised) in known for kind, normalised in read)
+
+
+async def _pays(
+    db: AsyncSession,
+    movement: MovementOut,
+    decision: Decision,
+    country: str,
+    rates: dict[tuple[str, str, date], Decimal | None],
+) -> bool:
+    """The second signal: what left the account, in the bill's currency at the movement day's
+    reference rate, is within FX_MATCH_TOLERANCE of the bill. Each pair and day's rate is read
+    once a pass (``rates``)."""
+    into = decision.currency or movement.currency
+    key = (movement.currency, into, movement.booked_on)
+    if key not in rates:
+        one = await fx.convert(
+            db, Decimal(1), movement.currency, into, on=movement.booked_on, country=country
+        )
+        rates[key] = one.rate if one is not None else None
+    rate = rates[key]
+    if rate is None or not decision.amount:
+        return False
+    gap = abs(abs(movement.amount) * rate - decision.amount) / decision.amount * 100
+    return gap <= get_settings().fx_match_tolerance
 
 
 # For the chat (assistant): what waits for the owner
@@ -627,6 +1057,7 @@ async def record_paid(
         LogEvent.SETTLED,
         {
             "evaluation": evaluation,
+            "method": decision.method.value,
             "usdc_units": decision.usdc_units,
             "tx_hash": tx_hash,
             "transaction_id": transaction_id,

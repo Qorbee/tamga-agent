@@ -153,6 +153,10 @@ class Settings(BaseSettings):
     # Bills the controller may weigh for one company in 24 hours, each once an evaluation waits
     # for the owner: an opinion beside the approval, never the decision. Zero: no bill's details
     # go to the model's provider, and a bill waits for the owner with the rules' results alone.
+    # How far a bank movement's amount, converted at its day's reference rate, may be from a bill
+    # paid by bank transfer, in percent of the bill, and still match it (ADR-0027): a bank's
+    # spread and fees make an exact amount impossible across currencies.
+    fx_match_tolerance: Decimal = Field(default=Decimal("3"), ge=0, le=20)
     advice_per_day: int = Field(default=0, ge=0)
     # Characters a model may write for one company in 24 hours when what Tamga wrote is asked for
     # in another language. Zero: nothing is translated, and no text goes to the model's provider.

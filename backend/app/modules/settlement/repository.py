@@ -8,6 +8,7 @@ from app.modules.settlement.models import (
     AccountState,
     PayeeWallet,
     Payment,
+    PaymentKind,
     PaymentState,
     VaultAccount,
 )
@@ -52,7 +53,11 @@ async def payee_wallets_of(
 
 
 async def payment_for(
-    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID, evaluation: int
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    evaluation: int,
+    kind: PaymentKind = PaymentKind.PAYMENT,
 ) -> Payment | None:
     payment: Payment | None = await db.scalar(
         select(Payment)
@@ -60,10 +65,20 @@ async def payment_for(
             Payment.company_id == company_id,
             Payment.decision_id == decision_id,
             Payment.evaluation == evaluation,
+            Payment.kind == kind,
         )
         .with_for_update()
     )
     return payment
+
+
+async def matched_movements(db: AsyncSession, company_id: uuid.UUID) -> set[uuid.UUID]:
+    rows = await db.scalars(
+        select(Payment.movement_id).where(
+            Payment.company_id == company_id, Payment.movement_id.is_not(None)
+        )
+    )
+    return {row for row in rows if row is not None}
 
 
 async def list_payments(
@@ -93,7 +108,11 @@ async def list_payments(
 async def settled_payments(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Payment]:
     rows = await db.scalars(
         select(Payment)
-        .where(Payment.company_id == company_id, Payment.state == PaymentState.SETTLED)
+        .where(
+            Payment.company_id == company_id,
+            Payment.state == PaymentState.SETTLED,
+            Payment.usdc_units.is_not(None),
+        )
         .order_by(Payment.finished_at, Payment.id)
     )
     return rows.all()
