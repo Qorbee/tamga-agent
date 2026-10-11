@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -7,6 +8,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.assistant import turns
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
 from app.modules.conversations import service as conversations
@@ -15,6 +17,10 @@ from app.packs.logistics import sandbox
 from app.platform.auth import Actor, Role
 from app.platform.db import open_session
 from app.platform.errors import NotFound
+from app.tests.assistant.test_chats import Script
+from app.tests.assistant.test_chats import model as owner_asks  # noqa: F401  (the fixture)
+from app.tests.assistant.test_turns import chats_of, shown
+from app.tests.assistant.test_turns import tamga as tamga  # noqa: F401  (the fixture)
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("storage_bucket")]
 
@@ -162,3 +168,26 @@ async def test_a_step_played_again_stores_its_message_once(client: httpx.AsyncCl
     await sandbox._moving_asks_to_be_paid(company_id)
     await sandbox._moving_asks_to_be_paid(company_id)
     assert len(await simulated(client)) == 1
+
+
+async def test_tamga_writes_first_when_a_sandbox_opens(
+    client: httpx.AsyncClient,
+    tamga: Callable[..., Script],  # noqa: F811
+) -> None:
+    await opened(client, "payday")
+    script = tamga("Three carriers are owed this week; I would look at the run first.")
+
+    assert await turns.speak_pending() == 1
+
+    [chat] = await chats_of(client)
+    assert chat["origin"] == "tamga" and chat["title"] == "Short cash on Friday"
+    card = (await shown(client, chat["id"]))[-1]
+    project = next(
+        item
+        for item in (await client.get("/projects")).json()["items"]
+        if item["number"] == sandbox.RUN_SALE
+    )
+    assert card["content"]["id"] == project["id"]
+    assert "Short cash on Friday" in str(script.requests[0])
+    # Once.
+    assert await turns.speak_pending() == 0

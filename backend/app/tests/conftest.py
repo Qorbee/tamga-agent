@@ -144,8 +144,11 @@ def fresh_rate_limits() -> Iterator[None]:
     yield
 
 
-async def guest_client(client: httpx.AsyncClient) -> uuid.UUID:
-    """Signs ``client`` in as the owner of a fresh sandbox; returns the sandbox's company id."""
-    response = await client.post("/sessions/guest")
+async def guest_client(client: httpx.AsyncClient, scenario: str | None = None) -> uuid.UUID:
+    """Signs ``client`` in as the owner of a fresh sandbox, opened with ``scenario`` (the
+    default when none); returns the sandbox's company id."""
+    response = await client.post(
+        "/sessions/guest", json={"scenario": scenario} if scenario else None
+    )
     assert response.status_code == 201, response.text
     return uuid.UUID(response.json()["company"]["id"])

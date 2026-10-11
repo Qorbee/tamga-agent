@@ -18,7 +18,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Final, Protocol
 
@@ -445,8 +445,36 @@ async def record_bank_payment(
 
 
 async def matched_movements(db: AsyncSession, company_id: uuid.UUID) -> set[uuid.UUID]:
-    """The bank movements already proving a payment: each pays one bill."""
+    """The bank movements already proving a payment in force: each pays one bill."""
     return await repository.matched_movements(db, company_id)
+
+
+async def settled_since(db: AsyncSession, at: datetime) -> bool:
+    """Whether any company's payment settled after ``at``; for the log's anchor, which covers
+    every company's head at once."""
+    return await repository.settled_since(db, at)
+
+
+async def undone_matches(
+    db: AsyncSession, company_id: uuid.UUID
+) -> set[tuple[uuid.UUID, uuid.UUID]]:
+    """Each (decision, movement) the owner said was not that bill's payment: never matched
+    again, though the movement may pay another bill."""
+    return await repository.undone_matches(db, company_id)
+
+
+async def undo_bank_payment(
+    db: AsyncSession, company_id: uuid.UUID, decision: DecisionPaid, *, by: uuid.UUID
+) -> PaymentOut | None:
+    """Takes a bank transfer's payment out of force, keeping it: the owner says the bill was not
+    paid after all. None when the evaluation has no bank payment in force; a vault release is
+    on the chain and is never undone. In the caller's transaction."""
+    payment = await repository.payment_for(db, company_id, decision.id, decision.evaluation)
+    if payment is None or payment.method is PaymentMethod.VAULT_USDC:
+        return None
+    payment.voided_at, payment.voided_by = utcnow(), by
+    await db.flush()
+    return _payment_out(payment)
 
 
 def explorer_url(tx_hash: str) -> str:

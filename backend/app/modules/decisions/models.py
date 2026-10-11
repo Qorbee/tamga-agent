@@ -126,6 +126,9 @@ class LogEvent(StrEnum):
     SETTLED = "settled"
     FAILED = "failed"
     WOULD_RELEASE = "would_release"
+    # The owner said a bank transfer settled by mistake was not paid: back to approved, with
+    # their reason, the way they correct Tamga's match or their own word.
+    UNPAID = "unpaid"
 
 
 class DecisionEvent(CompanyScoped, Base):

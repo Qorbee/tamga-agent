@@ -5,6 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useState, type ReactNode } from "react";
 
+import { useCanvasView } from "@/components/canvas-link";
 import { IconButton } from "@/components/icon-button";
 import { ScenarioPicker } from "@/components/scenario-picker";
 import { Button } from "@/components/ui/button";
@@ -120,9 +121,11 @@ export function WorldPanel() {
   const sandbox = useSandbox();
   const world = useWorld(sandbox);
   const { open, setOpen } = use(WorldOpen);
+  // A record open in the canvas takes the room: the world steps aside and comes back after.
+  const canvas = useCanvasView();
   const personas = world.data?.personas ?? [];
   const [chosen, setChosen] = useState<string | null>(null);
-  if (!sandbox || !open || personas.length === 0) return null;
+  if (!sandbox || !open || canvas !== null || personas.length === 0) return null;
   const persona = personas.find((item) => item.key === chosen) ?? personas[0];
   if (!persona) return null;
 

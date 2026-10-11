@@ -279,6 +279,8 @@ function described(
       return [body.evaluated_again ? words.sentBack : words.failed, "stopped"];
     case "would_release":
       return [words.wouldRelease, "quiet"];
+    case "unpaid":
+      return [words.unpaid(typeof body.reason === "string" ? body.reason : null), "stopped"];
     case "advised":
       return [
         body.proposal === "pay_part" && typeof body.amount === "string"

@@ -35,8 +35,9 @@ async def advise(timestamp: int) -> None:
         logger.info("the controller weighed %d bills", advised)
 
 
-@jobs.periodic("decisions.anchor", cron="*/15 * * * *")
+@jobs.periodic("decisions.anchor", cron="* * * * *")
 async def anchor(timestamp: int) -> None:
-    """The companies' log heads on the chain, when any moved since the last anchor."""
+    """The companies' log heads on the chain, when any moved: within the minute after a payment,
+    otherwise every ANCHOR_EVERY."""
     if await anchoring.anchor_heads():
         logger.info("the decision log's heads were anchored")

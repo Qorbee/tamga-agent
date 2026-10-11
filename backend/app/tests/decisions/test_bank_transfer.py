@@ -16,6 +16,7 @@ from app.modules.money import service as money
 from app.modules.money.models import AccountKind
 from app.modules.money.schemas import AccountRecord, MovementRecord
 from app.modules.settlement import executor
+from app.modules.settlement import repository as payments
 from app.packs.logistics import sandbox
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -240,3 +241,77 @@ async def test_a_movement_that_could_pay_two_bills_pays_neither(
     assert (await client.get("/payments", params={"decision_id": delivered["id"]})).json()[
         "items"
     ] == []
+
+
+async def test_a_bill_marked_paid_by_mistake_is_undone_with_the_owners_reason(
+    client: httpx.AsyncClient, vault: Vault
+) -> None:
+    delivered = await by_bank(client)
+    assert (await answer(client, delivered, "approve")).status_code == 200
+    before = utcnow()
+    paid = await answer(client, delivered, "mark_paid", pay_amount="1900", pay_currency="EUR")
+    assert paid.status_code == 200, paid.text
+
+    undone = await answer(
+        client, paid.json(), "undo_paid", reason="  Wrong bill: I paid   their other invoice "
+    )
+    assert undone.status_code == 200, undone.text
+    # Undone before the anchor's next pass, the payment and its undo still call for one.
+    async with open_session() as db:
+        assert await payments.settled_since(db, before)
+    assert undone.json()["state"] == "approved"
+    [payment] = (await client.get("/payments", params={"decision_id": delivered["id"]})).json()[
+        "items"
+    ]
+    # Kept for the record, out of force.
+    assert payment["voided_at"] is not None
+    last = (await events(client, delivered))[-1]
+    assert last["event"] == "unpaid"
+    assert last["body"]["reason"] == "Wrong bill: I paid their other invoice"
+    assert last["body"]["pay_amount"] == "1900.000000" and last["user_id"] is not None
+    # Nothing to undo now; and it can be marked paid again, for what really left.
+    assert (await answer(client, undone.json(), "undo_paid")).status_code == 409
+    again = await answer(client, undone.json(), "mark_paid", pay_amount="1890", pay_currency="EUR")
+    assert again.status_code == 200 and again.json()["state"] == "settled"
+    # A reason belongs to an undo only.
+    assert (await answer(client, again.json(), "approve", reason="why")).status_code == 422
+
+
+async def test_an_undone_match_is_never_made_again(client: httpx.AsyncClient, vault: Vault) -> None:
+    delivered = await by_bank(client)
+    company_id = uuid.UUID((await client.get("/me")).json()["company"]["id"])
+    assert (await answer(client, delivered, "approve")).status_code == 200
+    await bank_moves(company_id, ("near", "-1880.00"))
+    assert await service.settle_matched() == 1
+    settled = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    [payment] = (await client.get("/payments", params={"decision_id": delivered["id"]})).json()[
+        "items"
+    ]
+
+    undone = await answer(client, settled, "undo_paid", reason="That was the fuel advance")
+    assert undone.status_code == 200, undone.text
+    movement = next(
+        item
+        for item in (await client.get("/money/movements")).json()["items"]
+        if item["id"] == payment["movement_id"]
+    )
+    # Unlinked from the bill; it still left for that firm, so its category stays.
+    assert movement["invoice_id"] is None and movement["category"] == "subcontractor_payment"
+    assert (await events(client, delivered))[-1]["body"]["movement_id"] == payment["movement_id"]
+    # The next pass leaves the bill waiting for its own payment.
+    assert await service.settle_matched() == 0
+    assert (await by_bill(client))[sandbox.DELIVERED_BILL]["state"] == "approved"
+
+
+async def test_a_vault_payment_has_no_undo(client: httpx.AsyncClient, vault: Vault) -> None:
+    await a_sandbox(client)
+    await service.evaluate_pending()
+    delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE decisions SET state = 'settled' WHERE id = :id"), {"id": delivered["id"]}
+        )
+        await db.commit()
+    refused = await answer(client, delivered, "undo_paid")
+    assert refused.status_code == 409
+    assert "chain" in refused.json()["error"]["message"]

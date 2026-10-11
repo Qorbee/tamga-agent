@@ -37,6 +37,8 @@ export function usePolicyChange(onDone?: (sent: PolicyChange) => void) {
       void queryClient.invalidateQueries({ queryKey: ["decisions"] });
       void queryClient.invalidateQueries({ queryKey: ["invoices"] });
       void queryClient.invalidateQueries({ queryKey: ["invoice"] });
+      // The pay day and the reserve set the run's day and what fits in it.
+      void queryClient.invalidateQueries({ queryKey: ["payment-run"] });
       onDone?.(sent);
     },
   });

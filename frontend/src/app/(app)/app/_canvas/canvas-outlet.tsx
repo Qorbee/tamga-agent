@@ -5,6 +5,7 @@ import { InvoiceTitle, InvoiceView } from "@/features/books/invoice-view";
 import { DocumentDownload, DocumentTitle, DocumentView } from "@/features/documents/document-view";
 import { MailSubject, MailThread } from "@/features/mail/mail-thread";
 import { ProjectTitle, ProjectTitleMenu, ProjectView } from "@/features/projects/project-view";
+import { PaymentRunTitle, PaymentRunView } from "@/components/payment-run";
 import { CanvasFrame, CanvasPanel } from "@/features/shell/canvas";
 import { formatView, type CanvasView } from "@/lib/canvas-view";
 import { useI18n } from "@/lib/i18n/client";
@@ -46,6 +47,12 @@ function CanvasRecord({ view }: { view: CanvasView }) {
       return (
         <CanvasPanel label={t.books.invoice} title={<InvoiceTitle id={view.id} />}>
           <InvoiceView id={view.id} />
+        </CanvasPanel>
+      );
+    case "run":
+      return (
+        <CanvasPanel label={t.run.title} title={<PaymentRunTitle on={view.id} />}>
+          <PaymentRunView on={view.id} />
         </CanvasPanel>
       );
   }

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.books.schemas import InvoiceOut
 from app.modules.decisions.models import DecisionState, LogEvent
 from app.modules.policy.models import PaymentMethod
+from app.modules.policy.reserve import ReserveRule
 from app.modules.policy.schemas import Outcome
 
 
@@ -93,9 +94,10 @@ class DecisionAction(BaseModel):
     """The owner's answer to the evaluation it names: one for an evaluation since replaced is
     refused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:
     every rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it
-    in the bank, for what left their account (ADR-0027)."""
+    in the bank, for what left their account (ADR-0027); ``undo_paid`` takes that back, for a
+    bank transfer settled by mistake, with the owner's reason if they give one."""
 
-    action: Literal["approve", "hold", "reject", "edit", "pay_by", "mark_paid"]
+    action: Literal["approve", "hold", "reject", "edit", "pay_by", "mark_paid", "undo_paid"]
     evaluation: int = Field(ge=1)
     amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
     # With pay_by: the method, and the currency it leaves the account in (unchanged if none).
@@ -104,6 +106,8 @@ class DecisionAction(BaseModel):
     pay_currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
     pay_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     paid_on: date | None = None
+    # With undo_paid: why, in the owner's words. Kept on the log, for Tamga to learn from.
+    reason: str | None = Field(default=None, max_length=300)
 
     @model_validator(mode="after")
     def _fields_with_their_action(self) -> Self:
@@ -118,6 +122,8 @@ class DecisionAction(BaseModel):
             raise ValueError("a day paid comes with mark_paid")
         if self.pay_currency is not None and self.action not in ("pay_by", "mark_paid"):
             raise ValueError("a pay currency comes with pay_by or mark_paid")
+        if self.reason is not None and self.action != "undo_paid":
+            raise ValueError("a reason comes with undo_paid")
         return self
 
 
@@ -173,3 +179,56 @@ class DecisionChainOut(BaseModel):
     head: str | None
     broken_at: int | None
     anchor: ChainAnchorOut | None = None
+
+
+class RunItem(BaseModel):
+    decision: DecisionOut
+    # The bill in the policy's currency at the reference rate; None where no rate stands.
+    in_policy_currency: Decimal | None
+    # Paying it after the run's bills above it leaves what the reserve keeps; None where the
+    # balance or a rate is not known.
+    fits: bool | None
+
+
+class PaymentRunOut(BaseModel):
+    """The bills to pay on a day: those due by the next run after it, or overdue, that wait for
+    the owner or were approved and not paid yet, in the order they are weighed against the
+    accounts; and what the reserve leaves to pay them with. Figures are the policy's currency."""
+
+    on: date
+    # The company's day the run was worked out on.
+    today: date
+    # Bills due up to this day are in the run: the day before the next run.
+    through: date
+    currency: str
+    reserve: ReserveRule
+    # The bank and cash accounts' total; None where none is known.
+    balance: Decimal | None
+    # What the reserve keeps for bills outside the run, with its floor.
+    kept: Decimal | None
+    # The balance less what is kept: what the run can spend.
+    spare: Decimal | None
+    items: list[RunItem]
+    # Due in the run's days but held, by a rule or by the owner: shown, never counted.
+    held: list[DecisionOut]
+
+
+class RunApproval(BaseModel):
+    decision_id: uuid.UUID
+    evaluation: int
+
+
+class RunApprove(BaseModel):
+    """The owner approves these bills of a run, each the evaluation it names, one at a time."""
+
+    items: list[RunApproval] = Field(min_length=1, max_length=50)
+
+
+class RunRefusal(BaseModel):
+    decision_id: uuid.UUID
+    reason: str
+
+
+class RunApproved(BaseModel):
+    approved: list[uuid.UUID]
+    refused: list[RunRefusal]

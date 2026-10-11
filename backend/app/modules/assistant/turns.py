@@ -41,6 +41,7 @@ from app.modules.decisions.schemas import DecisionOut
 from app.modules.linking import service as linking
 from app.modules.linking.models import Outcome
 from app.modules.linking.schemas import PlacementOut
+from app.modules.playground import service as playground
 from app.modules.projects import service as projects
 from app.modules.projects.models import ProjectStatus
 from app.platform import chain, clock, events, llm
@@ -69,6 +70,12 @@ _PROPOSAL: Final = (
     "\nOpen the project and read its conversations. Then write the owner a short message: "
     "what the job is, why it looks like a job of its own, and what you need from them. A "
     "card under your message lets them confirm or reject the project, so do not say how."
+)
+_OPENING: Final = (
+    "\nSomeone just opened this company to try Tamga. Open the project and look at its trucks, "
+    "papers and bills. Then write a short welcome, under five sentences: what the company faces "
+    "today and what you would look at first. Do not explain the app; a card under your message "
+    "shows the job."
 )
 _APPROVAL: Final = (
     "\nOpen the project the bill belongs to and look at its trucks and their papers. Then write "
@@ -112,6 +119,7 @@ async def speak_pending() -> int:
         company_ids = sorted(
             set(await linking.companies_awaiting_owner(db))
             | set(await decisions.companies_awaiting_owner(db))
+            | set(await playground.just_opened(db))
         )
     written = 0
     for company_id in company_ids:
@@ -140,8 +148,8 @@ async def speak_pending() -> int:
 
 async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     """What waits for the owner and Tamga has not written about: bills to approve first, then
-    the oldest placements first."""
-    findings = await _approvals(db, company_id)
+    the oldest placements first. A sandbox that just opened is welcomed before anything."""
+    findings = [*await _opening(db, company_id), *await _approvals(db, company_id)]
     waiting: list[PlacementOut] = []
     # Every page of them: the list comes newest first, and the oldest is written about first.
     while True:
@@ -222,6 +230,44 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     return findings
 
 
+async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
+    """A sandbox's first job, written about once when it opens, so whoever opened it is met by
+    Tamga before any bill waits for them."""
+    scenario = await playground.scenario_of(db, company_id)
+    if scenario is None:
+        return []
+    first = await projects.list_projects(
+        db,
+        Actor.of_tamga(company_id),
+        statuses=[],
+        q=None,
+        suggested=None,
+        sort="starts_on",
+        page=PageParams(limit=1, offset=0),
+    )
+    if not first.items:
+        return []
+    project = first.items[0]
+    if await repository.raised(db, company_id, agents.OPENING, [project.id]):
+        return []
+    return [
+        Finding(
+            record=(agents.OPENING, project.id),
+            related=((agents.PROJECT, project.id),),
+            title=scenario.title,
+            prompt=_told(
+                "the company that just opened",
+                [
+                    f"Scenario: {scenario.title}. {scenario.summary}",
+                    f"Its first job: {project.number} ({project.name})",
+                ],
+                _OPENING,
+            ),
+            card={"kind": CardKind.PROJECT_PROPOSAL.value, "id": str(project.id)},
+        )
+    ]
+
+
 async def _approvals(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     """The bills that wait for the owner's approval and Tamga has not written about."""
     waiting = await decisions.awaiting_owner(db, company_id)
@@ -296,6 +342,8 @@ async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> 
     """Whether what was found still waits for the owner, who may have answered it on a page
     while the model wrote."""
     kind, record_id = finding.record
+    if kind == agents.OPENING:
+        return True
     if kind == agents.DECISION:
         return await decisions.waits_for_owner(db, company_id, record_id)
     if kind == agents.PROJECT:

@@ -11,6 +11,7 @@ sent, as a payment's is, so a call sent again is the same transaction.
 import hashlib
 import logging
 import uuid
+from datetime import timedelta
 from typing import Any, Final
 
 from app.config import get_settings
@@ -18,6 +19,7 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
 from app.modules.decisions import repository
 from app.modules.decisions.models import AnchorState, DecisionAnchor
+from app.modules.settlement import service as settlement
 from app.platform import agent_wallet, chain, events
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -25,6 +27,9 @@ from app.platform.db import open_session
 logger = logging.getLogger(__name__)
 
 _ANCHOR: Final = "anchor(bytes32)"
+# How often the heads are anchored when they moved; a payment settled since the last anchor is
+# anchored within the minute, so its row is sealed on the chain while someone looks at it.
+ANCHOR_EVERY: Final = timedelta(minutes=15)
 
 
 async def anchor_heads() -> bool:
@@ -43,6 +48,12 @@ async def anchor_heads() -> bool:
             if last is not None:
                 heads = await _kept(heads, last.heads)
             if not heads or (last is not None and last.heads == heads):
+                return False
+            if (
+                last is not None
+                and utcnow() - last.created_at < ANCHOR_EVERY
+                and not await settlement.settled_since(db, last.created_at)
+            ):
                 return False
             anchor = DecisionAnchor(
                 root=root_of(heads),

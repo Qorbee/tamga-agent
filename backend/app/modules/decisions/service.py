@@ -631,6 +631,10 @@ async def act(
     await db.refresh(decision)
     if body.evaluation != decision.evaluation:
         raise Conflict("It was evaluated again since: answer the evaluation in force")
+    if body.action == "undo_paid":
+        await _undo_paid(db, actor, decision, body.reason, utcnow())
+        await db.commit()
+        return DecisionOut.model_validate(decision)
     if decision.state is DecisionState.SETTLED:
         raise Conflict("It is paid already")
     if decision.state is DecisionState.APPROVED and body.action != "mark_paid":
@@ -769,6 +773,41 @@ async def _mark_paid(
     await _settle_by_bank(db, decision, payment, {"marked_by": str(actor.user_id)}, now)
 
 
+async def _undo_paid(
+    db: AsyncSession, actor: Actor, decision: Decision, reason: str | None, now: datetime
+) -> None:
+    """The owner says a bank transfer settled by mistake was not paid: their own word marked by
+    mistake, or a movement matched to the wrong bill. The payment is kept out of force, its
+    movement is never matched to this bill again, and the bill is approved and unpaid as before;
+    the reason goes on the log. A vault release is on the chain, and has no undo."""
+    if decision.state is not DecisionState.SETTLED:
+        raise Conflict("It is not marked paid")
+    if policies.tamga_pays(decision.method):
+        raise Conflict("The vault paid it on the chain: that cannot be undone")
+    payment = await settlement.undo_bank_payment(db, actor.company_id, decision, by=actor.user_id)
+    if payment is None:
+        raise Conflict("It has no bank payment to undo")
+    if payment.movement_id is not None:
+        await money.unlink_from_bill(db, actor.company_id, payment.movement_id, decision.invoice_id)
+    decision.state = DecisionState.APPROVED
+    await _log(
+        db,
+        decision,
+        LogEvent.UNPAID,
+        {
+            "evaluation": decision.evaluation,
+            "payment_id": str(payment.id),
+            "pay_amount": _text(payment.pay_amount),
+            "pay_currency": payment.pay_currency,
+            "paid_on": payment.paid_on.isoformat() if payment.paid_on else None,
+            "movement_id": str(payment.movement_id) if payment.movement_id else None,
+            "reason": " ".join(reason.split()) if reason else None,
+        },
+        user_id=actor.user_id,
+        at=now,
+    )
+
+
 async def _settle_by_bank(
     db: AsyncSession,
     decision: Decision,
@@ -853,6 +892,7 @@ async def _settle_matched(company_id: uuid.UUID) -> int:
             return 0
         since = min(row.decided_at.date() for row in waiting if row.decided_at is not None)
         taken = await settlement.matched_movements(db, company_id)
+        undone = await settlement.undone_matches(db, company_id)
         movements = [m for m in await money.outgoing(db, company_id, since) if m.id not in taken]
         known = await parties.identifiers_of(
             db,
@@ -870,6 +910,7 @@ async def _settle_matched(company_id: uuid.UUID) -> int:
                 movement
                 for movement in movements
                 if movement.booked_on >= approved_on
+                and (decision.id, movement.id) not in undone
                 and _from_firm(movement, known.get(decision.party_id, set()), company.country)
                 and await _pays(db, movement, decision, company.country, rates)
             ]

@@ -36,6 +36,8 @@ PROJECT: Final = linking.PROJECT
 CONVERSATION: Final = linking.CONVERSATION
 # A bill's decision, which Tamga writes about when it waits for the owner's approval.
 DECISION: Final = "decision"
+# A sandbox's opening, by its first job: Tamga welcomes whoever opened it, once.
+OPENING: Final = "opening"
 # What `waiting` lists of each kind: enough to say what is there, few enough to read.
 _LISTED: Final = 20
 # The projects something can wait in. One the owner rejected keeps the links suggested to it,

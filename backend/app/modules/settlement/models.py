@@ -8,10 +8,12 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     ForeignKeyConstraint,
+    Index,
     Numeric,
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -106,10 +108,25 @@ class Payment(CompanyScoped, Base):
     __tablename__ = "payments"
     __mapper_args__ = {"eager_defaults": True}
     __table_args__ = (
-        UniqueConstraint("company_id", "decision_id", "evaluation", "kind"),
+        # Among the payments in force: one the owner undid is kept, and the bill paid anew.
+        Index(
+            "payments_company_id_decision_id_evaluation_kind_key",
+            "company_id",
+            "decision_id",
+            "evaluation",
+            "kind",
+            unique=True,
+            postgresql_where=text("voided_at IS NULL"),
+        ),
         UniqueConstraint("idempotency_key"),
-        # One movement pays one bill.
-        UniqueConstraint("company_id", "movement_id"),
+        # One movement pays one bill; undone, it may pay another.
+        Index(
+            "payments_company_id_movement_id_key",
+            "company_id",
+            "movement_id",
+            unique=True,
+            postgresql_where=text("voided_at IS NULL"),
+        ),
         CheckConstraint(
             "(method <> 'vault_usdc' AND kind <> 'mirror') OR (payee IS NOT NULL AND "
             "usdc_units IS NOT NULL AND payment_key IS NOT NULL AND idempotency_key IS NOT NULL)",
@@ -150,3 +167,8 @@ class Payment(CompanyScoped, Base):
     failure: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     finished_at: Mapped[datetime | None]
+    # A bank transfer the owner said was not paid after all (marked by mistake, or a movement
+    # matched to the wrong bill): kept, out of force, and its movement never matched to this
+    # bill again. A vault release is on the chain and is never undone.
+    voided_at: Mapped[datetime | None]
+    voided_by: Mapped[uuid.UUID | None]

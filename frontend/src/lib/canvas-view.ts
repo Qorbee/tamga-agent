@@ -12,17 +12,19 @@ export const FROM_PARAM = "from";
 // The deepest a trail goes: a mail, an archive in it, a folder in that, the file.
 const MAX_TRAIL = 3;
 
-const KINDS = ["mail", "document", "project", "invoice"] as const;
-
-export type CanvasView = { kind: (typeof KINDS)[number]; id: string };
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Each kind of record, and what its id looks like: a record's uuid, or a payment run's day. */
+const KINDS = { mail: UUID, document: UUID, project: UUID, invoice: UUID, run: DAY } as const;
+
+export type CanvasView = { kind: keyof typeof KINDS; id: string };
 
 /** The view a `?view=` value names, or null for none or one this app does not know. */
 export function parseView(value: string | null): CanvasView | null {
   const [kind, id] = value?.split(":") ?? [];
-  const known = KINDS.find((name) => name === kind);
-  return known && id && UUID.test(id) ? { kind: known, id } : null;
+  const known = (Object.keys(KINDS) as (keyof typeof KINDS)[]).find((name) => name === kind);
+  return known && id && KINDS[known].test(id) ? { kind: known, id } : null;
 }
 
 export function formatView(view: CanvasView): string {

@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { T } from "@/components/translated";
 import {
   ApiError,
@@ -46,13 +47,16 @@ import { useIsOwner } from "@/lib/use-role";
  * and read again. A bill paid by bank is the owner's to pay: they mark it paid, or the bank's
  * movement settles it (ADR-0027).
  */
-export function DecisionRow({ decision, payment }: { decision: Decision; payment: Payment | undefined }) {
+export function DecisionRow({ decision, payment: given }: { decision: Decision; payment: Payment | undefined }) {
   const { t, locale } = useI18n();
+  // A payment the owner undid is kept for the record, and shows as none.
+  const payment = given?.voided_at ? undefined : given;
   const isOwner = useIsOwner();
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [undoing, setUndoing] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const bill = decision.invoice ?? null;
   const firm = bill?.party_name ?? "—";
@@ -68,6 +72,7 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
       setConfirming(false);
       setEditing(false);
       setMarking(false);
+      setUndoing(false);
     },
     // Evaluated again meanwhile: the list is read again and the owner answers what it says now.
     onError: (error) => {
@@ -96,6 +101,9 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
     (decision.state === "awaiting_owner" ||
       ((decision.state === "held" || decision.state === "rejected") && byOwner));
   const markable = byBank && (approvable || decision.state === "approved");
+  // Marked paid by mistake, or a movement matched to the wrong bill: the owner takes it back. A
+  // vault payment is on the chain and has no undo.
+  const undoable = byBank && decision.state === "settled" && payment?.method === "bank_transfer";
   const paidFrom =
     decision.pay_amount !== null && decision.pay_currency ? formatMoney(Number(decision.pay_amount), decision.pay_currency, locale) : null;
   // How it is paid, under the firm: from the vault, by bank in the bill's own currency, or from
@@ -181,6 +189,26 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
             ) : null}
           </span>
         </CanvasLink>
+        {isOwner && undoable && !undoing ? (
+          <DropdownMenu modal={false}>
+            <Hint label={t.payments.actions}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-muted-foreground mt-1.5"
+                  aria-label={t.payments.actions}
+                  disabled={answer.isPending}
+                >
+                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
+                </Button>
+              </DropdownMenuTrigger>
+            </Hint>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setUndoing(true)}>{t.payments.undoPaid}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
         {isOwner && !answered ? (
           <DropdownMenu modal={false}>
             <Hint label={t.payments.actions}>
@@ -284,6 +312,14 @@ export function DecisionRow({ decision, payment }: { decision: Decision; payment
           pending={answer.isPending}
           onCancel={() => setMarking(false)}
           onSave={(paid) => answer.mutate({ action: "mark_paid", ...paid })}
+        />
+      ) : null}
+
+      {undoing ? (
+        <UndoPaidForm
+          pending={answer.isPending}
+          onCancel={() => setUndoing(false)}
+          onUndo={(reason) => answer.mutate({ action: "undo_paid", ...(reason ? { reason } : {}) })}
         />
       ) : null}
 
@@ -461,6 +497,53 @@ function MarkPaidForm({
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={!valid || pending}>
           {t.payments.markPaid}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          {t.payments.cancel}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Takes back a bank payment: the owner's reason, if they give one, goes on the log. */
+function UndoPaidForm({
+  pending,
+  onCancel,
+  onUndo,
+}: {
+  pending: boolean;
+  onCancel: () => void;
+  onUndo: (reason: string) => void;
+}) {
+  const { t } = useI18n();
+  const [reason, setReason] = useState("");
+  return (
+    <form
+      className="grid gap-2 px-2 pb-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onUndo(reason.trim());
+      }}
+    >
+      <p className="text-sm font-medium">{t.payments.undoTitle}</p>
+      <p className="text-muted-foreground text-xs text-pretty">{t.payments.undoBody}</p>
+      <Textarea
+        value={reason}
+        maxLength={300}
+        rows={2}
+        onChange={(event) => setReason(event.target.value)}
+        placeholder={t.payments.undoReason}
+        aria-label={t.payments.undoReason}
+        aria-describedby="undo-reason-hint"
+        autoFocus
+      />
+      <p id="undo-reason-hint" className="text-muted-foreground text-xs">
+        {t.payments.undoReasonHint}
+      </p>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" variant="outline" disabled={pending}>
+          {t.payments.undo}
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
           {t.payments.cancel}

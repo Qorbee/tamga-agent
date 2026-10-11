@@ -22,6 +22,17 @@ from app.tests.decisions.test_decisions import vault as vault  # noqa: F401  (th
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("storage_bucket")]
 
 
+@pytest.fixture(autouse=True)
+def welcomed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These sandboxes stand in for any company: their welcome is left out, and tested with the
+    scenarios (tests/logistics/test_scenarios.py)."""
+
+    async def none(db: object, company_id: object) -> list[turns.Finding]:
+        return []
+
+    monkeypatch.setattr(turns, "_opening", none)
+
+
 async def test_a_bill_to_approve_is_written_about_with_its_card_past_the_days_chats(
     client: httpx.AsyncClient,
     vault: Vault,

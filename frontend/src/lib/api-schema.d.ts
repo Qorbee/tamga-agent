@@ -1024,6 +1024,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payment-runs/approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Run */
+        post: operations["payment-runs.approve_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payment-runs/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payment Run
+         * @description The run for a day, by default the next pay day (today without one): what is due by the
+         *     next run, in the order it is weighed, and what the reserve leaves to pay it with.
+         */
+        get: operations["payment-runs.get_payment_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments": {
         parameters: {
             query?: never;
@@ -2122,14 +2160,15 @@ export interface components {
          * @description The owner's answer to the evaluation it names: one for an evaluation since replaced is
          *     refused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:
          *     every rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it
-         *     in the bank, for what left their account (ADR-0027).
+         *     in the bank, for what left their account (ADR-0027); ``undo_paid`` takes that back, for a
+         *     bank transfer settled by mistake, with the owner's reason if they give one.
          */
         DecisionAction: {
             /**
              * Action
              * @enum {string}
              */
-            action: "approve" | "hold" | "reject" | "edit" | "pay_by" | "mark_paid";
+            action: "approve" | "hold" | "reject" | "edit" | "pay_by" | "mark_paid" | "undo_paid";
             /** Amount */
             amount?: number | string | null;
             /** Evaluation */
@@ -2141,6 +2180,8 @@ export interface components {
             pay_amount?: number | string | null;
             /** Pay Currency */
             pay_currency?: string | null;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * DecisionChainOut
@@ -2942,7 +2983,7 @@ export interface components {
          * LogEvent
          * @enum {string}
          */
-        LogEvent: "proposed" | "advised" | "edited" | "pay_by" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release";
+        LogEvent: "proposed" | "advised" | "edited" | "pay_by" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release" | "unpaid";
         /**
          * Me
          * @description Who is signed in, the company this session acts for, and every company they belong to.
@@ -3413,6 +3454,8 @@ export interface components {
             tx_hash: string | null;
             /** Usdc Units */
             usdc_units: number | null;
+            /** Voided At */
+            voided_at: string | null;
         };
         /** PaymentPage */
         PaymentPage: {
@@ -3420,6 +3463,42 @@ export interface components {
             items: components["schemas"]["PaymentOut"][];
             /** Total */
             total: number;
+        };
+        /**
+         * PaymentRunOut
+         * @description The bills to pay on a day: those due by the next run after it, or overdue, that wait for
+         *     the owner or were approved and not paid yet, in the order they are weighed against the
+         *     accounts; and what the reserve leaves to pay them with. Figures are the policy's currency.
+         */
+        PaymentRunOut: {
+            /** Balance */
+            balance: string | null;
+            /** Currency */
+            currency: string;
+            /** Held */
+            held: components["schemas"]["DecisionOut"][];
+            /** Items */
+            items: components["schemas"]["RunItem"][];
+            /** Kept */
+            kept: string | null;
+            /**
+             * On
+             * Format: date
+             */
+            on: string;
+            reserve: components["schemas"]["ReserveRule-Output"];
+            /** Spare */
+            spare: string | null;
+            /**
+             * Through
+             * Format: date
+             */
+            through: string;
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
         };
         /**
          * PaymentState
@@ -3987,6 +4066,49 @@ export interface components {
             reason: string;
             /** Rule */
             rule: string;
+        };
+        /** RunApproval */
+        RunApproval: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Evaluation */
+            evaluation: number;
+        };
+        /**
+         * RunApprove
+         * @description The owner approves these bills of a run, each the evaluation it names, one at a time.
+         */
+        RunApprove: {
+            /** Items */
+            items: components["schemas"]["RunApproval"][];
+        };
+        /** RunApproved */
+        RunApproved: {
+            /** Approved */
+            approved: string[];
+            /** Refused */
+            refused: components["schemas"]["RunRefusal"][];
+        };
+        /** RunItem */
+        RunItem: {
+            decision: components["schemas"]["DecisionOut"];
+            /** Fits */
+            fits: boolean | null;
+            /** In Policy Currency */
+            in_policy_currency: string | null;
+        };
+        /** RunRefusal */
+        RunRefusal: {
+            /**
+             * Decision Id
+             * Format: uuid
+             */
+            decision_id: string;
+            /** Reason */
+            reason: string;
         };
         /**
          * Said
@@ -6423,6 +6545,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "payment-runs.approve_run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunApprove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunApproved"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "payment-runs.get_payment_run": {
+        parameters: {
+            query?: {
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentRunOut"];
                 };
             };
             /** @description Validation Error */

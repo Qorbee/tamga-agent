@@ -1,9 +1,10 @@
 import uuid
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 
-from app.modules.decisions import service
+from app.modules.decisions import runs, service
 from app.modules.decisions.models import DecisionState
 from app.modules.decisions.schemas import (
     DecisionAction,
@@ -13,6 +14,9 @@ from app.modules.decisions.schemas import (
     DecisionPage,
     DecisionSort,
     EventSort,
+    PaymentRunOut,
+    RunApprove,
+    RunApproved,
 )
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
@@ -90,3 +94,18 @@ async def get_decision_chain(actor: ActorDep, db: SessionDep) -> DecisionChainOu
     """Whether the company's decision log still holds: each row's hash checked against what the
     row says and the row before it."""
     return await service.chain_state(db, actor)
+
+
+payment_runs = APIRouter(tags=["payment-runs"])
+
+
+@payment_runs.get("/payment-runs/current")
+async def get_payment_run(actor: ActorDep, db: SessionDep, on: date | None = None) -> PaymentRunOut:
+    """The run for a day, by default the next pay day (today without one): what is due by the
+    next run, in the order it is weighed, and what the reserve leaves to pay it with."""
+    return await runs.payment_run(db, actor, on)
+
+
+@payment_runs.post("/payment-runs/approvals")
+async def approve_run(body: RunApprove, actor: ActorDep, db: SessionDep) -> RunApproved:
+    return await runs.approve(db, actor, body)

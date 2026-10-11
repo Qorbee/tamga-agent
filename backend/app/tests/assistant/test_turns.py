@@ -28,6 +28,18 @@ from app.tests.linking.test_placing import placement as placement_of
 # The mail these tests store goes to the storage service, in the bucket the tests make.
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("storage_bucket")]
 
+
+@pytest.fixture(autouse=True)
+def welcomed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These sandboxes stand in for any company: their welcome is left out, and tested with the
+    scenarios (tests/logistics/test_scenarios.py)."""
+
+    async def none(db: object, company_id: object) -> list[turns.Finding]:
+        return []
+
+    monkeypatch.setattr(turns, "_opening", none)
+
+
 READ_ONLY = {
     "waiting",
     # Reading; a helper's run (investigate, read_file) and drafting are a person's.

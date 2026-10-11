@@ -80,7 +80,7 @@ function ApprovalCard({ data }: DataMessagePartProps<CardContent>) {
         <div className="border-border bg-card rounded-2xl border py-1 ps-2 pe-3">
           <DecisionRow
             decision={decision.data}
-            payment={payments.data?.items.find((payment) => payment.state === "settled")}
+            payment={payments.data?.items.find((payment) => payment.state === "settled" && !payment.voided_at)}
           />
         </div>
       ) : null}

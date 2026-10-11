@@ -59,9 +59,11 @@ def vault(monkeypatch: pytest.MonkeyPatch) -> Vault:
     return stand_in
 
 
-async def a_sandbox(client: httpx.AsyncClient, *, on_the_vault: bool = True) -> uuid.UUID:
-    """The judges' scenario, its account open on the vault with a wallet for each subcontractor."""
-    company_id = await guest_client(client)
+async def a_sandbox(
+    client: httpx.AsyncClient, *, on_the_vault: bool = True, scenario: str | None = None
+) -> uuid.UUID:
+    """A judges' scenario, its account open on the vault with a wallet for each subcontractor."""
+    company_id = await guest_client(client, scenario)
     await playground.seed(company_id)
     async with open_session() as db:
         # Where the vault is configured, the session queued an opening of its own.

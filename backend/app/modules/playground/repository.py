@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,4 +34,9 @@ async def unfinished(db: AsyncSession, steps: dict[str, int]) -> list[World]:
             or_(*(and_(World.scenario == key, World.played < n) for key, n in steps.items())),
         )
     )
+    return list(rows)
+
+
+async def opened_since(db: AsyncSession, day: date) -> list[uuid.UUID]:
+    rows = await db.scalars(select(World.company_id).where(World.opened_on >= day))
     return list(rows)

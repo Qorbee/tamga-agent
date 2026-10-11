@@ -325,6 +325,14 @@ export type DecisionEventPage = Schemas["DecisionEventPage"];
 type DecisionEventQuery = NonNullable<operations["decisions.list_decision_events"]["parameters"]["query"]>;
 export const listDecisionEvents = (params: DecisionEventQuery) =>
   request<DecisionEventPage>(`/decision-events${query(params)}`);
+// The payment run: the bills to pay on a day, weighed against what the reserve leaves.
+export type PaymentRun = Schemas["PaymentRunOut"];
+export type RunItem = Schemas["RunItem"];
+export const getPaymentRun = (on?: string) => request<PaymentRun>(`/payment-runs/current${query({ on })}`);
+export type RunApproved = Schemas["RunApproved"];
+/** Approves each bill, the evaluation it names; one evaluated again since is refused with why. */
+export const approveRun = (items: Schemas["RunApproval"][]) =>
+  request<RunApproved>("/payment-runs/approvals", json("POST", { items }));
 export type DecisionChain = Schemas["DecisionChainOut"];
 export const getDecisionChain = () => request<DecisionChain>("/decision-chain");
 

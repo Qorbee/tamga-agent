@@ -35,7 +35,11 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
             </Suspense>
           }
           bar={<PlaygroundBar />}
-          beside={<WorldPanel />}
+          beside={
+            <Suspense fallback={null}>
+              <WorldPanel />
+            </Suspense>
+          }
         >
           {children}
         </AppShell>

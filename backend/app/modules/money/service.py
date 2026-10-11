@@ -148,6 +148,18 @@ async def link_to_bill(
         movement.category_by = CategorySetBy.CODE
 
 
+async def unlink_from_bill(
+    db: AsyncSession, company_id: uuid.UUID, movement_id: uuid.UUID, invoice_id: uuid.UUID
+) -> None:
+    """The owner said the movement did not pay this bill: its link to it goes, and its category
+    stays as it is, since it still left for that firm. No commit."""
+    movement = await repository.get_movement(db, company_id, movement_id)
+    if movement is None or movement.invoice_id != invoice_id:
+        return
+    movement.invoice_id = None
+    await events.publish(db, company_id, events.EventKind.MONEY)
+
+
 async def holdings_of(db: AsyncSession, company_id: uuid.UUID, currency: str) -> Holdings:
     company = (await companies.get_companies(db, [company_id]))[company_id]
     today = clock.now(company).date()

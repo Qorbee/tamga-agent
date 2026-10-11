@@ -153,6 +153,17 @@ async def opened_on(company_id: uuid.UUID) -> date | None:
     return world.opened_on if world else None
 
 
+async def scenario_of(db: AsyncSession, company_id: uuid.UUID) -> ScenarioOut | None:
+    world = await repository.get(db, company_id)
+    scenario = _scenarios.get(world.scenario) if world else None
+    return _out(scenario) if scenario else None
+
+
+async def just_opened(db: AsyncSession) -> list[uuid.UUID]:
+    """The sandboxes seeded within the last day: Tamga writes first in each, once."""
+    return await repository.opened_since(db, (clock.utcnow() - timedelta(days=1)).date())
+
+
 async def get_world(db: AsyncSession, actor: Actor) -> WorldOut:
     company = (await companies.get_companies(db, [actor.company_id]))[actor.company_id]
     world = await repository.get(db, actor.company_id)

@@ -125,7 +125,7 @@ def walk(api: str, web: str, within: dict[str, float]) -> list[Step]:
     ):
         return w.steps
 
-    run = w.call("GET", "/payment-runs")
+    run = w.call("GET", "/payment-runs/current")
     w.note(
         "payment run proposed",
         "pass" if run.status_code == 200 else "missing",

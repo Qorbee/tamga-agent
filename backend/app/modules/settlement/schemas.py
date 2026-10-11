@@ -36,6 +36,8 @@ class PaymentOut(BaseModel):
     failure: str | None
     created_at: datetime
     finished_at: datetime | None
+    # Undone by the owner: not paid after all, kept for the record.
+    voided_at: datetime | None
 
 
 class PaymentPage(BaseModel):

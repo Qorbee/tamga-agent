@@ -1428,7 +1428,7 @@
         "type": "object"
       },
       "DecisionAction": {
-        "description": "The owner's answer to the evaluation it names: one for an evaluation since replaced is\nrefused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:\nevery rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it\nin the bank, for what left their account (ADR-0027).",
+        "description": "The owner's answer to the evaluation it names: one for an evaluation since replaced is\nrefused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:\nevery rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it\nin the bank, for what left their account (ADR-0027); ``undo_paid`` takes that back, for a\nbank transfer settled by mistake, with the owner's reason if they give one.",
         "properties": {
           "action": {
             "enum": [
@@ -1437,7 +1437,8 @@
               "reject",
               "edit",
               "pay_by",
-              "mark_paid"
+              "mark_paid",
+              "undo_paid"
             ],
             "title": "Action",
             "type": "string"
@@ -1512,6 +1513,18 @@
               }
             ],
             "title": "Pay Currency"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "required": [
@@ -3967,7 +3980,8 @@
           "rejected",
           "settled",
           "failed",
-          "would_release"
+          "would_release",
+          "unpaid"
         ],
         "title": "LogEvent",
         "type": "string"
@@ -5393,6 +5407,18 @@
               }
             ],
             "title": "Usdc Units"
+          },
+          "voided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voided At"
           }
         },
         "required": [
@@ -5415,7 +5441,8 @@
           "explorer_url",
           "failure",
           "created_at",
-          "finished_at"
+          "finished_at",
+          "voided_at"
         ],
         "title": "PaymentOut",
         "type": "object"
@@ -5439,6 +5466,97 @@
           "total"
         ],
         "title": "PaymentPage",
+        "type": "object"
+      },
+      "PaymentRunOut": {
+        "description": "The bills to pay on a day: those due by the next run after it, or overdue, that wait for\nthe owner or were approved and not paid yet, in the order they are weighed against the\naccounts; and what the reserve leaves to pay them with. Figures are the policy's currency.",
+        "properties": {
+          "balance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "held": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionOut"
+            },
+            "title": "Held",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kept": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kept"
+          },
+          "on": {
+            "format": "date",
+            "title": "On",
+            "type": "string"
+          },
+          "reserve": {
+            "$ref": "#/components/schemas/ReserveRule-Output"
+          },
+          "spare": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spare"
+          },
+          "through": {
+            "format": "date",
+            "title": "Through",
+            "type": "string"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "on",
+          "today",
+          "through",
+          "currency",
+          "reserve",
+          "balance",
+          "kept",
+          "spare",
+          "items",
+          "held"
+        ],
+        "title": "PaymentRunOut",
         "type": "object"
       },
       "PaymentState": {
@@ -7103,6 +7221,125 @@
           "reason"
         ],
         "title": "RuleResult",
+        "type": "object"
+      },
+      "RunApproval": {
+        "properties": {
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "evaluation": {
+            "title": "Evaluation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision_id",
+          "evaluation"
+        ],
+        "title": "RunApproval",
+        "type": "object"
+      },
+      "RunApprove": {
+        "description": "The owner approves these bills of a run, each the evaluation it names, one at a time.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunApproval"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RunApprove",
+        "type": "object"
+      },
+      "RunApproved": {
+        "properties": {
+          "approved": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Approved",
+            "type": "array"
+          },
+          "refused": {
+            "items": {
+              "$ref": "#/components/schemas/RunRefusal"
+            },
+            "title": "Refused",
+            "type": "array"
+          }
+        },
+        "required": [
+          "approved",
+          "refused"
+        ],
+        "title": "RunApproved",
+        "type": "object"
+      },
+      "RunItem": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/DecisionOut"
+          },
+          "fits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits"
+          },
+          "in_policy_currency": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Policy Currency"
+          }
+        },
+        "required": [
+          "decision",
+          "in_policy_currency",
+          "fits"
+        ],
+        "title": "RunItem",
+        "type": "object"
+      },
+      "RunRefusal": {
+        "properties": {
+          "decision_id": {
+            "format": "uuid",
+            "title": "Decision Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_id",
+          "reason"
+        ],
+        "title": "RunRefusal",
         "type": "object"
       },
       "Said": {
@@ -12313,6 +12550,108 @@
         "summary": "Get Party",
         "tags": [
           "parties"
+        ]
+      }
+    },
+    "/payment-runs/approvals": {
+      "post": {
+        "operationId": "payment-runs.approve_run",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunApprove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunApproved"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Approve Run",
+        "tags": [
+          "payment-runs"
+        ]
+      }
+    },
+    "/payment-runs/current": {
+      "get": {
+        "description": "The run for a day, by default the next pay day (today without one): what is due by the\nnext run, in the order it is weighed, and what the reserve leaves to pay it with.",
+        "operationId": "payment-runs.get_payment_run",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "on",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Payment Run",
+        "tags": [
+          "payment-runs"
         ]
       }
     },

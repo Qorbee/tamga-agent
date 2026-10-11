@@ -4,6 +4,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { DecisionRow } from "@/components/decision-card";
+import { PaymentRunCard } from "@/components/payment-run";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -37,6 +38,7 @@ export function PaymentsPage() {
   const [view, setView] = useState<View>("waiting");
   return (
     <div className="grid gap-4">
+      <PaymentRunCard />
       <ToggleGroup
         type="single"
         value={view}
@@ -57,6 +59,11 @@ export function PaymentsPage() {
       <p className="text-muted-foreground text-xs text-pretty">{t.payments.mirror}</p>
     </div>
   );
+}
+
+/** A settled payment the owner has not undone. */
+function inForce(payment: Payment): boolean {
+  return payment.state === "settled" && !payment.voided_at;
 }
 
 function Decisions({ view }: { view: View }) {
@@ -81,11 +88,16 @@ function Decisions({ view }: { view: View }) {
       queryFn: () => listPayments({ decision_id: ids, limit: 200 }),
     })),
   });
+  // Each bill's payment in force; one the owner undid only while none replaced it, and a failed
+  // attempt only while nothing settled.
   const shown = new Map<string, Payment>();
   for (const payment of payments.flatMap((query) => query.data?.items ?? [])) {
     const kept = shown.get(payment.decision_id);
+    if (kept && inForce(kept)) continue;
+    const settled = payment.state === "settled";
     const newer = !kept || (kept.state !== "settled" && payment.evaluation > kept.evaluation);
-    if (payment.state === "settled" || (payment.state === "failed" && newer)) shown.set(payment.decision_id, payment);
+    if (inForce(payment) || (settled && kept?.state !== "settled") || (payment.state === "failed" && newer))
+      shown.set(payment.decision_id, payment);
   }
 
   if (decisions.isError)
