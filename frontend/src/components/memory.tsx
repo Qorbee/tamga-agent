@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontalIcon, SentIcon } from "@hugeicons/core-free-icons";
+import { MoreHorizontalIcon, SentIcon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,29 +8,31 @@ import { useState } from "react";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ApiError,
+  changeMemory,
   changeMemoryEntry,
   discardMemoryEntry,
-  draftMemoryEntries,
   getMemoryEntry,
   getParty,
   getProject,
   listAllMemory,
-  writeMemoryEntry,
+  type MemoryChanges as Changes,
   type MemoryEntry,
   type MemoryKind,
 } from "@/lib/api";
+import { formatAgo } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useAsks, useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
-const KINDS: MemoryKind[] = ["term", "alias", "person", "preference", "practice"];
-const LONGEST = 500;
+const KINDS: MemoryKind[] = ["person", "alias", "term", "practice", "preference"];
+/** The longest text one message to the memorist reads (`MemoryText`). */
+const TOLD = 2000;
 
 /** Everything that shows an entry reads it again after a change. */
 function useRefresh() {
@@ -40,73 +42,99 @@ function useRefresh() {
   };
 }
 
-/**
- * One thing the owner taught Tamga (ADR-0024): its kind, its words and what it is about, and the
- * owner's answers. A draft from a chat reaches no agent until the owner confirms it here; one
- * that holds is corrected or retired, never deleted, so what agents were given stays traceable.
- */
-export function MemoryRow({ entry, grouped = false }: { entry: MemoryEntry; grouped?: boolean }) {
+/** What a message to the memorist asks: what was written, and the entry an edit is about. */
+function useTell(onDone: (changes: Changes) => void) {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: ({ text, entryId }: { text: string; entryId?: string }) =>
+      changeMemory({ text, entry_id: entryId ?? null }),
+    onSuccess: onDone,
+    onSettled: refresh,
+  });
+}
+
+function useWhy(error: Error | null): string {
   const { t } = useI18n();
+  return error instanceof ApiError && error.status === 429 ? t.memory.spent : t.memory.failed;
+}
+
+/**
+ * One thing Tamga knows (ADR-0024, ADR-0030), as Claude's memory lists it: who or what it is
+ * about, its sentence, and when it last changed. The memorist writes every entry; the owner edits
+ * one by telling it what should change, retires it (and uses it again), and deletes one retired
+ * for good. A draft from a chat or from ops waits for the owner's Confirm.
+ */
+export function MemoryRow({ entry, fresh = false }: { entry: MemoryEntry; fresh?: boolean }) {
+  const { t, locale } = useI18n();
   const words = t.memory;
   const owner = useIsOwner();
   const refresh = useRefresh();
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const change = useMutation({
     mutationFn: (body: Parameters<typeof changeMemoryEntry>[1]) => changeMemoryEntry(entry.id, body),
-    onSuccess: () => setEditing(false),
     onSettled: refresh,
   });
-  const discard = useMutation({ mutationFn: () => discardMemoryEntry(entry.id), onSettled: refresh });
+  const discard = useMutation({
+    mutationFn: () => discardMemoryEntry(entry.id),
+    onSuccess: () => setDeleting(false),
+    onSettled: refresh,
+  });
   const busy = change.isPending || discard.isPending;
   const draft = entry.state === "proposed";
+  const retired = entry.state === "retired";
+  const ago = formatAgo(new Date(entry.updated_at), locale);
 
   return (
-    <div data-slot="memory-entry" className="grid gap-2 py-2.5">
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-xs">
-            <span className="font-medium">{words.kinds[entry.kind]}</span>
-            <Subject entry={entry} />
-            {/* Among the drafts, their heading already says they wait. */}
-            {draft && !grouped ? <span className="text-warning-foreground">{words.waits}</span> : null}
-            {entry.state === "retired" ? <span>{words.retired}</span> : null}
+    <div data-slot="memory-entry" className="grid gap-2 py-3">
+      <div className="flex items-start gap-3">
+        <div className="grid min-w-0 flex-1 gap-x-6 gap-y-0.5 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto]">
+          <p className={cn("flex min-w-0 items-center gap-2 text-sm font-medium", retired && "text-muted-foreground")}>
+            <span className="truncate">{entry.title ?? words.kinds[entry.kind]}</span>
+            {fresh ? (
+              <span className="bg-primary text-primary-foreground shrink-0 rounded-md px-1.5 py-px text-[11px] font-medium">
+                {words.new}
+              </span>
+            ) : null}
           </p>
-          {editing ? null : (
-            <p className={cn("text-sm text-pretty break-words", entry.state === "retired" && "text-muted-foreground line-through")}>
+          <div className="min-w-0">
+            <p className={cn("text-sm text-pretty break-words", retired && "text-muted-foreground line-through")}>
               {entry.text}
             </p>
-          )}
+            <Subject entry={entry} />
+          </div>
+          <p className="text-muted-foreground text-xs whitespace-nowrap sm:pt-0.5">
+            {words.updated(ago ?? words.justNow)}
+          </p>
         </div>
-        {owner && !editing && !draft ? (
+        {owner && !draft && !editing ? (
           <DropdownMenu modal={false}>
             <Hint label={words.more}>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="text-muted-foreground -me-2" aria-label={words.more} disabled={busy}>
+                <Button variant="ghost" size="icon-sm" className="text-muted-foreground -me-2 -mt-1" aria-label={words.more} disabled={busy}>
                   <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
                 </Button>
               </DropdownMenuTrigger>
             </Hint>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setEditing(true)}>{words.edit}</DropdownMenuItem>
-              {entry.state === "held" ? (
-                <DropdownMenuItem onSelect={() => change.mutate({ state: "retired" })}>{words.retire}</DropdownMenuItem>
+              {retired ? (
+                <>
+                  <DropdownMenuItem onSelect={() => change.mutate({ state: "held" })}>{words.restore}</DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+                    {words.delete}
+                  </DropdownMenuItem>
+                </>
               ) : (
-                <DropdownMenuItem onSelect={() => change.mutate({ state: "held" })}>{words.restore}</DropdownMenuItem>
+                <>
+                  <DropdownMenuItem onSelect={() => setEditing(true)}>{words.edit}</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => change.mutate({ state: "retired" })}>{words.retire}</DropdownMenuItem>
+                </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
       </div>
-      {editing ? (
-        <EntryForm
-          kind={entry.kind}
-          text={entry.text}
-          busy={busy}
-          submit={words.save}
-          onCancel={() => setEditing(false)}
-          onSubmit={(kind, text) => change.mutate({ kind, text })}
-        />
-      ) : null}
+      {editing ? <EditBox entry={entry} onClose={() => setEditing(false)} /> : null}
       {owner && draft && !editing ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" disabled={busy} onClick={() => change.mutate({ state: "held" })}>
@@ -126,6 +154,164 @@ export function MemoryRow({ entry, grouped = false }: { entry: MemoryEntry; grou
           {t.errors.generic}
         </p>
       ) : null}
+      <Dialog open={deleting} onOpenChange={setDeleting}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{words.deleteTitle}</DialogTitle>
+            <DialogDescription>{words.deleteBody}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleting(false)}>
+              {words.cancel}
+            </Button>
+            <Button variant="destructive" disabled={discard.isPending} onClick={() => discard.mutate()}>
+              {words.delete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/** An edit is what should change, told to the memorist with the entry (ADR-0030). */
+function EditBox({ entry, onClose }: { entry: MemoryEntry; onClose: () => void }) {
+  const { t } = useI18n();
+  const words = t.memory;
+  const [text, setText] = useState("");
+  const [why, setWhy] = useState("");
+  const tell = useTell((done) => {
+    if (done.changes.length) onClose();
+    else setWhy(done.reason);
+  });
+  const failed = useWhy(tell.error);
+  const told = text.trim();
+  return (
+    <form
+      className="grid gap-1.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (told) tell.mutate({ text: told, entryId: entry.id });
+      }}
+    >
+      <Composer
+        value={text}
+        onChange={setText}
+        placeholder={words.whatChanges}
+        busy={tell.isPending}
+        onCancel={onClose}
+      />
+      <Status pending={tell.isPending} changes={null} why={why} error={tell.isError ? failed : ""} />
+    </form>
+  );
+}
+
+/** The line above a box: the memorist at work, what it changed, or why it changed nothing. */
+function Status({
+  pending,
+  changes,
+  why,
+  error,
+}: {
+  pending: boolean;
+  changes: Changes["changes"] | null;
+  why: string;
+  error: string;
+}) {
+  const { t } = useI18n();
+  const words = t.memory;
+  const [open, setOpen] = useState(false);
+  if (pending)
+    return (
+      <p className="shimmer text-muted-foreground px-1 text-sm motion-reduce:animate-none" role="status">
+        {words.looking}
+      </p>
+    );
+  if (error)
+    return (
+      <p className="text-danger-foreground px-1 text-sm" role="alert">
+        {error}
+      </p>
+    );
+  if (!why) return null;
+  const [first] = changes ?? [];
+  const said =
+    changes === null || changes.length === 0 ? (
+      <span>{words.noChange}</span>
+    ) : (
+      <span className="flex min-w-0 items-center gap-2">
+        <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="size-4 shrink-0" aria-hidden />
+        {changes.length === 1 && first ? (
+          <span className="min-w-0 truncate">
+            {words.done[first.action]} <span className="text-foreground">{words.sections[first.entry.kind]}</span>
+            {" › "}
+            <span className="text-foreground">{first.entry.title ?? words.kinds[first.entry.kind]}</span>
+          </span>
+        ) : (
+          <span>{words.changes(changes.length)}</span>
+        )}
+      </span>
+    );
+  return (
+    <div className="text-muted-foreground grid min-w-0 gap-1 px-1 text-sm" role="status">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        {said}
+        <Button type="button" size="xs" variant="ghost" className="text-muted-foreground shrink-0" onClick={() => setOpen(!open)}>
+          {open ? words.hide : words.seeWhy}
+        </Button>
+      </div>
+      {open ? <p className="text-pretty">{why}</p> : null}
+    </div>
+  );
+}
+
+/** A box like the chat's: Enter sends, Shift+Enter starts a new line. */
+function Composer({
+  value,
+  onChange,
+  placeholder,
+  busy,
+  onCancel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  busy: boolean;
+  onCancel?: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="border-border bg-card focus-within:border-ring flex min-w-0 items-end gap-2 rounded-3xl border py-1.5 ps-4 pe-1.5 transition-colors">
+      <Textarea
+        value={value}
+        maxLength={TOLD}
+        rows={1}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }
+          if (event.key === "Escape" && onCancel) onCancel();
+        }}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        // As wide as the box leaves it, never as wide as its placeholder.
+        className="max-h-40 min-h-8 w-full min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-sm shadow-none [field-sizing:fixed] focus-visible:ring-0 dark:bg-transparent"
+      />
+      {onCancel ? (
+        <Button type="button" size="sm" variant="ghost" className="shrink-0" onClick={onCancel}>
+          {t.memory.cancel}
+        </Button>
+      ) : null}
+      <IconButton
+        icon={SentIcon}
+        label={t.memory.send}
+        type="submit"
+        variant="default"
+        className="shrink-0 rounded-full"
+        disabled={!value.trim() || busy}
+      />
     </div>
   );
 }
@@ -145,77 +331,15 @@ function Subject({ entry }: { entry: MemoryEntry }) {
     retry: false,
   });
   const about = [party.data?.name, project.data ? `${project.data.number} · ${project.data.name}` : undefined].filter(Boolean);
-  return about.length ? <span className="min-w-0 truncate">{about.join(" · ")}</span> : null;
-}
-
-function EntryForm({
-  kind: initialKind,
-  text: initialText,
-  busy,
-  submit,
-  onSubmit,
-  onCancel,
-}: {
-  kind: MemoryKind;
-  text: string;
-  busy: boolean;
-  submit: string;
-  onSubmit: (kind: MemoryKind, text: string) => void;
-  onCancel?: () => void;
-}) {
-  const { t } = useI18n();
-  const words = t.memory;
-  const [kind, setKind] = useState<MemoryKind>(initialKind);
-  const [text, setText] = useState(initialText);
-  const clean = text.trim();
-  return (
-    <form
-      className="grid gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (clean) onSubmit(kind, clean);
-      }}
-    >
-      <Textarea
-        value={text}
-        maxLength={LONGEST}
-        rows={2}
-        onChange={(event) => setText(event.target.value)}
-        placeholder={words.placeholder}
-        aria-label={words.text}
-        className="min-h-16 text-sm"
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={kind} onValueChange={(value) => setKind(value as MemoryKind)}>
-          <SelectTrigger size="sm" aria-label={words.kind} className="min-w-0 flex-1 sm:max-w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {KINDS.map((each) => (
-              <SelectItem key={each} value={each}>
-                {words.kinds[each]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {onCancel ? (
-          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
-            {words.cancel}
-          </Button>
-        ) : null}
-        <Button type="submit" size="sm" disabled={busy || !clean}>
-          {submit}
-        </Button>
-      </div>
-    </form>
-  );
+  return about.length ? <p className="text-muted-foreground truncate text-xs">{about.join(" · ")}</p> : null;
 }
 
 /**
- * Settings → What Tamga knows: the drafts that wait for the owner, then what holds, and what the
- * owner retired on request. At the bottom, a box to tell Tamga something in one's own words: a
- * model drafts it into entries (`POST /memory/drafts`), each waiting above for the owner's
- * confirmation (ADR-0024). When it cannot draft, the owner writes the entry as it is.
+ * Settings → What Tamga knows, laid out as Claude's memory: the drafts that wait for the owner,
+ * then what holds, grouped by kind, and what was retired on request. At the bottom, a box where
+ * the owner (or ops) tells Tamga what to remember, change or forget in their own words: the
+ * memorist reads the memory and changes it (`POST /memory/changes`, ADR-0030), and the line
+ * above the box says what it did, or why it did nothing.
  */
 export function MemorySection() {
   const { t } = useI18n();
@@ -224,6 +348,7 @@ export function MemorySection() {
   const asks = useAsks();
   const refresh = useRefresh();
   const [retired, setRetired] = useState(false);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
   const states = retired ? (["retired"] as const) : (["proposed", "held"] as const);
   const entries = useQuery({
     queryKey: ["memory", { states }],
@@ -237,9 +362,14 @@ export function MemorySection() {
   });
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-4">
       <header>
-        <h3 className="text-muted-foreground pb-1 text-xs font-medium">{words.title}</h3>
+        <div className="flex items-center justify-between gap-2 pb-1">
+          <h3 className="text-muted-foreground text-xs font-medium">{words.title}</h3>
+          <Button size="xs" variant="ghost" className="text-muted-foreground -me-2" onClick={() => setRetired(!retired)}>
+            {retired ? words.showHeld : words.showRetired}
+          </Button>
+        </div>
         <p className="text-muted-foreground text-xs text-pretty">{words.hint}</p>
       </header>
       {drafts.length ? (
@@ -254,140 +384,76 @@ export function MemorySection() {
           </div>
           <div className="divide-border divide-y">
             {drafts.map((entry) => (
-              <MemoryRow key={entry.id} entry={entry} grouped />
+              <MemoryRow key={entry.id} entry={entry} fresh={fresh.has(entry.id)} />
             ))}
           </div>
         </div>
       ) : null}
       {entries.isPending ? (
-        <Skeleton className="h-16 rounded-xl" />
+        <Skeleton className="h-24 rounded-xl" />
       ) : shown.length ? (
-        <div className="divide-border divide-y">
-          {shown.map((entry) => (
-            <MemoryRow key={entry.id} entry={entry} />
-          ))}
-        </div>
+        KINDS.map((kind) => {
+          const ofKind = shown.filter((entry) => entry.kind === kind);
+          return ofKind.length ? (
+            <div key={kind}>
+              <h4 className="border-border border-b pb-2 text-sm font-medium">{words.sections[kind]}</h4>
+              <div className="divide-border divide-y">
+                {ofKind.map((entry) => (
+                  <MemoryRow key={entry.id} entry={entry} fresh={fresh.has(entry.id)} />
+                ))}
+              </div>
+            </div>
+          ) : null;
+        })
       ) : drafts.length ? null : (
         <p className="text-muted-foreground py-1 text-sm">{retired ? words.noneRetired : words.none}</p>
       )}
-      {/* Hidden, never unmounted, while the retired are shown: what was typed stays. */}
+      {/* Kept in sight at the foot of the part as the list scrolls, as the chat's box is; hidden,
+          never unmounted, while the retired are shown, so what was typed stays. */}
       {asks ? (
-        <div hidden={retired}>
-          <MemoryComposer owner={owner} onChange={refresh} />
+        <div hidden={retired} className="bg-popover sticky -bottom-5 -mb-5 pt-1 pb-5">
+          <MemoryBox onDone={(done) => setFresh(new Set(done.changes.map((each) => each.entry.id)))} />
         </div>
       ) : null}
-      <Button size="sm" variant="ghost" className="text-muted-foreground self-start" onClick={() => setRetired(!retired)}>
-        {retired ? words.showHeld : words.showRetired}
-      </Button>
     </section>
   );
 }
 
-/** The longest text one drafting reads (`MemoryText`). */
-const TOLD = 2000;
-
-function MemoryComposer({ owner, onChange }: { owner: boolean; onChange: () => void }) {
+function MemoryBox({ onDone }: { onDone: (changes: Changes) => void }) {
   const { t } = useI18n();
-  const words = t.memory;
   const [text, setText] = useState("");
-  const [said, setSaid] = useState("");
-  // What could not be drafted, for the owner to write as it is.
-  const [asIs, setAsIs] = useState<string | null>(null);
-  const drafting = useMutation({
-    mutationFn: (told: string) => draftMemoryEntries({ text: told }),
-    onMutate: () => {
-      setSaid("");
-      setAsIs(null);
-    },
-    onSuccess: (drafted, told) => {
-      if (drafted.items.length) {
-        setText("");
-        setSaid(words.drafted(drafted.items.length));
-        return;
-      }
-      // Nothing drafted: the words stay, and the owner may still keep them as they are.
-      setSaid(words.nothingToKeep);
-      if (owner) setAsIs(told.slice(0, LONGEST));
-    },
-    onError: (_error, told) => {
-      if (owner) setAsIs(told.slice(0, LONGEST));
-    },
-    onSettled: onChange,
+  const [last, setLast] = useState<Changes | null>(null);
+  // Each answer opens closed, its reason behind See why.
+  const [answers, setAnswers] = useState(0);
+  const tell = useTell((done) => {
+    setLast(done);
+    setAnswers((count) => count + 1);
+    // What changed something is sent; what changed nothing stays, to be put another way.
+    if (done.changes.length) setText("");
+    onDone(done);
   });
-  const write = useMutation({
-    mutationFn: writeMemoryEntry,
-    onSuccess: () => {
-      setAsIs(null);
-      setText("");
-    },
-    onSettled: onChange,
-  });
+  const failed = useWhy(tell.error);
   const told = text.trim();
-  const send = () => {
-    if (told && !drafting.isPending) drafting.mutate(told);
-  };
-  const spent = drafting.error instanceof ApiError && drafting.error.status === 429;
-
   return (
-    <div className="grid gap-2">
-      <form
-        className="border-border bg-card focus-within:border-ring rounded-2xl border p-2 transition-colors"
-        onSubmit={(event) => {
-          event.preventDefault();
-          send();
-        }}
-      >
-        <Textarea
-          value={text}
-          maxLength={TOLD}
-          rows={2}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter drafts, Shift+Enter starts a new line, as in the chat.
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              send();
-            }
-          }}
-          placeholder={words.tell}
-          aria-label={words.tell}
-          className="max-h-48 min-h-14 resize-none border-0 bg-transparent px-2 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
-        />
-        <div className="flex items-center justify-between gap-2 ps-2">
-          <span className="text-muted-foreground min-w-0 text-xs text-pretty" role="status">
-            {drafting.isPending ? words.drafting : said}
-          </span>
-          <IconButton
-            icon={SentIcon}
-            label={words.draft}
-            type="submit"
-            variant="default"
-            className="shrink-0 rounded-full"
-            disabled={!told || drafting.isPending}
-          />
-        </div>
-      </form>
-      {drafting.isError ? (
-        <p className="text-danger-foreground text-xs" role="alert">
-          {owner ? (spent ? words.spent : words.failed) : t.errors.generic}
-        </p>
-      ) : null}
-      {asIs !== null ? (
-        <EntryForm
-          kind="practice"
-          text={asIs}
-          busy={write.isPending}
-          submit={words.add}
-          onCancel={() => setAsIs(null)}
-          onSubmit={(kind, entry) => write.mutate({ kind, text: entry })}
-        />
-      ) : null}
-      {write.isError ? (
-        <p className="text-danger-foreground text-xs" role="alert">
-          {t.errors.generic}
-        </p>
-      ) : null}
-    </div>
+    <form
+      className="grid gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (told && !tell.isPending) {
+          setLast(null);
+          tell.mutate({ text: told });
+        }
+      }}
+    >
+      <Status
+        key={answers}
+        pending={tell.isPending}
+        changes={last?.changes ?? null}
+        why={last?.reason ?? ""}
+        error={tell.isError ? failed : ""}
+      />
+      <Composer value={text} onChange={setText} placeholder={t.memory.tell} busy={tell.isPending} />
+    </form>
   );
 }
 

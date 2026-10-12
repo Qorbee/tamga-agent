@@ -39,7 +39,7 @@ from app.modules.assistant.schemas import (
     ChatOut,
     ChatPage,
     CompactionMessage,
-    MemoryDrafts,
+    MemoryChanges,
     RunChoice,
 )
 from app.modules.assistant.seat import Seat
@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 # The budget of requests (CHAT_REQUESTS_PER_DAY) counts those made in this long.
 RUN_WINDOW: Final = timedelta(days=1)
-# What one drafting of memory in Settings may ask: an answer, and once more if it is unusable.
+# What one change of memory in Settings may ask: an answer, and once more if it is unusable.
 MEMORIST_REQUESTS: Final = 2
 # The most requests one answer may take: the searches before it and the answer itself. A run
 # that starts within the day's budget finishes, so a day can end this many requests past it. Its
@@ -382,12 +382,23 @@ async def run_chat(
     return response
 
 
-async def draft_memory(db: AsyncSession, actor: Actor, text: str) -> MemoryDrafts:
-    """What someone wrote in Settings, drafted by the memorist into entries of the company's
-    memory (ADR-0024): each ``proposed``, holding only once the owner confirms it. Its requests
-    come from the day's budget of the chat, taken before the model is called; it is charged
-    what was asked, however the call ends."""
+async def change_memory(
+    db: AsyncSession, actor: Actor, text: str, entry_id: uuid.UUID | None
+) -> MemoryChanges:
+    """What someone wrote in Settings, made into changes of the company's memory by the
+    memorist, which reads the memory first (ADR-0030): the owner's hold at once, anyone else's
+    only add, as drafts. ``entry_id``: the entry an edit is about, the owner's only. Its
+    requests come from the day's budget of the chat, taken before the model is called; it is
+    charged what was asked, however the call ends."""
     actor.require(*_ASKERS)
+    owner = actor.role is Role.OWNER
+    if entry_id is not None:
+        actor.require(Role.OWNER)
+    entries = await memory.for_memorist(db, actor.company_id)
+    handles = {f"m{n}": entry.id for n, entry in enumerate(entries, 1)}
+    focus = next((handle for handle, id_ in handles.items() if id_ == entry_id), None)
+    if entry_id is not None and focus is None:
+        raise NotFound("No such entry to change: a retired one is used again first")
     now = utcnow()
     run_id = uuid.uuid7()
     company = (await companies.get_companies(db, [actor.company_id])).get(actor.company_id)
@@ -403,26 +414,35 @@ async def draft_memory(db: AsyncSession, actor: Actor, text: str) -> MemoryDraft
     try:
         result = await llm.run(
             agents.memorist,
-            agents.memorist_case(text),
-            deps=None,
+            agents.memorist_case(entries, handles, text, focus),
+            deps=agents.MemorySeat(handles=handles, may_change=owner),
             limits=UsageLimits(request_limit=MEMORIST_REQUESTS),
-            # Entries are written in the language they were asked in.
+            # It answers in the language it is written to.
             language=None,
             trace_content=company is not None and companies.traces_content(company.kind),
             usage=usage,
         )
     except llm.NoAnswer as error:
-        raise Conflict("No entries could be drafted from this: write one as it is") from error
+        raise Conflict("Tamga could not make sense of this: nothing was changed") from error
     finally:
         await repository.settle_run(db, actor.company_id, run_id, usage.requests)
         await db.commit()
-    drafted = await memory.draft_from_settings(
+    remembered = result.output
+    done = await memory.apply_changes(
         db,
-        actor.company_id,
-        [(fact.kind, fact.text) for fact in result.output.entries],
-        written_by=actor.user_id,
+        actor,
+        [
+            memory.Change(
+                action=edit.action,
+                entry_id=handles[edit.entry] if edit.entry else None,
+                kind=edit.kind,
+                title=edit.name,
+                text=edit.text,
+            )
+            for edit in remembered.changes
+        ],
     )
-    return MemoryDrafts(items=drafted)
+    return MemoryChanges(changes=done, reason=" ".join(remembered.reason.split()))
 
 
 async def compact_chat(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> ChatOut:

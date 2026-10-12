@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.config import Effort
 from app.modules.assistant.models import CardKind, Origin
-from app.modules.memory.schemas import MemoryEntryOut
+from app.modules.memory.schemas import MemoryChangeDone
 
 
 class ChatOut(BaseModel):
@@ -105,12 +105,15 @@ class RunChoice(BaseModel):
 
 
 class MemoryText(BaseModel):
-    """What someone wrote in Settings for Tamga to remember, in their own words: one fact or
-    several, drafted into entries the owner confirms one by one."""
+    """What someone wrote in Settings for Tamga to remember, change or forget, in their own words
+    (ADR-0030). ``entry_id``: the entry an edit is about."""
 
     text: str = Field(min_length=1, max_length=2000)
+    entry_id: uuid.UUID | None = None
 
 
-class MemoryDrafts(BaseModel):
-    # Each ``proposed``; none when the text held nothing worth keeping.
-    items: list[MemoryEntryOut]
+class MemoryChanges(BaseModel):
+    # In the order made; none when what was written changed nothing.
+    changes: list[MemoryChangeDone]
+    # The memorist's one sentence: what it did, or why it changed nothing.
+    reason: str

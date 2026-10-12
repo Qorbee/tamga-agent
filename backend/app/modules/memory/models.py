@@ -58,6 +58,8 @@ class MemoryEntry(CompanyScoped, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     kind: Mapped[MemoryKind] = mapped_column(text_enum(MemoryKind, "memory_entries_kind_check"))
+    # What a list shows it by: who or what it is about ("Mersin hattı"), written by the memorist.
+    title: Mapped[str | None] = mapped_column(String(80))
     text: Mapped[str] = mapped_column(String(500))
     # Folded for search (`platform/search.py`).
     search_text: Mapped[str] = mapped_column(Text)

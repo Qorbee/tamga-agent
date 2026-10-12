@@ -285,6 +285,7 @@ export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
 export type MemoryEntry = Schemas["MemoryEntryOut"];
 export type MemoryPage = Schemas["MemoryPage"];
 export type MemoryKind = Schemas["MemoryKind"];
+export type MemoryChanges = Schemas["MemoryChanges"];
 type MemoryQuery = NonNullable<operations["memory.list_memory"]["parameters"]["query"]>;
 export const listMemory = (params: MemoryQuery) => request<MemoryPage>(`/memory${query(params)}`);
 /** Every entry the filters list, page by page: the owner sees and retires each one. */
@@ -300,9 +301,9 @@ export const getMemoryEntry = (id: string) => request<MemoryEntry>(`/memory/${id
 /** An entry the owner writes: it holds at once. */
 export const writeMemoryEntry = (body: Schemas["MemoryIn"]) =>
   request<MemoryEntry>("/memory", json("POST", body));
-/** What someone wrote, drafted by a model into entries that wait for the owner's confirmation. */
-export const draftMemoryEntries = (body: Schemas["MemoryText"]) =>
-  request<Schemas["MemoryDrafts"]>("/memory/drafts", json("POST", body));
+/** What someone wrote, made into changes of the memory by a model that reads it first (ADR-0030). */
+export const changeMemory = (body: Schemas["MemoryText"]) =>
+  request<Schemas["MemoryChanges"]>("/memory/changes", json("POST", body));
 /** The owner corrects, confirms (`held`) or retires an entry. */
 export const changeMemoryEntry = (id: string, body: Schemas["MemoryChange"]) =>
   request<MemoryEntry>(`/memory/${id}`, json("PATCH", body));

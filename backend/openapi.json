@@ -4106,20 +4106,48 @@
         "title": "MemoryChange",
         "type": "object"
       },
-      "MemoryDrafts": {
+      "MemoryChangeDone": {
+        "description": "One change the memorist made: an entry added, changed or retired, as it now stands.",
         "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/MemoryEntryOut"
-            },
-            "title": "Items",
-            "type": "array"
+          "action": {
+            "enum": [
+              "add",
+              "change",
+              "retire"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "entry": {
+            "$ref": "#/components/schemas/MemoryEntryOut"
           }
         },
         "required": [
-          "items"
+          "action",
+          "entry"
         ],
-        "title": "MemoryDrafts",
+        "title": "MemoryChangeDone",
+        "type": "object"
+      },
+      "MemoryChanges": {
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryChangeDone"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changes",
+          "reason"
+        ],
+        "title": "MemoryChanges",
         "type": "object"
       },
       "MemoryEntryOut": {
@@ -4219,6 +4247,17 @@
             "title": "Text",
             "type": "string"
           },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -4240,6 +4279,7 @@
         "required": [
           "id",
           "kind",
+          "title",
           "text",
           "party_id",
           "project_id",
@@ -4351,8 +4391,20 @@
         "type": "string"
       },
       "MemoryText": {
-        "description": "What someone wrote in Settings for Tamga to remember, in their own words: one fact or\nseveral, drafted into entries the owner confirms one by one.",
+        "description": "What someone wrote in Settings for Tamga to remember, change or forget, in their own words\n(ADR-0030). ``entry_id``: the entry an edit is about.",
         "properties": {
+          "entry_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Id"
+          },
           "text": {
             "maxLength": 2000,
             "minLength": 1,
@@ -11546,10 +11598,10 @@
         ]
       }
     },
-    "/memory/drafts": {
+    "/memory/changes": {
       "post": {
-        "description": "Drafts what was written into entries of the company's memory, by a model: each one\nwaits for the owner's confirmation (`PATCH /memory/{id}` with `state: held`) before any\nagent reads it. 429 when the chat's requests for today are spent.",
-        "operationId": "memory.draft_memory_entries",
+        "description": "What was written, made into changes of the company's memory by a model that reads it\nfirst (ADR-0030): entries added, changed or retired, and why. The owner's changes hold at\nonce; ops' only add, as drafts the owner confirms. With `entry_id`, an edit of that entry.\n429 when the chat's requests for today are spent; 409 when nothing usable came back.",
+        "operationId": "memory.change_memory",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11561,11 +11613,11 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MemoryDrafts"
+                  "$ref": "#/components/schemas/MemoryChanges"
                 }
               }
             },
@@ -11587,7 +11639,7 @@
             "APIKeyCookie": []
           }
         ],
-        "summary": "Draft Memory Entries",
+        "summary": "Change Memory",
         "tags": [
           "memory"
         ]

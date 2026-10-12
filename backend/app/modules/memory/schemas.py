@@ -8,6 +8,8 @@ from app.modules.memory.models import MemoryKind, MemorySource, MemoryState
 
 # The longest entry: one fact, not a document.
 TEXT_LENGTH = 500
+# The longest name an entry is listed by.
+TITLE_LENGTH = 80
 
 
 class MemoryEntryOut(BaseModel):
@@ -15,6 +17,7 @@ class MemoryEntryOut(BaseModel):
 
     id: uuid.UUID
     kind: MemoryKind
+    title: str | None
     text: str
     party_id: uuid.UUID | None
     project_id: uuid.UUID | None
@@ -56,3 +59,10 @@ class MemoryChange(BaseModel):
 
 
 MemorySort = Literal["-updated_at", "-last_used_at", "kind"]
+
+
+class MemoryChangeDone(BaseModel):
+    """One change the memorist made: an entry added, changed or retired, as it now stands."""
+
+    action: Literal["add", "change", "retire"]
+    entry: MemoryEntryOut

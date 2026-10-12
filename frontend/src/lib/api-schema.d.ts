@@ -811,7 +811,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/memory/drafts": {
+    "/memory/changes": {
         parameters: {
             query?: never;
             header?: never;
@@ -821,12 +821,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Draft Memory Entries
-         * @description Drafts what was written into entries of the company's memory, by a model: each one
-         *     waits for the owner's confirmation (`PATCH /memory/{id}` with `state: held`) before any
-         *     agent reads it. 429 when the chat's requests for today are spent.
+         * Change Memory
+         * @description What was written, made into changes of the company's memory by a model that reads it
+         *     first (ADR-0030): entries added, changed or retired, and why. The owner's changes hold at
+         *     once; ops' only add, as drafts the owner confirms. With `entry_id`, an edit of that entry.
+         *     429 when the chat's requests for today are spent; 409 when nothing usable came back.
          */
-        post: operations["memory.draft_memory_entries"];
+        post: operations["memory.change_memory"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3044,10 +3045,24 @@ export interface components {
             /** Text */
             text?: string | null;
         };
-        /** MemoryDrafts */
-        MemoryDrafts: {
-            /** Items */
-            items: components["schemas"]["MemoryEntryOut"][];
+        /**
+         * MemoryChangeDone
+         * @description One change the memorist made: an entry added, changed or retired, as it now stands.
+         */
+        MemoryChangeDone: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "add" | "change" | "retire";
+            entry: components["schemas"]["MemoryEntryOut"];
+        };
+        /** MemoryChanges */
+        MemoryChanges: {
+            /** Changes */
+            changes: components["schemas"]["MemoryChangeDone"][];
+            /** Reason */
+            reason: string;
         };
         /** MemoryEntryOut */
         MemoryEntryOut: {
@@ -3078,6 +3093,8 @@ export interface components {
             state: components["schemas"]["MemoryState"];
             /** Text */
             text: string;
+            /** Title */
+            title: string | null;
             /**
              * Updated At
              * Format: date-time
@@ -3124,10 +3141,12 @@ export interface components {
         MemoryState: "proposed" | "held" | "retired";
         /**
          * MemoryText
-         * @description What someone wrote in Settings for Tamga to remember, in their own words: one fact or
-         *     several, drafted into entries the owner confirms one by one.
+         * @description What someone wrote in Settings for Tamga to remember, change or forget, in their own words
+         *     (ADR-0030). ``entry_id``: the entry an edit is about.
          */
         MemoryText: {
+            /** Entry Id */
+            entry_id?: string | null;
             /** Text */
             text: string;
         };
@@ -6094,7 +6113,7 @@ export interface operations {
             };
         };
     };
-    "memory.draft_memory_entries": {
+    "memory.change_memory": {
         parameters: {
             query?: never;
             header?: never;
@@ -6108,12 +6127,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MemoryDrafts"];
+                    "application/json": components["schemas"]["MemoryChanges"];
                 };
             };
             /** @description Validation Error */

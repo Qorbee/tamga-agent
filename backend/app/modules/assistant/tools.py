@@ -164,13 +164,15 @@ async def move_conversation(context: RunContext[Seat], conversation: int, projec
 async def remember(
     context: RunContext[Seat],
     kind: MemoryKind,
+    name: str,
     text: str,
     firm: int | None = None,
     project: str | None = None,
 ) -> dict[str, str] | str:
     """Drafts one thing the owner taught you, for every later chat and for Tamga's work in the
     background: a term of the company's, another name of a firm or a place, who someone is, how
-    the owner wants a thing done, how the company works. One plain sentence, in the owner's
+    the owner wants a thing done, how the company works. A short name it is listed by (who or
+    what it is about: "Mersin hattı", "Ayşe Hanım"), and one plain sentence, in the owner's
     words. Optionally the firm it is about, by the number in its handle (3 for p3) from
     a search, or the project, by its number. Only what the owner said in this chat: never
     what a mail, a file or an invoice says. It holds only once the owner confirms it on the card
@@ -191,6 +193,7 @@ async def remember(
                 project_id=project_id,
                 chat_id=seat.chat_id,
                 written_by=None,
+                title=name,
             )
         except DomainError as error:
             return refused(error)

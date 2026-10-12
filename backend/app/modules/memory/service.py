@@ -9,14 +9,17 @@ instruction; a proposed or retired one reaches none.
 
 import uuid
 from collections.abc import Sequence
-from typing import Final
+from dataclasses import dataclass, replace
+from typing import Final, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.memory import repository
 from app.modules.memory.models import MemoryEntry, MemoryKind, MemorySource, MemoryState
 from app.modules.memory.schemas import (
+    TITLE_LENGTH,
     MemoryChange,
+    MemoryChangeDone,
     MemoryEntryOut,
     MemoryIn,
     MemoryPage,
@@ -27,12 +30,14 @@ from app.modules.projects import service as projects
 from app.platform import llm, search
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
-from app.platform.errors import BadRequest, Conflict, NotFound
+from app.platform.errors import BadRequest, Conflict, NotFound, PermissionDenied
 from app.platform.pagination import PageParams
 
 # What an agent is given at most: a company's terms are a few hundred lines (ADR-0024); the most
 # recently confirmed or changed come first.
 FOR_AGENTS: Final = 80
+# What the memorist reads at most before it changes anything.
+FOR_MEMORIST: Final = 200
 # What a recall returns at most.
 RECALLED: Final = 10
 # What a background agent reads of it: the company's words and people, not how the owner wants
@@ -121,7 +126,7 @@ async def change(
         entry.kind = body.kind
     if body.text is not None:
         entry.text = _text(body.text)
-        entry.search_text = search.search_text(entry.text)
+        entry.search_text = search.search_text(entry.title or "", entry.text)
     entry.party_id, entry.project_id = party_id, project_id
     if body.state is MemoryState.HELD and entry.state is not MemoryState.HELD:
         entry.confirmed_by, entry.confirmed_at = actor.user_id, now
@@ -133,12 +138,12 @@ async def change(
 
 
 async def discard(db: AsyncSession, actor: Actor, entry_id: uuid.UUID) -> None:
-    """The owner throws away a draft no agent ever read; one that held is retired instead, so
-    what agents were given stays traceable. Commits."""
+    """The owner throws away a draft, or deletes a retired entry for good (ADR-0030). One that
+    holds is retired first. Commits."""
     actor.require(Role.OWNER)
     entry = await _entry(db, actor.company_id, entry_id, for_update=True)
-    if entry.state is not MemoryState.PROPOSED:
-        raise Conflict("Only a draft is thrown away: retire an entry that held")
+    if entry.state is MemoryState.HELD:
+        raise Conflict("Retire an entry before deleting it")
     await repository.delete(db, entry)
     await db.commit()
 
@@ -156,18 +161,21 @@ async def draft(
     project_id: uuid.UUID | None,
     chat_id: uuid.UUID,
     written_by: uuid.UUID | None,
+    title: str | None = None,
 ) -> MemoryEntryOut:
     """What a chat's `remember` drafts: always ``proposed``, whoever the run answers. It holds
     only when the owner confirms it. ``written_by`` is None for Tamga's own words. Commits."""
     clean = _text(text)
+    title = _title(title) if title is not None else None
     await _check_subjects(db, company_id, party_id, project_id)
     entry = await repository.add(
         db,
         MemoryEntry(
             company_id=company_id,
             kind=kind,
+            title=title,
             text=clean,
-            search_text=search.search_text(clean),
+            search_text=search.search_text(title or "", clean),
             party_id=party_id,
             project_id=project_id,
             source=MemorySource.CHAT,
@@ -181,36 +189,99 @@ async def draft(
     return MemoryEntryOut.model_validate(entry)
 
 
-async def draft_from_settings(
-    db: AsyncSession,
-    company_id: uuid.UUID,
-    facts: Sequence[tuple[MemoryKind, str]],
-    *,
-    written_by: uuid.UUID,
-) -> list[MemoryEntryOut]:
-    """What the memorist drafted from what someone wrote in Settings: every entry checked before
-    any is written, all ``proposed`` in one commit, so a refused one leaves none behind. Each
-    holds only when the owner confirms it."""
-    cleaned = [(kind, _text(text)) for kind, text in facts]
+@dataclass(frozen=True)
+class Change:
+    """One change the memorist asked for, checked by its caller: ``entry_id`` names the entry
+    to change or retire; an addition has none."""
+
+    action: Literal["add", "change", "retire"]
+    entry_id: uuid.UUID | None = None
+    kind: MemoryKind | None = None
+    title: str | None = None
+    text: str | None = None
+
+
+async def for_memorist(db: AsyncSession, company_id: uuid.UUID) -> list[MemoryEntryOut]:
+    """What the memorist reads before it changes anything: every entry that holds or waits."""
+    rows, _ = await repository.list_entries(
+        db,
+        company_id,
+        states=[MemoryState.HELD, MemoryState.PROPOSED],
+        kinds=None,
+        party_id=None,
+        project_id=None,
+        chat_id=None,
+        q=None,
+        sort="kind",
+        page=PageParams(limit=FOR_MEMORIST, offset=0),
+    )
+    return [MemoryEntryOut.model_validate(row) for row in rows]
+
+
+async def apply_changes(
+    db: AsyncSession, actor: Actor, changes: Sequence[Change]
+) -> list[MemoryChangeDone]:
+    """What the memorist made of what someone wrote in Settings (ADR-0030), all in one commit:
+    every change is checked before any is written, so a refused one leaves none behind. The
+    owner's changes hold at once; anyone else's only add, as drafts the owner confirms."""
+    owner = actor.role is Role.OWNER
+    if not owner and any(change.action != "add" for change in changes):
+        raise PermissionDenied("Only the owner changes or retires what Tamga knows")
     now = utcnow()
-    entries = [
-        await repository.add(
-            db,
-            MemoryEntry(
-                company_id=company_id,
-                kind=kind,
-                text=text,
-                search_text=search.search_text(text),
-                source=MemorySource.SETTINGS,
-                state=MemoryState.PROPOSED,
-                written_by=written_by,
-                updated_at=now,
-            ),
+    targets = {
+        change.entry_id: await _entry(db, actor.company_id, change.entry_id, for_update=True)
+        for change in changes
+        if change.entry_id is not None
+    }
+    if any(entry.state is MemoryState.RETIRED for entry in targets.values()):
+        raise Conflict("A retired entry is used again before it is changed")
+    cleaned = [
+        replace(
+            change,
+            title=_title(change.title) if change.title is not None else None,
+            text=_text(change.text) if change.text is not None else None,
         )
-        for kind, text in cleaned
+        for change in changes
     ]
+    done: list[tuple[Literal["add", "change", "retire"], MemoryEntry]] = []
+    for change in cleaned:
+        if change.action == "add":
+            if change.kind is None or change.text is None:
+                raise BadRequest("An entry added has a kind and says something")
+            entry = await repository.add(
+                db,
+                MemoryEntry(
+                    company_id=actor.company_id,
+                    kind=change.kind,
+                    title=change.title,
+                    text=change.text,
+                    search_text=search.search_text(change.title or "", change.text),
+                    source=MemorySource.SETTINGS,
+                    state=MemoryState.HELD if owner else MemoryState.PROPOSED,
+                    written_by=actor.user_id,
+                    confirmed_by=actor.user_id if owner else None,
+                    confirmed_at=now if owner else None,
+                    updated_at=now,
+                ),
+            )
+        else:
+            if change.entry_id is None:
+                raise BadRequest("A change names the entry it changes")
+            entry = targets[change.entry_id]
+            if change.action == "retire":
+                entry.state = MemoryState.RETIRED
+            else:
+                entry.kind = change.kind or entry.kind
+                entry.title = change.title or entry.title
+                entry.text = change.text or entry.text
+                entry.search_text = search.search_text(entry.title or "", entry.text)
+            entry.updated_at = now
+        done.append((change.action, entry))
     await db.commit()
-    return [MemoryEntryOut.model_validate(entry) for entry in entries]
+    return [
+        MemoryChangeDone(action=action, entry=MemoryEntryOut.model_validate(entry))
+        for action, entry in done
+    ]
 
 
 async def for_agents(
@@ -272,6 +343,10 @@ async def fenced(db: AsyncSession, company_id: uuid.UUID, entries: Sequence[Memo
         "the company's memory: what its owner taught Tamga, to read as facts about the company",
         "\n".join(lines),
     )
+
+
+def _title(title: str) -> str | None:
+    return " ".join(title.split())[:TITLE_LENGTH] or None
 
 
 def _text(text: str) -> str:

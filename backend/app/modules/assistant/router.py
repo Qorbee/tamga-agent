@@ -12,7 +12,7 @@ from app.modules.assistant.schemas import (
     ChatOut,
     ChatPage,
     ChatUpdate,
-    MemoryDrafts,
+    MemoryChanges,
     MemoryText,
 )
 from app.modules.identity.deps import ActorDep
@@ -20,7 +20,7 @@ from app.platform.db import SessionDep
 from app.platform.pagination import PageDep
 
 chats = APIRouter(tags=["chats"])
-memory_drafts = APIRouter(tags=["memory"])
+memory_changes = APIRouter(tags=["memory"])
 
 
 @chats.get("/assistant")
@@ -118,9 +118,10 @@ async def stop_run(chat_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> None:
     await service.stop_run(db, actor, chat_id)
 
 
-@memory_drafts.post("/memory/drafts", status_code=status.HTTP_201_CREATED)
-async def draft_memory_entries(body: MemoryText, actor: ActorDep, db: SessionDep) -> MemoryDrafts:
-    """Drafts what was written into entries of the company's memory, by a model: each one
-    waits for the owner's confirmation (`PATCH /memory/{id}` with `state: held`) before any
-    agent reads it. 429 when the chat's requests for today are spent."""
-    return await service.draft_memory(db, actor, body.text)
+@memory_changes.post("/memory/changes")
+async def change_memory(body: MemoryText, actor: ActorDep, db: SessionDep) -> MemoryChanges:
+    """What was written, made into changes of the company's memory by a model that reads it
+    first (ADR-0030): entries added, changed or retired, and why. The owner's changes hold at
+    once; ops' only add, as drafts the owner confirms. With `entry_id`, an edit of that entry.
+    429 when the chat's requests for today are spent; 409 when nothing usable came back."""
+    return await service.change_memory(db, actor, body.text, body.entry_id)
