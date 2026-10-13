@@ -1,7 +1,7 @@
 # Frontend
 
-The Tamga web app: the landing page, the owner app (a chat with a canvas) and, later, the playground —
-one Next.js App Router project on Tailwind v4, shadcn/ui and assistant-ui. It holds no business rules;
+The Tamga web app: the landing page, the owner app (a chat with a canvas) and the playground — one
+Next.js App Router project on Tailwind v4, shadcn/ui and assistant-ui. It holds no business rules;
 everything it shows comes from the FastAPI backend through the generated API contract.
 
 ## Map

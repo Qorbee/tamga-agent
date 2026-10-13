@@ -105,12 +105,16 @@ Arc testnet; nothing touches a company's bank or real money.
   the page that asked is closed; unread is per person. From half full, a ring beside Send shows
   how full a chat is, and before it fills its earlier part is written into notes; a model names
   each chat from its first question, in one small request; whoever asks chooses the model and
-  how long it reasons, from a chip beside Send.
+  how long it reasons, from a chip beside Send. When an answer is a list, totals or a trend, it
+  shows a view under it, chosen from a catalog with its filters: the owner's bills, invoice
+  totals by month, money due week by week, movements, jobs or the payment run, each drawn by the
+  app from the API, so no figure in it is the model's.
 - **Tamga writes first:** when it proposes a project or cannot choose one for a conversation, it
   writes to the owner in the chat that already holds that record, or opens a new one, and code
   puts a card under its message, on which the owner answers. Such a turn acts for the company
   as an actor with no user, which every service that writes refuses. Past a set number of new
-  chats a day, what it finds goes into the day's digest as its card, with no model run.
+  chats a day, what it finds goes into the day's digest as its card, with no model run. The
+  bills that wait for the owner are raised together, in one message and one card of up to 50.
 - **Live:** what the background work writes shows without a reload, through the company's event
   stream, and a note says when Tamga writes, also as the browser's notification.
 - **Budgets:** each use of a model has a daily budget per company that is zero until the owner
@@ -138,6 +142,22 @@ Arc testnet; nothing touches a company's bank or real money.
   every evaluation, answer and payment, newest first, and says whether the chain still holds;
   every quarter hour the executor seals each company's newest entry on Arc as one root, so
   entries removed from the end are caught too.
+- **The payment run:** the bills due by the next pay day, in order, each said to fit or not under
+  what the reserve keeps, read at a glance: tiles of what is available, due and expected, a bar
+  of the cash against what is proposed and the reserve, and Tamga's call on each bill as a pill
+  with its reason. "Approve N payments" approves the ones Tamga would pay that fit, as the owner
+  would one by one, refusing one whose evaluation changed. A bank transfer marked paid by
+  mistake is undone with the owner's reason, when given, on the log, and the movement it was matched to is
+  never matched to it again; a vault payment is on the chain and has no undo.
+- **Memory:** what the owner taught Tamga, read by every chat and the background agents as data.
+  The owner tells it in Settings in their own words; a model reads what it already knows and
+  adds, changes or retires entries at once, saying what it did or why it did nothing. What the
+  chat or another member suggests waits for the owner's confirmation.
+- **The playground:** a judge picks one of three scenarios, each a sandbox with its accounts,
+  bills and threads. The World, a column beside the page that stays when a project opens, holds
+  the scenario's people on a simulated WhatsApp and by mail; their scripted messages go through
+  the same intake as real mail, and the judge can write as any of them. Skip 24h and Skip to the
+  pay day move the sandbox's clock, and every page counts from its day.
 - **Circle:** the wallet set and the company treasury on Arc testnet, developer-controlled. Each
   company gets an account on the vault, with an owner key and a receive-only wallet for each
   subcontractor it pays. A judge's sandbox is opened on the vault with test USDC, and what is
@@ -150,13 +170,10 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, by Oct 17: the live demo; company memory and a short brief, so the chat knows the company
-across chats and fetches the rest only when asked; changes that matter as drafts the owner
-confirms on a card, a policy written from the owner's own words among them; Tamga speaking first
-on an overdue invoice, a new bill or a missing paper, and a morning brief; the treasury (cash, the
-vault, the next four weeks); models that quote what they relied on, checked by code and scored on
-the owner's own answers; the why behind every link, truck and firm; and the playground's
-scenarios.
+Next, by Oct 17: the live demo; a policy written from the owner's own words, confirmed on a
+card; Tamga speaking first on an overdue invoice, a new bill or a missing paper, and a morning
+brief; bank movements through an aggregator; models that quote what they relied on, checked by
+code and scored on the owner's own answers; and the why behind every link, truck and firm.
 
 ## This repository
 
