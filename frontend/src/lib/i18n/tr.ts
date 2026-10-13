@@ -1133,6 +1133,7 @@ export const tr: Dictionary = {
     scenario: "Senaryo",
     clock: "Deneme saati",
     skipDay: "24 saat ilerlet",
+    skipDayShort: "24 sa",
     skipTo: (day: string) => `${day} gününe geç`,
     skipping: "İlerletiliyor…",
     world: "Dünya",

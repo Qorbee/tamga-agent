@@ -17,9 +17,15 @@ export function Welcome() {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-1 fill-mode-both mb-8 flex flex-col gap-4 duration-300">
       <h1 className="mb-2 text-xl font-medium tracking-tight text-balance">{t.assistant.greeting}</h1>
-      <SetupCard />
-      <MoneyTiles />
-      <PaymentRunCard />
+      {/* On a phone the cards step aside while the owner types, so the keyboard leaves room for
+          the box; they come back when it is left. */}
+      <div className="grid grid-rows-[1fr] transition-[grid-template-rows,opacity] duration-300 ease-out max-md:group-has-[.aui-composer-input:focus]/chat:grid-rows-[0fr] max-md:group-has-[.aui-composer-input:focus]/chat:opacity-0 motion-reduce:transition-none">
+        <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
+          <SetupCard />
+          <MoneyTiles />
+          <PaymentRunCard />
+        </div>
+      </div>
     </div>
   );
 }

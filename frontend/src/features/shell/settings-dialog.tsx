@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { BackToMenu } from "@/components/top-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -120,7 +121,7 @@ export function SettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton={side || !inPart}
+        showCloseButton={side}
         className="flex flex-col gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-(--app-height,100dvh) max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:ring-0 sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-w-4xl"
       >
         <DialogHeader className="sr-only">
@@ -139,7 +140,8 @@ export function SettingsDialog({
                 <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.75} className="size-5" />
               </button>
             ) : (
-              <span className="size-10" aria-hidden />
+              // The way back to the menu, the same button as on every page.
+              <BackToMenu onLeave={() => onOpenChange(false)} />
             )}
             <h2 className="flex-1 text-center text-base font-medium">{inPart ? t.settings.tabs[part] : t.settings.title}</h2>
             <span className="size-10" aria-hidden />

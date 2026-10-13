@@ -71,6 +71,10 @@ re-apply them:
   (`group-has-data-dragging/sidebar-wrapper:transition-none`); `SidebarContent` shows its scrollbar
   (no `no-scrollbar`) with a stable gutter.
 - `ui/sidebar.tsx`: on a phone the drawer covers the whole screen (`SIDEBAR_WIDTH_MOBILE`).
+- `ui/sheet.tsx`, `ui/dialog.tsx`: no backdrop blur on a touch screen; a left sheet on a phone
+  slides in whole, without fading.
+- `thread.aui.tsx`: the root is a named group (`group/chat`), so the home's cards can step aside
+  while the composer has focus; the column starts below the phone's see-through top bar.
 - `tool-group.aui.tsx`, `tool-fallback.aui.tsx`, `reasoning.aui.tsx`: a step that opens or closes
   holds the scroll with `keep-in-place.ts`, not assistant-ui's `useScrollLock`, which hid the
   scrollbar for the animation and made the page jump beside it.

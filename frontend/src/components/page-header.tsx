@@ -1,21 +1,25 @@
 import type { ReactNode } from "react";
 
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { TopBar } from "@/components/top-bar";
 
 /**
- * The bar above a page: the sidebar button on phones (the desktop sidebar has its own), the page's
- * title, and its actions. It keeps a page's first line of content clear of the window's top edge.
+ * The bar above the chat: its title and actions. On a phone it is the see-through `TopBar`, laid
+ * over the chat so the messages scroll under it; on a wider screen, a band of its own (the desktop
+ * sidebar has its own button).
  */
 export function PageHeader({ title, children }: { title?: ReactNode; children?: ReactNode }) {
+  const named = title ? (
+    <h1 className="flex min-w-0 items-center text-sm font-medium">{typeof title === "string" ? <span className="truncate">{title}</span> : title}</h1>
+  ) : undefined;
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-6">
-      <SidebarTrigger className="md:hidden" />
-      {title ? (
-        <h1 className="flex min-w-0 flex-1 items-center text-sm font-medium">
-          {typeof title === "string" ? <span className="truncate">{title}</span> : title}
-        </h1>
-      ) : null}
-      {children ? <div className="ms-auto flex items-center gap-1">{children}</div> : null}
-    </header>
+    <>
+      <TopBar title={named} className="absolute inset-x-0 top-0 z-20 md:hidden">
+        {children}
+      </TopBar>
+      <header className="flex h-14 shrink-0 items-center gap-2 px-6 max-md:hidden">
+        {named ? <div className="min-w-0 flex-1">{named}</div> : null}
+        {children ? <div className="ms-auto flex items-center gap-1">{children}</div> : null}
+      </header>
+    </>
   );
 }

@@ -82,9 +82,10 @@ export function AppShell({
           {beside}
         </div>
         {canvas}
+        {/* Inside the provider: on a phone Settings goes back to the menu with its own button. */}
+        <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
-      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CompanyEvents />
     </ShellActionsContext.Provider>
   );

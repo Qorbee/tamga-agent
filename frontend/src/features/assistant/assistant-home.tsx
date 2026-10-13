@@ -26,7 +26,7 @@ export function AssistantHome() {
   const started = useAuiState((s) => s.thread.messages.length > 0);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <ReadWhenShown />
       <PageHeader title={started ? <ChatTitle /> : undefined} />
       <div className="min-h-0 flex-1">

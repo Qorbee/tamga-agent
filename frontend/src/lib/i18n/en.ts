@@ -1165,6 +1165,7 @@ export const en = {
     scenario: "Scenario",
     clock: "Sandbox time",
     skipDay: "Skip 24h",
+    skipDayShort: "24h",
     skipTo: (day: string) => `Skip to ${day}`,
     skipping: "Skipping…",
     world: "World",

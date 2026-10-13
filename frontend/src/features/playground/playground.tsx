@@ -22,7 +22,7 @@ import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { getMe, getMessage, getPolicy, getWorld, listMessages, sayAs, skipDays, type MessageSummary, type Persona } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDayShort, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -84,19 +84,28 @@ export function PlaygroundBar() {
   return (
     <div
       data-slot="playground-bar"
-      className="border-border bg-background flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2 backdrop-blur"
+      className="border-border bg-background flex shrink-0 items-center gap-x-3 border-b px-4 py-2 max-sm:gap-x-2 max-sm:px-3"
     >
       <span className="bg-primary/10 text-primary rounded-full px-2.5 py-0.5 text-xs font-medium">{t.playground.badge}</span>
       <span className="min-w-0 truncate text-sm font-medium max-sm:hidden">{world.data?.scenario?.title}</span>
       {world.data ? (
-        <span className="text-muted-foreground font-mono text-xs tabular-nums" aria-label={t.playground.clock}>
-          {formatDate(new Date(world.data.now), locale, "dateTime")}
+        <span className="text-muted-foreground min-w-0 truncate font-mono text-xs tabular-nums" aria-label={t.playground.clock}>
+          {/* A phone keeps the bar to one row: the day and the time, without the weekday. */}
+          <span className="max-sm:hidden">{formatDate(new Date(world.data.now), locale, "dateTime")}</span>
+          <span className="sm:hidden">{formatDayShort(todayIso(new Date(world.data.now)), locale)} {formatDate(new Date(world.data.now), locale, "time")}</span>
         </span>
       ) : null}
-      <span className="ms-auto flex items-center gap-1.5">
+      <span className="ms-auto flex shrink-0 items-center gap-1.5 max-sm:gap-0.5">
         <Button size="sm" variant="outline" disabled={skip.isPending || !world.data?.ready} onClick={() => skip.mutate(1)}>
           <HugeiconsIcon icon={Forward02Icon} strokeWidth={1.75} />
-          {skip.isPending && skip.variables === 1 ? t.playground.skipping : t.playground.skipDay}
+          {skip.isPending && skip.variables === 1 ? (
+            t.playground.skipping
+          ) : (
+            <>
+              <span className="max-sm:hidden">{t.playground.skipDay}</span>
+              <span className="sm:hidden">{t.playground.skipDayShort}</span>
+            </>
+          )}
         </Button>
         {payday != null && toPayday != null && toPayday > 1 ? (
           <Button
