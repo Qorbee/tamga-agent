@@ -1229,6 +1229,54 @@
         "title": "ChecklistMarkSet",
         "type": "object"
       },
+      "Choices": {
+        "description": "What the judge chose of the scenario's policy before it opened; the rest is the\nscenario's own.",
+        "properties": {
+          "approval_limit": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Limit"
+          },
+          "payment_weekday": {
+            "anyOf": [
+              {
+                "maximum": 6.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Weekday"
+          },
+          "reserve_rule": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Rule"
+          }
+        },
+        "title": "Choices",
+        "type": "object"
+      },
       "ColumnOut": {
         "properties": {
           "hidden": {
@@ -2510,6 +2558,42 @@
       },
       "GuestStart": {
         "properties": {
+          "choices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Choices"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "company": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "scenario": {
             "anyOf": [
               {
@@ -5705,6 +5789,14 @@
             "title": "Name",
             "type": "string"
           },
+          "relation": {
+            "enum": [
+              "client",
+              "carrier"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -5722,6 +5814,7 @@
           "key",
           "name",
           "role",
+          "relation",
           "address",
           "thread_key",
           "medium",
@@ -7485,9 +7578,27 @@
       },
       "ScenarioOut": {
         "properties": {
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
           "key": {
             "title": "Key",
             "type": "string"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScenarioPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "summary": {
             "title": "Summary",
@@ -7501,9 +7612,49 @@
         "required": [
           "key",
           "title",
-          "summary"
+          "summary",
+          "company",
+          "owner",
+          "policy"
         ],
         "title": "ScenarioOut",
+        "type": "object"
+      },
+      "ScenarioPolicy": {
+        "description": "How the scenario's company pays, as the judge may change it before it opens.",
+        "properties": {
+          "approval_limit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Approval Limit",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "payment_weekday": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Weekday"
+          },
+          "reserve_rule": {
+            "title": "Reserve Rule",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency",
+          "approval_limit",
+          "reserve_rule",
+          "payment_weekday"
+        ],
+        "title": "ScenarioPolicy",
         "type": "object"
       },
       "Settled": {

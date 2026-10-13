@@ -28,6 +28,7 @@ from app.modules.identity.schemas import (
     UserOut,
 )
 from app.modules.playground import service as playground
+from app.modules.playground.schemas import Choices
 from app.modules.settlement import service as settlement
 from app.platform import clock, storage
 from app.platform.auth import Actor, Role
@@ -146,11 +147,19 @@ async def update_company(db: AsyncSession, actor: Actor, *, language: Language) 
 
 
 async def create_guest_session(
-    db: AsyncSession, *, client: str, scenario: str | None = None
+    db: AsyncSession,
+    *,
+    client: str,
+    scenario: str | None = None,
+    name: str | None = None,
+    company_name: str | None = None,
+    choices: Choices | None = None,
 ) -> OpenedSession:
-    """A judge's one click: a sandbox company, a guest who owns it, and a session (ADR-0004)."""
+    """A judge's one click: a sandbox company, a guest who owns it, and a session (ADR-0004).
+    The company and the guest carry the names the judge gave, else the scenario's own."""
     settings = get_settings()
     chosen = playground.chosen(scenario)
+    named_company, named_owner = playground.names(chosen)
     if not _guest_limiter().allow(client):
         raise TooManyRequests("Too many new sandboxes from this address. Try again later")
     now = utcnow()
@@ -160,12 +169,17 @@ async def create_guest_session(
 
     expires_at = now + timedelta(hours=settings.guest_hours)
     company = await companies.create_company(
-        db, name="Sandbox", kind=CompanyKind.SANDBOX, expires_at=expires_at
+        db,
+        name=(company_name or "").strip() or named_company,
+        kind=CompanyKind.SANDBOX,
+        expires_at=expires_at,
     )
-    user = await repository.add_user(db, User(is_guest=True))
+    user = await repository.add_user(
+        db, User(is_guest=True, name=(name or "").strip() or named_owner)
+    )
     await repository.add_membership(db, user_id=user.id, company_id=company.id, role=Role.OWNER)
     opened = await _open_session(db, user, company.id, expires_at)
-    await playground.seed_later(db, company.id, chosen)
+    await playground.seed_later(db, company.id, chosen, choices)
     await db.commit()
     return opened
 

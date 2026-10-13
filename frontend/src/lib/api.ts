@@ -84,8 +84,8 @@ const PAGE = 200;
 export type SignIn = Schemas["SignIn"];
 export const signIn = (body: SignIn) => request<Me>("/sessions", json("POST", body));
 /** A judge's sandbox, opened with the scenario they picked (the default when none). */
-export const createGuestSession = (scenario?: string) =>
-  request<Me>("/sessions/guest", json("POST", { scenario: scenario ?? null }));
+export type GuestStart = Schemas["GuestStart"];
+export const createGuestSession = (body: GuestStart) => request<Me>("/sessions/guest", json("POST", body));
 export type InvitePreview = Schemas["InvitePreview"];
 export const previewInvite = (token: string) =>
   request<InvitePreview>("/invites/lookup", json("POST", { token }));

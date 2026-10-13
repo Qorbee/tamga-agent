@@ -8,6 +8,7 @@ import {
   Globe02Icon,
   PlusSignIcon,
   SentIcon,
+  TickDouble02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +21,7 @@ import { ScenarioPicker } from "@/components/scenario-picker";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { getMe, getPolicy, getWorld, listMessages, sayAs, skipDays, type Persona } from "@/lib/api";
+import { getMe, getMessage, getPolicy, getWorld, listMessages, sayAs, skipDays, type MessageSummary, type Persona } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -141,6 +142,10 @@ export function WorldPanel() {
   const shown = personas.filter((persona) => persona.medium === medium);
   const persona = shown.find((item) => item.key === chosen) ?? null;
   const now = world.data?.now ?? new Date().toISOString();
+  // On a phone the world covers the app: it steps aside for the mail or file it opened.
+  const stepAside = () => {
+    if (!window.matchMedia("(min-width: 64rem)").matches) setOpen(false);
+  };
 
   return (
     <aside
@@ -153,9 +158,10 @@ export function WorldPanel() {
         canvas !== null ? "lg:w-72 2xl:w-80" : "lg:w-80",
       )}
     >
-      <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b ps-4 pe-2">
+      <header className="border-border flex h-14 shrink-0 items-center gap-2 border-b ps-4 pe-2">
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">{t.playground.world}</span>
+          <You />
         </span>
         <Hint label={t.playground.worldHint}>
           <span tabIndex={0} className="text-muted-foreground bg-secondary rounded-full px-2 py-0.5 text-[11px]">
@@ -179,18 +185,9 @@ export function WorldPanel() {
       {persona === null ? (
         <PersonaList personas={shown} now={now} onPick={(key) => setChosen(key)} />
       ) : persona.medium === "whatsapp" ? (
-        <ChatThread key={persona.key} persona={persona} now={now} onBack={() => setChosen(null)} />
+        <ChatThread key={persona.key} persona={persona} now={now} onBack={() => setChosen(null)} onOpened={stepAside} />
       ) : (
-        <MailThreadList
-          key={persona.key}
-          persona={persona}
-          now={now}
-          onBack={() => setChosen(null)}
-          onOpened={() => {
-            // On a phone the world covers the app: it steps aside for the mail it opened.
-            if (!window.matchMedia("(min-width: 64rem)").matches) setOpen(false);
-          }}
-        />
+        <MailThreadList key={persona.key} persona={persona} now={now} onBack={() => setChosen(null)} onOpened={stepAside} />
       )}
     </aside>
   );
@@ -298,13 +295,18 @@ function PersonaRow({ persona, now, onPick }: { persona: Persona; now: string; o
   const last = thread.data?.items[0];
   const seenKey = useSeenKey(persona);
   const seen = seenAt(seenKey);
-  const unread = (thread.data?.items ?? []).filter((message) => !seen || message.sent_at > seen).length;
+  // Only what they said: the company's own messages are never unread to it.
+  const unread = (thread.data?.items ?? []).filter((message) => message.direction === "inbound" && (!seen || message.sent_at > seen)).length;
   return (
     <button type="button" onClick={onPick} className="hover:bg-accent/50 flex w-full items-center gap-3 px-3 py-2.5 text-start">
       <Avatar persona={persona} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{persona.name}</span>
+          <span className="min-w-0 truncate text-sm font-medium">{persona.name}</span>
+          <span className="bg-secondary text-muted-foreground shrink-0 rounded-full px-1.5 py-px text-[10px]">
+            {t.playground.relations[persona.relation]}
+          </span>
+          <span className="flex-1" />
           {last ? (
             <span className={cn("shrink-0 text-[11px] tabular-nums", unread > 0 ? "text-success-foreground font-medium" : "text-muted-foreground")}>
               {when(last.sent_at)}
@@ -313,6 +315,7 @@ function PersonaRow({ persona, now, onPick }: { persona: Persona; now: string; o
         </span>
         <span className="flex items-center gap-2">
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+            {last?.direction === "outbound" ? `${t.playground.you}: ` : null}
             {persona.medium === "mail" ? (last?.subject ?? persona.subject) : (last?.snippet ?? persona.role)}
           </span>
           {unread > 0 ? (
@@ -343,7 +346,7 @@ function ThreadHeader({ persona, onBack }: { persona: Persona; onBack: () => voi
 
 /** A WhatsApp thread as a phone shows it: the wallpaper, a chip for each day, the persona's
  * bubbles with their time inside, oldest first, and a box to type as them. */
-function ChatThread({ persona, now, onBack }: { persona: Persona; now: string; onBack: () => void }) {
+function ChatThread({ persona, now, onBack, onOpened }: { persona: Persona; now: string; onBack: () => void; onOpened: () => void }) {
   const { t, locale } = useI18n();
   const messages = useThread(persona);
   const said = [...(messages.data?.items ?? [])].reverse();
@@ -363,7 +366,10 @@ function ChatThread({ persona, now, onBack }: { persona: Persona; now: string; o
   return (
     <>
       <ThreadHeader persona={persona} onBack={onBack} />
-      <ol className="bg-world-wall flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-3" aria-live="polite">
+      <ol
+        className="bg-world-wall flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto bg-(image:--world-pattern) bg-size-[160px] px-3 py-3"
+        aria-live="polite"
+      >
         {said.length === 0 && !messages.isPending ? (
           <li className="bg-card text-muted-foreground m-auto max-w-[24ch] rounded-lg px-3 py-2 text-center text-xs text-pretty">
             {t.playground.noMessages}
@@ -379,39 +385,94 @@ function ChatThread({ persona, now, onBack }: { persona: Persona; now: string; o
                   {day}
                 </span>
               ) : null}
-              <div
-                className={cn(
-                  "bg-world-bubble relative max-w-[85%] justify-self-start rounded-lg px-2.5 pt-1.5 pb-1 shadow-xs",
-                  newDay && "rounded-ss-none",
-                )}
-              >
-                {newDay ? (
-                  <span
-                    aria-hidden
-                    className="bg-world-bubble absolute -start-1.5 top-0 size-2.5 [clip-path:polygon(100%_0,0_0,100%_100%)]"
-                  />
-                ) : null}
-                {message.attachment_count > 0 ? (
-                  <span className="bg-muted text-muted-foreground mb-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs">
-                    <HugeiconsIcon icon={Attachment01Icon} className="size-3.5" aria-hidden />
-                    {t.playground.attachment}
-                  </span>
-                ) : null}
-                <p className="text-sm text-pretty whitespace-pre-line">
-                  {message.snippet}
-                  {/* Room for the time on the last line, as a phone keeps it. */}
-                  <span aria-hidden className="inline-block w-12" />
-                </p>
-                <span className="text-muted-foreground absolute end-2 bottom-1 text-[10px] tabular-nums">
-                  {formatDate(new Date(message.sent_at), locale, "time")}
-                </span>
-              </div>
+              <Bubble message={message} first={newDay || said[index - 1]?.direction !== message.direction} onOpened={onOpened} />
             </li>
           );
         })}
       </ol>
       <SayBox persona={persona} rows={1} />
     </>
+  );
+}
+
+/** Who the judge is in their sandbox, so no one in the World is mistaken for them. */
+function You() {
+  const { t } = useI18n();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  if (!me.data) return null;
+  const name = me.data.user.name;
+  return (
+    <span className="text-muted-foreground block truncate text-[11px]">
+      {t.playground.youAre(name ?? t.playground.you, me.data.company.name)}
+    </span>
+  );
+}
+
+/** One message as a phone shows it: theirs on the left in white, yours on the right in green,
+ * a tail on the first of a run, its files as chips that open, the time inside. */
+function Bubble({ message, first, onOpened }: { message: MessageSummary; first: boolean; onOpened: () => void }) {
+  const { locale } = useI18n();
+  const ours = message.direction === "outbound";
+  const tone = ours ? "bg-world-bubble-out" : "bg-world-bubble";
+  return (
+    <div
+      className={cn(
+        "relative max-w-[85%] rounded-lg px-2.5 pt-1.5 pb-1 shadow-xs",
+        tone,
+        ours ? "justify-self-end" : "justify-self-start",
+        first && (ours ? "rounded-se-none" : "rounded-ss-none"),
+      )}
+    >
+      {first ? (
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-0 size-2.5",
+            tone,
+            ours ? "-end-1.5 [clip-path:polygon(0_0,100%_0,0_100%)]" : "-start-1.5 [clip-path:polygon(100%_0,0_0,100%_100%)]",
+          )}
+        />
+      ) : null}
+      {message.attachment_count > 0 ? <Files message={message} onOpened={onOpened} /> : null}
+      <p className="text-sm text-pretty whitespace-pre-line">
+        {message.snippet}
+        {/* Room for the time on the last line, as a phone keeps it. */}
+        <span aria-hidden className="inline-block w-14" />
+      </p>
+      <span className="text-muted-foreground absolute end-2 bottom-1 flex items-center gap-0.5 text-[10px] tabular-nums">
+        {formatDate(new Date(message.sent_at), locale, "time")}
+        {ours ? <HugeiconsIcon icon={TickDouble02Icon} strokeWidth={2} className="size-3" aria-hidden /> : null}
+      </span>
+    </div>
+  );
+}
+
+/** A message's files by their names, each opening in the canvas beside the World. */
+function Files({ message, onOpened }: { message: MessageSummary; onOpened: () => void }) {
+  const { t } = useI18n();
+  const full = useQuery({ queryKey: ["message", message.id], queryFn: () => getMessage(message.id) });
+  const files = (full.data?.attachments ?? []).filter((file) => !file.inline);
+  if (files.length === 0)
+    return (
+      <span className="bg-muted text-muted-foreground mb-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs">
+        <HugeiconsIcon icon={Attachment01Icon} className="size-3.5" aria-hidden />
+        {t.playground.attachment}
+      </span>
+    );
+  return (
+    <span className="mb-1 grid gap-1">
+      {files.map((file) => (
+        <CanvasLink
+          key={file.document_id}
+          view={{ kind: "document", id: file.document_id }}
+          onClick={onOpened}
+          className="bg-muted hover:bg-accent flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs"
+        >
+          <HugeiconsIcon icon={Attachment01Icon} className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{file.filename}</span>
+        </CanvasLink>
+      ))}
+    </span>
   );
 }
 
@@ -452,7 +513,10 @@ function MailThreadList({
               className="hover:bg-accent/50 aria-[current=true]:bg-secondary block px-4 py-3"
             >
               <span className="flex items-baseline gap-2">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">{mail.subject ?? persona.subject}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  {mail.direction === "outbound" ? `${t.playground.you}: ` : null}
+                  {mail.subject ?? persona.subject}
+                </span>
                 <span className="text-muted-foreground shrink-0 text-[11px] tabular-nums">{when(mail.sent_at)}</span>
               </span>
               <span className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">{mail.snippet}</span>

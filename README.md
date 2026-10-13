@@ -153,8 +153,9 @@ Arc testnet; nothing touches a company's bank or real money.
   The owner tells it in Settings in their own words; a model reads what it already knows and
   adds, changes or retires entries at once, saying what it did or why it did nothing. What the
   chat or another member suggests waits for the owner's confirmation.
-- **The playground:** a judge picks one of three scenarios, each a sandbox with its accounts,
-  bills and threads. The World, a column beside the page that stays when a project opens, holds
+- **The playground:** a judge picks one of three scenarios, names themselves, their company
+  and how it pays (or keeps the scenario's), and opens a sandbox with its accounts, bills and
+  threads already under way. The World, a column beside the page that stays when a project opens, holds
   the scenario's people on a simulated WhatsApp and by mail; their scripted messages go through
   the same intake as real mail, and the judge can write as any of them. Skip 24h and Skip to the
   pay day move the sandbox's clock, and every page counts from its day.

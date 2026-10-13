@@ -43,8 +43,12 @@
   --segment-border: #8a8476;
 
   /* The playground's World: a chat app's wallpaper and its message bubbles. */
-  --world-wall: #f0ebe1;
+  --world-wall: #efe7db;
   --world-bubble: #ffffff;
+  /* Your own messages in the World, on the right: a sage tint, the app's own green. */
+  --world-bubble-out: #deedd2;
+  /* A doodle of the trade (a truck, a parcel, a pin, a paper) the wall repeats, faintly. */
+  --world-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='rgba%28110%2C96%2C74%2C0.16%29' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg transform='translate%2814 20%29'%3E%3Cpath d='M0 14h22V2H0z M22 6h7l5 5v3h-12'/%3E%3Ccircle cx='6' cy='16' r='2.5'/%3E%3Ccircle cx='27' cy='16' r='2.5'/%3E%3C/g%3E%3Cg transform='translate%2896 14%29'%3E%3Cpath d='M0 4l12-4 12 4v14l-12 4-12-4z M0 4l12 4 12-4 M12 8v14'/%3E%3C/g%3E%3Cg transform='translate%2826 92%29'%3E%3Cpath d='M8 22s8-8 8-14A8 8 0 0 0 0 8c0 6 8 14 8 14z'/%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3C/g%3E%3Cg transform='translate%28100 88%29'%3E%3Cpath d='M0 0h16l6 6v22H0z M16 0v6h6 M4 12h12 M4 17h12 M4 22h8'/%3E%3C/g%3E%3Cg transform='translate%2864 60%29'%3E%3Cpath d='M0 6h20 M14 0l6 6-6 6'/%3E%3C/g%3E%3C/svg%3E");
 
   /* Status: a fill for dots and icons, a text colour, a soft tint for badges. Ochre as text is
      3.9:1, hence its darker foreground. Blocked reuses terracotta. */
@@ -115,6 +119,8 @@
 
   --world-wall: #0f0e0c;
   --world-bubble: #24211c;
+  --world-bubble-out: #1e3022;
+  --world-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='rgba%28240%2C230%2C210%2C0.06%29' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg transform='translate%2814 20%29'%3E%3Cpath d='M0 14h22V2H0z M22 6h7l5 5v3h-12'/%3E%3Ccircle cx='6' cy='16' r='2.5'/%3E%3Ccircle cx='27' cy='16' r='2.5'/%3E%3C/g%3E%3Cg transform='translate%2896 14%29'%3E%3Cpath d='M0 4l12-4 12 4v14l-12 4-12-4z M0 4l12 4 12-4 M12 8v14'/%3E%3C/g%3E%3Cg transform='translate%2826 92%29'%3E%3Cpath d='M8 22s8-8 8-14A8 8 0 0 0 0 8c0 6 8 14 8 14z'/%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3C/g%3E%3Cg transform='translate%28100 88%29'%3E%3Cpath d='M0 0h16l6 6v22H0z M16 0v6h6 M4 12h12 M4 17h12 M4 22h8'/%3E%3C/g%3E%3Cg transform='translate%2864 60%29'%3E%3Cpath d='M0 6h20 M14 0l6 6-6 6'/%3E%3C/g%3E%3C/svg%3E");
 
   --success: #8fae84;
   --success-foreground: #8fae84;
@@ -159,6 +165,7 @@
   --color-segment-border: var(--segment-border);
   --color-world-wall: var(--world-wall);
   --color-world-bubble: var(--world-bubble);
+  --color-world-bubble-out: var(--world-bubble-out);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);

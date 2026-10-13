@@ -2,15 +2,16 @@ import logging
 import uuid
 
 from app.modules.playground import service
+from app.modules.playground.schemas import Choices
 from app.platform import jobs
 
 logger = logging.getLogger(__name__)
 
 
 @jobs.task("playground.seed", retry=2)
-async def seed(company_id: str) -> None:
-    """A new sandbox, filled with the scenario its judge picked."""
-    await service.seed(uuid.UUID(company_id))
+async def seed(company_id: str, choices: dict[str, object] | None = None) -> None:
+    """A new sandbox, filled with the scenario its judge picked, with what they chose of it."""
+    await service.seed(uuid.UUID(company_id), Choices.model_validate(choices) if choices else None)
 
 
 @jobs.task("playground.play", retry=2)

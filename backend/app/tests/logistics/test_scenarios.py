@@ -13,6 +13,7 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
 from app.modules.conversations import service as conversations
 from app.modules.playground import service as playground
+from app.modules.playground.schemas import Choices
 from app.packs.logistics import sandbox
 from app.platform.auth import Actor, Role
 from app.platform.db import open_session
@@ -34,11 +35,14 @@ async def opened(client: httpx.AsyncClient, scenario: str | None = None) -> uuid
     return company_id
 
 
-async def simulated(client: httpx.AsyncClient) -> list[dict[str, object]]:
+async def simulated(client: httpx.AsyncClient, *, earlier: bool = False) -> list[dict[str, object]]:
+    """The world's messages; the ones from before the sandbox opened only with ``earlier``."""
     items: list[dict[str, object]] = (
         await client.get("/messages", params={"channel": "simulated"})
     ).json()["items"]
-    return items
+    return [
+        item for item in items if earlier or not str(item["rfc_message_id"]).startswith("<earlier-")
+    ]
 
 
 async def test_the_scenarios_are_listed_before_anyone_signs_in(client: httpx.AsyncClient) -> None:
@@ -106,8 +110,9 @@ async def test_skipping_a_day_moves_the_clock_and_plays_the_script(
     ]
     assert sandbox.PLATE_MOVING in str(delivered["snippet"])
     assert delivered["attachment_count"] == 1
-    # Read by the same intake as any mail: it waits to be processed like one.
-    assert await conversations.process_pending() == 3
+    # Read by the same intake as any mail: it waits to be processed like one, with what was
+    # said before the sandbox opened.
+    assert await conversations.process_pending() == 3 + len(sandbox.FREIGHT_EARLIER)
     # Played once: a second pass on the same day plays nothing.
     assert await playground.play_due(company_id) == 0
 
@@ -239,3 +244,100 @@ async def test_what_the_judge_types_is_as_long_as_its_channel_allows(
     assert (await client.post("/playground/world/messages", json=chat_line)).status_code == 400
     mail = {"persona": sandbox.CLIENT_DESK.key, "text": "Dear team,\n" + "x" * 900}
     assert (await client.post("/playground/world/messages", json=mail)).status_code == 204
+
+
+async def test_a_judge_names_themselves_their_company_and_how_it_pays(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(
+        "/sessions/guest",
+        json={
+            "scenario": "payday",
+            "name": "Ada Byron",
+            "company": "Ada Freight, Inc.",
+            "choices": {"approval_limit": "500.00", "reserve_rule": "light", "payment_weekday": 2},
+        },
+    )
+    assert response.status_code == 201, response.text
+    me = response.json()
+    assert me["user"]["name"] == "Ada Byron" and me["company"]["name"] == "Ada Freight, Inc."
+    # The choices ride with the seeding job, which writes them before the scenario's own policy.
+    async with open_session() as db:
+        args = await db.scalar(
+            text("SELECT args FROM procrastinate_jobs WHERE task_name = 'playground.seed'")
+        )
+    assert args["choices"] == {
+        "approval_limit": "500.00",
+        "reserve_rule": "light",
+        "payment_weekday": 2,
+    }
+    await playground.seed(uuid.UUID(me["company"]["id"]), Choices.model_validate(args["choices"]))
+
+    policy = (await client.get("/policy")).json()
+    assert Decimal(policy["approval_limit"]) == 500 and policy["reserve"]["key"] == "light"
+    assert policy["payment_weekday"] == 2 and policy["currency"] == "EUR"
+    # A comma in the name is part of it, not a second sender: what the company said is its own.
+    sent = [m for m in await simulated(client, earlier=True) if m["direction"] == "outbound"]
+    assert len(sent) == sum(earlier.ours for earlier in sandbox.PAYDAY_EARLIER)
+
+
+async def test_a_sandbox_named_by_nobody_takes_the_scenarios_names(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post("/sessions/guest", json={"scenario": "freight", "name": "  "})
+    me = response.json()
+    assert me["user"]["name"] == sandbox.OWNER and me["company"]["name"] == sandbox.COMPANY
+    listed = {
+        scenario["key"]: scenario for scenario in (await client.get("/playground/scenarios")).json()
+    }
+    assert listed["payday"]["policy"]["reserve_rule"] == "steady"
+    assert listed["freight"]["company"] == sandbox.COMPANY
+
+
+async def test_payment_rules_that_cannot_hold_open_no_sandbox(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/sessions/guest", json={"scenario": "payday", "choices": {"reserve_rule": "nope"}}
+    )
+    assert response.status_code == 400
+    named = await client.post(
+        "/sessions/guest", json={"scenario": "payday", "company": "Line\nbreak"}
+    )
+    assert named.status_code == 422
+    async with open_session() as db:
+        assert await db.scalar(text("SELECT count(*) FROM playground_worlds")) == 0
+
+
+async def test_a_sandbox_opens_on_conversations_already_under_way(
+    client: httpx.AsyncClient,
+) -> None:
+    await opened(client, "freight")
+
+    lena = [
+        message
+        for message in await simulated(client, earlier=True)
+        if message["thread_key"] == sandbox.CLIENT_DESK.thread_key
+    ]
+    directions = sorted((str(message["sent_at"]), message["direction"]) for message in lena)
+    # The client's order, then the company's answer, both before the sandbox's day.
+    assert [direction for _, direction in directions[:2]] == ["inbound", "outbound"]
+    ours = next(message for message in lena if message["direction"] == "outbound")
+    assert sandbox.COMPANY in str(ours["snippet"]) or "{company}" not in str(ours["snippet"])
+    # Dated in the order written, apart, so a reply never shows above what it answers.
+    earlier = sorted(
+        (str(message["sent_at"]), str(message["rfc_message_id"]))
+        for message in await simulated(client, earlier=True)
+        if str(message["rfc_message_id"]).startswith("<earlier-")
+    )
+    assert len({at for at, _ in earlier}) == len(sandbox.FREIGHT_EARLIER)
+    assert [int(rfc.split("-")[1].split(".")[0]) for _, rfc in earlier] == list(
+        range(len(sandbox.FREIGHT_EARLIER))
+    )
+    world = (await client.get("/playground/world")).json()
+    assert {persona["key"]: persona["relation"] for persona in world["personas"]}[
+        "lena"
+    ] == "client"
+    # Seeding again stores none of it twice.
+    company_id = uuid.UUID((await client.get("/me")).json()["company"]["id"])
+    before = len(await simulated(client, earlier=True))
+    await playground.seed(company_id)
+    assert len(await simulated(client, earlier=True)) == before

@@ -2091,6 +2091,19 @@ export interface components {
             /** Shipment Id */
             shipment_id?: string | null;
         };
+        /**
+         * Choices
+         * @description What the judge chose of the scenario's policy before it opened; the rest is the
+         *     scenario's own.
+         */
+        Choices: {
+            /** Approval Limit */
+            approval_limit?: number | string | null;
+            /** Payment Weekday */
+            payment_weekday?: number | null;
+            /** Reserve Rule */
+            reserve_rule?: string | null;
+        };
         /** ColumnOut */
         ColumnOut: {
             /** Hidden */
@@ -2527,6 +2540,11 @@ export interface components {
         FieldSource: "owner" | "extraction" | "suggestion";
         /** GuestStart */
         GuestStart: {
+            choices?: components["schemas"]["Choices"] | null;
+            /** Company */
+            company?: string | null;
+            /** Name */
+            name?: string | null;
             /** Scenario */
             scenario?: string | null;
         };
@@ -3591,6 +3609,11 @@ export interface components {
             medium: "whatsapp" | "mail";
             /** Name */
             name: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "client" | "carrier";
             /** Role */
             role: string;
             /** Subject */
@@ -4196,12 +4219,31 @@ export interface components {
         };
         /** ScenarioOut */
         ScenarioOut: {
+            /** Company */
+            company: string;
             /** Key */
             key: string;
+            /** Owner */
+            owner: string;
+            policy: components["schemas"]["ScenarioPolicy"] | null;
             /** Summary */
             summary: string;
             /** Title */
             title: string;
+        };
+        /**
+         * ScenarioPolicy
+         * @description How the scenario's company pays, as the judge may change it before it opens.
+         */
+        ScenarioPolicy: {
+            /** Approval Limit */
+            approval_limit: string;
+            /** Currency */
+            currency: string;
+            /** Payment Weekday */
+            payment_weekday: number | null;
+            /** Reserve Rule */
+            reserve_rule: string;
         };
         /**
          * Settled

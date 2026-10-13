@@ -61,7 +61,12 @@ async def create_guest_session(
     request: Request, db: SessionDep, response: Response, body: GuestStart | None = None
 ) -> Me:
     opened = await service.create_guest_session(
-        db, client=_client(request), scenario=body.scenario if body else None
+        db,
+        client=_client(request),
+        scenario=body.scenario if body else None,
+        name=body.name if body else None,
+        company_name=body.company if body else None,
+        choices=body.choices if body else None,
     )
     _set_session_cookie(response, opened)
     return opened.me

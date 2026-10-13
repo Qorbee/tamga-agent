@@ -17,11 +17,13 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
 from typing import Final
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import service as companies
@@ -30,7 +32,18 @@ from app.modules.conversations import service as conversations
 from app.modules.decisions import service as decisions
 from app.modules.playground import repository
 from app.modules.playground.models import World
-from app.modules.playground.schemas import Medium, PersonaOut, Said, ScenarioOut, WorldOut
+from app.modules.playground.schemas import (
+    Choices,
+    Medium,
+    PersonaOut,
+    Relation,
+    Said,
+    ScenarioOut,
+    ScenarioPolicy,
+    WorldOut,
+)
+from app.modules.policy import service as policies
+from app.modules.policy.schemas import PolicyIn
 from app.modules.settlement import service as settlement
 from app.platform import clock, events, jobs
 from app.platform.auth import Actor, Role
@@ -59,6 +72,7 @@ class Persona:
     medium: Medium = "whatsapp"
     # A mail persona's thread: the subject every message of theirs carries.
     subject: str = ""
+    relation: Relation = "carrier"
 
     @property
     def thread_key(self) -> str:
@@ -74,6 +88,17 @@ class Step:
 
 
 @dataclass(frozen=True, slots=True)
+class Earlier:
+    """A message from before the sandbox opened, so it opens on work already under way: the
+    persona's, or the company's own to them (``ours``)."""
+
+    persona: str
+    days_before: int
+    text: str
+    ours: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Scenario:
     key: str
     title: str
@@ -81,6 +106,12 @@ class Scenario:
     seed: Seed
     personas: tuple[Persona, ...] = ()
     steps: tuple[Step, ...] = field(default=())
+    # The company the judge runs and who they are in it, unless they name others.
+    company: str = "Sandbox"
+    owner: str = "Guest"
+    # The scenario's policy, written before its own seed runs, with what the judge changed.
+    policy: PolicyIn | None = None
+    history: tuple[Earlier, ...] = ()
 
 
 _scenarios: dict[str, Scenario] = {}
@@ -92,6 +123,11 @@ def register_scenario(scenario: Scenario) -> None:
         raise ValueError(f"scenario {scenario.key} registered twice")
     if any(a.day > b.day for a, b in zip(scenario.steps, scenario.steps[1:], strict=False)):
         raise ValueError(f"scenario {scenario.key}: steps out of order")
+    keys = {persona.key for persona in scenario.personas}
+    if any(earlier.persona not in keys for earlier in scenario.history):
+        raise ValueError(f"scenario {scenario.key}: its history names someone not in it")
+    if any(earlier.days_before < 1 for earlier in scenario.history):
+        raise ValueError(f"scenario {scenario.key}: its history is dated from a day before")
     _scenarios[scenario.key] = scenario
 
 
@@ -100,7 +136,42 @@ def list_scenarios() -> list[ScenarioOut]:
 
 
 def _out(scenario: Scenario) -> ScenarioOut:
-    return ScenarioOut(key=scenario.key, title=scenario.title, summary=scenario.summary)
+    policy = scenario.policy
+    return ScenarioOut(
+        key=scenario.key,
+        title=scenario.title,
+        summary=scenario.summary,
+        company=scenario.company,
+        owner=scenario.owner,
+        policy=ScenarioPolicy(
+            currency=policy.currency,
+            approval_limit=policy.approval_limit,
+            reserve_rule=policy.reserve_rule,
+            payment_weekday=policy.payment_weekday,
+        )
+        if policy
+        else None,
+    )
+
+
+def names(key: str) -> tuple[str, str]:
+    """The company and the owner a scenario opens with when the judge names neither."""
+    scenario = _scenarios[key]
+    return scenario.company, scenario.owner
+
+
+def _policy(scenario: Scenario, choices: Choices | None) -> PolicyIn | None:
+    """The scenario's policy with the judge's choices in it, checked as any policy is."""
+    if scenario.policy is None:
+        return None
+    if choices is None:
+        return scenario.policy
+    try:
+        return PolicyIn.model_validate(
+            {**scenario.policy.model_dump(), **choices.model_dump(exclude_none=True)}
+        )
+    except ValidationError as error:
+        raise BadRequest(f"Those payment rules do not hold: {error.errors()[0]['msg']}") from None
 
 
 def chosen(key: str | None) -> str:
@@ -114,16 +185,23 @@ def chosen(key: str | None) -> str:
     return key
 
 
-async def seed_later(db: AsyncSession, company_id: uuid.UUID, scenario: str) -> None:
+async def seed_later(
+    db: AsyncSession, company_id: uuid.UUID, scenario: str, choices: Choices | None = None
+) -> None:
     """Records a new sandbox's scenario and queues its seeding, in the caller's transaction, so
-    it runs once the sandbox exists and never for one whose creation rolled back."""
+    it runs once the sandbox exists and never for one whose creation rolled back. The judge's
+    choices are checked here, so a policy that cannot hold is refused before anything opens."""
     from app.modules.playground import tasks
 
+    _policy(_scenarios[scenario], choices)
     await repository.add(db, World(company_id=company_id, scenario=scenario))
-    await jobs.defer(db, tasks.seed, args={"company_id": str(company_id)})
+    args: dict[str, object] = {"company_id": str(company_id)}
+    if choices is not None:
+        args["choices"] = choices.model_dump(mode="json", exclude_none=True)
+    await jobs.defer(db, tasks.seed, args=args)
 
 
-async def seed(company_id: uuid.UUID) -> None:
+async def seed(company_id: uuid.UUID, choices: Choices | None = None) -> None:
     """Runs a sandbox's scenario. Anything but a live sandbox is left alone: the job can outlive
     its sandbox's expiry, and it must never write into a pilot's records."""
     async with open_session() as db:
@@ -136,7 +214,13 @@ async def seed(company_id: uuid.UUID) -> None:
     if scenario is None:
         logger.warning("not seeding %s: no scenario %s", company_id, world.scenario)
         return
+    policy = _policy(scenario, choices)
+    if policy is not None:
+        # Before the scenario's own seed, which then finds a version and keeps it.
+        async with open_session() as db:
+            await policies.seed_policy(db, company_id, policy)
     await scenario.seed(company_id)
+    await _remember(company_id, scenario)
     async with open_session() as db:
         world = await repository.get(db, company_id, lock=True)
         if world is not None and world.opened_on is None:
@@ -149,6 +233,34 @@ async def seed(company_id: uuid.UUID) -> None:
             await events.publish(db, company_id, kind)
         await db.commit()
     await play_due(company_id)
+
+
+# Minutes between two earlier messages: a day's few fit in its morning.
+_APART: Final = 20
+
+
+async def _remember(company_id: uuid.UUID, scenario: Scenario) -> None:
+    """The messages from before the sandbox opened, each dated that many days back, in office
+    hours and in the order written, so a reply never shows above what it answers. Each has a
+    Message-ID of its own, so seeding again stores none twice."""
+    personas = {persona.key: persona for persona in scenario.personas}
+    async with open_session() as db:
+        company = (await companies.get_companies(db, [company_id]))[company_id]
+        now = clock.now(company)
+        for index, earlier in enumerate(scenario.history):
+            await _say(
+                db,
+                company_id,
+                personas[earlier.persona],
+                earlier.text,
+                message_id=f"<earlier-{index}.{company_id}@world.sandbox.example>",
+                at=(now - timedelta(days=earlier.days_before)).replace(
+                    hour=9, minute=0, second=0, microsecond=0
+                )
+                + timedelta(minutes=_APART * index),
+                ours=earlier.ours,
+            )
+        await db.commit()
 
 
 async def opened_on(company_id: uuid.UUID) -> date | None:
@@ -184,6 +296,7 @@ async def get_world(db: AsyncSession, actor: Actor) -> WorldOut:
                 key=p.key,
                 name=p.name,
                 role=p.role,
+                relation=p.relation,
                 address=p.address,
                 thread_key=p.thread_key,
                 medium=p.medium,
@@ -266,23 +379,32 @@ async def _say(
     files: Sequence[tuple[str, bytes, str]] = (),
     *,
     message_id: str | None = None,
+    at: datetime | None = None,
+    ours: bool = False,
 ) -> None:
+    """A message in a persona's thread: theirs, or with ``ours`` the company's own to them, as
+    its mailbox would have kept what it sent. ``{company}`` in the text is the company's name."""
     company = (await companies.get_companies(db, [company_id]))[company_id]
     mail = EmailMessage()
-    mail["From"] = f"{persona.name} <{persona.address}>"
-    mail["To"] = OWNER_ADDRESS
+    # As addresses, not text: a judge's company named "Acme, Inc." would read as two senders.
+    own = Address(display_name=company.name, addr_spec=OWNER_ADDRESS)
+    theirs = Address(display_name=persona.name, addr_spec=persona.address)
+    mail["From"] = own if ours else theirs
+    mail["To"] = theirs if ours else own
     mail["Subject"] = (
         f"WhatsApp · {persona.name}" if persona.medium == "whatsapp" else persona.subject
     )
-    mail["Date"] = format_datetime(clock.now(company))
+    mail["Date"] = format_datetime(at or clock.now(company))
     mail["Message-ID"] = message_id or make_msgid(domain="world.sandbox.example")
     mail["In-Reply-To"] = persona.thread_key
     mail["References"] = persona.thread_key
-    mail.set_content(text)
+    mail.set_content(text.replace("{company}", company.name))
     for name, data, content_type in files:
         main, _, sub = content_type.partition("/")
         mail.add_attachment(data, maintype=main, subtype=sub, filename=name)
-    await conversations.ingest_simulated(db, company_id, mail.as_bytes())
+    await conversations.ingest_simulated(
+        db, company_id, mail.as_bytes(), sent_from=OWNER_ADDRESS if ours else None
+    )
     await events.publish(db, company_id, events.EventKind.THREADS)
 
 

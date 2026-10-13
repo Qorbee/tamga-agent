@@ -307,12 +307,15 @@ async def ingest_mail(
     return new
 
 
-async def ingest_simulated(db: AsyncSession, company_id: uuid.UUID, raw: bytes) -> bool:
+async def ingest_simulated(
+    db: AsyncSession, company_id: uuid.UUID, raw: bytes, *, sent_from: str | None = None
+) -> bool:
     """Stores one message a sandbox's world sent (a persona, or the judge typing as one), as a
     mail: the same parsing, threading, files and reading as a real mailbox's, on the simulated
-    channel, so nothing it says can reach a real person. True when it is new to the company: one
-    whose Message-ID is stored already (a script's step played again) is not. Runs in the
-    caller's transaction and does not commit."""
+    channel, so nothing it says can reach a real person. ``sent_from`` is the company's own
+    address in its world: a message from it is one the company sent, outbound. True when it is
+    new to the company: one whose Message-ID is stored already (a script's step played again)
+    is not. Runs in the caller's transaction and does not commit."""
     content_hash = hashlib.sha256(raw).digest()
     if await repository.get_message_by_hash(db, company_id, content_hash) is not None:
         return False
@@ -324,7 +327,7 @@ async def ingest_simulated(db: AsyncSession, company_id: uuid.UUID, raw: bytes) 
         company_id,
         content_hash,
         FetchedMail(uid=0, raw=raw, internaldate=None),
-        outbound_from=set(),
+        outbound_from={sent_from} if sent_from else set(),
         sent=False,
         channel=Channel.SIMULATED,
     )

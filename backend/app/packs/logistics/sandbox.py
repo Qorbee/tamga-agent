@@ -44,7 +44,7 @@ from app.modules.parties import service as parties
 from app.modules.parties.models import IdentifierKind, PartyKind
 from app.modules.parties.service import Identifier
 from app.modules.playground import service as playground
-from app.modules.playground.service import Persona, Scenario, Step
+from app.modules.playground.service import Earlier, Persona, Scenario, Step
 from app.modules.policy import service as policies
 from app.modules.policy.models import PaymentMethod
 from app.modules.policy.schemas import PolicyIn
@@ -321,6 +321,7 @@ CLIENT_DESK: Final = Persona(
     address="lena.hoffmann@northwind-retail.example",
     medium="mail",
     subject=f"Delivery {SALE}: POD and ETA",
+    relation="client",
 )
 
 
@@ -511,6 +512,7 @@ BUYER_DESK: Final = Persona(
     address="ap@brightwater-foods.example",
     medium="mail",
     subject=f"Remittance advice {NEXT_SALE}",
+    relation="client",
 )
 
 
@@ -742,6 +744,7 @@ INGRID: Final = Persona(
     address="ingrid.solberg@fjord-seafood.example",
     medium="mail",
     subject="Transport request: 2 reefers Bergen → Rotterdam",
+    relation="client",
 )
 MARCO: Final = Persona(
     key="marco",
@@ -750,6 +753,7 @@ MARCO: Final = Persona(
     address="m.keller@alpine-outdoor.example",
     medium="mail",
     subject=f"Your invoice {WEEK_SALES[1]}",
+    relation="client",
 )
 ESZTER: Final = Persona(
     key="eszter",
@@ -868,6 +872,80 @@ async def seed_week(company_id: uuid.UUID) -> None:
     await _seed(company_id, WEEK)
 
 
+# The company a judge runs in every scenario, and who they are, unless they name others.
+COMPANY: Final = "Harbourline Logistics"
+OWNER: Final = "Sam Taylor"
+
+# What was said before each sandbox opens, so it opens on work under way, as the pilot's did:
+# each dated before the load it speaks of (the trucks' `loaded` days above).
+FREIGHT_EARLIER: Final = (
+    Earlier(
+        "lena",
+        16,
+        f"Dear {{company}} team,\n\nplease book two trucks for our order {SALE}, Rotterdam to "
+        "Munich, 33 pallets each, with a tail lift.\n\nKind regards,\nLena Hoffmann\n"
+        f"{CLIENT.name}",
+    ),
+    Earlier(
+        "lena",
+        16,
+        f"Dear Lena,\n\nconfirmed: two trucks for {SALE}, Rotterdam to Munich. Plates and "
+        "drivers follow the day before loading.\n\nBest regards,\n{company}",
+        ours=True,
+    ),
+    Earlier(
+        "marta",
+        5,
+        f"Hi Marta, can Kestrel take a Rotterdam to Munich load for {SALE}? 33 pallets, tail "
+        "lift, at the usual rate.",
+        ours=True,
+    ),
+    Earlier(
+        "marta",
+        5,
+        f"Yes, we take it. {PLATE_MOVING}, driver Tomasz Wiśniewski. Invoice after delivery.",
+    ),
+)
+PAYDAY_EARLIER: Final = (
+    Earlier(
+        "jeroen",
+        8,
+        f"Dear {{company}} team,\n\nplease find our order {NEXT_SALE}, Hamburg to Lyon. "
+        f"Payment as agreed, 30 days.\n\nBest regards,\nJeroen de Vries\n{BUYER.name}",
+    ),
+    Earlier(
+        "jeroen",
+        8,
+        f"Dear Jeroen,\n\nthank you, {NEXT_SALE} is confirmed.\n\nBest regards,\n{{company}}",
+        ours=True,
+    ),
+    Earlier(
+        "petr",
+        7,
+        "Hi Petr, confirming the load we spoke about. We pay carriers on our Friday run, once "
+        "our client has paid.",
+        ours=True,
+    ),
+    Earlier("petr", 7, "Agreed, thanks. The truck is booked."),
+)
+WEEK_EARLIER: Final = (
+    Earlier(
+        "agnieszka",
+        8,
+        "Agnieszka, will you have a truck for Rotterdam to Munich next week?",
+        ours=True,
+    ),
+    Earlier("agnieszka", 8, "Probably yes, I'll confirm by Monday."),
+    Earlier(
+        "pavel",
+        3,
+        f"Pavel, loading for {WEEK_SALES[1]} in Zurich tomorrow at 08:00. Please send a photo "
+        "of the CMR once you have unloaded.",
+        ours=True,
+    ),
+    Earlier("pavel", 3, "OK, I'll be there at 08:00."),
+)
+
 SCENARIOS: Final = (
     Scenario(
         key="freight",
@@ -883,6 +961,10 @@ SCENARIOS: Final = (
             Step(2, _moving_asks_to_be_paid),
             Step(2, _client_thanks),
         ),
+        company=COMPANY,
+        owner=OWNER,
+        policy=FREIGHT.policy,
+        history=FREIGHT_EARLIER,
     ),
     Scenario(
         key="payday",
@@ -899,6 +981,10 @@ SCENARIOS: Final = (
             Step(2, _buyer_remits),
             Step(2, _client_pays_next),
         ),
+        company=COMPANY,
+        owner=OWNER,
+        policy=PAYDAY.policy,
+        history=PAYDAY_EARLIER,
     ),
     Scenario(
         key="week",
@@ -916,6 +1002,10 @@ SCENARIOS: Final = (
             Step(3, _northwind_pays),
             Step(4, _kestrel_asks_to_be_paid),
         ),
+        company=COMPANY,
+        owner=OWNER,
+        policy=WEEK.policy,
+        history=WEEK_EARLIER,
     ),
 )
 

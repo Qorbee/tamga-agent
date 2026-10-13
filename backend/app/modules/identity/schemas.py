@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from app.modules.companies.schemas import CompanySummary
+from app.modules.playground.schemas import Choices
 from app.platform.auth import Role
 
 # Long enough to resist guessing, capped so a huge body cannot make one hash expensive.
@@ -42,9 +43,18 @@ class Me(BaseModel):
     today: date
 
 
+# A name a judge types: one line, no control characters.
+_A_NAME = r"^[^\x00-\x1f\x7f]*$"
+
+
 class GuestStart(BaseModel):
     # A scenario's key (GET /playground/scenarios); the first registered when none is given.
     scenario: str | None = Field(default=None, max_length=40)
+    # Who the judge is and the company they run; the scenario's own names when left out.
+    name: str | None = Field(default=None, max_length=60, pattern=_A_NAME)
+    company: str | None = Field(default=None, max_length=80, pattern=_A_NAME)
+    # What they changed of the scenario's policy before it opened.
+    choices: Choices | None = None
 
 
 class CompanySwitch(BaseModel):

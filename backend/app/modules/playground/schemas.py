@@ -1,16 +1,42 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 # How a persona writes: a chat on WhatsApp, or mail.
 Medium = Literal["whatsapp", "mail"]
+# What a persona's firm is to the company: one it carries for, or one that carries for it.
+Relation = Literal["client", "carrier"]
+
+
+class ScenarioPolicy(BaseModel):
+    """How the scenario's company pays, as the judge may change it before it opens."""
+
+    currency: str
+    approval_limit: Decimal
+    reserve_rule: str
+    payment_weekday: int | None
 
 
 class ScenarioOut(BaseModel):
     key: str
     title: str
     summary: str
+    # The company the judge runs, and who they are in it, unless they name others.
+    company: str
+    owner: str
+    # None for a scenario whose company has no policy yet.
+    policy: ScenarioPolicy | None
+
+
+class Choices(BaseModel):
+    """What the judge chose of the scenario's policy before it opened; the rest is the
+    scenario's own."""
+
+    approval_limit: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    reserve_rule: str | None = Field(default=None, max_length=40)
+    payment_weekday: int | None = Field(default=None, ge=0, le=6)
 
 
 class PersonaOut(BaseModel):
@@ -18,6 +44,7 @@ class PersonaOut(BaseModel):
     name: str
     # Who they are to the company: "Dispatcher, Kestrel Freight".
     role: str
+    relation: Relation
     # The address their messages come from; the World panel's thread is theirs.
     address: str
     thread_key: str
