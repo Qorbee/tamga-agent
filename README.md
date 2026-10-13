@@ -107,11 +107,14 @@ Arc testnet; nothing touches a company's bank or real money.
   each chat from its first question, in one small request; whoever asks chooses the model and
   how long it reasons, from a chip beside Send. When an answer is a list, totals or a trend, it
   shows a view under it, chosen from a catalog with its filters: the owner's bills, invoice
-  totals by month, money due week by week, movements, jobs or the payment run, each drawn by the
-  app from the API, so no figure in it is the model's.
+  totals by month (what comes in against what goes out in one chart), money due week by week,
+  movements, jobs or the payment run, each drawn by the app from the API and opening with its
+  figures summed by code, so no figure in it is the model's. Each step the assistant took reads
+  as a sentence written by code ("Searched “Kestrel” in mail"), its raw call one tap away.
 - **Tamga writes first:** when it proposes a project or cannot choose one for a conversation, it
   writes to the owner in the chat that already holds that record, or opens a new one, and code
-  puts a card under its message, on which the owner answers. Such a turn acts for the company
+  puts a card under its message, on which the owner answers. The chat shows it at work as soon as
+  it begins, and its message opens with why, in code's words. Such a turn acts for the company
   as an actor with no user, which every service that writes refuses. Past a set number of new
   chats a day, what it finds goes into the day's digest as its card, with no model run. The
   bills that wait for the owner are raised together, in one message and one card of up to 50.
