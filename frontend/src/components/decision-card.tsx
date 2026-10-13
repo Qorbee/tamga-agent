@@ -1,10 +1,12 @@
 "use client";
 
-import { AiIdeaIcon, LinkSquare02Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
+import { AiIdeaIcon, ArrowDown01Icon, LinkSquare02Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { callOf, waits } from "@/components/bill-call";
+import { CallPill, useCallReason } from "@/components/call-pill";
 import { CanvasLink } from "@/components/canvas-link";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
@@ -38,21 +40,41 @@ import {
 import { formatDate, formatDays, formatMoney, formatUsdc } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useIsOwner } from "@/lib/use-role";
+import { cn } from "@/lib/utils";
 
 /**
- * One bill's decision (docs/architecture/05): who and how much, in the bill's own currency, how it
- * is paid, why it waits or is held, and the owner's answers, as the Payments page lists it and as a
- * card under what Tamga writes in a chat. An approval is confirmed first, since a payment cannot be
- * taken back; each answer names the evaluation shown, and one evaluated again meanwhile is refused
- * and read again. A bill paid by bank is the owner's to pay: they mark it paid, or the bank's
- * movement settles it (ADR-0027).
+ * One bill's decision (docs/architecture/05), read at a glance: who, how much in the bill's own
+ * currency, and Tamga's call as a pill with a few words of why; the rest (the controller's reason,
+ * the rules, how it is paid, its transaction) opens under "Why?". The buttons follow the call: a
+ * bill Tamga would hold offers Hold first and paying it as the second choice. An approval is
+ * confirmed first, since a payment cannot be taken back; each answer names the evaluation shown,
+ * and one evaluated again meanwhile is refused and read again. A bill paid by bank is the owner's
+ * to pay: they mark it paid, or the bank's movement settles it (ADR-0027).
+ *
+ * `fits` is the payment run's word on the reserve, where the row sits in one.
  */
-export function DecisionRow({ decision, payment: given }: { decision: Decision; payment: Payment | undefined }) {
+export function DecisionRow({
+  decision,
+  payment: given,
+  fits = null,
+  actions = true,
+  inRun = false,
+}: {
+  decision: Decision;
+  payment: Payment | undefined;
+  fits?: boolean | null;
+  actions?: boolean;
+  /** In a run, the bills Tamga would pay are approved together by "Approve N": their rows offer
+   * no button of their own, and the menu still holds every answer. */
+  inRun?: boolean;
+}) {
   const { t, locale } = useI18n();
   // A payment the owner undid is kept for the record, and shows as none.
   const payment = given?.voided_at ? undefined : given;
   const isOwner = useIsOwner();
   const queryClient = useQueryClient();
+  const reasonOf = useCallReason();
+  const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -84,9 +106,12 @@ export function DecisionRow({ decision, payment: given }: { decision: Decision; 
       void queryClient.invalidateQueries({ queryKey: ["decisions"] });
       void queryClient.invalidateQueries({ queryKey: ["decision"] });
       void queryClient.invalidateQueries({ queryKey: ["payments"] });
+      void queryClient.invalidateQueries({ queryKey: ["payment-run"] });
     },
   });
 
+  const call = callOf(decision, fits);
+  const reason = reasonOf(decision, call);
   const stopping = decision.rules.filter((rule) => rule.outcome === "hold" || rule.outcome === "reject");
   const byOwner = decision.decided_by !== null;
   const byBank = decision.method === "bank_transfer";
@@ -100,14 +125,24 @@ export function DecisionRow({ decision, payment: given }: { decision: Decision; 
     stopping.length === 0 &&
     (decision.state === "awaiting_owner" ||
       ((decision.state === "held" || decision.state === "rejected") && byOwner));
+  const holdable = decision.state === "awaiting_owner" || (decision.state === "rejected" && byOwner);
   const markable = byBank && (approvable || decision.state === "approved");
   // Marked paid by mistake, or a movement matched to the wrong bill: the owner takes it back. A
   // vault payment is on the chain and has no undo.
   const undoable = byBank && decision.state === "settled" && payment?.method === "bank_transfer";
   const paidFrom =
     decision.pay_amount !== null && decision.pay_currency ? formatMoney(Number(decision.pay_amount), decision.pay_currency, locale) : null;
-  // How it is paid, under the firm: from the vault, by bank in the bill's own currency, or from
-  // another account at the official rate of the evaluation's day.
+  // What leaves the company, under the bill's own amount: test USDC from the vault, or the bank
+  // amount when it is paid from an account in another currency.
+  const secondary =
+    decision.state === "paid_in_books"
+      ? null
+      : !byBank
+        ? usdc
+        : decision.pay_currency && decision.pay_currency !== decision.currency
+          ? (paidFrom ? `≈ ${paidFrom}` : null)
+          : null;
+  // How it is paid, in words, for "Why?".
   const how =
     decision.state === "paid_in_books"
       ? null
@@ -129,74 +164,66 @@ export function DecisionRow({ decision, payment: given }: { decision: Decision; 
         ? byBank
           ? t.payments.waitsForBank
           : t.payments.beingPaid
-        : decision.state === "held" && byOwner
-          ? t.payments.heldByYou
-          : decision.state === "rejected"
-            ? byOwner
-              ? t.payments.rejectedByYou
-              : t.payments.rejected
-            : decision.state === "failed"
-              ? t.payments.refused
-              : null;
+        : decision.state === "rejected"
+          ? byOwner
+            ? t.payments.rejectedByYou
+            : t.payments.rejected
+          : decision.state === "failed"
+            ? t.payments.refused
+            : null;
   // The controller's opinion on the evaluation shown: it moves nothing, the owner answers.
-  const advice = answered ? null : (decision.advice ?? null);
-  const advised = advice
-    ? advice.proposal === "pay_part"
-      ? t.payments.advice.payPart(money(advice.amount) ?? "")
-      : t.payments.advice[advice.proposal]
-    : null;
+  const advice = !answered && decision.advice?.evaluation === decision.evaluation ? decision.advice : null;
+  const part = advice?.proposal === "pay_part" ? money(advice.amount) : null;
+  // Tamga would wait: holding is the first answer offered, paying it the second.
+  const holdFirst = call.call === "hold";
+  const together = inRun && call.call === "pay" && !byBank;
+  const showActions =
+    actions && !together && isOwner && (approvable || markable || (holdFirst && holdable)) && !editing && !marking;
 
   return (
     <>
       <div className="flex items-start gap-1">
         <CanvasLink
           view={{ kind: "invoice", id: decision.invoice_id }}
-          className="hover:bg-accent/40 aria-[current=true]:bg-secondary flex min-w-0 flex-1 items-start gap-3 rounded-xl px-2 py-2.5 transition-colors"
+          className="hover:bg-accent/40 aria-[current=true]:bg-secondary flex min-w-0 flex-1 items-start gap-3 rounded-xl px-2 py-2 transition-colors"
         >
           <span className="min-w-0 flex-1">
-            <span className="text-muted-foreground flex flex-wrap items-baseline gap-x-2 text-xs">
-              <span className="font-mono whitespace-nowrap">{bill?.number ?? t.books.noNumber}</span>
-              {bill?.due_date ? (
-                <span className="whitespace-nowrap">{t.books.dueOn(formatDays(bill.due_date, null, locale))}</span>
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate text-sm font-medium">{firm}</span>
+              <span className="text-muted-foreground hidden shrink-0 font-mono text-xs sm:inline">{bill?.number ?? t.books.noNumber}</span>
+            </span>
+            <span className="mt-1 flex min-w-0 items-center gap-2">
+              <CallPill call={call.call} />
+              {reason ? (
+                <span className="text-muted-foreground min-w-0 truncate text-xs">
+                  {reason.advice ? <T>{reason.text}</T> : reason.text}
+                </span>
+              ) : bill?.due_date && waits(call.call) ? (
+                <span className="text-muted-foreground truncate text-xs">{t.books.dueOn(formatDays(bill.due_date, null, locale))}</span>
               ) : null}
             </span>
-            <span className="block text-base font-medium text-pretty break-words">{firm}</span>
-            {how ? <span className="text-muted-foreground mt-0.5 block text-xs">{how}</span> : null}
-            {status ? <span className="text-muted-foreground mt-1 block text-xs">{status}</span> : null}
-            {/* The vault's own words, for whoever looks into it. */}
-            {decision.state === "failed" && payment?.failure ? (
-              <span className="text-muted-foreground mt-0.5 block font-mono text-xs break-words">{payment.failure}</span>
-            ) : null}
-            {stopping.length > 0 && !answered ? (
-              <ul className="mt-1 grid gap-0.5 text-xs">
-                {stopping.map((rule) => (
-                  <li key={rule.rule} className="text-warning-foreground flex items-center gap-1.5">
-                    <span className="bg-warning size-1.5 shrink-0 rounded-full" aria-hidden />
-                    {t.payments.rules[rule.rule] ?? rule.reason}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
           </span>
-          {/* The bill's own amount and currency lead; how it is paid follows (ADR-0027, point 8).
-              Paid outside Tamga, the bill's own total is all there is to show. */}
+          {/* The bill's own amount and currency lead; what leaves the company follows (ADR-0027,
+              point 8). Paid outside Tamga, the bill's own total is all there is to show. */}
           <span className="shrink-0 text-end tabular-nums">
             <span className="block text-sm font-medium">
               {(decision.state === "paid_in_books" ? money(bill?.total_amount ?? decision.amount) : money(decision.amount)) ?? "—"}
             </span>
             {decision.amount_edited && bill?.total_amount ? (
               <span className="text-muted-foreground block text-xs">{t.payments.partOf(money(bill.total_amount) ?? "")}</span>
+            ) : secondary ? (
+              <span className="text-muted-foreground block text-xs">{secondary}</span>
             ) : null}
           </span>
         </CanvasLink>
-        {isOwner && undoable && !undoing ? (
+        {isOwner && (undoable || !answered) && !undoing ? (
           <DropdownMenu modal={false}>
             <Hint label={t.payments.actions}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-muted-foreground mt-1.5"
+                  className="text-muted-foreground mt-1"
                   aria-label={t.payments.actions}
                   disabled={answer.isPending}
                 >
@@ -205,51 +232,69 @@ export function DecisionRow({ decision, payment: given }: { decision: Decision; 
               </DropdownMenuTrigger>
             </Hint>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setUndoing(true)}>{t.payments.undoPaid}</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        {isOwner && !answered ? (
-          <DropdownMenu modal={false}>
-            <Hint label={t.payments.actions}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground mt-1.5"
-                  aria-label={t.payments.actions}
-                  disabled={answer.isPending}
-                >
-                  <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.75} />
-                </Button>
-              </DropdownMenuTrigger>
-            </Hint>
-            <DropdownMenuContent align="end">
-              <PayByItems decision={decision} onPick={(body) => answer.mutate(body)} />
-              {decision.state === "awaiting_owner" || (decision.state === "rejected" && byOwner) ? (
-                <DropdownMenuItem onSelect={() => answer.mutate({ action: "hold" })}>{t.payments.hold}</DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onSelect={() => setEditing(true)}>{t.payments.changeAmount}</DropdownMenuItem>
-              {decision.state !== "rejected" ? (
-                <DropdownMenuItem onSelect={() => answer.mutate({ action: "reject" })}>{t.payments.reject}</DropdownMenuItem>
+              {undoable ? <DropdownMenuItem onSelect={() => setUndoing(true)}>{t.payments.undoPaid}</DropdownMenuItem> : null}
+              {!answered ? (
+                <>
+                  {together && approvable ? (
+                    <DropdownMenuItem onSelect={() => setConfirming(true)}>{t.payments.approveThis}</DropdownMenuItem>
+                  ) : null}
+                  <PayByItems decision={decision} onPick={(body) => answer.mutate(body)} />
+                  {holdable && !holdFirst ? (
+                    <DropdownMenuItem onSelect={() => answer.mutate({ action: "hold" })}>{t.payments.hold}</DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem onSelect={() => setEditing(true)}>{t.payments.changeAmount}</DropdownMenuItem>
+                  {decision.state !== "rejected" ? (
+                    <DropdownMenuItem onSelect={() => answer.mutate({ action: "reject" })}>{t.payments.reject}</DropdownMenuItem>
+                  ) : null}
+                </>
               ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
       </div>
 
-      {/* Under the row, the width of the card: a sentence or two beside the amounts is a column. */}
-      {advice && advised ? (
-        <p className="flex items-start gap-1.5 px-2 pb-2 text-xs">
-          <HugeiconsIcon icon={AiIdeaIcon} strokeWidth={1.75} className="text-primary mt-px size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 text-pretty">
-            <span className="font-medium">{advised}</span>
-            <span className="text-muted-foreground">
-              {" · "}
-              <T>{advice.reason}</T>
-            </span>
-          </span>
-        </p>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="text-muted-foreground hover:text-foreground ms-2 -mt-1 mb-1 inline-flex items-center gap-0.5 text-xs"
+      >
+        {open ? t.payments.hideWhy : t.payments.why}
+        <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={1.75} className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {open ? (
+        <div className="text-muted-foreground grid gap-1.5 px-2 pb-2 text-xs">
+          {advice ? (
+            <p className="flex items-start gap-1.5">
+              <HugeiconsIcon icon={AiIdeaIcon} strokeWidth={1.75} className="text-primary mt-px size-3.5 shrink-0" aria-hidden />
+              <span className="min-w-0 text-pretty">
+                <span className="text-foreground font-medium">
+                  {advice.proposal === "pay_part" ? t.payments.advice.payPart(part ?? "") : t.payments.advice[advice.proposal]}
+                </span>
+                {" · "}
+                <T>{advice.reason}</T>
+              </span>
+            </p>
+          ) : null}
+          {stopping.length > 0 && !answered ? (
+            <ul className="grid gap-0.5">
+              {stopping.map((rule) => (
+                <li key={rule.rule} className="text-warning-foreground flex items-center gap-1.5">
+                  <span className="bg-warning size-1.5 shrink-0 rounded-full" aria-hidden />
+                  {t.payments.rules[rule.rule] ?? rule.reason}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="flex flex-wrap gap-x-3">
+            <span className="font-mono sm:hidden">{bill?.number ?? t.books.noNumber}</span>
+            {bill?.due_date ? <span>{t.books.dueOn(formatDays(bill.due_date, null, locale))}</span> : null}
+            {how ? <span>{how}</span> : null}
+            {status ? <span>{status}</span> : null}
+          </p>
+          {/* The vault's own words, for whoever looks into it. */}
+          {decision.state === "failed" && payment?.failure ? <p className="font-mono break-words">{payment.failure}</p> : null}
+        </div>
       ) : null}
 
       {payment && payment.method === "bank_transfer" && payment.paid_on ? (
@@ -285,11 +330,36 @@ export function DecisionRow({ decision, payment: given }: { decision: Decision; 
         />
       ) : null}
 
-      {isOwner && (approvable || markable) && !editing && !marking ? (
+      {showActions ? (
         <div className="flex flex-wrap gap-2 px-2 pb-2">
+          {holdFirst && holdable ? (
+            <Button size="sm" disabled={answer.isPending} onClick={() => answer.mutate({ action: "hold" })}>
+              {t.payments.hold}
+            </Button>
+          ) : null}
           {approvable ? (
-            <Button size="sm" disabled={answer.isPending} onClick={() => setConfirming(true)}>
-              {t.payments.approve}
+            <Button
+              size="sm"
+              variant={holdFirst ? "outline" : "default"}
+              disabled={answer.isPending}
+              onClick={() => setConfirming(true)}
+            >
+              {holdFirst ? t.payments.payAnyway : t.payments.approve}
+            </Button>
+          ) : null}
+          {part && approvable && advice?.amount ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={answer.isPending}
+              onClick={() => answer.mutate({ action: "edit", amount: advice.amount ?? decision.amount })}
+            >
+              {t.payments.payPartInstead(part)}
+            </Button>
+          ) : null}
+          {call.call === "needs_you" && holdable ? (
+            <Button size="sm" variant="outline" disabled={answer.isPending} onClick={() => answer.mutate({ action: "hold" })}>
+              {t.payments.hold}
             </Button>
           ) : null}
           {markable ? (
@@ -337,6 +407,7 @@ export function DecisionRow({ decision, payment: given }: { decision: Decision; 
             </DialogTitle>
             <DialogDescription>
               {(byBank ? t.payments.confirmBodyBank : t.payments.confirmBody)(bill?.number ?? t.books.noNumber)}
+              {holdFirst ? ` ${t.payments.againstAdvice}` : null}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -1,0 +1,89 @@
+"use client";
+
+import { useQueries, useQuery } from "@tanstack/react-query";
+
+import { usePaymentRun } from "@/components/payment-run";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getHoldings, getPolicy, listDecisions, listInvoiceTotals, type InvoiceTotal } from "@/lib/api";
+import { formatDays, formatMoneyShort, todayIso } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
+
+/** The calendar day after one the API wrote. */
+function dayAfter(day: string): string {
+  const [year = 1970, month = 1, date = 1] = day.split("-").map(Number);
+  return todayIso(new Date(year, month - 1, date + 1));
+}
+
+/**
+ * Where the money stands, in four figures (the owner's mockup, Oct 13): what the accounts hold,
+ * what is due by the next pay day, what clients owe by then, and how many bills wait for the owner.
+ * Each is the server's figure; a tile with nothing known says so with a dash.
+ */
+export function MoneyTiles({ className }: { className?: string }) {
+  const { t, locale } = useI18n();
+  const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
+  const currency = policy.data?.currency;
+  const run = usePaymentRun();
+  const holdings = useQuery({
+    queryKey: ["money-holdings", currency],
+    queryFn: () => getHoldings(currency ?? ""),
+    enabled: Boolean(currency),
+  });
+  // The run's last day counts: the books' cutoff is strict, so it is the day after.
+  const cutoff = run.data ? dayAfter(run.data.through) : undefined;
+  const [incoming, outgoing] = useQueries({
+    queries: (["receivable", "payable"] as const).map((direction) => ({
+      queryKey: ["invoice-totals", { direction, outstanding: true, due_before: cutoff }],
+      queryFn: () => listInvoiceTotals({ direction, outstanding: true, due_before: cutoff }),
+      enabled: Boolean(cutoff),
+    })),
+  });
+  const waiting = useQuery({
+    queryKey: ["decisions", { view: "count-waiting" }],
+    queryFn: () => listDecisions({ state: ["awaiting_owner"], limit: 1 }),
+  });
+  if (policy.isPending || run.isPending || holdings.isPending) return <Skeleton className={cn("h-20 rounded-2xl", className)} />;
+  if (!currency) return null;
+
+  const money = (amount: number, unit = currency) => formatMoneyShort(amount, unit, locale);
+  // What the books say is owed by then, held bills included: a hold is no less a debt.
+  const totalOf = (totals: InvoiceTotal[] | undefined) => {
+    const amounts = (totals ?? []).filter((total) => total.currency && Number(total.remaining_amount ?? 0) > 0);
+    if (amounts.length === 0) return "—";
+    return amounts.map((total) => money(Number(total.remaining_amount), total.currency ?? currency)).join(" · ");
+  };
+  const tiles: { label: string; value: string; tone?: string }[] = [
+    {
+      label: t.tiles.available,
+      value: holdings.data && holdings.data.items.length > 0 ? money(Number(holdings.data.total)) : "—",
+    },
+    {
+      label: run.data ? t.tiles.dueBy(formatDays(run.data.through, null, locale)) : t.tiles.due,
+      value: totalOf(outgoing?.data),
+    },
+    { label: t.tiles.expected, value: totalOf(incoming?.data) },
+    {
+      label: t.tiles.toApprove,
+      // Unknown until it loads: never a zero that says nothing waits.
+      value: waiting.data ? String(waiting.data.total) : "—",
+      tone: (waiting.data?.total ?? 0) > 0 ? "text-danger-foreground" : undefined,
+    },
+  ];
+  return (
+    // A row of four on a wide page; on a phone they scroll sideways rather than break a figure.
+    <dl
+      className={cn(
+        "-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] sm:grid sm:grid-cols-4 sm:overflow-visible",
+        className,
+      )}
+    >
+      {tiles.map((tile) => (
+        <div key={tile.label} className="border-border bg-card min-w-36 shrink-0 snap-start rounded-2xl border px-3.5 py-3 sm:min-w-0">
+          <dt className="text-muted-foreground truncate text-[11px] font-medium tracking-[0.08em] uppercase">{tile.label}</dt>
+          <dd className={cn("mt-1 truncate text-lg font-medium tabular-nums", tile.tone)}>{tile.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}

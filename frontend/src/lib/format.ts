@@ -25,6 +25,27 @@ export function formatMoney(amount: number, currency: string, locale: Locale): s
   return new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency }).format(amount);
 }
 
+/** A figure for a tile or a bar's legend: whole units, the currency kept. */
+export function formatMoneyShort(amount: number, currency: string, locale: Locale): string {
+  if (STABLECOINS.has(currency)) {
+    return `${new Intl.NumberFormat(intlLocale[locale], { maximumFractionDigits: 0 }).format(amount)} ${currency}`;
+  }
+  return new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+}
+
+/** A figure on a chart's bar: "€6.5K", the currency kept. */
+export function formatMoneyCompact(amount: number, currency: string, locale: Locale): string {
+  if (STABLECOINS.has(currency)) {
+    return `${new Intl.NumberFormat(intlLocale[locale], { notation: "compact", maximumFractionDigits: 1 }).format(amount)} ${currency}`;
+  }
+  return new Intl.NumberFormat(intlLocale[locale], {
+    style: "currency",
+    currency,
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(amount);
+}
+
 /** USDC from its smallest units (six decimals), every decimal a mirrored bill has kept. */
 export function formatUsdc(units: number, locale: Locale): string {
   const figure = new Intl.NumberFormat(intlLocale[locale], {

@@ -4,7 +4,8 @@ import { useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { DecisionRow } from "@/components/decision-card";
-import { PaymentRunCard } from "@/components/payment-run";
+import { MoneyTiles } from "@/components/money-tiles";
+import { PaymentRunCard, usePaymentRun } from "@/components/payment-run";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,29 +14,30 @@ import { useI18n } from "@/lib/i18n/client";
 import { usePagedList } from "@/lib/use-paged-list";
 
 const PAGE = 50;
-const VIEWS = ["waiting", "held", "paid"] as const;
+const VIEWS = ["later", "held", "paid"] as const;
 type View = (typeof VIEWS)[number];
-/** What each tab lists: an approved decision waits for the executor beside those that wait for
- * the owner, since both are still to be paid; a bill the books show paid is paid, by the vault or
- * not. */
+/** What each tab lists: what is still to be paid after the run above (an approved decision waits
+ * for the executor beside those that wait for the owner); what is held; and what is paid, by the
+ * vault or not. */
 const STATES: Record<View, Decision["state"][]> = {
-  waiting: ["awaiting_owner", "approved"],
+  later: ["awaiting_owner", "approved"],
   held: ["held", "failed", "rejected"],
   paid: ["settled", "paid_in_books"],
 };
 
 /**
- * The bills Tamga decided about (docs/architecture/05): what waits for the owner's approval, what
- * a rule or the owner holds and why, and what the vault paid, with its transaction. The owner
- * answers here; nothing is paid without that answer, and an approval is confirmed first, since a
- * payment cannot be taken back.
+ * The bills Tamga decided about (docs/architecture/05), at a glance: where the money stands, the
+ * next payment run with each bill's call and "Approve N", then what is due later, what is held and
+ * what was paid. The owner answers here; nothing is paid without that answer, and an approval is
+ * confirmed first, since a payment cannot be taken back.
  */
 export function PaymentsPage() {
   const { t } = useI18n();
-  const [view, setView] = useState<View>("waiting");
+  const [view, setView] = useState<View>("later");
   return (
-    <div className="grid gap-4">
-      <PaymentRunCard />
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
+      <MoneyTiles />
+      <PaymentRunCard full />
       <Segmented
         fill
         label={t.nav.payments}
@@ -44,7 +46,7 @@ export function PaymentsPage() {
         options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.payments.views[value]}</span> }))}
       />
       <Decisions view={view} />
-      <p className="text-muted-foreground text-xs text-pretty">{t.payments.mirror}</p>
+      <p className="text-muted-foreground text-xs">{t.payments.mirror}</p>
     </div>
   );
 }
@@ -56,6 +58,9 @@ function inForce(payment: Payment): boolean {
 
 function Decisions({ view }: { view: View }) {
   const { t } = useI18n();
+  const run = usePaymentRun();
+  // The run's bills are on its card above; "Later" lists the rest still to pay.
+  const inRun = new Set(view === "later" ? (run.data?.items ?? []).map((item) => item.decision.id) : []);
   const decisions = usePagedList(
     ["decisions", { view }],
     (page) => listDecisions({ state: STATES[view], expand: ["invoice"], sort: "-issued_on", ...page }),
@@ -96,12 +101,13 @@ function Decisions({ view }: { view: View }) {
     );
   // While another tab's rows are read, the last tab's are never shown under its name.
   if (!decisions.items || decisions.isPlaceholderData) return <Skeleton className="h-40 rounded-2xl" />;
-  if (decisions.items.length === 0)
+  const rows = decisions.items.filter((decision) => !inRun.has(decision.id));
+  if (rows.length === 0 && !decisions.more)
     return <p className="text-muted-foreground py-10 text-center text-sm">{t.payments.empty[view]}</p>;
   return (
     <div className="grid gap-3">
       <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-2xl border">
-        {decisions.items.map((decision) => (
+        {rows.map((decision) => (
           <li key={decision.id} className="py-1 ps-2 pe-3">
             <DecisionRow decision={decision} payment={shown.get(decision.id)} />
           </li>

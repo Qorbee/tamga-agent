@@ -2,6 +2,8 @@
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { Hint } from "@/components/hint";
+import { MoneyTiles } from "@/components/money-tiles";
 import { useRuleWords } from "@/components/policy-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,10 +26,11 @@ import {
   type Movement,
   type MovementCategory,
 } from "@/lib/api";
-import { formatDays, formatMoney, todayIso } from "@/lib/format";
+import { formatDays, formatMoney, formatMoneyCompact, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useIsOwner } from "@/lib/use-role";
 import { usePagedList } from "@/lib/use-paged-list";
+import { cn } from "@/lib/utils";
 
 const PAGE = 50;
 const CATEGORIES: readonly MovementCategory[] = [
@@ -50,7 +53,8 @@ const CATEGORIES: readonly MovementCategory[] = [
  */
 export function MoneyPage() {
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
+      <MoneyTiles />
       <Holdings />
       <Accounts />
       <Outlook />
@@ -77,27 +81,25 @@ function Holdings() {
     );
   if (!policy.data || !holdings.data) return <Skeleton className="h-20 rounded-2xl" />;
   const reserve = read(policy.data.reserve, policy.data.currency);
+  // One line under the tiles, whose Available is the total: how it is counted, and the reserve in
+  // force, each explained by its hint rather than a paragraph.
   return (
-    <section className="border-border bg-card grid gap-1 rounded-2xl border px-4 py-3.5">
+    <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
       {holdings.data.items.length > 0 ? (
-        <>
-          <p className="text-lg font-medium tabular-nums">
-            {t.money.about(formatMoney(Number(holdings.data.total), holdings.data.currency, locale))}
-          </p>
-          <p className="text-muted-foreground text-xs text-pretty">
-            {t.money.aboutHint}
-            {holdings.data.complete ? null : ` ${t.money.incomplete}`}
-          </p>
-        </>
+        <Hint label={`${t.money.aboutHint}${holdings.data.complete ? "" : ` ${t.money.incomplete}`}`}>
+          <span tabIndex={0} className="text-xs underline decoration-dotted underline-offset-4">
+            {t.money.atRate(formatMoney(Number(holdings.data.total), holdings.data.currency, locale))}
+          </span>
+        </Hint>
       ) : (
-        <p className="text-muted-foreground text-sm text-pretty">{t.money.noAccounts}</p>
+        <span>{t.money.noAccounts}</span>
       )}
-      <p className="text-muted-foreground border-border mt-2 border-t pt-2 text-xs text-pretty">
-        <span className="text-foreground font-medium">{t.money.reserve(reserve.name)}</span>
-        {" · "}
-        {reserve.body}
-      </p>
-    </section>
+      <Hint label={reserve.body}>
+        <span tabIndex={0} className="bg-secondary rounded-full px-2.5 py-0.5 text-xs">
+          {t.money.reserve(reserve.name)}
+        </span>
+      </Hint>
+    </p>
   );
 }
 
@@ -123,10 +125,13 @@ function Accounts() {
       <h2 className="text-muted-foreground text-xs font-medium">{t.money.accounts}</h2>
       <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-2xl border">
         {sorted.map((account) => (
-          <li key={account.id} className="flex items-start gap-3 px-4 py-2.5">
+          <li key={account.id} className="flex items-center gap-3 px-4 py-2.5">
+            <span className="bg-secondary text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-medium">
+              {account.currency.slice(0, 4)}
+            </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium break-words">{account.name}</span>
-              <span className="text-muted-foreground block text-xs">{detail(account, t.money)}</span>
+              <span className="block truncate text-sm font-medium">{account.name}</span>
+              <span className="text-muted-foreground block truncate text-xs">{detail(account, t.money)}</span>
             </span>
             <span className="shrink-0 text-end text-sm font-medium tabular-nums">
               {account.balance !== null ? (
@@ -192,33 +197,97 @@ function Outlook() {
     key: cutoff,
   }));
   const empty = rows.every((row) => row.collect.length === 0 && row.pay.length === 0);
-  const shown = (amounts: [string, number][]) =>
-    amounts.length === 0 ? "—" : amounts.map(([currency, amount]) => formatMoney(amount, currency, locale)).join(" · ");
+  const currencies = [...new Set(rows.flatMap((row) => [...row.collect, ...row.pay].map(([currency]) => currency)))];
   return (
     <section className="grid gap-2">
       <h2 className="text-muted-foreground text-xs font-medium">{t.money.next}</h2>
       {empty ? (
         <p className="text-muted-foreground border-border rounded-2xl border px-4 py-3 text-sm">{t.money.nothingDue}</p>
       ) : (
-        <div className="border-border bg-card overflow-hidden rounded-2xl border">
-          <div className="text-muted-foreground border-border grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b px-4 py-2 text-xs">
-            <span />
-            <span className="text-end">{t.money.toCollect}</span>
-            <span className="text-end">{t.money.toPay}</span>
-          </div>
-          {rows.map((row) => (
-            <div
-              key={row.key}
-              className="border-border grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b px-4 py-2.5 text-sm last:border-b-0"
-            >
-              <span className="text-muted-foreground text-xs">{row.label}</span>
-              <span className="text-end tabular-nums break-words">{shown(row.collect)}</span>
-              <span className="text-end tabular-nums break-words">{shown(row.pay)}</span>
-            </div>
+        <div className="border-border bg-card grid gap-4 rounded-2xl border px-4 py-3.5">
+          <p className="text-muted-foreground flex flex-wrap gap-x-4 text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="bg-success size-2 rounded-sm" aria-hidden />
+              {t.money.toCollect}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="bg-warning size-2 rounded-sm" aria-hidden />
+              {t.money.toPay}
+            </span>
+          </p>
+          {currencies.map((currency) => (
+            <WeekBars
+              key={currency}
+              currency={currency}
+              shownCurrency={currencies.length > 1}
+              weeks={rows.map((row, index) => ({
+                key: row.key,
+                label: index === 0 ? t.money.overdue : formatDays(cutoffs[index - 1]!, null, locale),
+                fullLabel: row.label,
+                collect: row.collect.find(([unit]) => unit === currency)?.[1] ?? 0,
+                pay: row.pay.find(([unit]) => unit === currency)?.[1] ?? 0,
+              }))}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+type Week = { key: string; label: string; fullLabel: string; collect: number; pay: number };
+
+/** Each bucket's money in and out as two bars, one currency at a time: currencies are never
+ * added together here. The figures are in a table for a screen reader. */
+function WeekBars({ currency, weeks, shownCurrency }: { currency: string; weeks: Week[]; shownCurrency: boolean }) {
+  const { t, locale } = useI18n();
+  const most = Math.max(1, ...weeks.flatMap((week) => [week.collect, week.pay]));
+  const short = (amount: number) => (amount > 0 ? formatMoneyCompact(amount, currency, locale) : "");
+  const height = (amount: number) => `${Math.max(amount > 0 ? 4 : 0, (amount / most) * 100)}%`;
+  return (
+    <figure className="grid gap-2">
+      {shownCurrency ? <figcaption className="text-muted-foreground font-mono text-xs">{currency}</figcaption> : null}
+      <div aria-hidden className="grid h-36 grid-cols-5 items-end gap-2">
+        {weeks.map((week) => (
+          <div key={week.key} className="flex h-full items-end justify-center gap-1">
+            {(["collect", "pay"] as const).map((side) => (
+              <div key={side} className="flex h-full w-full max-w-7 flex-col justify-end">
+                <span className="text-muted-foreground mb-1 truncate text-center text-[10px] tabular-nums">{short(week[side])}</span>
+                <span
+                  className={cn("w-full rounded-t-md", side === "collect" ? "bg-success" : "bg-warning")}
+                  style={{ height: height(week[side]) }}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div aria-hidden className="text-muted-foreground border-border grid grid-cols-5 gap-2 border-t pt-1.5 text-center text-[11px]">
+        {weeks.map((week) => (
+          <span key={week.key} className="truncate">
+            {week.label}
+          </span>
+        ))}
+      </div>
+      <table className="sr-only">
+        <thead>
+          <tr>
+            <th />
+            <th>{t.money.toCollect}</th>
+            <th>{t.money.toPay}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((week) => (
+            <tr key={week.key}>
+              <th>{week.fullLabel}</th>
+              <td>{formatMoney(week.collect, currency, locale)}</td>
+              <td>{formatMoney(week.pay, currency, locale)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </figure>
   );
 }
 
@@ -300,7 +369,7 @@ function MovementRow({ movement }: { movement: Movement }) {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="hover:text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+                  className="bg-secondary hover:bg-accent rounded-full px-2 py-px disabled:opacity-50"
                   aria-label={`${t.money.category}: ${label}`}
                   disabled={change.isPending}
                 >
@@ -316,11 +385,12 @@ function MovementRow({ movement }: { movement: Movement }) {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <span>{label}</span>
+            <span className="bg-secondary rounded-full px-2 py-px">{label}</span>
           )}
         </span>
       </span>
-      <span className="shrink-0 text-end text-sm font-medium tabular-nums">
+      <span className={cn("shrink-0 text-end text-sm font-medium tabular-nums", amount > 0 && "text-success-foreground")}>
+        {amount > 0 ? "+" : ""}
         {formatMoney(amount, movement.currency, locale)}
       </span>
     </div>
