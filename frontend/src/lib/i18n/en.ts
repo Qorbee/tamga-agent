@@ -640,6 +640,9 @@ export const en = {
     /** The cards Tamga leaves under what it writes. */
     cards: {
       gone: "This is no longer here.",
+      bills: (count: number) => (count === 1 ? "1 bill to approve" : `${count} bills to approve`),
+      updated: "Updated since Tamga wrote",
+      done: (count: number) => (count === 1 ? "1 answered · show" : `${count} answered · show`),
     },
     /** How full a chat is, and compacting it. */
     choice: {

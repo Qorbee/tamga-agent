@@ -128,7 +128,7 @@ async def test_tamga_writes_first_about_a_project_it_proposes(
     ]
     assert messages[2]["content"].startswith("Stone asks for a truck")
     assert messages[3]["activityType"] == CardKind.PROJECT_PROPOSAL
-    assert messages[3]["content"] == {"id": project["id"]}
+    assert messages[3]["content"]["id"] == project["id"]
 
     # The run only reads, and what was found reached it as data from outside.
     assert {tool.name for tool in script.infos[0].function_tools} == READ_ONLY
@@ -186,7 +186,7 @@ async def test_a_finding_goes_to_the_chat_that_holds_its_project_or_to_a_new_one
     assert messages[0]["content"] == "How is Munich A?"
     assert messages[-2]["content"].startswith("The proof of delivery fits both")
     assert messages[-1]["activityType"] == CardKind.CONVERSATION_QUESTION
-    assert messages[-1]["content"] == {"id": str(question.id)}
+    assert messages[-1]["content"]["id"] == str(question.id)
 
     # The owner archives that chat; the next finding about the project opens a chat of its own.
     assert (await client.patch(f"/chats/{chat_id}", json={"archived": True})).status_code == 200
@@ -229,7 +229,7 @@ async def test_a_project_merged_into_another_gives_it_its_place_in_the_chats(
 
     # The card shows the project that stays, not one that is gone.
     [card] = [each for each in await shown(client, written["id"]) if each["role"] == "activity"]
-    assert card["content"] == {"id": str(stays.id)}
+    assert card["content"]["id"] == str(stays.id)
     async with open_session() as db:
         held = (
             await db.execute(

@@ -211,7 +211,11 @@ async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> Ch
                 CardMessage(
                     id=str(row.id),
                     activity_type=CardKind(row.message["kind"]),
-                    content=CardContent(id=row.message["id"]),
+                    content=CardContent(
+                        id=row.message["id"],
+                        ids=row.message.get("ids", []),
+                        evaluations=row.message.get("evaluations", []),
+                    ),
                 )
             )
             continue

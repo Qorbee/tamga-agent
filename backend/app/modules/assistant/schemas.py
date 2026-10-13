@@ -52,6 +52,10 @@ class ChatUpdate(BaseModel):
 class CardContent(BaseModel):
     # The record the card shows; its kind says which (``CardKind``).
     id: uuid.UUID
+    # A card of several records (``decision_batch``): each one's id, and the evaluation Tamga
+    # wrote about, so a client marks one evaluated again since.
+    ids: list[uuid.UUID] = []
+    evaluations: list[int] = []
 
 
 class CardMessage(BaseModel):

@@ -381,10 +381,27 @@
       },
       "CardContent": {
         "properties": {
+          "evaluations": {
+            "default": [],
+            "items": {
+              "type": "integer"
+            },
+            "title": "Evaluations",
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -398,7 +415,8 @@
         "enum": [
           "project_proposal",
           "conversation_question",
-          "decision_approval"
+          "decision_approval",
+          "decision_batch"
         ],
         "title": "CardKind",
         "type": "string"
@@ -9594,7 +9612,7 @@
     },
     "/decisions": {
       "get": {
-        "description": "Decisions about the company's payables, by default the latest evaluated first.",
+        "description": "Decisions about the company's payables, by default the latest evaluated first; with\n``id``, only those.",
         "operationId": "decisions.list_decisions",
         "parameters": [
           {
@@ -9648,6 +9666,27 @@
                 }
               ],
               "title": "Party Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  "maxItems": 200,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id"
             }
           },
           {

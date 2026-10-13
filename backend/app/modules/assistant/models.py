@@ -45,8 +45,12 @@ class CardKind(StrEnum):
     PROJECT_PROPOSAL = "project_proposal"
     # A conversation the linker could not choose a project for: its placement's id.
     CONVERSATION_QUESTION = "conversation_question"
-    # A bill that waits for the owner's approval: its decision's id.
+    # A bill that waits for the owner's approval: its decision's id. Chats from before Oct 13
+    # hold it; Tamga now writes about the bills that wait together.
     DECISION_APPROVAL = "decision_approval"
+    # The bills that waited for the owner's approval when Tamga wrote, together: the first
+    # one's decision id, and every one's id and evaluation.
+    DECISION_BATCH = "decision_batch"
 
 
 class Chat(CompanyScoped, Base):

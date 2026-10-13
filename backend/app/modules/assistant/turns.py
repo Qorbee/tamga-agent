@@ -3,7 +3,9 @@ needs the owner, it writes first, in the chat that already holds the finding's r
 new one, and code puts a card under what it wrote.
 
 What makes it speak is a list in code, never a prompt's choice: a project the linker proposes,
-a conversation it cannot choose a project for, and a bill that waits for the owner's approval.
+a conversation it cannot choose a project for, and the bills that wait for the owner's approval,
+written about together, in one message with one card, so one pass of the payment path reads as
+one subject.
 Each is read from where it stands (the placements and decisions that wait for the owner), so
 nothing is lost when a run fails or the worker stops: what was not written about yet is found
 again.
@@ -21,9 +23,11 @@ is outside text and reaches it fenced. It is one job that never overlaps with it
 
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Final
+from itertools import batched
+from typing import Any, Final
 
 from pydantic_ai import UsageLimits
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
@@ -34,6 +38,7 @@ from app.config import get_settings
 from app.modules.assistant import agents, context, repository, service
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.seat import Seat
+from app.modules.books.schemas import InvoiceOut
 from app.modules.companies import service as companies
 from app.modules.companies.models import Company, CompanyMode
 from app.modules.decisions import service as decisions
@@ -43,7 +48,7 @@ from app.modules.linking.models import Outcome
 from app.modules.linking.schemas import PlacementOut
 from app.modules.playground import service as playground
 from app.modules.projects import service as projects
-from app.modules.projects.models import ProjectStatus
+from app.modules.projects.models import Project, ProjectStatus
 from app.platform import chain, clock, events, llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
@@ -77,15 +82,20 @@ _OPENING: Final = (
     "today and what you would look at first. Do not explain the app; a card under your message "
     "shows the job."
 )
-_APPROVAL: Final = (
-    "\nOpen the project the bill belongs to and look at its trucks and their papers. Then write "
-    "the owner a short message: what the bill is for, what the rules found, what the controller "
-    "proposes if it did, and whether you would pay it now. A card under your message lets them "
-    "approve, hold or reject it, so do not say how. Nothing is paid until they approve."
+_APPROVALS: Final = (
+    "\nOpen the projects these bills belong to, each once, and look at their trucks and papers. "
+    "Then write the owner one short message about the bills together, four sentences at most: "
+    "how many wait and what they come to, which you would pay now and which you would hold, "
+    "each with one reason. A rule that could not be checked was not checked: never say it was "
+    "breached or broken. A card under your message lists every bill with what Tamga would do and "
+    "lets them approve or hold, so do not go through the bills one by one or say how. Nothing is "
+    "paid until they approve."
 )
 # A bill is written about once the controller weighed it, or once this has passed since its
 # evaluation: an opinion that does not come never holds the owner's approval back.
 ADVICE_WAIT: Final = timedelta(minutes=15)
+# The most bills one message and its card hold: what one approval of the card can answer.
+BATCH: Final = 50
 _QUESTION: Final = (
     "\nRead the conversation and open the projects it could belong to. Then write the owner "
     "a short message: what the conversation is about, what speaks for each project, and "
@@ -100,14 +110,17 @@ class Finding:
 
     # What it is about: Tamga writes about a record once.
     record: tuple[str, uuid.UUID]
+    # More records the same message is about: the other bills of a batch.
+    also: tuple[tuple[str, uuid.UUID], ...]
     # Records whose chat already holds its context: the project a conversation may belong to.
     related: tuple[tuple[str, uuid.UUID], ...]
     # The name of a chat opened for it.
     title: str
     # What the run is told: code's words, with what was found fenced inside.
     prompt: str
-    # The card under the message: its kind, and the id of the record it shows.
-    card: dict[str, str]
+    # The card under the message: its kind, the id of the record it shows, and for a batch
+    # every record's id and evaluation.
+    card: dict[str, Any]
 
 
 async def speak_pending() -> int:
@@ -191,6 +204,7 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
             findings.append(
                 Finding(
                     record=(agents.PROJECT, project.id),
+                    also=(),
                     related=(),
                     title=f"{project.number} · {project.name}",
                     prompt=_told(
@@ -210,6 +224,7 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
             findings.append(
                 Finding(
                     record=(agents.CONVERSATION, item.thread_id),
+                    also=(),
                     related=tuple((agents.PROJECT, project.id) for project in between),
                     title=subject,
                     prompt=_told(
@@ -253,6 +268,7 @@ async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     return [
         Finding(
             record=(agents.OPENING, project.id),
+            also=(),
             related=((agents.PROJECT, project.id),),
             title=scenario.title,
             prompt=_told(
@@ -269,59 +285,83 @@ async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
 
 
 async def _approvals(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
-    """The bills that wait for the owner's approval and Tamga has not written about."""
+    """The bills that wait for the owner's approval and Tamga has not written about, together:
+    one message and one card for up to ``BATCH`` of them. A bill the controller is still
+    weighing joins the others while they are recent; once the oldest ready one has waited
+    ``ADVICE_WAIT``, the ready ones are written about without it, so a steady stream of new bills
+    never keeps the old ones from the owner."""
     waiting = await decisions.awaiting_owner(db, company_id)
     told = await repository.raised(db, company_id, agents.DECISION, [item.id for item in waiting])
+    waiting = [item for item in waiting if item.id not in told]
+    bills = {item.id: item.invoice for item in waiting if item.invoice is not None}
+    waiting = [item for item in waiting if item.id in bills]
     # The controller weighs each evaluation within minutes, while the company's budget lasts.
     weighing = await decisions.advice_left(db, company_id) > 0
     now = utcnow()
-    waiting = [
+    ready = [
         item
         for item in waiting
-        if item.id not in told
-        and (item.advice is not None or not weighing or now - item.evaluated_at >= ADVICE_WAIT)
+        if item.advice is not None or not weighing or now - item.evaluated_at >= ADVICE_WAIT
     ]
-    jobs = await decisions.jobs_of(db, company_id, [item.invoice_id for item in waiting])
+    if not ready:
+        return []
+    if len(ready) < len(waiting) and now - min(item.evaluated_at for item in ready) < ADVICE_WAIT:
+        return []
+    jobs = await decisions.jobs_of(db, company_id, [item.invoice_id for item in ready])
     known = await projects.get_projects(
         db, company_id, sorted({job for held in jobs.values() for job in held})
     )
-    findings: list[Finding] = []
-    for item in waiting:
-        bill = item.invoice
-        if bill is None:
-            continue
+    return [_batch(chunk, bills, jobs, known) for chunk in batched(ready, BATCH, strict=False)]
+
+
+def _batch(
+    waiting: Sequence[DecisionOut],
+    bills: dict[uuid.UUID, InvoiceOut],
+    jobs: dict[uuid.UUID, list[uuid.UUID]],
+    known: dict[uuid.UUID, Project],
+) -> Finding:
+    lines: list[str] = []
+    related: dict[uuid.UUID, None] = {}
+    for index, item in enumerate(waiting, 1):
+        bill = bills[item.id]
         held = {job: known[job] for job in jobs.get(item.invoice_id, []) if job in known}
-        name = f"{bill.party_name or 'A subcontractor'} · {bill.number or 'a bill'}"
-        findings.append(
-            Finding(
-                record=(agents.DECISION, item.id),
-                related=tuple((agents.PROJECT, project_id) for project_id in held),
-                title=name,
-                prompt=_told(
-                    "a bill that waits for the owner's approval",
-                    [
-                        f"Bill {bill.number or '(no number)'} from "
-                        f"{bill.party_name or '(unknown)'}",
-                        f"Amount: {item.amount} {item.currency or ''}, due {bill.due_date or '?'}",
-                        *_mirrored(item),
-                        *_advised(item),
-                        "Its jobs: "
-                        + (
-                            "; ".join(f"{p.number} ({p.name})" for p in held.values())
-                            or "none confirmed"
-                        ),
-                        *(
-                            f"Rule {rule.rule}: {rule.outcome.value}, {rule.reason}"
-                            for rule in item.rules
-                            if rule.reason
-                        ),
-                    ],
-                    _APPROVAL,
-                ),
-                card={"kind": CardKind.DECISION_APPROVAL.value, "id": str(item.id)},
-            )
-        )
-    return findings
+        related.update(dict.fromkeys(held))
+        lines += [
+            f"Bill {index}: {bill.number or '(no number)'} from {bill.party_name or '(unknown)'}",
+            f"Amount: {item.amount} {item.currency or ''}, due {bill.due_date or '?'}",
+            *_mirrored(item),
+            *_advised(item),
+            "Its jobs: "
+            + ("; ".join(f"{p.number} ({p.name})" for p in held.values()) or "none confirmed"),
+            *(
+                f"Rule {rule.rule}: {rule.outcome.value}, {rule.reason}"
+                for rule in item.rules
+                if rule.reason
+            ),
+            "",
+        ]
+    first = waiting[0]
+    bill = bills[first.id]
+    title = (
+        f"{bill.party_name or 'A subcontractor'} · {bill.number or 'a bill'}"
+        if len(waiting) == 1
+        else f"{len(waiting)} bills to approve"
+    )
+    return Finding(
+        record=(agents.DECISION, first.id),
+        also=tuple((agents.DECISION, item.id) for item in waiting[1:]),
+        related=tuple((agents.PROJECT, project_id) for project_id in related),
+        title=title,
+        prompt=_told("the bills that wait for the owner's approval", lines[:-1], _APPROVALS),
+        # Every bill stays on the card, as the message speaks of all of them: one answered
+        # meanwhile shows as answered there.
+        card={
+            "kind": CardKind.DECISION_BATCH.value,
+            "id": str(first.id),
+            "ids": [str(item.id) for item in waiting],
+            "evaluations": [item.evaluation for item in waiting],
+        },
+    )
 
 
 def _advised(item: DecisionOut) -> list[str]:
@@ -345,7 +385,8 @@ async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> 
     if kind == agents.OPENING:
         return True
     if kind == agents.DECISION:
-        return await decisions.waits_for_owner(db, company_id, record_id)
+        ids = [record_id for _, record_id in (finding.record, *finding.also)]
+        return bool(await decisions.still_waiting(db, company_id, ids))
     if kind == agents.PROJECT:
         project = (await projects.get_projects(db, company_id, [record_id])).get(record_id)
         return project is not None and project.status is ProjectStatus.PROPOSED
@@ -378,7 +419,9 @@ async def _speak(company: Company, finding: Finding) -> int:
     async with open_session() as db:
         if await repository.raised(db, company.id, record_kind, [record_id]):
             return 0
-        chat = await repository.holding(db, company.id, [finding.record, *finding.related])
+        chat = await repository.holding(
+            db, company.id, [finding.record, *finding.also, *finding.related]
+        )
         opened = chat is None
         if chat is None:
             since = now - service.RUN_WINDOW
@@ -497,7 +540,8 @@ async def _speak(company: Company, finding: Finding) -> int:
                 kind=MessageKind.CARD,
             )
             kept.last_message_at = at
-            await repository.touch_record(db, kept, record_kind, record_id, at, raised=True)
+            for kind, one in (finding.record, *finding.also):
+                await repository.touch_record(db, kept, kind, one, at, raised=True)
             for opened_kind, opened_id in dict.fromkeys(seat.opened):
                 await repository.touch_record(db, kept, opened_kind, opened_id, at)
             await events.publish(db, company.id, events.EventKind.CHAT, chat_id, by_tamga=True)
@@ -538,7 +582,8 @@ async def _into_digest(db: AsyncSession, company: Company, finding: Finding) -> 
         kind=MessageKind.CARD,
     )
     chat.last_message_at = now
-    await repository.touch_record(db, chat, *finding.record, now, raised=True)
+    for kind, one in (finding.record, *finding.also):
+        await repository.touch_record(db, chat, kind, one, now, raised=True)
     await events.publish(db, company.id, events.EventKind.CHAT, chat.id, by_tamga=True)
     await db.commit()
     return 1

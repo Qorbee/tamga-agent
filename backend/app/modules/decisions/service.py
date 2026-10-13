@@ -1064,6 +1064,15 @@ async def waits_for_owner(db: AsyncSession, company_id: uuid.UUID, decision_id: 
     return decision is not None and decision.state is DecisionState.AWAITING_OWNER
 
 
+async def still_waiting(
+    db: AsyncSession, company_id: uuid.UUID, decision_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of these still wait for the owner, read at once under the company's lock, held until
+    the caller commits, as ``waits_for_owner`` reads one."""
+    await repository.lock_decisions(db, company_id)
+    return await repository.awaiting_among(db, company_id, decision_ids)
+
+
 async def jobs_of(
     db: AsyncSession, company_id: uuid.UUID, invoice_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, list[uuid.UUID]]:
@@ -1197,6 +1206,7 @@ async def list_decisions(
     states: Sequence[DecisionState] | None,
     invoice_id: uuid.UUID | None,
     party_id: uuid.UUID | None,
+    ids: Sequence[uuid.UUID] | None = None,
     with_invoices: bool = False,
     sort: DecisionSort = "-evaluated_at",
     page: PageParams,
@@ -1207,6 +1217,7 @@ async def list_decisions(
         states=states,
         invoice_id=invoice_id,
         party_id=party_id,
+        ids=ids,
         sort=sort,
         page=page,
     )

@@ -335,7 +335,8 @@ export interface paths {
         };
         /**
          * List Decisions
-         * @description Decisions about the company's payables, by default the latest evaluated first.
+         * @description Decisions about the company's payables, by default the latest evaluated first; with
+         *     ``id``, only those.
          */
         get: operations["decisions.list_decisions"];
         put?: never;
@@ -1809,10 +1810,20 @@ export interface components {
         /** CardContent */
         CardContent: {
             /**
+             * Evaluations
+             * @default []
+             */
+            evaluations: number[];
+            /**
              * Id
              * Format: uuid
              */
             id: string;
+            /**
+             * Ids
+             * @default []
+             */
+            ids: string[];
         };
         /**
          * CardKind
@@ -1820,7 +1831,7 @@ export interface components {
          *     is about says which record its id names.
          * @enum {string}
          */
-        CardKind: "project_proposal" | "conversation_question" | "decision_approval";
+        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch";
         /**
          * CardMessage
          * @description A card code put in a chat, carried as the chat protocol's activity message. A client
@@ -5167,6 +5178,7 @@ export interface operations {
                 state?: components["schemas"]["DecisionState"][] | null;
                 invoice_id?: string | null;
                 party_id?: string | null;
+                id?: string[] | null;
                 expand?: "invoice"[];
                 sort?: "-evaluated_at" | "-issued_on" | "issued_on";
                 limit?: number;

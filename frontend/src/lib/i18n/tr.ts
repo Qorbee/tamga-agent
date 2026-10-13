@@ -619,6 +619,9 @@ export const tr: Dictionary = {
     },
     cards: {
       gone: "Bu artık burada değil.",
+      bills: (count: number) => `Onayınızı bekleyen ${count} fatura`,
+      updated: "Tamga yazdıktan sonra değişti",
+      done: (count: number) => `${count} yanıtlandı · göster`,
     },
     choice: {
       label: "Model ve akıl yürütme",

@@ -33,16 +33,19 @@ async def list_decisions(
     state: Annotated[list[DecisionState] | None, Query()] = None,
     invoice_id: uuid.UUID | None = None,
     party_id: uuid.UUID | None = None,
+    id: Annotated[list[uuid.UUID] | None, Query(max_length=200)] = None,  # noqa: A002
     expand: Annotated[list[Literal["invoice"]], Query()] = [],  # noqa: B006
     sort: DecisionSort = "-evaluated_at",
 ) -> DecisionPage:
-    """Decisions about the company's payables, by default the latest evaluated first."""
+    """Decisions about the company's payables, by default the latest evaluated first; with
+    ``id``, only those."""
     return await service.list_decisions(
         db,
         actor,
         states=state,
         invoice_id=invoice_id,
         party_id=party_id,
+        ids=id,
         with_invoices="invoice" in expand,
         sort=sort,
         page=page,

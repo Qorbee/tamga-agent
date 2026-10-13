@@ -167,10 +167,13 @@ async def list_decisions(
     states: Sequence[DecisionState] | None,
     invoice_id: uuid.UUID | None,
     party_id: uuid.UUID | None,
+    ids: Sequence[uuid.UUID] | None = None,
     sort: str = "-evaluated_at",
     page: PageParams,
 ) -> tuple[Sequence[Decision], int]:
     filters = [Decision.company_id == company_id]
+    if ids:
+        filters.append(Decision.id.in_(ids))
     if states:
         filters.append(Decision.state.in_(states))
     if invoice_id is not None:
@@ -193,6 +196,21 @@ _DECISION_SORTS: dict[str, list[ColumnElement[Any]]] = {
     "-issued_on": [Decision.issued_on.desc().nulls_last()],
     "issued_on": [Decision.issued_on.asc().nulls_last()],
 }
+
+
+async def awaiting_among(
+    db: AsyncSession, company_id: uuid.UUID, decision_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    if not decision_ids:
+        return set()
+    rows = await db.scalars(
+        select(Decision.id).where(
+            Decision.company_id == company_id,
+            Decision.id.in_(decision_ids),
+            Decision.state == DecisionState.AWAITING_OWNER,
+        )
+    )
+    return set(rows.all())
 
 
 async def last_event(db: AsyncSession, company_id: uuid.UUID) -> DecisionEvent | None:
