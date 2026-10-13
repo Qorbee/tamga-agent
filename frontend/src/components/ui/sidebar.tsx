@@ -29,7 +29,7 @@ import { useI18n } from "@/lib/i18n/client"
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
+const SIDEBAR_WIDTH_MOBILE = "100vw"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -189,7 +189,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          // A phone's sidebar is a page of its own: it covers the screen, as the chat apps' do.
+          className="w-full bg-sidebar p-0 text-sidebar-foreground data-[side=left]:w-full data-[side=left]:border-r-0 data-[side=left]:sm:max-w-none data-[side=right]:w-full data-[side=right]:sm:max-w-none [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,

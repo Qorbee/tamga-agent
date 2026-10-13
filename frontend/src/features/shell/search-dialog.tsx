@@ -13,6 +13,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import { CHAT_PATH, pages } from "./pages";
 import { useShellActions } from "./shell-actions";
@@ -43,7 +44,8 @@ export function SearchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
+        // On a phone it is a page of its own, the field at its top, so the keyboard moves nothing.
+        className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-(--app-height,100dvh) max-sm:max-w-none max-sm:translate-x-0 max-sm:rounded-none max-sm:ring-0 sm:max-w-xl"
       >
         <DialogTitle className="sr-only">{t.search.title}</DialogTitle>
         {/* Mounted per opening, so each search starts empty. */}
@@ -142,7 +144,7 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col max-sm:h-full">
       <div className="border-border flex flex-col gap-3 border-b px-4 pt-4 pb-3">
         <div className="flex items-center gap-3">
           <HugeiconsIcon icon={Search01Icon} strokeWidth={1.75} className="text-muted-foreground size-5 shrink-0" />
@@ -164,8 +166,11 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
             onKeyDown={onKeyDown}
             className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-base outline-none"
           />
+          <button type="button" onClick={onDone} className="text-muted-foreground hover:text-foreground text-sm sm:hidden">
+            {t.search.cancel}
+          </button>
         </div>
-        <div role="tablist" aria-label={t.search.title} className="flex gap-1">
+        <div role="tablist" aria-label={t.search.title} className="flex gap-1 overflow-x-auto">
           {tabs.map((value) => (
             <button
               key={value}
@@ -186,7 +191,7 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
         </div>
       </div>
 
-      <div id={listId} role="listbox" aria-label={t.search.title} className="max-h-[min(60vh,34rem)] overflow-y-auto p-2">
+      <div id={listId} role="listbox" aria-label={t.search.title} className="max-h-[min(60vh,34rem)] overflow-y-auto p-2 max-sm:max-h-none max-sm:min-h-0 max-sm:flex-1">
         {sections.length === 0 ? (
           <p className="text-muted-foreground px-3 py-8 text-center text-sm">{t.search.noResults}</p>
         ) : (
@@ -205,11 +210,11 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
                     onMouseMove={() => setActive(position)}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => choose(result)}
-                    className="aria-selected:bg-accent aria-selected:text-accent-foreground flex h-10 cursor-pointer items-center gap-3 rounded-lg px-3 text-sm"
+                    className="aria-selected:bg-accent aria-selected:text-accent-foreground flex h-10 cursor-pointer items-center gap-3 rounded-lg px-3 text-sm max-sm:h-12 max-sm:text-base max-sm:aria-selected:bg-transparent max-sm:active:bg-accent"
                   >
                     <HugeiconsIcon icon={result.icon} strokeWidth={1.75} className="text-muted-foreground size-4.5 shrink-0" />
                     <span className="truncate-fade min-w-0 flex-1">{result.label}</span>
-                    {position === current ? <Key>↵</Key> : null}
+                    {position === current ? <Key className="max-sm:hidden">↵</Key> : null}
                   </div>
                 );
               })}
@@ -218,7 +223,8 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
         )}
       </div>
 
-      <div className="border-border text-muted-foreground flex gap-4 border-t px-4 py-2.5 text-xs">
+      {/* Keys a phone has none of. */}
+      <div className="border-border text-muted-foreground flex gap-4 border-t px-4 py-2.5 text-xs max-sm:hidden">
         <span className="flex items-center gap-1.5">
           <Key>Esc</Key> {t.search.close}
         </span>
@@ -233,9 +239,9 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Key({ children }: { children: ReactNode }) {
+function Key({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <kbd className="border-border bg-muted text-muted-foreground rounded-md border px-1.5 font-sans text-xs leading-5">
+    <kbd className={cn("border-border bg-muted text-muted-foreground rounded-md border px-1.5 font-sans text-xs leading-5", className)}>
       {children}
     </kbd>
   );

@@ -19,6 +19,7 @@ export const en = {
   shell: {
     sidebar: "Sidebar",
     sidebarDescription: "Pages and past chats",
+    closeSidebar: "Close the menu",
     toggleSidebar: "Toggle sidebar",
     resizeSidebar: "Resize sidebar",
     recents: "Recents",
@@ -34,6 +35,7 @@ export const en = {
     },
   },
   search: {
+    cancel: "Cancel",
     title: "Search",
     placeholder: "Search chats and pages…",
     tabs: { all: "All", chats: "Chats", pages: "Pages" },
@@ -82,6 +84,9 @@ export const en = {
       save: "Save",
     },
     tabs: { general: "General", company: "Company", payments: "Payments", memory: "Memory" },
+    back: "Back to Settings",
+    /** What a part holds, under its name in the phone's list. */
+    holds: { payments: "Ways, reserve, pay day", memory: "What Tamga knows of you" },
     howYouPay: {
       title: "How you pay",
       methods: "Ways you pay",

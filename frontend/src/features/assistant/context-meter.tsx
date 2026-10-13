@@ -99,7 +99,7 @@ function Meter({ chat }: { chat: Chat }) {
           </button>
         </DropdownMenuTrigger>
       </Hint>
-      <DropdownMenuContent align="end" side="top" className="w-72">
+      <DropdownMenuContent align="end" side="top" collisionPadding={16} className="w-72 max-w-[calc(100vw-2rem)]">
         <p className="px-2 pt-1.5 text-sm font-medium">{t.assistant.context.used(percent)}</p>
         <p className="text-muted-foreground px-2 pt-1 pb-2 text-xs text-pretty">
           {t.assistant.context.half}

@@ -21,6 +21,7 @@ export const tr: Dictionary = {
   shell: {
     sidebar: "Kenar çubuğu",
     sidebarDescription: "Sayfalar ve geçmiş sohbetler",
+    closeSidebar: "Menüyü kapat",
     toggleSidebar: "Kenar çubuğunu aç veya kapat",
     resizeSidebar: "Kenar çubuğunu boyutlandır",
     recents: "Son sohbetler",
@@ -30,6 +31,7 @@ export const tr: Dictionary = {
     backTo: { mail: "E-postaya dön", document: "Dosyaya dön", project: "Projeye dön", invoice: "Faturaya dön", run: "Ödeme planına dön" },
   },
   search: {
+    cancel: "Vazgeç",
     title: "Ara",
     placeholder: "Sohbetlerde ve sayfalarda ara…",
     tabs: { all: "Tümü", chats: "Sohbetler", pages: "Sayfalar" },
@@ -78,6 +80,8 @@ export const tr: Dictionary = {
       save: "Kaydet",
     },
     tabs: { general: "Genel", company: "Şirket", payments: "Ödemeler", memory: "Hafıza" },
+    back: "Ayarlara dön",
+    holds: { payments: "Yollar, yedek, ödeme günü", memory: "Tamga'nın sizden bildikleri" },
     howYouPay: {
       title: "Nasıl ödüyorsunuz",
       methods: "Ödeme yollarınız",

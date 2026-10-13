@@ -70,6 +70,10 @@ re-apply them:
 - `ui/sidebar.tsx`: no width animation while a resize handle inside it is dragged
   (`group-has-data-dragging/sidebar-wrapper:transition-none`); `SidebarContent` shows its scrollbar
   (no `no-scrollbar`) with a stable gutter.
+- `ui/sidebar.tsx`: on a phone the drawer covers the whole screen (`SIDEBAR_WIDTH_MOBILE`).
+- `tool-group.aui.tsx`, `tool-fallback.aui.tsx`, `reasoning.aui.tsx`: a step that opens or closes
+  holds the scroll with `keep-in-place.ts`, not assistant-ui's `useScrollLock`, which hid the
+  scrollbar for the animation and made the page jump beside it.
 - `hooks/use-mobile.ts`: reads the media query through `useSyncExternalStore` instead of setting state
   in an effect, which the React Compiler lint rejects.
 - `thread.aui.tsx`: no Edit on a question and no Refresh on an answer. The server keeps one

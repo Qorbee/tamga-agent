@@ -2,12 +2,12 @@
 
 import { memo, useCallback, useRef } from "react";
 import {
-  useScrollLock,
   useAuiState,
   type ReasoningMessagePartComponent,
   type ReasoningGroupComponent,
 } from "@assistant-ui/react";
 import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
+import { useKeepInPlace } from "@/components/assistant-ui/keep-in-place";
 import {
   ANIMATION_DURATION,
   ReasoningRoot as ReasoningRootBase,
@@ -28,7 +28,7 @@ function ReasoningRoot({
   ...props
 }: ReasoningRootProps) {
   const collapsibleRef = useRef<HTMLDivElement | null>(null);
-  const lockScroll = useScrollLock(collapsibleRef, ANIMATION_DURATION);
+  const lockScroll = useKeepInPlace(collapsibleRef, ANIMATION_DURATION);
 
   const handleAnimationStart = useCallback(() => {
     lockScroll();

@@ -11,7 +11,6 @@ import {
 import {
   toolApprovalAcceptsText,
   useAuiState,
-  useScrollLock,
   useToolCallElapsed,
   type ToolApprovalOption,
   type ToolCallMessagePart,
@@ -27,6 +26,7 @@ import {
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
+import { useKeepInPlace } from "@/components/assistant-ui/keep-in-place";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -53,7 +53,7 @@ function ToolFallbackRoot({
 }: ToolFallbackRootProps) {
   const collapsibleRef = useRef<HTMLDivElement>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
-  const lockScroll = useScrollLock(collapsibleRef, ANIMATION_DURATION);
+  const lockScroll = useKeepInPlace(collapsibleRef, ANIMATION_DURATION);
 
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : uncontrolledOpen;

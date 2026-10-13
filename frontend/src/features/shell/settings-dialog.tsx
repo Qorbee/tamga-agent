@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
   Brain02Icon,
   Building03Icon,
   ComputerIcon,
@@ -49,6 +51,7 @@ import {
 import { LOCALE_COOKIE, isLocale, localeNames, locales } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { applyTheme, readTheme, themes, type Theme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 import { CompanyIdentity } from "./company-identity";
 import { allowNotifications, canNotify } from "./notify";
@@ -67,7 +70,7 @@ const tabIcons: Record<(typeof TABS)[number], IconSvgElement> = {
   memory: Brain02Icon,
 };
 
-// Where the parts become a side menu (Tailwind's `sm`): below it they are a row.
+// Where the parts become a side menu (Tailwind's `sm`): below it they are a page of their own.
 const SIDE_MENU = "(min-width: 640px)";
 
 function onWidth(onChange: () => void) {
@@ -85,9 +88,12 @@ function useSideMenu(): boolean {
   );
 }
 
+type Part = (typeof TABS)[number];
+
 /**
  * Settings, opened from the account menu: a menu down the left and the chosen part beside it, as
- * the chat apps the owner knows lay theirs out (a row of tabs on a phone). How the app looks and
+ * the chat apps the owner knows lay theirs out. On a phone it is a page of its own: a list of the
+ * parts, each with what it holds now, and a tap opens one with a way back. How the app looks and
  * reads on this device; the company, and the language Tamga writes in for it; how it pays (the
  * ways, the reserve, the pay day) and how its books record payments; and what Tamga remembers.
  */
@@ -99,24 +105,64 @@ export function SettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
+  const side = useSideMenu();
+  const [part, setPart] = useState<Part>("general");
+  // On a phone, whether a part is open over the list; each opening starts at the list.
+  const [inPart, setInPart] = useState(false);
+  // Opened from outside (the account menu, a shortcut), the dialog's own callback never fires.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setInPart(false);
+  }
+  const listed = !side && !inPart;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(44rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent
+        showCloseButton={side || !inPart}
+        className="flex flex-col gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-(--app-height,100dvh) max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none max-sm:ring-0 sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-w-4xl"
+      >
         <DialogHeader className="sr-only">
           <DialogTitle>{t.settings.title}</DialogTitle>
           <DialogDescription>{t.settings.description}</DialogDescription>
         </DialogHeader>
-        <Tabs defaultValue="general" orientation={useSideMenu() ? "vertical" : "horizontal"} className="min-h-0 flex-1 gap-0 sm:flex-row">
-          <nav aria-label={t.settings.title} className="border-border shrink-0 border-b sm:w-56 sm:border-e sm:border-b-0">
-            <p className="text-muted-foreground px-5 pt-5 pb-2 text-xs font-medium max-sm:hidden">{t.settings.title}</p>
-            {/* On a phone the parts are a row that scrolls, clear of the dialog's close button. */}
-            <TabsList className="w-full justify-start gap-1 rounded-none bg-transparent p-3 max-sm:overflow-x-auto max-sm:pe-14 sm:flex-col sm:items-stretch sm:pt-0">
+        {!side ? (
+          <header className="flex h-14 shrink-0 items-center gap-2 px-3">
+            {inPart ? (
+              <button
+                type="button"
+                onClick={() => setInPart(false)}
+                aria-label={t.settings.back}
+                className="hover:bg-accent flex size-10 items-center justify-center rounded-full"
+              >
+                <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.75} className="size-5" />
+              </button>
+            ) : (
+              <span className="size-10" aria-hidden />
+            )}
+            <h2 className="flex-1 text-center text-base font-medium">{inPart ? t.settings.tabs[part] : t.settings.title}</h2>
+            <span className="size-10" aria-hidden />
+          </header>
+        ) : null}
+        {listed ? <PartList onPick={(chosen) => {
+          setPart(chosen);
+          setInPart(true);
+        }} /> : null}
+        <Tabs
+          value={part}
+          onValueChange={(value) => setPart(value as Part)}
+          orientation={side ? "vertical" : "horizontal"}
+          className={cn("min-h-0 flex-1 gap-0 sm:flex-row", listed && "hidden")}
+        >
+          <nav aria-label={t.settings.title} className="border-border shrink-0 max-sm:hidden sm:w-56 sm:border-e">
+            <p className="text-muted-foreground px-5 pt-5 pb-2 text-xs font-medium">{t.settings.title}</p>
+            <TabsList className="w-full flex-col items-stretch justify-start gap-1 rounded-none bg-transparent p-3 pt-0">
               {TABS.map((tab) => (
                 <TabsTrigger
                   key={tab}
                   value={tab}
-                  className="text-muted-foreground hover:text-foreground data-[state=active]:bg-segment data-[state=active]:text-foreground flex-none justify-start gap-2.5 rounded-xl px-3 py-2 text-sm font-normal data-[state=active]:shadow-none sm:w-full"
+                  className="text-muted-foreground hover:text-foreground data-[state=active]:bg-segment data-[state=active]:text-foreground w-full flex-none justify-start gap-2.5 rounded-xl px-3 py-2 text-sm font-normal data-[state=active]:shadow-none"
                 >
                   <HugeiconsIcon icon={tabIcons[tab]} strokeWidth={1.75} />
                   {t.settings.tabs[tab]}
@@ -125,8 +171,8 @@ export function SettingsDialog({
             </TabsList>
           </nav>
           {/* Every part stays mounted, hidden when not chosen: a draft typed in one survives a look
-              at another. */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:pt-12">
+              at another, and going back to the list on a phone. */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-2 pb-8 sm:px-8 sm:pt-12 sm:pb-5">
             <TabsContent forceMount value="general" className="grid gap-8 data-[state=inactive]:hidden">
               <Part title={t.settings.appearance}>
                 <Row label={t.settings.theme}>
@@ -157,6 +203,41 @@ export function SettingsDialog({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The parts as a phone lists them: grouped rows, each with its icon and what it holds now. */
+function PartList({ onPick }: { onPick: (part: Part) => void }) {
+  const { t, locale } = useI18n();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const theme = readTheme(document.documentElement.dataset.themePreference);
+  const holds: Record<Part, string> = {
+    general: `${t.settings.themes[theme]} · ${localeNames[locale]}`,
+    company: me.data?.company.name ?? "",
+    payments: t.settings.holds.payments,
+    memory: t.settings.holds.memory,
+  };
+  return (
+    <nav aria-label={t.settings.title} className="min-h-0 flex-1 overflow-y-auto px-4 pb-8">
+      <ul className="bg-card divide-border divide-y overflow-hidden rounded-2xl">
+        {TABS.map((tab) => (
+          <li key={tab}>
+            <button
+              type="button"
+              onClick={() => onPick(tab)}
+              className="hover:bg-accent/50 active:bg-accent flex w-full items-center gap-4 px-4 py-3.5 text-start"
+            >
+              <HugeiconsIcon icon={tabIcons[tab]} strokeWidth={1.75} className="text-muted-foreground size-6 shrink-0" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-base">{t.settings.tabs[tab]}</span>
+                {holds[tab] ? <span className="text-muted-foreground block truncate text-sm">{holds[tab]}</span> : null}
+              </span>
+              <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.75} className="text-muted-foreground size-4 shrink-0" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 

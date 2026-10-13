@@ -1,7 +1,7 @@
 "use client";
 
 import { ThreadListPrimitive, useAuiState } from "@assistant-ui/react";
-import { PlusSignIcon, Search01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, PlusSignIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -35,9 +35,10 @@ import { AccountMenu } from "./account-menu";
 import { CHAT_PATH, pages } from "./pages";
 import { useShellActions } from "./shell-actions";
 
-// Every row, pages and past chats alike, is 36px with an 18px icon; collapsed, a 40px square.
+// Every row, pages and past chats alike, is 36px with an 18px icon; collapsed, a 40px square; on
+// a phone, 44px for a thumb.
 const ROW =
-  "h-9 [&_svg]:size-4.5 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-[11px]!";
+  "h-9 [&_svg]:size-4.5 max-md:h-11 max-md:text-base max-md:[&_svg]:size-5 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-[11px]!";
 
 /**
  * The owner app's sidebar: New chat and Search, the pages, past chats, and the account at its foot.
@@ -84,6 +85,18 @@ export function AppSidebar({
           <span className="truncate text-base font-medium tracking-tight">{t.meta.title}</span>
         </Link>
         <SidebarTrigger className="text-muted-foreground max-md:hidden" />
+        {isMobile ? (
+          // A plain button, not an IconButton: the drawer focuses it on opening, and a tooltip
+          // would show on a phone with no pointer to move off it.
+          <button
+            type="button"
+            aria-label={t.shell.closeSidebar}
+            onClick={() => setOpenMobile(false)}
+            className="text-muted-foreground hover:bg-sidebar-accent flex size-10 items-center justify-center rounded-full"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} className="size-5" />
+          </button>
+        ) : null}
       </SidebarHeader>
 
       <SidebarContent>

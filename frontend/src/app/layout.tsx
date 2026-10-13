@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Sans, JetBrains_Mono, Lora } from "next/font/google";
 import { cookies } from "next/headers";
 
@@ -17,6 +17,14 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin", "latin-ext"],
   variable: "--font-jetbrains-mono",
 });
+
+// On Android the keyboard shrinks the layout, as in the chat apps, so the composer rides above it
+// and nothing behind it scrolls. iOS ignores this; `useAppHeight` covers it there.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  interactiveWidget: "resizes-content",
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = getDictionary(await getLocale());

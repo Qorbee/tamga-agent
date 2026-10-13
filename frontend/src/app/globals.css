@@ -270,6 +270,12 @@
   html {
     @apply font-sans;
   }
+  /* The app is a frame as tall as the screen that scrolls inside: the page behind it never moves,
+     so a pull or a fling past a list's end does not drag the whole app with it. */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
   body {
     @apply bg-background text-foreground;
     /* Money is read in columns: every figure lines up. */
@@ -304,6 +310,17 @@
     * {
       scrollbar-width: thin;
       scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+    }
+  }
+  /* A touch screen shows no scrollbars, as phones' own apps do: everything still scrolls, and no
+     gutter is kept for a bar that never shows. After the thin bars above, so it wins there too. */
+  @media (pointer: coarse) {
+    * {
+      scrollbar-width: none;
+      scrollbar-gutter: auto !important;
+    }
+    ::-webkit-scrollbar {
+      display: none;
     }
   }
 }

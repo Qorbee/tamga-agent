@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { useAppHeight } from "@/lib/use-app-height";
 
 import { AppSidebar } from "./app-sidebar";
 import { CompanyEvents } from "./company-events";
@@ -33,6 +34,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [width, setWidth] = useState(sidebarWidth);
+  useAppHeight();
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const actions = useMemo(
@@ -68,11 +70,11 @@ export function AppShell({
       <SidebarProvider
         defaultOpen={sidebarOpen}
         style={{ "--sidebar-width": `${width}px`, "--sidebar-width-icon": "3.5rem" } as CSSProperties}
-        className="h-dvh min-h-0 overflow-hidden"
+        className="h-(--app-height,100dvh) min-h-0 overflow-hidden"
       >
         <AppSidebar width={width} onWidthChange={setWidth} />
         <div className="flex min-w-0 flex-1">
-          <SidebarInset className="min-w-0 overflow-y-auto [scrollbar-gutter:stable]">
+          <SidebarInset className="min-w-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
             {bar}
             {/* The page fills what the bar leaves, so a page as tall as the screen stays so. */}
             <div className="flex min-h-0 flex-1 flex-col">{children}</div>

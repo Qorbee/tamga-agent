@@ -10,7 +10,6 @@ import {
 } from "react";
 import { ChevronDownIcon, LoaderIcon } from "@/components/icons";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useScrollLock } from "@assistant-ui/react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
+import { useKeepInPlace } from "@/components/assistant-ui/keep-in-place";
 
 const ANIMATION_DURATION = 200;
 
@@ -53,7 +53,7 @@ function ToolGroupRoot({
 }: ToolGroupRootProps) {
   const collapsibleRef = useRef<HTMLDivElement>(null);
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
-  const lockScroll = useScrollLock(collapsibleRef, ANIMATION_DURATION);
+  const lockScroll = useKeepInPlace(collapsibleRef, ANIMATION_DURATION);
 
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : uncontrolledOpen;
