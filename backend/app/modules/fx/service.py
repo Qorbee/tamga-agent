@@ -19,6 +19,7 @@ from app.modules.companies import service as companies
 from app.modules.fx import repository
 from app.modules.fx.models import FxRate
 from app.platform.auth import Actor
+from app.platform.clock import utcnow
 from app.platform.db import open_session
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,9 @@ async def convert(
     source = _sources.get(country)
     if source is None:
         return None
+    # Nothing is published for a day the world has not reached: a sandbox whose clock was
+    # skipped ahead reads the latest rate there is, and says which day it is from.
+    on = min(on, utcnow().date())
     worth = await _in_base(db, source, currency, on)
     target = await _in_base(db, source, into, on)
     if worth is None or target is None:

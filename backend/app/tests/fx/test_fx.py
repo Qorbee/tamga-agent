@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.fx import service as fx
+from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.tests.fx import rates
 
@@ -70,6 +71,20 @@ async def test_a_rate_is_never_guessed(database: None, monkeypatch: pytest.Monke
         assert await fx.convert(db, Decimal(1), None, "USD", on=FRIDAY, country="tr") is None
     assert fx.quotes("tr", "EUR") and fx.quotes("tr", "USD")
     assert not fx.quotes("tr", "XYZ") and not fx.quotes("xx", "USD")
+
+
+async def test_a_day_ahead_of_the_world_uses_the_latest_rate_published(
+    database: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sandbox skipped weeks ahead still converts: no rate exists for its day yet."""
+    rates.use(monkeypatch)
+    today = utcnow().date()
+    await rates.store(today, EUR="1.16")
+    async with open_session() as db:
+        ahead = await fx.convert(
+            db, Decimal("10.00"), "EUR", "USD", on=today + timedelta(days=45), country="tr"
+        )
+    assert ahead is not None and ahead.on == today and ahead.amount == Decimal("11.60")
 
 
 async def test_refresh_reads_each_day_once_and_a_day_not_published_again(
