@@ -1,15 +1,25 @@
 "use client";
 
-import { Cancel01Icon, Forward02Icon, Globe02Icon, PlusSignIcon, SentIcon, Attachment01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowLeft01Icon,
+  Attachment01Icon,
+  Cancel01Icon,
+  Forward02Icon,
+  Globe02Icon,
+  PlusSignIcon,
+  SentIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, use, useState, type ReactNode } from "react";
+import { createContext, use, useEffect, useState, type ReactNode } from "react";
 
-import { useCanvasView } from "@/components/canvas-link";
+import { CanvasLink, useCanvasView } from "@/components/canvas-link";
+import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { ScenarioPicker } from "@/components/scenario-picker";
+import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { getMe, getPolicy, getWorld, listMessages, sayAs, skipDays, type Persona } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -113,67 +123,357 @@ export function PlaygroundBar() {
 }
 
 /**
- * The world beside the page: each persona's thread as a phone shows it, oldest first, and a box
- * to type as them. What is typed arrives as their message, through the same intake as theirs.
+ * The world beside the page, a column of its own between the page and the canvas, so a record
+ * opened in the canvas never hides it: the scenario's people as a phone shows them, on WhatsApp
+ * and by mail. A chat opens as its thread; a mail opens in the canvas beside it. What the judge
+ * types arrives as that person's message, through the same intake as theirs.
  */
 export function WorldPanel() {
   const { t } = useI18n();
   const sandbox = useSandbox();
   const world = useWorld(sandbox);
   const { open, setOpen } = use(WorldOpen);
-  // A record open in the canvas takes the room: the world steps aside and comes back after.
   const canvas = useCanvasView();
   const personas = world.data?.personas ?? [];
+  const [medium, setMedium] = useState<Persona["medium"]>("whatsapp");
   const [chosen, setChosen] = useState<string | null>(null);
-  if (!sandbox || !open || canvas !== null || personas.length === 0) return null;
-  const persona = personas.find((item) => item.key === chosen) ?? personas[0];
-  if (!persona) return null;
+  if (!sandbox || !open || personas.length === 0) return null;
+  const shown = personas.filter((persona) => persona.medium === medium);
+  const persona = shown.find((item) => item.key === chosen) ?? null;
+  const now = world.data?.now ?? new Date().toISOString();
 
   return (
     <aside
       data-slot="world-panel"
       aria-label={t.playground.world}
       className={cn(
-        "bg-card flex min-h-0 flex-col",
-        "max-lg:fixed max-lg:inset-0 max-lg:z-40",
-        "lg:border-border lg:m-2 lg:ms-0 lg:w-80 lg:shrink-0 lg:rounded-2xl lg:border",
+        "bg-card flex min-h-0 flex-col overflow-hidden",
+        "max-lg:fixed max-lg:inset-0 max-lg:z-50",
+        "lg:border-border lg:m-2 lg:ms-0 lg:shrink-0 lg:rounded-2xl lg:border",
+        canvas !== null ? "lg:w-72 2xl:w-80" : "lg:w-80",
       )}
     >
-      <header className="border-border flex items-start gap-2 border-b px-4 py-3">
+      <header className="border-border flex h-12 shrink-0 items-center gap-2 border-b ps-4 pe-2">
         <span className="min-w-0 flex-1">
-          <span className="text-muted-foreground block text-xs font-medium tracking-[0.08em] uppercase">
-            {t.playground.world}
-          </span>
-          <span className="text-muted-foreground block text-xs">{t.playground.worldHint}</span>
+          <span className="block text-sm font-medium">{t.playground.world}</span>
         </span>
+        <Hint label={t.playground.worldHint}>
+          <span tabIndex={0} className="text-muted-foreground bg-secondary rounded-full px-2 py-0.5 text-[11px]">
+            {t.playground.badge}
+          </span>
+        </Hint>
         <IconButton icon={Cancel01Icon} label={t.playground.closeWorld} onClick={() => setOpen(false)} />
       </header>
-      {personas.length > 1 ? (
-        <div className="flex gap-1 overflow-x-auto px-3 pt-2">
-          {personas.map((item) => (
-            <Button
-              key={item.key}
-              size="sm"
-              variant={item.key === persona.key ? "secondary" : "ghost"}
-              aria-pressed={item.key === persona.key}
-              onClick={() => setChosen(item.key)}
-            >
-              {item.name}
-            </Button>
-          ))}
-        </div>
-      ) : null}
-      <PersonaThread key={persona.key} persona={persona} />
+      <div className="border-border border-b px-3 py-2">
+        <Segmented
+          fill
+          label={t.playground.world}
+          value={medium}
+          onChange={(value) => {
+            setMedium(value);
+            setChosen(null);
+          }}
+          options={(["whatsapp", "mail"] as const).map((value) => ({ value, label: t.playground[value] }))}
+        />
+      </div>
+      {persona === null ? (
+        <PersonaList personas={shown} now={now} onPick={(key) => setChosen(key)} />
+      ) : persona.medium === "whatsapp" ? (
+        <ChatThread key={persona.key} persona={persona} now={now} onBack={() => setChosen(null)} />
+      ) : (
+        <MailThreadList
+          key={persona.key}
+          persona={persona}
+          now={now}
+          onBack={() => setChosen(null)}
+          onOpened={() => {
+            // On a phone the world covers the app: it steps aside for the mail it opened.
+            if (!window.matchMedia("(min-width: 64rem)").matches) setOpen(false);
+          }}
+        />
+      )}
     </aside>
   );
 }
 
-function PersonaThread({ persona }: { persona: Persona }) {
-  const { t, locale } = useI18n();
-  const messages = useQuery({
+/** The calm tints a persona's initial sits on, chosen by their key so each keeps theirs. */
+const TINTS = [
+  "bg-success-soft text-success-foreground",
+  "bg-warning-soft text-warning-foreground",
+  "bg-danger-soft text-danger-foreground",
+  "bg-secondary text-foreground",
+];
+
+function Avatar({ persona, size = "size-10" }: { persona: Persona; size?: string }) {
+  const tint = TINTS[[...persona.key].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % TINTS.length];
+  const initials = persona.name
+    .split(" ")
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1))
+    .join("");
+  return (
+    <span aria-hidden className={cn("flex shrink-0 items-center justify-center rounded-full text-sm font-medium", size, tint)}>
+      {initials}
+    </span>
+  );
+}
+
+function useThread(persona: Persona) {
+  return useQuery({
     queryKey: ["world-messages", persona.thread_key],
     queryFn: () => listMessages({ channel: "simulated", thread_key: persona.thread_key, limit: 100 }),
   });
+}
+
+/** Where the viewer's last read of a persona's thread is kept: per sandbox, since every sandbox's
+ * personas share their thread keys and a skipped clock would mark a fresh sandbox's messages read. */
+function useSeenKey(persona: Persona): string | null {
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  return me.data ? `tamga.world.seen.${me.data.company.id}.${persona.thread_key}` : null;
+}
+
+/** When the viewer last read a thread: this browser only, and nothing breaks without it. */
+function seenAt(key: string | null): string | null {
+  if (!key) return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function markSeen(key: string | null, at: string): void {
+  if (!key) return;
+  try {
+    window.localStorage.setItem(key, at);
+  } catch {
+    // A private window keeps nothing: every thread stays unread there.
+  }
+}
+
+/** A time for a list row: the hour today, "Yesterday", else the day. */
+function useWhen(now: string) {
+  const { t, locale } = useI18n();
+  const today = localDay(now);
+  return (sent: string) => {
+    const day = formatDate(new Date(sent), locale, "day");
+    if (sameDay(sent, today)) return formatDate(new Date(sent), locale, "time");
+    if (sameDay(sent, shiftDay(today, -1))) return t.playground.yesterday;
+    return day;
+  };
+}
+
+// Both sides of a day's comparison in the browser's timezone, as each message's time is shown.
+function localDay(at: string): string {
+  const date = new Date(at);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function sameDay(sent: string, day: string): boolean {
+  return localDay(sent) === day;
+}
+
+function shiftDay(day: string, by: number): string {
+  const [year = 1970, month = 1, date = 1] = day.split("-").map(Number);
+  const shifted = new Date(year, month - 1, date + by);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}-${String(shifted.getDate()).padStart(2, "0")}`;
+}
+
+function PersonaList({ personas, now, onPick }: { personas: Persona[]; now: string; onPick: (key: string) => void }) {
+  return (
+    <ul className="min-h-0 flex-1 overflow-y-auto py-1">
+      {personas.map((persona) => (
+        <li key={persona.key}>
+          <PersonaRow persona={persona} now={now} onPick={() => onPick(persona.key)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PersonaRow({ persona, now, onPick }: { persona: Persona; now: string; onPick: () => void }) {
+  const { t } = useI18n();
+  const thread = useThread(persona);
+  const when = useWhen(now);
+  const last = thread.data?.items[0];
+  const seenKey = useSeenKey(persona);
+  const seen = seenAt(seenKey);
+  const unread = (thread.data?.items ?? []).filter((message) => !seen || message.sent_at > seen).length;
+  return (
+    <button type="button" onClick={onPick} className="hover:bg-accent/50 flex w-full items-center gap-3 px-3 py-2.5 text-start">
+      <Avatar persona={persona} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{persona.name}</span>
+          {last ? (
+            <span className={cn("shrink-0 text-[11px] tabular-nums", unread > 0 ? "text-success-foreground font-medium" : "text-muted-foreground")}>
+              {when(last.sent_at)}
+            </span>
+          ) : null}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+            {persona.medium === "mail" ? (last?.subject ?? persona.subject) : (last?.snippet ?? persona.role)}
+          </span>
+          {unread > 0 ? (
+            <span className="bg-success text-card flex h-4.5 min-w-4.5 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums">
+              <span aria-hidden>{unread}</span>
+              <span className="sr-only">{t.playground.unread(unread)}</span>
+            </span>
+          ) : null}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function ThreadHeader({ persona, onBack }: { persona: Persona; onBack: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="border-border flex shrink-0 items-center gap-2 border-b px-2 py-2">
+      <IconButton icon={ArrowLeft01Icon} label={t.playground.back} onClick={onBack} />
+      <Avatar persona={persona} size="size-9" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{persona.name}</span>
+        <span className="text-muted-foreground block truncate text-xs">{persona.role}</span>
+      </span>
+    </div>
+  );
+}
+
+/** A WhatsApp thread as a phone shows it: the wallpaper, a chip for each day, the persona's
+ * bubbles with their time inside, oldest first, and a box to type as them. */
+function ChatThread({ persona, now, onBack }: { persona: Persona; now: string; onBack: () => void }) {
+  const { t, locale } = useI18n();
+  const messages = useThread(persona);
+  const said = [...(messages.data?.items ?? [])].reverse();
+  const latest = said.at(-1)?.sent_at;
+  const seenKey = useSeenKey(persona);
+  useEffect(() => {
+    if (latest) markSeen(seenKey, latest);
+  }, [seenKey, latest]);
+  const today = localDay(now);
+  const dayOf = (sent: string) =>
+    sameDay(sent, today)
+      ? t.playground.today
+      : sameDay(sent, shiftDay(today, -1))
+        ? t.playground.yesterday
+        : formatDate(new Date(sent), locale, "day");
+
+  return (
+    <>
+      <ThreadHeader persona={persona} onBack={onBack} />
+      <ol className="bg-world-wall flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-3" aria-live="polite">
+        {said.length === 0 && !messages.isPending ? (
+          <li className="bg-card text-muted-foreground m-auto max-w-[24ch] rounded-lg px-3 py-2 text-center text-xs text-pretty">
+            {t.playground.noMessages}
+          </li>
+        ) : null}
+        {said.map((message, index) => {
+          const day = dayOf(message.sent_at);
+          const newDay = index === 0 || dayOf(said[index - 1]!.sent_at) !== day;
+          return (
+            <li key={message.id} className="grid gap-1">
+              {newDay ? (
+                <span className="bg-card text-muted-foreground my-1.5 justify-self-center rounded-lg px-2.5 py-1 text-[11px] font-medium shadow-xs">
+                  {day}
+                </span>
+              ) : null}
+              <div
+                className={cn(
+                  "bg-world-bubble relative max-w-[85%] justify-self-start rounded-lg px-2.5 pt-1.5 pb-1 shadow-xs",
+                  newDay && "rounded-ss-none",
+                )}
+              >
+                {newDay ? (
+                  <span
+                    aria-hidden
+                    className="bg-world-bubble absolute -start-1.5 top-0 size-2.5 [clip-path:polygon(100%_0,0_0,100%_100%)]"
+                  />
+                ) : null}
+                {message.attachment_count > 0 ? (
+                  <span className="bg-muted text-muted-foreground mb-1 flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs">
+                    <HugeiconsIcon icon={Attachment01Icon} className="size-3.5" aria-hidden />
+                    {t.playground.attachment}
+                  </span>
+                ) : null}
+                <p className="text-sm text-pretty whitespace-pre-line">
+                  {message.snippet}
+                  {/* Room for the time on the last line, as a phone keeps it. */}
+                  <span aria-hidden className="inline-block w-12" />
+                </p>
+                <span className="text-muted-foreground absolute end-2 bottom-1 text-[10px] tabular-nums">
+                  {formatDate(new Date(message.sent_at), locale, "time")}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <SayBox persona={persona} rows={1} />
+    </>
+  );
+}
+
+/** A mail persona's thread: each mail by its subject and first lines, opened whole in the
+ * canvas, and a box to write the next one as them. */
+function MailThreadList({
+  persona,
+  now,
+  onBack,
+  onOpened,
+}: {
+  persona: Persona;
+  now: string;
+  onBack: () => void;
+  onOpened: () => void;
+}) {
+  const { t } = useI18n();
+  const messages = useThread(persona);
+  const when = useWhen(now);
+  const mails = messages.data?.items ?? [];
+  const latest = mails[0]?.sent_at;
+  const seenKey = useSeenKey(persona);
+  useEffect(() => {
+    if (latest) markSeen(seenKey, latest);
+  }, [seenKey, latest]);
+  return (
+    <>
+      <ThreadHeader persona={persona} onBack={onBack} />
+      <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
+        {mails.length === 0 && !messages.isPending ? (
+          <li className="text-muted-foreground px-4 py-6 text-center text-xs">{t.playground.noMessages}</li>
+        ) : null}
+        {mails.map((mail) => (
+          <li key={mail.id}>
+            <CanvasLink
+              view={{ kind: "mail", id: mail.id }}
+              onClick={onOpened}
+              className="hover:bg-accent/50 aria-[current=true]:bg-secondary block px-4 py-3"
+            >
+              <span className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{mail.subject ?? persona.subject}</span>
+                <span className="text-muted-foreground shrink-0 text-[11px] tabular-nums">{when(mail.sent_at)}</span>
+              </span>
+              <span className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">{mail.snippet}</span>
+              {mail.attachment_count > 0 ? (
+                <span className="text-muted-foreground mt-1 flex items-center gap-1 text-[11px]">
+                  <HugeiconsIcon icon={Attachment01Icon} className="size-3" aria-hidden />
+                  {t.playground.attachment}
+                </span>
+              ) : null}
+            </CanvasLink>
+          </li>
+        ))}
+      </ul>
+      <SayBox persona={persona} rows={3} />
+    </>
+  );
+}
+
+/** Types as the persona: a chat line, or a mail's text under their subject. */
+function SayBox({ persona, rows }: { persona: Persona; rows: number }) {
+  const { t } = useI18n();
   const [text, setText] = useState("");
   const queryClient = useQueryClient();
   const send = useMutation({
@@ -183,56 +483,49 @@ function PersonaThread({ persona }: { persona: Persona }) {
       void queryClient.invalidateQueries({ queryKey: ["world-messages", persona.thread_key] });
     },
   });
-  const said = [...(messages.data?.items ?? [])].reverse();
-
+  const most = persona.medium === "mail" ? 1000 : 200;
+  const submit = () => {
+    const typed = text.trim();
+    if (typed && !send.isPending) send.mutate({ persona: persona.key, text: typed });
+  };
   return (
-    <>
-      <div className="flex items-center gap-3 px-4 py-3">
-        <span className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-medium">
-          {persona.name.slice(0, 1)}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">{persona.name}</span>
-          <span className="text-muted-foreground block truncate text-xs">{persona.role}</span>
-        </span>
-      </div>
-      <ol className="bg-muted/40 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-3" aria-live="polite">
-        {said.length === 0 && !messages.isPending ? (
-          <li className="text-muted-foreground m-auto max-w-[24ch] text-center text-xs text-pretty">{t.playground.noMessages}</li>
-        ) : null}
-        {said.map((message) => (
-          <li key={message.id} className="bg-card border-border max-w-[85%] self-start rounded-2xl rounded-ss-sm border px-3 py-2 shadow-xs">
-            <p className="text-sm text-pretty whitespace-pre-line">{message.snippet}</p>
-            <p className="text-muted-foreground mt-1 flex items-center justify-end gap-1.5 text-[11px] tabular-nums">
-              {message.attachment_count > 0 ? (
-                <HugeiconsIcon icon={Attachment01Icon} className="size-3" aria-hidden />
-              ) : null}
-              {formatDate(new Date(message.sent_at), locale, "dateTime")}
-            </p>
-          </li>
-        ))}
-      </ol>
-      <form
-        className="border-border flex items-center gap-2 border-t p-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const typed = text.trim();
-          if (typed) send.mutate({ persona: persona.key, text: typed });
+    <form
+      className={cn("border-border flex items-end gap-2 border-t p-2.5", persona.medium === "whatsapp" && "bg-world-wall")}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <Textarea
+        value={text}
+        rows={rows}
+        maxLength={most}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          // A chat line goes on Enter, as on a phone; a mail keeps its new lines.
+          if (persona.medium === "whatsapp" && event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            submit();
+          }
         }}
-      >
-        <Input
-          value={text}
-          maxLength={200}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={t.playground.typeAs(persona.name.split(" ")[0] ?? persona.name)}
-          aria-describedby="world-typed"
-          className="rounded-full"
-        />
-        <IconButton icon={SentIcon} label={t.playground.send} type="submit" disabled={!text.trim() || send.isPending} />
-        <span id="world-typed" className="sr-only">
-          {t.playground.sent}
-        </span>
-      </form>
-    </>
+        placeholder={t.playground.writeAs(persona.name.split(" ")[0] ?? persona.name)}
+        aria-describedby="world-typed"
+        className={cn(
+          "bg-card min-h-10 min-w-0 flex-1 resize-none [field-sizing:fixed]",
+          persona.medium === "whatsapp" ? "rounded-3xl px-4 py-2.5" : "rounded-xl",
+        )}
+      />
+      <IconButton
+        icon={SentIcon}
+        label={t.playground.send}
+        type="submit"
+        variant="default"
+        className="size-10 shrink-0 rounded-full"
+        disabled={!text.trim() || send.isPending}
+      />
+      <span id="world-typed" className="sr-only">
+        {t.playground.sent}
+      </span>
+    </form>
   );
 }

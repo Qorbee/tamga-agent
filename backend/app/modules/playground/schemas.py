@@ -1,6 +1,10 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+# How a persona writes: a chat on WhatsApp, or mail.
+Medium = Literal["whatsapp", "mail"]
 
 
 class ScenarioOut(BaseModel):
@@ -17,6 +21,9 @@ class PersonaOut(BaseModel):
     # The address their messages come from; the World panel's thread is theirs.
     address: str
     thread_key: str
+    medium: Medium
+    # A mail persona's subject; empty on WhatsApp.
+    subject: str
 
 
 class WorldOut(BaseModel):
@@ -44,4 +51,5 @@ class Said(BaseModel):
     same intake as theirs."""
 
     persona: str = Field(max_length=40)
-    text: str = Field(min_length=1, max_length=200)
+    # A WhatsApp persona's is at most 200 characters, a mail persona's 1,000.
+    text: str = Field(min_length=1, max_length=1000)

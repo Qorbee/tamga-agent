@@ -5690,12 +5690,24 @@
             "title": "Key",
             "type": "string"
           },
+          "medium": {
+            "enum": [
+              "whatsapp",
+              "mail"
+            ],
+            "title": "Medium",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
           },
           "role": {
             "title": "Role",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
             "type": "string"
           },
           "thread_key": {
@@ -5708,7 +5720,9 @@
           "name",
           "role",
           "address",
-          "thread_key"
+          "thread_key",
+          "medium",
+          "subject"
         ],
         "title": "PersonaOut",
         "type": "object"
@@ -7453,7 +7467,7 @@
             "type": "string"
           },
           "text": {
-            "maxLength": 200,
+            "maxLength": 1000,
             "minLength": 1,
             "title": "Text",
             "type": "string"

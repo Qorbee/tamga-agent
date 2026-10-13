@@ -10,6 +10,8 @@ import { callOf, waits } from "@/components/bill-call";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry } from "@/components/memory";
+
+import { ShownView } from "./views";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApproveMany, CallCounts, fitsOf, usePaymentRun } from "@/components/payment-run";
 import { ProjectCard, Questions } from "@/components/waiting-cards";
@@ -279,6 +281,7 @@ export function ChatCards() {
       ))}
       <Compacted />
       <Remembered />
+      <ShownView />
     </>
   );
 }

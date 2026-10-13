@@ -63,6 +63,7 @@ export function DecisionRow({
   decision: Decision;
   payment: Payment | undefined;
   fits?: boolean | null;
+  /** False: the row only shows (a chat's view), and the owner answers where it links to. */
   actions?: boolean;
   /** In a run, the bills Tamga would pay are approved together by "Approve N": their rows offer
    * no button of their own, and the menu still holds every answer. */
@@ -216,7 +217,7 @@ export function DecisionRow({
             ) : null}
           </span>
         </CanvasLink>
-        {isOwner && (undoable || !answered) && !undoing ? (
+        {actions && isOwner && (undoable || !answered) && !undoing ? (
           <DropdownMenu modal={false}>
             <Hint label={t.payments.actions}>
               <DropdownMenuTrigger asChild>

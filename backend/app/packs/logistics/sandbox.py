@@ -8,6 +8,12 @@
   fourth is on the road, and the bank holds less than all of it under a reserve that keeps two
   weeks of bills. The run says which fit. A fragile carrier asks to be paid; two days on, the
   client's next payment arrives and everything fits.
+- **Three clients, one week** (``week``): four jobs for three clients and five carriers, and the
+  week's traffic around them on WhatsApp and by mail: a new job asked for, a CMR sent from the
+  road, a client questioning an invoice, a carrier's invoice, a client paying, a carrier asking.
+
+Each world has people on both channels: drivers and dispatchers on WhatsApp, clients and
+accounts desks by mail.
 
 The books are stored as a books source would have given them, as fixed records that do not
 depend on how far back the pilot's sync reads; the projects, their trucks and their links are
@@ -302,6 +308,53 @@ async def _moving_truck_delivered(company_id: uuid.UUID) -> None:
     )
 
 
+DRIVER: Final = Persona(
+    key="tomasz",
+    name="Tomasz Wiśniewski",
+    role=f"Driver, {MOVING.name} · {PLATE_MOVING}",
+    address="tomasz.w@kestrel-freight.example",
+)
+CLIENT_DESK: Final = Persona(
+    key="lena",
+    name="Lena Hoffmann",
+    role=f"Logistics, {CLIENT.name}",
+    address="lena.hoffmann@northwind-retail.example",
+    medium="mail",
+    subject=f"Delivery {SALE}: POD and ETA",
+)
+
+
+async def _driver_at_the_border(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        DRIVER,
+        "freight.border",
+        "Two hours at the border check near Bad Bentheim, moving again now. "
+        "Still unloading in Munich tomorrow morning.",
+    )
+
+
+async def _client_asks_for_proof(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        CLIENT_DESK,
+        "freight.client_asks",
+        f"Dear team,\n\nfor our month-end we need the signed CMR of {PLATE_DELIVERED} under "
+        f"order {SALE}, and an ETA for the second truck, {PLATE_MOVING}.\n\n"
+        "Kind regards,\nLena Hoffmann\nNorthwind Retail GmbH",
+    )
+
+
+async def _client_thanks(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        CLIENT_DESK,
+        "freight.client_thanks",
+        "Dear team,\n\nboth trucks are in, thank you. Please send the second CMR as well, "
+        "then we can close the order on our side.\n\nBest,\nLena",
+    )
+
+
 async def _moving_asks_to_be_paid(company_id: uuid.UUID) -> None:
     await playground.say(
         company_id,
@@ -443,25 +496,360 @@ async def _fragile_asks_again(company_id: uuid.UUID) -> None:
     )
 
 
-async def _client_pays_next(company_id: uuid.UUID) -> None:
-    """The client's next invoice is paid: the books say so, and the bank holds it."""
+ATLAS_DESK: Final = Persona(
+    key="grace",
+    name="Grace Whitfield",
+    role=f"Accounts, {DELIVERED.name}",
+    address="accounts@atlas-haulage.example",
+    medium="mail",
+    subject=f"Reminder: invoice {RUN_BILLS[0]} is overdue",
+)
+BUYER_DESK: Final = Persona(
+    key="jeroen",
+    name="Jeroen de Vries",
+    role=f"Accounts payable, {BUYER.name}",
+    address="ap@brightwater-foods.example",
+    medium="mail",
+    subject=f"Remittance advice {NEXT_SALE}",
+)
+
+
+async def _kestrel_asks_for_friday(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        DISPATCHER,
+        "payday.kestrel",
+        f"Hi! {RUN_BILLS[1]} falls due this week, can we count on it by Friday? Thanks, Marta",
+    )
+
+
+async def _atlas_reminds(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        ATLAS_DESK,
+        "payday.atlas",
+        f"Hello,\n\nour records show invoice {RUN_BILLS[0]} (EUR 1,100.00) as overdue since "
+        "yesterday. Could you let us know when we can expect payment?\n\nRegards,\n"
+        f"Grace Whitfield\nAccounts, {DELIVERED.name}",
+    )
+
+
+async def _buyer_remits(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        BUYER_DESK,
+        "payday.remits",
+        f"Good morning,\n\nplease find our payment of EUR {NEXT_PAYMENT:,} for invoice "
+        f"{NEXT_SALE}, sent today to your Harbour Bank account.\n\nKind regards,\n"
+        f"Jeroen de Vries\n{BUYER.name}",
+    )
+
+
+async def _client_pays(
+    company_id: uuid.UUID,
+    world: _World,
+    accounts: tuple[AccountRecord, ...],
+    client: _Firm,
+    number: str,
+    amount: Decimal,
+    ref: str,
+) -> None:
+    """A client's invoice is paid: the books say so, and the main account holds it."""
     opened = await _opened_on(company_id)
-    paid = frozenset({NEXT_SALE})
+    paid = frozenset({number})
     await books.store_records(
-        company_id, SOURCE, _cards(PAYDAY, opened, paid), _records(PAYDAY, opened, paid)
+        company_id, SOURCE, _cards(world, opened, paid), _records(world, opened, paid)
     )
     # The open pages read the invoice again: it is paid now.
     await events.publish_now(company_id, [events.EventKind.INVOICES])
     async with open_session() as db:
-        sale = await _invoice_ids(db, company_id, [NEXT_SALE])
+        sale = await _invoice_ids(db, company_id, [number])
         company = (await companies.get_companies(db, [company_id]))[company_id]
         today = clock.now(company).date()
-    main = _RUN_ACCOUNTS[0]
+    main = accounts[0]
     await money.store(
         company_id,
         SOURCE,
-        [dataclasses.replace(main, balance=(main.balance or Decimal(0)) + NEXT_PAYMENT)],
-        [_receipt(today, "m7", 0, BUYER, NEXT_SALE, NEXT_PAYMENT, sale[_as_compared(NEXT_SALE)])],
+        [dataclasses.replace(main, balance=(main.balance or Decimal(0)) + amount)],
+        [_receipt(today, ref, 0, client, number, amount, sale[_as_compared(number)])],
+    )
+
+
+async def _client_pays_next(company_id: uuid.UUID) -> None:
+    await _client_pays(company_id, PAYDAY, _RUN_ACCOUNTS, BUYER, NEXT_SALE, NEXT_PAYMENT, "m7")
+
+
+# --- Three clients, one week ------------------------------------------------------------------
+
+FJORD: Final = _Firm(
+    "C-3", "Fjord Seafood AS", PartyKind.ORGANISATION, "NO923609016MVA", "NO9386011117947"
+)
+ALPINE: Final = _Firm(
+    "C-4", "Alpine Outdoor AG", PartyKind.ORGANISATION, "CHE116281710", "CH9300762011623852957"
+)
+DANUBE: Final = _Firm(
+    "S-5",
+    "Danube Express Kft.",
+    PartyKind.ORGANISATION,
+    "HU12892312",
+    "HU42117730161111101800000000",
+)
+
+WEEK_SALES: Final = ("FS-2026-0712", "AO-2026-0233", "NW-2026-0455")
+WEEK_BILLS: Final = {
+    "atlas": "AH-7802",
+    "kestrel": "KF-2260",
+    "orbit": "OT-0401",
+    "danube": "DX-0981",
+    "vistula": "VC-1162",
+}
+PLATE_ORBIT: Final = "2AC 7781"
+ORBIT_CMR: Final = "CMR 6610294"
+NORTHWIND_PAYMENT: Final = Decimal("3100.00")
+
+_WEEK_ACCOUNTS: Final = (
+    dataclasses.replace(ACCOUNTS[0], balance=Decimal("9800.00")),
+    dataclasses.replace(ACCOUNTS[2], balance=Decimal("2400.00")),
+)
+
+
+def _week_movements(today: date, sales: dict[str, uuid.UUID]) -> list[MovementRecord]:
+    return [
+        _moved(today, "m1", "eur", 19, "-4100.00", MovementCategory.SALARY, "Salaries, last month"),
+        _moved(today, "m2", "eur", 19, "-45.00", MovementCategory.BANK_FEE, "Account fee"),
+        _moved(today, "m3", "eur", 12, "-1480.00", MovementCategory.TAX, "VAT payment"),
+        _moved(today, "m4", "usd", 8, "-720.00", MovementCategory.OTHER, "Fuel cards"),
+        _receipt(today, "m5", 2, FJORD, WEEK_SALES[0], Decimal("5200.00"), sales[WEEK_SALES[0]]),
+        _moved(today, "m6", "eur", 1, "-2950.00", MovementCategory.LOAN, "Truck lease"),
+    ]
+
+
+WEEK: Final = _World(
+    firms=(FJORD, ALPINE, CLIENT, DELIVERED, MOVING, FRAGILE, DANUBE, LATER),
+    invoices=(
+        _Invoice(
+            WEEK_SALES[0], FJORD, InvoiceDirection.RECEIVABLE, -9, -2, Decimal("5200.00"), paid=True
+        ),
+        # The amount the client questions on day 2: it says 3,600 was agreed.
+        _Invoice(WEEK_SALES[1], ALPINE, InvoiceDirection.RECEIVABLE, -2, 12, Decimal("3900.00")),
+        # Paid on day 3: until then, its carrier's bill waits for the client.
+        _Invoice(WEEK_SALES[2], CLIENT, InvoiceDirection.RECEIVABLE, -4, 3, NORTHWIND_PAYMENT),
+        _Invoice(
+            WEEK_BILLS["atlas"], DELIVERED, InvoiceDirection.PAYABLE, -7, -1, Decimal("1250.00")
+        ),
+        _Invoice(
+            WEEK_BILLS["kestrel"], MOVING, InvoiceDirection.PAYABLE, -6, 2, Decimal("1350.00")
+        ),
+        _Invoice(WEEK_BILLS["orbit"], FRAGILE, InvoiceDirection.PAYABLE, -1, 6, Decimal("1800.00")),
+        _Invoice(WEEK_BILLS["danube"], DANUBE, InvoiceDirection.PAYABLE, -1, 5, Decimal("1650.00")),
+        _Invoice(WEEK_BILLS["vistula"], LATER, InvoiceDirection.PAYABLE, -3, 1, Decimal("1400.00")),
+    ),
+    jobs=(
+        _Job(
+            WEEK_SALES[0],
+            FJORD,
+            "Oslo → Hamburg",
+            starts=-9,
+            ends=-4,
+            goods="2 reefers, frozen salmon, 38,000 kg",
+            trucks=(
+                _Truck(
+                    "GB AT 51 FRZ",
+                    DELIVERED,
+                    WEEK_BILLS["atlas"],
+                    loaded=-9,
+                    delivered=-6,
+                    cmr="CMR 6610211",
+                ),
+                _Truck(
+                    "PL WGM 6120",
+                    MOVING,
+                    WEEK_BILLS["kestrel"],
+                    loaded=-8,
+                    delivered=-5,
+                    cmr="CMR 6610230",
+                ),
+            ),
+        ),
+        _Job(
+            WEEK_SALES[1],
+            ALPINE,
+            "Zurich → Lyon",
+            starts=-3,
+            ends=1,
+            goods="48 pallets, outdoor gear, 14,200 kg",
+            trucks=(
+                # Its CMR comes from the driver on day 1.
+                _Truck(PLATE_ORBIT, FRAGILE, WEEK_BILLS["orbit"], loaded=-2),
+                _Truck(
+                    "HU KTX 412",
+                    DANUBE,
+                    WEEK_BILLS["danube"],
+                    loaded=-3,
+                    delivered=-1,
+                    cmr="CMR 6610287",
+                ),
+            ),
+        ),
+        _Job(
+            WEEK_SALES[2],
+            CLIENT,
+            "Rotterdam → Munich",
+            starts=-5,
+            ends=-2,
+            goods="30 pallets, household textiles, 16,900 kg",
+            trucks=(
+                _Truck(
+                    "PL VC 30871",
+                    LATER,
+                    WEEK_BILLS["vistula"],
+                    loaded=-5,
+                    delivered=-2,
+                    cmr="CMR 6610249",
+                ),
+            ),
+        ),
+    ),
+    accounts=_WEEK_ACCOUNTS,
+    movements=_week_movements,
+    policy=PolicyIn(
+        currency=_EUR,
+        approval_limit=Decimal("1500.00"),
+        pay_when_paid=True,
+        methods=[PaymentMethod.VAULT_USDC],
+        default_method=PaymentMethod.VAULT_USDC,
+        reserve_rule="steady",
+        payment_weekday=4,
+    ),
+)
+
+PAVEL: Final = Persona(
+    key="pavel",
+    name="Pavel Novák",
+    role=f"Driver, {FRAGILE.name} · {PLATE_ORBIT}",
+    address="pavel.novak@orbit-transport.example",
+)
+AGNIESZKA: Final = Persona(
+    key="agnieszka",
+    name="Agnieszka Kowalska",
+    role=f"Dispatcher, {LATER.name}",
+    address="dispatch@vistula-cargo.example",
+)
+INGRID: Final = Persona(
+    key="ingrid",
+    name="Ingrid Solberg",
+    role=f"Logistics, {FJORD.name}",
+    address="ingrid.solberg@fjord-seafood.example",
+    medium="mail",
+    subject="Transport request: 2 reefers Bergen → Rotterdam",
+)
+MARCO: Final = Persona(
+    key="marco",
+    name="Marco Keller",
+    role=f"Accounts, {ALPINE.name}",
+    address="m.keller@alpine-outdoor.example",
+    medium="mail",
+    subject=f"Your invoice {WEEK_SALES[1]}",
+)
+ESZTER: Final = Persona(
+    key="eszter",
+    name="Eszter Tóth",
+    role=f"Accounts, {DANUBE.name}",
+    address="szamla@danube-express.example",
+    medium="mail",
+    subject=f"Invoice {WEEK_BILLS['danube']}",
+)
+
+
+async def _fjord_asks_for_a_new_job(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        INGRID,
+        "week.fjord",
+        "Hello,\n\nwe need 2 reefer trucks Bergen → Rotterdam, loading next Tuesday, 33 pallets "
+        "of frozen salmon each at -18 °C. Could you quote and confirm by Friday?\n\n"
+        f"Best regards,\nIngrid Solberg\n{FJORD.name}",
+    )
+
+
+async def _vistula_offers_a_truck(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        AGNIESZKA,
+        "week.vistula",
+        "Hi, our truck is empty in Munich from tomorrow. Any return load towards Poland?",
+    )
+
+
+async def _orbit_sends_the_cmr(company_id: uuid.UUID) -> None:
+    opened = await _opened_on(company_id)
+    await playground.say(
+        company_id,
+        PAVEL,
+        "week.orbit_cmr",
+        f"Unloaded in Lyon, all 48 pallets OK. Signed CMR attached. {PLATE_ORBIT}",
+        [
+            (
+                f"{ORBIT_CMR} - {FRAGILE.name}.pdf",
+                _cmr_pdf(ORBIT_CMR, WEEK.jobs[1], FRAGILE, PLATE_ORBIT, opened + timedelta(days=1)),
+                "application/pdf",
+            )
+        ],
+    )
+
+
+async def _alpine_questions_the_invoice(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        MARCO,
+        "week.alpine",
+        f"Dear Sir or Madam,\n\nyour invoice {WEEK_SALES[1]} shows EUR 3,900.00, but the rate "
+        "we agreed for Zurich → Lyon was EUR 3,600.00. Please send a corrected invoice.\n\n"
+        f"Kind regards,\nMarco Keller\n{ALPINE.name}",
+    )
+
+
+async def _danube_sends_its_invoice(company_id: uuid.UUID) -> None:
+    opened = await _opened_on(company_id)
+    number = WEEK_BILLS["danube"]
+    await playground.say(
+        company_id,
+        ESZTER,
+        "week.danube",
+        f"Dear partner,\n\nplease find attached our invoice {number} for the Zurich → Lyon "
+        f"transport (HU KTX 412), EUR 1,650.00, due in five days.\n\nThank you,\nEszter Tóth",
+        [
+            (
+                f"{number}.pdf",
+                _pdf(
+                    [
+                        f"INVOICE {number}",
+                        f"From: {DANUBE.name}, VAT {DANUBE.tax_id}",
+                        f"To: the carrier's client, order {WEEK_SALES[1]}",
+                        "Transport Zurich -> Lyon, truck HU KTX 412",
+                        "Total: EUR 1,650.00",
+                        f"Issued {opened - timedelta(days=1):%d.%m.%Y}, due in five days",
+                        f"IBAN {DANUBE.iban}",
+                    ]
+                ),
+                "application/pdf",
+            )
+        ],
+    )
+
+
+async def _northwind_pays(company_id: uuid.UUID) -> None:
+    await _client_pays(
+        company_id, WEEK, _WEEK_ACCOUNTS, CLIENT, WEEK_SALES[2], NORTHWIND_PAYMENT, "m7"
+    )
+
+
+async def _kestrel_asks_to_be_paid(company_id: uuid.UUID) -> None:
+    await playground.say(
+        company_id,
+        DISPATCHER,
+        "week.kestrel",
+        f"Hello again, {WEEK_BILLS['kestrel']} was due two days ago. Any news? Marta",
     )
 
 
@@ -476,6 +864,10 @@ async def seed_payday(company_id: uuid.UUID) -> None:
     await _seed(company_id, PAYDAY)
 
 
+async def seed_week(company_id: uuid.UUID) -> None:
+    await _seed(company_id, WEEK)
+
+
 SCENARIOS: Final = (
     Scenario(
         key="freight",
@@ -483,8 +875,14 @@ SCENARIOS: Final = (
         summary="A job with two carriers: one delivered and can be paid, one is still driving. "
         "Skip a day and its dispatcher sends the CMR.",
         seed=seed_freight,
-        personas=(DISPATCHER,),
-        steps=(Step(1, _moving_truck_delivered), Step(2, _moving_asks_to_be_paid)),
+        personas=(DISPATCHER, DRIVER, CLIENT_DESK),
+        steps=(
+            Step(0, _driver_at_the_border),
+            Step(0, _client_asks_for_proof),
+            Step(1, _moving_truck_delivered),
+            Step(2, _moving_asks_to_be_paid),
+            Step(2, _client_thanks),
+        ),
     ),
     Scenario(
         key="payday",
@@ -492,11 +890,31 @@ SCENARIOS: Final = (
         summary="Three carriers are owed this week and the bank can't cover all of them under "
         "the reserve. Watch the payment run decide, then skip until the client pays.",
         seed=seed_payday,
-        personas=(CARRIER,),
+        personas=(CARRIER, DISPATCHER, ATLAS_DESK, BUYER_DESK),
         steps=(
             Step(0, _fragile_asks),
+            Step(0, _kestrel_asks_for_friday),
             Step(1, _fragile_asks_again),
+            Step(1, _atlas_reminds),
+            Step(2, _buyer_remits),
             Step(2, _client_pays_next),
+        ),
+    ),
+    Scenario(
+        key="week",
+        title="Three clients, one week",
+        summary="Four jobs for three clients and five carriers, and a busy week on WhatsApp and "
+        "by mail: a new job, a CMR from the road, a disputed invoice, a client's payment.",
+        seed=seed_week,
+        personas=(PAVEL, AGNIESZKA, DISPATCHER, INGRID, MARCO, ESZTER),
+        steps=(
+            Step(0, _fjord_asks_for_a_new_job),
+            Step(0, _vistula_offers_a_truck),
+            Step(1, _orbit_sends_the_cmr),
+            Step(2, _alpine_questions_the_invoice),
+            Step(2, _danube_sends_its_invoice),
+            Step(3, _northwind_pays),
+            Step(4, _kestrel_asks_to_be_paid),
         ),
     ),
 )
@@ -676,15 +1094,22 @@ def _as_compared(number: str) -> str:
 def _cmr_pdf(number: str, job: _Job, carrier: _Firm, plate: str, delivered_on: date) -> bytes:
     """A one-page PDF with a text layer, standing in for the signed CMR a driver brings back."""
     origin, _, destination = job.route.partition(" → ")
-    lines = [
-        "CMR - International Consignment Note",
-        f"No. {number.removeprefix('CMR ')}",
-        f"Sender: {job.client.name}, {origin}",
-        f"Consignee: {job.client.name} Distribution Centre, {destination}",
-        f"Carrier: {carrier.name}, truck {plate}",
-        f"Goods: {job.goods}",
-        f"Received in good order on {delivered_on:%d.%m.%Y}, signed and stamped by the consignee.",
-    ]
+    return _pdf(
+        [
+            "CMR - International Consignment Note",
+            f"No. {number.removeprefix('CMR ')}",
+            f"Sender: {job.client.name}, {origin}",
+            f"Consignee: {job.client.name} Distribution Centre, {destination}",
+            f"Carrier: {carrier.name}, truck {plate}",
+            f"Goods: {job.goods}",
+            f"Received in good order on {delivered_on:%d.%m.%Y}, signed and stamped by the "
+            "consignee.",
+        ]
+    )
+
+
+def _pdf(lines: list[str]) -> bytes:
+    """A one-page PDF of these lines, with a text layer, in Latin-1."""
     text = "".join(
         f"BT /F1 11 Tf 56 {760 - 22 * row} Td ({line}) Tj ET\n" for row, line in enumerate(lines)
     ).encode("latin-1")

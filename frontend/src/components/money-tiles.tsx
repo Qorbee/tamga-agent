@@ -71,19 +71,17 @@ export function MoneyTiles({ className }: { className?: string }) {
     },
   ];
   return (
-    // A row of four on a wide page; on a phone they scroll sideways rather than break a figure.
-    <dl
-      className={cn(
-        "-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] sm:grid sm:grid-cols-4 sm:overflow-visible",
-        className,
-      )}
-    >
+    // Four in a row where the page is wide, two by two where it is not (a phone, or a page beside
+    // the World and the canvas): by the page's own width, so no figure is ever cut.
+    <div className={cn("@container", className)}>
+    <dl className="grid grid-cols-2 gap-2 @2xl:grid-cols-4">
       {tiles.map((tile) => (
-        <div key={tile.label} className="border-border bg-card min-w-36 shrink-0 snap-start rounded-2xl border px-3.5 py-3 sm:min-w-0">
+        <div key={tile.label} className="border-border bg-card min-w-0 rounded-2xl border px-3.5 py-3">
           <dt className="text-muted-foreground truncate text-[11px] font-medium tracking-[0.08em] uppercase">{tile.label}</dt>
           <dd className={cn("mt-1 truncate text-lg font-medium tabular-nums", tile.tone)}>{tile.value}</dd>
         </div>
       ))}
     </dl>
+    </div>
   );
 }

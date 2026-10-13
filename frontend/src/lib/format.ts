@@ -62,8 +62,10 @@ export function formatNumber(value: number, locale: Locale): string {
 export function formatDate(
   date: Date,
   locale: Locale,
-  style: "day" | "dateTime" = "day",
+  style: "day" | "dateTime" | "time" = "day",
 ): string {
+  // The hour alone, as a chat shows a message sent today.
+  if (style === "time") return new Intl.DateTimeFormat(intlLocale[locale], { hour: "2-digit", minute: "2-digit" }).format(date);
   return new Intl.DateTimeFormat(intlLocale[locale], {
     weekday: "short",
     day: "numeric",

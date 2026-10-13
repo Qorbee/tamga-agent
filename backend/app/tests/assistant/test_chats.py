@@ -619,6 +619,7 @@ async def test_a_chat_holds_the_records_its_runs_open(
         "waiting",
         "search",
         "open",
+        "show",
         "investigate",
         "read_file",
         "remember",

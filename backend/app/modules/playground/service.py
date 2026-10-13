@@ -30,7 +30,7 @@ from app.modules.conversations import service as conversations
 from app.modules.decisions import service as decisions
 from app.modules.playground import repository
 from app.modules.playground.models import World
-from app.modules.playground.schemas import PersonaOut, Said, ScenarioOut, WorldOut
+from app.modules.playground.schemas import Medium, PersonaOut, Said, ScenarioOut, WorldOut
 from app.modules.settlement import service as settlement
 from app.platform import clock, events, jobs
 from app.platform.auth import Actor, Role
@@ -41,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 # Where the world's mail is addressed: nobody's mailbox, on a domain reserved for examples.
 OWNER_ADDRESS: Final = "owner@sandbox.example"
+# What the judge may type as a persona: a chat line, or a mail.
+SAID_LENGTH: Final[dict[str, int]] = {"whatsapp": 200, "mail": 1000}
 
 # Fills one sandbox, in sessions of its own, and commits what it writes.
 type Seed = Callable[[uuid.UUID], Awaitable[None]]
@@ -48,12 +50,15 @@ type Seed = Callable[[uuid.UUID], Awaitable[None]]
 
 @dataclass(frozen=True, slots=True)
 class Persona:
-    """Someone in the world who writes to the company: one WhatsApp-like thread each."""
+    """Someone in the world who writes to the company, on WhatsApp or by mail: one thread each."""
 
     key: str
     name: str
     role: str
     address: str
+    medium: Medium = "whatsapp"
+    # A mail persona's thread: the subject every message of theirs carries.
+    subject: str = ""
 
     @property
     def thread_key(self) -> str:
@@ -176,7 +181,13 @@ async def get_world(db: AsyncSession, actor: Actor) -> WorldOut:
         days_skipped=company.clock_offset.days,
         personas=[
             PersonaOut(
-                key=p.key, name=p.name, role=p.role, address=p.address, thread_key=p.thread_key
+                key=p.key,
+                name=p.name,
+                role=p.role,
+                address=p.address,
+                thread_key=p.thread_key,
+                medium=p.medium,
+                subject=p.subject,
             )
             for p in (scenario.personas if scenario else ())
         ],
@@ -218,6 +229,10 @@ async def say_as(db: AsyncSession, actor: Actor, body: Said) -> None:
     persona = next((p for p in personas if p.key == body.persona), None)
     if persona is None:
         raise NotFound("No such persona in this sandbox")
+    if len(body.text) > SAID_LENGTH[persona.medium]:
+        raise BadRequest(
+            f"A {persona.medium} message is at most {SAID_LENGTH[persona.medium]} characters"
+        )
     await _say(db, actor.company_id, persona, body.text)
     await db.commit()
 
@@ -256,7 +271,9 @@ async def _say(
     mail = EmailMessage()
     mail["From"] = f"{persona.name} <{persona.address}>"
     mail["To"] = OWNER_ADDRESS
-    mail["Subject"] = f"WhatsApp · {persona.name}"
+    mail["Subject"] = (
+        f"WhatsApp · {persona.name}" if persona.medium == "whatsapp" else persona.subject
+    )
     mail["Date"] = format_datetime(clock.now(company))
     mail["Message-ID"] = message_id or make_msgid(domain="world.sandbox.example")
     mail["In-Reply-To"] = persona.thread_key

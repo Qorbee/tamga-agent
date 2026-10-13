@@ -4,6 +4,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 
 import { Hint } from "@/components/hint";
 import { MoneyTiles } from "@/components/money-tiles";
+import { between, PeriodBars, SeriesLegend, type Series } from "@/components/period-bars";
 import { useRuleWords } from "@/components/policy-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,12 +22,11 @@ import {
   listInvoiceTotals,
   listMoneyAccounts,
   listMovements,
-  type InvoiceTotal,
   type MoneyAccount,
   type Movement,
   type MovementCategory,
 } from "@/lib/api";
-import { formatDays, formatMoney, formatMoneyCompact, todayIso } from "@/lib/format";
+import { formatDays, formatMoney, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useIsOwner } from "@/lib/use-role";
 import { usePagedList } from "@/lib/use-paged-list";
@@ -198,6 +198,10 @@ function Outlook() {
   }));
   const empty = rows.every((row) => row.collect.length === 0 && row.pay.length === 0);
   const currencies = [...new Set(rows.flatMap((row) => [...row.collect, ...row.pay].map(([currency]) => currency)))];
+  const series: Series[] = [
+    { label: t.money.toCollect, tone: "success" },
+    { label: t.money.toPay, tone: "warning" },
+  ];
   return (
     <section className="grid gap-2">
       <h2 className="text-muted-foreground text-xs font-medium">{t.money.next}</h2>
@@ -205,27 +209,21 @@ function Outlook() {
         <p className="text-muted-foreground border-border rounded-2xl border px-4 py-3 text-sm">{t.money.nothingDue}</p>
       ) : (
         <div className="border-border bg-card grid gap-4 rounded-2xl border px-4 py-3.5">
-          <p className="text-muted-foreground flex flex-wrap gap-x-4 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="bg-success size-2 rounded-sm" aria-hidden />
-              {t.money.toCollect}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="bg-warning size-2 rounded-sm" aria-hidden />
-              {t.money.toPay}
-            </span>
-          </p>
+          <SeriesLegend series={series} />
           {currencies.map((currency) => (
-            <WeekBars
+            <PeriodBars
               key={currency}
               currency={currency}
+              series={series}
               shownCurrency={currencies.length > 1}
-              weeks={rows.map((row, index) => ({
+              periods={rows.map((row, index) => ({
                 key: row.key,
                 label: index === 0 ? t.money.overdue : formatDays(cutoffs[index - 1]!, null, locale),
                 fullLabel: row.label,
-                collect: row.collect.find(([unit]) => unit === currency)?.[1] ?? 0,
-                pay: row.pay.find(([unit]) => unit === currency)?.[1] ?? 0,
+                values: [
+                  row.collect.find(([unit]) => unit === currency)?.[1] ?? 0,
+                  row.pay.find(([unit]) => unit === currency)?.[1] ?? 0,
+                ],
               }))}
             />
           ))}
@@ -233,78 +231,6 @@ function Outlook() {
       )}
     </section>
   );
-}
-
-type Week = { key: string; label: string; fullLabel: string; collect: number; pay: number };
-
-/** Each bucket's money in and out as two bars, one currency at a time: currencies are never
- * added together here. The figures are in a table for a screen reader. */
-function WeekBars({ currency, weeks, shownCurrency }: { currency: string; weeks: Week[]; shownCurrency: boolean }) {
-  const { t, locale } = useI18n();
-  const most = Math.max(1, ...weeks.flatMap((week) => [week.collect, week.pay]));
-  const short = (amount: number) => (amount > 0 ? formatMoneyCompact(amount, currency, locale) : "");
-  const height = (amount: number) => `${Math.max(amount > 0 ? 4 : 0, (amount / most) * 100)}%`;
-  return (
-    <figure className="grid gap-2">
-      {shownCurrency ? <figcaption className="text-muted-foreground font-mono text-xs">{currency}</figcaption> : null}
-      <div aria-hidden className="grid h-36 grid-cols-5 items-end gap-2">
-        {weeks.map((week) => (
-          <div key={week.key} className="flex h-full items-end justify-center gap-1">
-            {(["collect", "pay"] as const).map((side) => (
-              <div key={side} className="flex h-full w-full max-w-7 flex-col justify-end">
-                <span className="text-muted-foreground mb-1 truncate text-center text-[10px] tabular-nums">{short(week[side])}</span>
-                <span
-                  className={cn("w-full rounded-t-md", side === "collect" ? "bg-success" : "bg-warning")}
-                  style={{ height: height(week[side]) }}
-                />
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-      <div aria-hidden className="text-muted-foreground border-border grid grid-cols-5 gap-2 border-t pt-1.5 text-center text-[11px]">
-        {weeks.map((week) => (
-          <span key={week.key} className="truncate">
-            {week.label}
-          </span>
-        ))}
-      </div>
-      <table className="sr-only">
-        <thead>
-          <tr>
-            <th />
-            <th>{t.money.toCollect}</th>
-            <th>{t.money.toPay}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {weeks.map((week) => (
-            <tr key={week.key}>
-              <th>{week.fullLabel}</th>
-              <td>{formatMoney(week.collect, currency, locale)}</td>
-              <td>{formatMoney(week.pay, currency, locale)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </figure>
-  );
-}
-
-/** What is left per currency up to cutoff ``index``, less what was left up to the one before. */
-function between(cumulative: InvoiceTotal[][], index: number): [string, number][] {
-  const sum = (totals: InvoiceTotal[] | undefined) => {
-    const out = new Map<string, number>();
-    for (const total of totals ?? []) {
-      if (total.currency && total.remaining_amount !== null) out.set(total.currency, Number(total.remaining_amount));
-    }
-    return out;
-  };
-  const now = sum(cumulative[index]);
-  const before = index === 0 ? new Map<string, number>() : sum(cumulative[index - 1]);
-  return [...now]
-    .map(([currency, amount]): [string, number] => [currency, amount - (before.get(currency) ?? 0)])
-    .filter(([, amount]) => Math.abs(amount) >= 0.005);
 }
 
 function Movements() {

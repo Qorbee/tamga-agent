@@ -43,7 +43,7 @@ async def simulated(client: httpx.AsyncClient) -> list[dict[str, object]]:
 
 async def test_the_scenarios_are_listed_before_anyone_signs_in(client: httpx.AsyncClient) -> None:
     listed = (await client.get("/playground/scenarios")).json()
-    assert [scenario["key"] for scenario in listed] == ["freight", "payday"]
+    assert [scenario["key"] for scenario in listed] == ["freight", "payday", "week"]
     assert all(scenario["title"] and scenario["summary"] for scenario in listed)
 
 
@@ -61,12 +61,18 @@ async def test_short_cash_opens_with_three_carriers_owed_and_a_reserve(
 
     world = (await client.get("/playground/world")).json()
     assert world["scenario"]["key"] == "payday" and world["days_skipped"] == 0
-    assert [persona["key"] for persona in world["personas"]] == ["petr"]
-    # Its first step plays as it opens: the fragile carrier asks to be paid.
-    assert world["played"] == 1
-    [asked] = await simulated(client)
-    assert sandbox.RUN_BILLS[2] in str(asked["snippet"])
-    assert asked["thread_key"] == sandbox.CARRIER.thread_key
+    assert [persona["key"] for persona in world["personas"]] == ["petr", "marta", "grace", "jeroen"]
+    assert [persona["medium"] for persona in world["personas"]] == [
+        "whatsapp",
+        "whatsapp",
+        "mail",
+        "mail",
+    ]
+    # Its first steps play as it opens: the fragile carrier and Kestrel ask to be paid.
+    assert world["played"] == 2
+    said = {str(message["thread_key"]): message for message in await simulated(client)}
+    assert sandbox.RUN_BILLS[2] in str(said[sandbox.CARRIER.thread_key]["snippet"])
+    assert sandbox.RUN_BILLS[1] in str(said[sandbox.DISPATCHER.thread_key]["snippet"])
 
     policy = (await client.get("/policy")).json()
     assert policy["reserve"]["key"] == "steady" and policy["currency"] == "EUR"
@@ -82,7 +88,8 @@ async def test_skipping_a_day_moves_the_clock_and_plays_the_script(
 ) -> None:
     company_id = await opened(client)
     before = date.fromisoformat((await client.get("/me")).json()["today"])
-    assert await simulated(client) == []
+    # The driver and the client's desk write as it opens.
+    assert len(await simulated(client)) == 2
 
     world = (await client.post("/playground/world/skip", json={"days": 1})).json()
     assert world["days_skipped"] == 1
@@ -92,11 +99,15 @@ async def test_skipping_a_day_moves_the_clock_and_plays_the_script(
     # The skip queued the play; the worker runs it.
     assert await playground.play_due(company_id) == 1
 
-    [delivered] = await simulated(client)
+    [delivered] = [
+        message
+        for message in await simulated(client)
+        if message["sender"] == sandbox.DISPATCHER.address
+    ]
     assert sandbox.PLATE_MOVING in str(delivered["snippet"])
     assert delivered["attachment_count"] == 1
     # Read by the same intake as any mail: it waits to be processed like one.
-    assert await conversations.process_pending() == 1
+    assert await conversations.process_pending() == 3
     # Played once: a second pass on the same day plays nothing.
     assert await playground.play_due(company_id) == 0
 
@@ -109,7 +120,9 @@ async def test_the_judge_types_as_a_persona(client: httpx.AsyncClient) -> None:
         json={"persona": sandbox.DISPATCHER.key, "text": "Truck is stuck at the border."},
     )
     assert said.status_code == 204
-    [message] = await simulated(client)
+    [message] = [
+        item for item in await simulated(client) if item["sender"] == sandbox.DISPATCHER.address
+    ]
     assert message["sender"] == sandbox.DISPATCHER.address
     assert message["snippet"] == "Truck is stuck at the border."
 
@@ -140,7 +153,7 @@ async def test_two_days_on_the_client_pays_and_the_bank_holds_it(
     company_id = await opened(client, "payday")
 
     await client.post("/playground/world/skip", json={"days": 2})
-    assert await playground.play_due(company_id) == 2
+    assert await playground.play_due(company_id) == 4
 
     bills = {bill["number"]: bill for bill in (await client.get("/invoices")).json()["items"]}
     assert Decimal(bills[sandbox.NEXT_SALE]["remaining_amount"]) == 0
@@ -152,7 +165,8 @@ async def test_two_days_on_the_client_pays_and_the_bank_holds_it(
         if item["reference"] == sandbox.NEXT_SALE
     ]
     assert [Decimal(item["amount"]) for item in paid] == [sandbox.NEXT_PAYMENT]
-    assert len(await simulated(client)) == 2
+    # Petr twice, Marta, Atlas's reminder and the remittance advice.
+    assert len(await simulated(client)) == 5
 
 
 async def test_a_skip_waits_for_the_sandbox_to_open(client: httpx.AsyncClient) -> None:
@@ -167,7 +181,7 @@ async def test_a_step_played_again_stores_its_message_once(client: httpx.AsyncCl
     # A worker that died after the step and before marking it played plays it again.
     await sandbox._moving_asks_to_be_paid(company_id)
     await sandbox._moving_asks_to_be_paid(company_id)
-    assert len(await simulated(client)) == 1
+    assert len(await simulated(client)) == 3
 
 
 async def test_tamga_writes_first_when_a_sandbox_opens(
@@ -191,3 +205,37 @@ async def test_tamga_writes_first_when_a_sandbox_opens(
     assert "Short cash on Friday" in str(script.requests[0])
     # Once.
     assert await turns.speak_pending() == 0
+
+
+async def test_a_week_of_three_clients_plays_every_step_on_both_channels(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await opened(client, "week")
+    projects = (await client.get("/projects")).json()["items"]
+    assert {project["number"] for project in projects} == set(sandbox.WEEK_SALES)
+
+    for _ in range(4):
+        await client.post("/playground/world/skip", json={"days": 1})
+        await playground.play_due(company_id)
+    world = (await client.get("/playground/world")).json()
+    assert world["played"] == world["steps"] == 7
+
+    said = await simulated(client)
+    by_sender = {str(message["sender"]): message for message in said}
+    # A mail persona writes under its subject; a WhatsApp one as a chat.
+    assert by_sender[sandbox.MARCO.address]["subject"] == sandbox.MARCO.subject
+    assert str(by_sender[sandbox.PAVEL.address]["subject"]).startswith("WhatsApp")
+    assert by_sender[sandbox.PAVEL.address]["attachment_count"] == 1
+    assert by_sender[sandbox.ESZTER.address]["attachment_count"] == 1
+    bills = {bill["number"]: bill for bill in (await client.get("/invoices")).json()["items"]}
+    assert Decimal(bills[sandbox.WEEK_SALES[2]]["remaining_amount"]) == 0
+
+
+async def test_what_the_judge_types_is_as_long_as_its_channel_allows(
+    client: httpx.AsyncClient,
+) -> None:
+    await opened(client)
+    chat_line = {"persona": sandbox.DRIVER.key, "text": "x" * 201}
+    assert (await client.post("/playground/world/messages", json=chat_line)).status_code == 400
+    mail = {"persona": sandbox.CLIENT_DESK.key, "text": "Dear team,\n" + "x" * 900}
+    assert (await client.post("/playground/world/messages", json=mail)).status_code == 204

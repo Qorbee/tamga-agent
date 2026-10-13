@@ -3584,10 +3584,17 @@ export interface components {
             address: string;
             /** Key */
             key: string;
+            /**
+             * Medium
+             * @enum {string}
+             */
+            medium: "whatsapp" | "mail";
             /** Name */
             name: string;
             /** Role */
             role: string;
+            /** Subject */
+            subject: string;
             /** Thread Key */
             thread_key: string;
         };

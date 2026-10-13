@@ -17,7 +17,7 @@ from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.settings import ModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.assistant import helpers, looking, tools
+from app.modules.assistant import helpers, looking, tools, views
 from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
 from app.modules.decisions import service as decisions
@@ -90,6 +90,10 @@ answer is spread over more conversations than a few opens read, such as how some
 across a job's mails. A project's state, its papers or its latest mail are search and open.
 - read_file: a helper that answers a question from a file's own pages, which open does not show.
 - waiting: what waits for the owner's answer now, in full.
+- show: a view under your answer, drawn by the app from the records: bills and Tamga's call on \
+each, invoice totals by month, money due in and out by week, account movements, jobs, or the \
+next payment run. Use it when the answer is a list, totals or a trend; your text then says in a \
+sentence or two what matters, and leaves the figures to the view.
 - remember: drafts one thing the owner teaches you, for every later chat. Use it when the owner \
 tells you a term, a nickname, who someone is or how they want things done, and asks you to keep \
 it or plainly means it to hold. It waits for the owner's confirmation on its card.
@@ -122,6 +126,8 @@ assistant: Agent[Seat, str] = Agent(
         helpers.helping.filtered(tools.for_a_person),
         tools.drafting.filtered(tools.for_a_person),
         tools.packs.filtered(tools.for_a_person),
+        # Read only, so Tamga's own turns show views too.
+        views.viewing,
     ],
 )
 

@@ -42,6 +42,10 @@
   --segment: #ffffff;
   --segment-border: #8a8476;
 
+  /* The playground's World: a chat app's wallpaper and its message bubbles. */
+  --world-wall: #f0ebe1;
+  --world-bubble: #ffffff;
+
   /* Status: a fill for dots and icons, a text colour, a soft tint for badges. Ochre as text is
      3.9:1, hence its darker foreground. Blocked reuses terracotta. */
   --success: #4f6b45;
@@ -109,6 +113,9 @@
   --segment: #3a362e;
   --segment-border: #77705f;
 
+  --world-wall: #0f0e0c;
+  --world-bubble: #24211c;
+
   --success: #8fae84;
   --success-foreground: #8fae84;
   --success-soft: #1c2219;
@@ -150,6 +157,8 @@
   --color-accent: var(--accent);
   --color-segment: var(--segment);
   --color-segment-border: var(--segment-border);
+  --color-world-wall: var(--world-wall);
+  --color-world-bubble: var(--world-bubble);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);

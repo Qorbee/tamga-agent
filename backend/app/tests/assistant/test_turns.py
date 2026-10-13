@@ -45,6 +45,8 @@ READ_ONLY = {
     # Reading; a helper's run (investigate, read_file) and drafting are a person's.
     "search",
     "open",
+    # A view only names what to show (ADR-0029).
+    "show",
 }
 
 

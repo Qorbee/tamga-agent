@@ -37,6 +37,9 @@ const pairs = [
   ["ring", ["background", "card"], NON_TEXT],
   // The edge that marks a selector's chosen option on its track.
   ["segment-border", ["muted"], NON_TEXT],
+  // The World's messages, and what is written on its wallpaper.
+  ["foreground", ["world-bubble", "world-wall"], TEXT],
+  ["muted-foreground", ["world-bubble", "world-wall"], TEXT],
 ];
 // Terracotta passes as text only on the light surfaces; on charcoal it is used as a fill alone.
 const lightOnly = [["primary", ["background", "card"], TEXT]];
