@@ -93,3 +93,11 @@ async def test_movements_of_one_account_are_shown_only_when_the_words_fit_one(
 
     assert "2 of the company's 2 accounts fit" in script.returned(1)
     assert euro in script.returned(2) and "'account'" not in script.returned(2)
+
+
+def test_invoice_totals_show_both_sides_unless_one_is_named() -> None:
+    adapter: TypeAdapter[Any] = TypeAdapter(views.View)
+    both = adapter.validate_python({"view": "invoice_totals"})
+    payable = adapter.validate_python({"view": "invoice_totals", "direction": "payable"})
+    assert isinstance(both, views.Totals) and both.direction == "both"
+    assert isinstance(payable, views.Totals) and payable.direction == "payable"

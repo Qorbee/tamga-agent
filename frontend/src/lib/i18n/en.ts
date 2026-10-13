@@ -987,6 +987,8 @@ export const en = {
     load: "Could not load this. Try again.",
   },
   money: {
+    /** What comes in less what goes out. */
+    net: "Net",
     accounts: "Accounts",
     noAccounts: "No bank account yet. Until one is connected, what moved is estimated from your books.",
     estimated: "Estimated from your books",
@@ -1054,6 +1056,11 @@ export const en = {
     newest: (shown: number, total: number) => `Sums of the newest ${shown} of ${total} movements`,
     payable: "Owed to carriers",
     receivable: "Owed by clients",
+    bothSides: "In and out",
+    cameIn: "Came in",
+    wentOut: "Went out",
+    billStats: { count: "Bills", sum: "They come to" },
+    projectCount: "Projects",
     outstanding: "Left to pay",
     months: (count: number) => (count === 1 ? "1 month" : `${count} months`),
     weeks: (count: number) => (count === 1 ? "1 week" : `${count} weeks`),

@@ -31,7 +31,9 @@ const DOT: Record<Call, string> = {
   rejected: "bg-muted-foreground",
 };
 
-export function CallPill({ call, className }: { call: Call; className?: string }) {
+/** Tamga's call as a pill; with `count`, how many bills have it, inside the pill, so the two
+ * never wrap apart. */
+export function CallPill({ call, count, className }: { call: Call; count?: number; className?: string }) {
   const { t } = useI18n();
   return (
     <span
@@ -42,6 +44,7 @@ export function CallPill({ call, className }: { call: Call; className?: string }
       )}
     >
       <span aria-hidden className={cn("size-1.5 rounded-full", DOT[call])} />
+      {count !== undefined ? <span className="font-semibold tabular-nums">{count}</span> : null}
       {t.payments.calls[call]}
     </span>
   );

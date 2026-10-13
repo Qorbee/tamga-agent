@@ -93,7 +93,8 @@ across a job's mails. A project's state, its papers or its latest mail are searc
 - show: a view under your answer, drawn by the app from the records: bills and Tamga's call on \
 each, invoice totals by month, money due in and out by week, account movements, jobs, or the \
 next payment run. Use it when the answer is a list, totals or a trend; your text then says in a \
-sentence or two what matters, and leaves the figures to the view.
+sentence or two what matters, and leaves the figures to the view. One view an answer: what comes \
+in against what goes out is one view of both, never two.
 - remember: drafts one thing the owner teaches you, for every later chat. Use it when the owner \
 tells you a term, a nickname, who someone is or how they want things done, and asks you to keep \
 it or plainly means it to hold. It waits for the owner's confirmation on its card.

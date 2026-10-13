@@ -26,7 +26,7 @@ import {
   type Movement,
   type MovementCategory,
 } from "@/lib/api";
-import { formatDays, formatMoney, todayIso } from "@/lib/format";
+import { formatDayShort, formatDays, formatMoney, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useIsOwner } from "@/lib/use-role";
 import { usePagedList } from "@/lib/use-paged-list";
@@ -216,9 +216,10 @@ function Outlook() {
               currency={currency}
               series={series}
               shownCurrency={currencies.length > 1}
+              net
               periods={rows.map((row, index) => ({
                 key: row.key,
-                label: index === 0 ? t.money.overdue : formatDays(cutoffs[index - 1]!, null, locale),
+                label: index === 0 ? t.money.overdue : formatDayShort(cutoffs[index - 1]!, locale),
                 fullLabel: row.label,
                 values: [
                   row.collect.find(([unit]) => unit === currency)?.[1] ?? 0,

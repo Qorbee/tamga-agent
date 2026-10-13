@@ -87,6 +87,11 @@ export function todayIso(now: Date = new Date()): string {
 }
 
 /** A job's days: one day, or the span from the first to the last ("10 – 14 Aug 2026"). */
+/** A day as a chart's axis names it, "13 Oct": the year and the weekday left to the readout. */
+export function formatDayShort(day: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(intlLocale[locale], { day: "numeric", month: "short" }).format(new Date(`${day}T12:00:00`));
+}
+
 export function formatDays(start: string | null, end: string | null, locale: Locale): string {
   const format = new Intl.DateTimeFormat(intlLocale[locale], { day: "numeric", month: "short", year: "numeric" });
   if (start && end && start !== end) return format.formatRange(localDay(start), localDay(end));

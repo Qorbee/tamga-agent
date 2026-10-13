@@ -37,11 +37,11 @@ class Bills(BaseModel):
 
 
 class Totals(BaseModel):
-    """What invoices come to, month by month by their due day: what clients owe, or what is
-    owed to carriers."""
+    """What invoices come to, month by month by their due day: what clients owe, what is owed
+    to carriers, or both side by side with what they leave."""
 
     view: Literal["invoice_totals"]
-    direction: Literal["receivable", "payable"]
+    direction: Literal["both", "receivable", "payable"] = "both"
     # Only what is left to pay on them.
     outstanding: bool = True
     firm: int | None = None

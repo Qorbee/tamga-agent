@@ -78,13 +78,11 @@ export function CallCounts({ decisions, fits }: { decisions: Decision[]; fits?: 
     const call = callOf(decision, fits?.get(decision.id) ?? null).call;
     counts.set(call, (counts.get(call) ?? 0) + 1);
   }
+  // One line that scrolls sideways when it outgrows its row, never two.
   return (
-    <span className="flex flex-wrap gap-1.5">
+    <span className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {COUNTED.filter((call) => counts.has(call)).map((call) => (
-        <span key={call} className="inline-flex items-center gap-1">
-          <span className="text-sm font-medium tabular-nums">{counts.get(call)}</span>
-          <CallPill call={call} />
-        </span>
+        <CallPill key={call} call={call} count={counts.get(call)} />
       ))}
     </span>
   );
