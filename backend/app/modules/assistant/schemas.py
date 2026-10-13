@@ -80,13 +80,31 @@ class CompactionMessage(BaseModel):
     content: dict[str, Any] = {}
 
 
+class TurnContent(BaseModel):
+    # In code's words; none for a turn from before reasons were kept.
+    reason: str | None
+    at: datetime
+
+
+class TurnMessage(BaseModel):
+    """Where Tamga began a turn on its own, carried as an activity message: why, in code's
+    words, and when, so the owner sees what started what follows."""
+
+    id: str
+    role: Literal["activity"] = "activity"
+    activity_type: Literal["tamga_turn"] = Field(
+        default="tamga_turn", serialization_alias="activityType"
+    )
+    content: TurnContent
+
+
 class ChatMessages(BaseModel):
     """A chat's messages as the chat protocol (AG-UI) carries them, oldest first: what a client
     hands its runtime to show the chat. The server keeps its own copy and never reads a client's
     back (ADR-0006)."""
 
     # The protocol's own messages, as its client library types them, and Tamga's cards.
-    messages: list[CardMessage | CompactionMessage | dict[str, Any]]
+    messages: list[CardMessage | CompactionMessage | TurnMessage | dict[str, Any]]
 
 
 class AssistantOut(BaseModel):

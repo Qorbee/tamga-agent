@@ -41,6 +41,8 @@ from app.modules.assistant.schemas import (
     CompactionMessage,
     MemoryChanges,
     RunChoice,
+    TurnContent,
+    TurnMessage,
 )
 from app.modules.assistant.seat import Seat
 from app.modules.companies import service as companies
@@ -193,7 +195,7 @@ async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> Ch
     own, and each card where it was put, as an activity message of its kind. A chat that was
     compacted is shown whole, with a mark where its notes were written."""
     chat = await _chat(db, actor.company_id, chat_id)
-    shown: list[CardMessage | CompactionMessage | dict[str, Any]] = []
+    shown: list[CardMessage | CompactionMessage | TurnMessage | dict[str, Any]] = []
     written: list[ModelMessage] = []
 
     def flush() -> None:
@@ -204,7 +206,22 @@ async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> Ch
         )
         written.clear()
 
-    for row in await repository.rows(db, actor.company_id, chat.id):
+    rows = await repository.rows(db, actor.company_id, chat.id)
+    turns = await repository.run_reasons(
+        db,
+        actor.company_id,
+        list({row.run_id: None for row in rows if row.began_by is Origin.TAMGA}),
+    )
+    begun: set[uuid.UUID] = set()
+    for row in rows:
+        # A turn Tamga took on its own opens with why: what code found, in its words.
+        if row.run_id in turns and row.run_id not in begun:
+            begun.add(row.run_id)
+            flush()
+            reason, at = turns[row.run_id]
+            shown.append(
+                TurnMessage(id=f"turn-{row.run_id}", content=TurnContent(reason=reason, at=at))
+            )
         if row.kind is MessageKind.CARD:
             flush()
             shown.append(

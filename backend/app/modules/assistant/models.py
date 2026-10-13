@@ -192,3 +192,6 @@ class ChatRun(CompanyScoped, Base):
     began_by: Mapped[Origin] = mapped_column(text_enum(Origin, "chat_runs_began_by_check"))
     requests: Mapped[int] = mapped_column(SmallInteger)
     ran_at: Mapped[datetime]
+    # Why Tamga took a turn on its own, in code's words ("3 bills wait for you"): shown above
+    # what it wrote. None for a run someone asked for.
+    reason: Mapped[str | None] = mapped_column(String(200))

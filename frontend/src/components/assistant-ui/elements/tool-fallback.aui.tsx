@@ -27,6 +27,7 @@ import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import { useKeepInPlace } from "@/components/assistant-ui/keep-in-place";
+import { StepResult, useStepLabel } from "@/components/assistant-ui/tool-steps";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -132,11 +133,14 @@ function ToolFallbackDuration({
 function ToolFallbackTrigger({
   toolName,
   status,
+  label: named,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   toolName: string;
   status?: ToolCallMessagePartStatus;
+  /** The step in words, from its call; without it, the tool's own name for it. */
+  label?: string | null;
 }) {
   const { t } = useI18n();
   const statusType = status?.type ?? "complete";
@@ -173,7 +177,7 @@ function ToolFallbackTrigger({
         )}
       >
         {isCancelled ? `${label}: ` : null}
-        {t.assistant.tools[toolName] ?? (
+        {named ?? t.assistant.tools[toolName] ?? (
           <>
             {isCancelled ? null : `${label}: `}
             <b>{toolName}</b>
@@ -734,13 +738,12 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   approval,
   respondToApproval,
 }) => {
-  const isCancelled =
-    status?.type === "incomplete" && status.reason === "cancelled";
   const isRequiresAction = status?.type === "requires-action";
   const shouldRenderApproval =
     isRequiresAction && offersInterruptAction(status, approval, interrupt);
 
   const [open, setOpen] = useState(isRequiresAction);
+  const stepLabel = useStepLabel();
   const [prevRequiresAction, setPrevRequiresAction] =
     useState(isRequiresAction);
   if (isRequiresAction !== prevRequiresAction) {
@@ -750,13 +753,11 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
 
   return (
     <ToolFallbackRoot open={open} onOpenChange={setOpen}>
-      <ToolFallbackTrigger toolName={toolName} status={status} />
+      <ToolFallbackTrigger toolName={toolName} status={status} label={stepLabel(toolName, argsText)} />
       <ToolFallbackContent>
         <ToolFallbackError status={status} />
-        <ToolFallbackArgs
-          argsText={argsText}
-          className={cn(isCancelled && "opacity-60")}
-        />
+        {/* What it found in words; the raw call and result under its "Show details". */}
+        <StepResult toolName={toolName} argsText={argsText} result={result} />
         {shouldRenderApproval && (
           <ToolFallbackApproval
             addResult={addResult}
@@ -767,7 +768,6 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
             status={status}
           />
         )}
-        <ToolFallbackResult result={result} />
       </ToolFallbackContent>
     </ToolFallbackRoot>
   );

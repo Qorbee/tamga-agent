@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { callOf, waits } from "@/components/bill-call";
+import { BrandMark } from "@/components/brand-mark";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry } from "@/components/memory";
@@ -26,8 +27,9 @@ import {
   type CardContent,
   type CardKind,
   type RunItem,
+  type TurnContent,
 } from "@/lib/api";
-import { formatMoneyShort } from "@/lib/format";
+import { formatDate, formatMoneyShort } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 
 /**
@@ -263,6 +265,28 @@ function CompactedHere() {
 
 const Compacted = makeAssistantDataUI({ name: "agui-activity/compaction", render: CompactedHere });
 
+/** Where Tamga began a turn on its own: why, in code's words, and when, so what follows reads
+ * as Tamga's own and the owner sees what set it off. */
+function TurnBegan({ data }: DataMessagePartProps<TurnContent>) {
+  const { t, locale } = useI18n();
+  return (
+    <div data-slot="chat-turn-began" role="separator" className="text-muted-foreground my-3 flex items-center gap-3 text-xs">
+      <span className="bg-border h-px flex-1" />
+      <span className="flex max-w-[80%] items-center gap-1.5 text-center text-pretty">
+        <BrandMark className="size-3.5 shrink-0" />
+        <span>
+          {data.reason ? t.assistant.turnBegan(data.reason) : t.assistant.turnBeganBare}
+          {" · "}
+          {formatDate(new Date(data.at), locale, "dateTime")}
+        </span>
+      </span>
+      <span className="bg-border h-px flex-1" />
+    </div>
+  );
+}
+
+const Began = makeAssistantDataUI<TurnContent>({ name: "agui-activity/tamga_turn", render: TurnBegan });
+
 /** What the chat's `remember` drafted, as a card the owner confirms under Tamga's answer
  * (ADR-0024); until the tool has answered, nothing. */
 const Remembered = makeAssistantToolUI<Record<string, unknown>, unknown>({
@@ -280,6 +304,7 @@ export function ChatCards() {
         <Registered key={kind} />
       ))}
       <Compacted />
+      <Began />
       <Remembered />
       <ShownView />
     </>

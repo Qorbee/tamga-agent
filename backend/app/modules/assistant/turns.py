@@ -462,7 +462,12 @@ async def _speak(company: Company, finding: Finding) -> int:
         if spent >= settings.tamga_requests_per_day:
             return 0
         await repository.add_run(
-            db, company.id, run_id, began_by=Origin.TAMGA, requests=TURN_REQUESTS, at=now
+            db,
+            company.id,
+            run_id,
+            began_by=Origin.TAMGA,
+            requests=TURN_REQUESTS,
+            at=now,
         )
         history = await context.sent(db, company.id, chat.id)
         # The brief's part that changes, after the history and never kept (ADR-0025).
@@ -471,6 +476,8 @@ async def _speak(company: Company, finding: Finding) -> int:
         )
         chat.running_since = now
         chat_id = chat.id
+        # Said at once, not only when the message lands: the owner sees Tamga at work in it.
+        await events.publish(db, company.id, events.EventKind.CHAT, chat_id)
         await db.commit()
 
     seat = Seat(
@@ -540,6 +547,7 @@ async def _speak(company: Company, finding: Finding) -> int:
                 kind=MessageKind.CARD,
             )
             kept.last_message_at = at
+            await repository.give_reason(db, company.id, run_id, finding.title[:200])
             for kind, one in (finding.record, *finding.also):
                 await repository.touch_record(db, kept, kind, one, at, raised=True)
             for opened_kind, opened_id in dict.fromkeys(seat.opened):

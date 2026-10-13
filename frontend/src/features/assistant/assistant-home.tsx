@@ -4,6 +4,7 @@ import { useAuiState } from "@assistant-ui/react";
 import { useEffect } from "react";
 
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
+import { LoaderIcon } from "@/components/icons";
 import { PageHeader } from "@/components/page-header";
 import { markChatRead } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
@@ -29,9 +30,28 @@ export function AssistantHome() {
       <ReadWhenShown />
       <PageHeader title={started ? <ChatTitle /> : undefined} />
       <div className="min-h-0 flex-1">
-        <Thread components={{ Welcome, ComposerTools }} placeholder={t.assistant.placeholder} />
+        <Thread components={{ Welcome, ComposerTools, AfterMessages: WorkingHere }} placeholder={t.assistant.placeholder} />
       </div>
     </div>
+  );
+}
+
+/**
+ * While Tamga writes in the open chat and this page is not the one asking (it began a turn on
+ * its own, or answers someone else), a line says so until the message lands: nothing appears
+ * out of nowhere.
+ */
+function WorkingHere() {
+  const { t } = useI18n();
+  const id = useAuiState((s) => s.threadListItem.id);
+  const answering = useAuiState((s) => s.thread.isRunning);
+  const chat = useChats().data?.items.find((item) => item.id === id);
+  if (!chat?.running || answering) return null;
+  return (
+    <p data-slot="chat-working" className="text-muted-foreground flex items-center gap-2 text-sm" aria-live="polite">
+      <LoaderIcon className="size-3.5 shrink-0 animate-spin [animation-duration:0.8s]" aria-hidden />
+      <span className="shimmer motion-reduce:animate-none">{t.assistant.working}</span>
+    </p>
   );
 }
 

@@ -93,6 +93,8 @@ export type ThreadComponents = {
   TaskGroup?: ComponentType<{ group: ThreadGroupPart }> | undefined;
   /** Shown in the composer beside Send: what the app adds there (the model, how full the chat is). */
   ComposerTools?: ComponentType | undefined;
+  /** Shown under the last message: what the app says is still happening in the chat. */
+  AfterMessages?: ComponentType | undefined;
 };
 
 const messageGroupBy = groupPartByType({
@@ -198,7 +200,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
   autoFocus,
   placeholder,
 }) => {
-  const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
+  const { Welcome = ThreadWelcome, AfterMessages } = useContext(ThreadComponentsContext);
 
   return (
     <ThreadPrimitive.Root
@@ -236,6 +238,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
             <ThreadPrimitive.Messages>
               {() => <ThreadMessage />}
             </ThreadPrimitive.Messages>
+            {AfterMessages ? <AfterMessages /> : null}
           </div>
 
           <ThreadPrimitive.ViewportFooter

@@ -1946,7 +1946,7 @@ export interface components {
          */
         ChatMessages: {
             /** Messages */
-            messages: (components["schemas"]["CardMessage"] | components["schemas"]["CompactionMessage"] | {
+            messages: (components["schemas"]["CardMessage"] | components["schemas"]["CompactionMessage"] | components["schemas"]["TurnMessage"] | {
                 [key: string]: unknown;
             })[];
         };
@@ -4466,6 +4466,38 @@ export interface components {
             language: components["schemas"]["Language"];
             /** Texts */
             texts: string[];
+        };
+        /** TurnContent */
+        TurnContent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * TurnMessage
+         * @description Where Tamga began a turn on its own, carried as an activity message: why, in code's
+         *     words, and when, so the owner sees what started what follows.
+         */
+        TurnMessage: {
+            /**
+             * Activitytype
+             * @default tamga_turn
+             * @constant
+             */
+            activityType: "tamga_turn";
+            content: components["schemas"]["TurnContent"];
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @default activity
+             * @constant
+             */
+            role: "activity";
         };
         /**
          * TypeSource

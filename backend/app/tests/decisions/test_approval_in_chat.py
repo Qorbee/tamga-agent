@@ -15,7 +15,7 @@ from app.packs.logistics import sandbox
 from app.platform.db import open_session
 from app.tests.assistant.test_chats import Script
 from app.tests.assistant.test_chats import model as owner_asks  # noqa: F401  (the fixture)
-from app.tests.assistant.test_turns import chats_of, shown
+from app.tests.assistant.test_turns import cards_in, chats_of, shown
 from app.tests.assistant.test_turns import tamga as tamga  # noqa: F401  (the fixture)
 from app.tests.decisions.test_decisions import Vault, a_sandbox, by_bill
 from app.tests.decisions.test_decisions import vault as vault  # noqa: F401  (the fixture)
@@ -138,9 +138,7 @@ async def test_the_bills_that_wait_together_are_one_message_and_one_card(
     assert len(script.requests) == 1
     [chat] = await chats_of(client)
     assert chat["title"] == f"{len(waiting)} bills to approve"
-    cards = [
-        message for message in await shown(client, chat["id"]) if message["role"] == "activity"
-    ]
+    cards = await cards_in(client, chat["id"])
     assert [card["activityType"] for card in cards] == ["decision_batch"]
     assert set(cards[0]["content"]["ids"]) == {decision["id"] for decision in waiting}
     told = str(script.requests[0])

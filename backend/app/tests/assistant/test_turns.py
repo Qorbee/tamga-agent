@@ -91,6 +91,15 @@ async def shown(client: httpx.AsyncClient, chat_id: str) -> list[dict[str, Any]]
     return list((await client.get(f"/chats/{chat_id}/messages")).json()["messages"])
 
 
+async def cards_in(client: httpx.AsyncClient, chat_id: str) -> list[dict[str, Any]]:
+    """The cards a chat holds, without the lines that say why Tamga began a turn."""
+    return [
+        message
+        for message in await shown(client, chat_id)
+        if message["role"] == "activity" and message["activityType"] != "tamga_turn"
+    ]
+
+
 async def spent(company_id: uuid.UUID, began_by: Origin) -> int:
     async with open_session() as db:
         total = await db.scalar(
@@ -121,16 +130,20 @@ async def test_tamga_writes_first_about_a_project_it_proposes(
     assert chat["origin"] == "tamga" and chat["unread"] is True and chat["running"] is False
     assert chat["title"] == f"{project['number']} · {project['name']}"
     messages = await shown(client, chat["id"])
-    # What code told the run is not a message of the chat; the card comes last, made by code.
+    # What code told the run is not a message of the chat: a line says why the turn began, in
+    # code's words, and the card comes last, made by code.
     assert [message["role"] for message in messages] == [
+        "activity",
         "assistant",
         "tool",
         "assistant",
         "activity",
     ]
-    assert messages[2]["content"].startswith("Stone asks for a truck")
-    assert messages[3]["activityType"] == CardKind.PROJECT_PROPOSAL
-    assert messages[3]["content"]["id"] == project["id"]
+    assert messages[0]["activityType"] == "tamga_turn"
+    assert messages[0]["content"]["reason"] == chat["title"]
+    assert messages[3]["content"].startswith("Stone asks for a truck")
+    assert messages[4]["activityType"] == CardKind.PROJECT_PROPOSAL
+    assert messages[4]["content"]["id"] == project["id"]
 
     # The run only reads, and what was found reached it as data from outside.
     assert {tool.name for tool in script.infos[0].function_tools} == READ_ONLY
@@ -153,6 +166,12 @@ async def test_tamga_writes_first_about_a_project_it_proposes(
     tamga("unused")
     assert await turns.speak_pending() == 0
     assert len(await chats_of(client)) == 1
+
+    # Deleted, the chat takes why the turn began with it; the run stays for the budget.
+    assert (await client.delete(f"/chats/{chat['id']}")).status_code == 204
+    async with open_session() as db:
+        assert await db.scalar(select(func.count()).where(ChatRun.reason.is_not(None))) == 0
+    assert await spent(company_id, Origin.TAMGA) == 2
 
 
 async def test_a_finding_goes_to_the_chat_that_holds_its_project_or_to_a_new_one(
@@ -230,7 +249,7 @@ async def test_a_project_merged_into_another_gives_it_its_place_in_the_chats(
     assert merged.status_code == 200, merged.text
 
     # The card shows the project that stays, not one that is gone.
-    [card] = [each for each in await shown(client, written["id"]) if each["role"] == "activity"]
+    [card] = await cards_in(client, written["id"])
     assert card["content"]["id"] == str(stays.id)
     async with open_session() as db:
         held = (
@@ -450,7 +469,9 @@ async def test_an_answer_that_cannot_be_used_leaves_the_card_alone(
 
     [chat] = await chats_of(client)
     assert chat["unread"] is True and chat["running"] is False
-    [card] = await shown(client, chat["id"])
+    # Why the turn began still opens it: the card alone follows.
+    [began, card] = await shown(client, chat["id"])
+    assert began["activityType"] == "tamga_turn"
     assert card["role"] == "activity" and card["activityType"] == CardKind.PROJECT_PROPOSAL
     # It is not asked again: that would pay again for the same.
     tamga("unused")
@@ -471,6 +492,8 @@ async def test_a_turn_that_fails_leaves_no_chat_and_is_taken_again(
     assert await chats_of(client) == []
     async with open_session() as db:
         assert await db.scalar(select(func.count()).select_from(Chat)) == 0
+        # The run is counted, with no words of the chat that went.
+        assert await db.scalar(select(func.count()).where(ChatRun.reason.is_not(None))) == 0
     assert await spent(company_id, Origin.TAMGA) == 0
 
     tamga("Stone asks for a truck. It looks like a new job.")
@@ -542,7 +565,7 @@ async def test_every_finding_is_reached_however_many_wait(
     # Both were written about, the one that waited longer first.
     written = []
     for chat in sorted(await chats_of(client), key=lambda chat: chat["last_message_at"]):
-        [card] = [each for each in await shown(client, chat["id"]) if each["role"] == "activity"]
+        [card] = await cards_in(client, chat["id"])
         written.append(card["content"]["id"])
     first = await placement_of(company_id, "<order@x>")
     later = await placement_of(company_id, "<later@x>")
@@ -625,8 +648,12 @@ async def test_a_turn_into_a_chat_that_is_nearly_full_compacts_it_first(
     # them in place of the chat.
     [chat] = await chats_of(client)
     assert chat["id"] == chat_id
-    roles = [message["role"] for message in await shown(client, chat_id)]
+    messages = await shown(client, chat_id)
+    roles = [message["role"] for message in messages]
     assert roles[-3:] == ["activity", "assistant", "activity"]
+    # The compaction is no turn of Tamga's own: one line says why it wrote, before its answer.
+    turned = [message for message in messages if message.get("activityType") == "tamga_turn"]
+    assert len(turned) == 1 and messages.index(turned[0]) == len(messages) - 3
     told = script.said(1)
     assert "The owner asked about the new project." in told[0]
     assert "What is the new project?" not in " ".join(told)

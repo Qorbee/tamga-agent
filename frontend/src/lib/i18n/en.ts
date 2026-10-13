@@ -617,6 +617,11 @@ export const en = {
       role: "Your role reads chats and cannot ask.",
     },
     /** What Tamga looked at for an answer, by the name of its tool. */
+    /** Above a turn Tamga took on its own: why, in code's words. */
+    turnBegan: (reason: string) => `Tamga wrote on its own: ${reason}`,
+    turnBeganBare: "Tamga wrote on its own",
+    /** In the open chat while Tamga writes in it for someone else, or on its own. */
+    working: "Tamga is looking into this…",
     tools: {
       waiting: "Looked at what waits for you",
       search: "Searched the records",
@@ -697,6 +702,23 @@ export const en = {
     reasoning: "Reasoning",
     toolCalls: (count: number) => `${count} tool ${count === 1 ? "call" : "calls"}`,
     result: "Result:",
+    /** A tool step as the owner reads it, written by code from the call. */
+    steps: {
+      searched: (query: string) => `Searched “${query}”`,
+      searchedIn: (query: string, where: string) => `Searched “${query}” in ${where}`,
+      latest: "Looked at the latest records",
+      latestIn: (where: string) => `Looked at the latest ${where}`,
+      opened: (what: string) => `Opened ${what}`,
+      openedProject: (number: string) => `Opened project ${number}`,
+      records: { conversation: "a conversation", invoice: "an invoice", file: "a file", firm: "a firm", chat: "a past chat" },
+      sources: { mail: "mail", projects: "projects", invoices: "invoices", files: "files", firms: "firms", memory: "memory", chats: "past chats" },
+      nothing: "nothing matched",
+      unavailable: "could not be searched just now",
+      showDetails: "Show details",
+      hideDetails: "Hide details",
+      showAll: (count: number) => `Show all ${count} lines`,
+      showLess: "Show less",
+    },
     usedTool: "Used tool",
     cancelledTool: "Cancelled tool",
     cancelledReason: "Cancelled reason:",

@@ -91,6 +91,20 @@ async def mark_read(db: AsyncSession, chat: Chat, user_id: uuid.UUID, at: dateti
 
 
 async def delete_chat(db: AsyncSession, chat: Chat) -> None:
+    """The chat and all it holds. Its runs stay, as the budget counts them, but lose why they
+    began: in the chat's words, it goes with the chat."""
+    await db.execute(
+        update(ChatRun)
+        .where(
+            ChatRun.company_id == chat.company_id,
+            ChatRun.id.in_(
+                select(ChatMessage.run_id).where(
+                    ChatMessage.company_id == chat.company_id, ChatMessage.chat_id == chat.id
+                )
+            ),
+        )
+        .values(reason=None)
+    )
     await db.execute(delete(Chat).where(Chat.company_id == chat.company_id, Chat.id == chat.id))
 
 
@@ -376,6 +390,36 @@ async def add_run(
         db,
         ChatRun(id=run_id, company_id=company_id, began_by=began_by, requests=requests, ran_at=at),
     )
+
+
+async def give_reason(
+    db: AsyncSession, company_id: uuid.UUID, run_id: uuid.UUID, reason: str
+) -> None:
+    """Why Tamga took a turn on its own, kept once the turn's messages are: a run that stored
+    nothing keeps no words of a chat."""
+    await db.execute(
+        update(ChatRun)
+        .where(ChatRun.company_id == company_id, ChatRun.id == run_id)
+        .values(reason=reason)
+    )
+
+
+async def run_reasons(
+    db: AsyncSession, company_id: uuid.UUID, run_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[str | None, datetime]]:
+    """Why and when each of these runs Tamga took on its own began, by its id; a run with no
+    reason (a compaction before a turn) is none of them."""
+    if not run_ids:
+        return {}
+    found = await db.execute(
+        select(ChatRun.id, ChatRun.reason, ChatRun.ran_at).where(
+            ChatRun.company_id == company_id,
+            ChatRun.id.in_(run_ids),
+            ChatRun.began_by == Origin.TAMGA,
+            ChatRun.reason.is_not(None),
+        )
+    )
+    return {run_id: (reason, at) for run_id, reason, at in found.all()}
 
 
 async def settle_run(

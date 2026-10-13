@@ -3,6 +3,7 @@ search over every source of the company and of no other, an open that reaches on
 given and never a file's text, helpers that only read and whose claims stand only on quotes code
 finds, and a quiet chat's summary that a later chat's search finds."""
 
+import re
 import uuid
 from collections.abc import Callable
 from datetime import timedelta
@@ -104,6 +105,12 @@ async def test_one_search_reaches_every_source_of_the_company_and_of_no_other(
     assert "Munich hattı is the weekly Munich line" in found
     assert "s1:" in found and "The Munich job" in found
     assert "Elsewhere" not in found
+    # The chat shows each source's hits by its heading and leaves the handles out
+    # (frontend `tool-steps.tsx`): a change to this shape is a change there too.
+    for heading in looking._TITLES.values():
+        assert f"{heading}:\n" in found
+    assert re.search(r"^\[c\d+\] ", found, re.MULTILINE)
+    assert re.search(r"^i\d+: |^f\d+: |^p\d+: |^s\d+: ", found, re.MULTILINE)
     # One source, when the run names it.
     script = model(("search", {"query": "order", "sources": ["files"]}), "One file.")
     await ask(client, await new_chat(client), user("Which files are orders?"))

@@ -447,6 +447,7 @@ export const getAssistant = () => request<Assistant>("/assistant");
 /** The cards Tamga leaves under what it writes, and the record each shows. */
 export type CardKind = Schemas["CardKind"];
 export type CardContent = Schemas["CardContent"];
+export type TurnContent = Schemas["TurnContent"];
 /** A chat's messages as the chat protocol (AG-UI) carries them, oldest first. */
 export const getChatMessages = (id: string) => request<ChatMessages>(`/chats/${id}/messages`);
 /**
