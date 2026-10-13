@@ -11,6 +11,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { BackToMenu } from "@/components/top-bar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,7 @@ export function SearchDialog({
       <DialogContent
         showCloseButton={false}
         // On a phone it is a page of its own, the field at its top, so the keyboard moves nothing.
-        className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-(--app-height,100dvh) max-sm:max-w-none max-sm:translate-x-0 max-sm:rounded-none max-sm:ring-0 sm:max-w-xl"
+        className="top-[12vh] translate-y-0 grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0 max-sm:inset-0 max-sm:h-(--app-height,100dvh) max-sm:max-w-none max-sm:translate-x-0 max-sm:rounded-none max-sm:ring-0 sm:max-w-xl"
       >
         <DialogTitle className="sr-only">{t.search.title}</DialogTitle>
         {/* Mounted per opening, so each search starts empty. */}
@@ -144,9 +145,17 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="flex flex-col max-sm:h-full">
-      <div className="border-border flex flex-col gap-3 border-b px-4 pt-4 pb-3">
-        <div className="flex items-center gap-3">
+    // min-w-0: in the dialog's grid a long chat title would otherwise widen the whole panel past
+    // a phone's screen.
+    <div className="flex min-w-0 flex-col max-sm:h-full">
+      <div className="border-border flex flex-col gap-3 border-b px-4 pt-4 pb-3 max-sm:border-b-0 max-sm:px-3 max-sm:pt-2">
+        {/* A phone's Search is a page: the menu's button and its name, as on every page. */}
+        <div className="flex h-12 items-center gap-2 sm:hidden">
+          <BackToMenu onLeave={onDone} />
+          <span className="flex-1 text-center text-base font-medium">{t.search.title}</span>
+          <span className="size-9" aria-hidden />
+        </div>
+        <div className="flex items-center gap-3 max-sm:border-border max-sm:bg-card max-sm:h-12 max-sm:rounded-2xl max-sm:border max-sm:px-3.5">
           <HugeiconsIcon icon={Search01Icon} strokeWidth={1.75} className="text-muted-foreground size-5 shrink-0" />
           <input
             ref={field}
@@ -166,9 +175,6 @@ function SearchPanel({ onDone }: { onDone: () => void }) {
             onKeyDown={onKeyDown}
             className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-base outline-none"
           />
-          <button type="button" onClick={onDone} className="text-muted-foreground hover:text-foreground text-sm sm:hidden">
-            {t.search.cancel}
-          </button>
         </div>
         <div role="tablist" aria-label={t.search.title} className="flex gap-1 overflow-x-auto">
           {tabs.map((value) => (

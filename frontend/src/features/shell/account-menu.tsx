@@ -17,6 +17,7 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { ApiError, getMe, signOut } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
+import { cn } from "@/lib/utils";
 
 import { useShellActions } from "./shell-actions";
 
@@ -24,7 +25,7 @@ import { useShellActions } from "./shell-actions";
  * The foot of the sidebar: who is signed in and to which company, with Settings and Sign out. When
  * no one is signed in, or the API cannot be reached, it says so in the same place.
  */
-export function AccountMenu() {
+export function AccountMenu({ floating = false }: { floating?: boolean }) {
   const { t, locale } = useI18n();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -49,24 +50,46 @@ export function AccountMenu() {
       <SidebarMenuItem>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              tooltip={label || t.account.menu}
-              aria-label={t.account.menu}
-              className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2"
-            >
-              <Avatar className="size-8">
-                <AvatarFallback className="bg-secondary text-xs font-medium">
-                  {name ? initials(name, locale) : <HugeiconsIcon icon={UserIcon} strokeWidth={1.75} />}
-                </AvatarFallback>
-              </Avatar>
-              <span className="flex min-w-0 flex-1 flex-col text-start">
-                <span className="truncate-fade text-sm font-medium">{label}</span>
-                {me.data ? (
-                  <span className="text-muted-foreground truncate-fade text-xs">{me.data.company.name}</span>
-                ) : null}
-              </span>
-              <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={1.75} className="text-muted-foreground" />
-            </SidebarMenuButton>
+            {floating ? (
+              // A phone's: the initials alone, floating at the drawer's foot.
+              <button
+                type="button"
+                aria-label={t.account.menu}
+                className={cn(
+                  "pointer-events-auto flex h-12 min-w-12 items-center justify-center gap-2 rounded-full text-sm font-medium shadow-lg",
+                  name ? "bg-primary text-primary-foreground" : "bg-card text-foreground px-4",
+                )}
+              >
+                {name ? (
+                  initials(name, locale)
+                ) : (
+                  // Signed out or offline is said, not shown as the same blank icon.
+                  <>
+                    <HugeiconsIcon icon={UserIcon} strokeWidth={1.75} />
+                    {label ? <span className="max-w-40 truncate">{label}</span> : null}
+                  </>
+                )}
+              </button>
+            ) : (
+              <SidebarMenuButton
+                tooltip={label || t.account.menu}
+                aria-label={t.account.menu}
+                className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2"
+              >
+                <Avatar className="size-8">
+                  <AvatarFallback className="bg-secondary text-xs font-medium">
+                    {name ? initials(name, locale) : <HugeiconsIcon icon={UserIcon} strokeWidth={1.75} />}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="flex min-w-0 flex-1 flex-col text-start">
+                  <span className="truncate-fade text-sm font-medium">{label}</span>
+                  {me.data ? (
+                    <span className="text-muted-foreground truncate-fade text-xs">{me.data.company.name}</span>
+                  ) : null}
+                </span>
+                <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={1.75} className="text-muted-foreground" />
+              </SidebarMenuButton>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="min-w-56">
             {user?.email ? (

@@ -31,7 +31,6 @@ export const tr: Dictionary = {
     backTo: { mail: "E-postaya dön", document: "Dosyaya dön", project: "Projeye dön", invoice: "Faturaya dön", run: "Ödeme planına dön" },
   },
   search: {
-    cancel: "Vazgeç",
     title: "Ara",
     placeholder: "Sohbetlerde ve sayfalarda ara…",
     tabs: { all: "Tümü", chats: "Sohbetler", pages: "Sayfalar" },

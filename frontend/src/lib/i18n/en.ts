@@ -35,7 +35,6 @@ export const en = {
     },
   },
   search: {
-    cancel: "Cancel",
     title: "Search",
     placeholder: "Search chats and pages…",
     tabs: { all: "All", chats: "Chats", pages: "Pages" },

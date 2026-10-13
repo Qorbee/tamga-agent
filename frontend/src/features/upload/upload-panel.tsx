@@ -63,8 +63,8 @@ export function UploadPanel() {
   const tooLarge = upload.error instanceof ApiError && upload.error.status === 413;
 
   return (
-    <div className="grid gap-10">
-      <form onSubmit={onSubmit} className="grid gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-10">
+      <form onSubmit={onSubmit} className="grid grid-cols-[minmax(0,1fr)] gap-4">
         <label
           htmlFor="upload-file"
           onDragOver={(event) => {
@@ -181,7 +181,7 @@ function RecentDocuments({ types }: { types: DocumentType[] }) {
   });
 
   return (
-    <section className="grid gap-3">
+    <section className="grid grid-cols-[minmax(0,1fr)] gap-3">
       <h2 className="text-sm font-medium">{t.upload.recent}</h2>
       {documents.isPending ? (
         <Skeleton className="h-24 rounded-2xl" />

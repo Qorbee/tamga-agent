@@ -28,6 +28,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useI18n } from "@/lib/i18n/client";
+import { useMenuSwipe } from "@/lib/use-menu-swipe";
 import { SIDEBAR_SIZE, saveSize } from "@/lib/panel-sizes";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,8 @@ export function AppSidebar({
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
-  const { isMobile, setOpen, setOpenMobile } = useSidebar();
+  const { isMobile, setOpen, openMobile, setOpenMobile } = useSidebar();
+  useMenuSwipe({ enabled: isMobile, open: openMobile, setOpen: setOpenMobile });
   const { openSearch } = useShellActions();
   const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
   const chatOpen = pathname === CHAT_PATH;
@@ -86,6 +88,19 @@ export function AppSidebar({
         </Link>
         <SidebarTrigger className="text-muted-foreground max-md:hidden" />
         {isMobile ? (
+          <button
+            type="button"
+            aria-label={t.search.title}
+            onClick={() => {
+              picked();
+              openSearch();
+            }}
+            className="text-muted-foreground hover:bg-sidebar-accent ms-auto flex size-10 items-center justify-center rounded-full"
+          >
+            <HugeiconsIcon icon={Search01Icon} strokeWidth={1.75} className="size-5" />
+          </button>
+        ) : null}
+        {isMobile ? (
           // A plain button, not an IconButton: the drawer focuses it on opening, and a tooltip
           // would show on a phone with no pointer to move off it.
           <button
@@ -99,10 +114,23 @@ export function AppSidebar({
         ) : null}
       </SidebarHeader>
 
-      <SidebarContent>
+      {/* On a desktop, Search is a field under the name, as the chat apps keep it; collapsed to
+          icons, it is a row like the others; a phone has its icon in the header. */}
+      <div className="px-2 pb-2 max-md:hidden group-data-[collapsible=icon]:hidden">
+        <button
+          type="button"
+          onClick={openSearch}
+          className="border-sidebar-border bg-background text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 flex h-9 w-full items-center gap-2 rounded-lg border px-2.5 text-sm outline-none focus-visible:ring-[3px]"
+        >
+          <HugeiconsIcon icon={Search01Icon} strokeWidth={1.75} className="size-4" />
+          <span className="flex-1 text-start">{t.search.title}</span>
+        </button>
+      </div>
+
+      <SidebarContent className="max-md:pb-24">
         <SidebarGroup className="pt-0">
           <SidebarMenu className="gap-0.5">
-            <SidebarMenuItem>
+            <SidebarMenuItem className="max-md:hidden">
               <ThreadListPrimitive.New asChild>
                 {/* The primitive marks itself active on an empty chat; a button to start one is not
                     a place to be, so it is never highlighted. */}
@@ -116,7 +144,7 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </ThreadListPrimitive.New>
             </SidebarMenuItem>
-            <SidebarMenuItem>
+            <SidebarMenuItem className="hidden group-data-[collapsible=icon]:block">
               <SidebarMenuButton
                 tooltip={t.search.title}
                 onClick={() => {
@@ -162,9 +190,27 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
-        <AccountMenu />
-      </SidebarFooter>
+      {isMobile ? (
+        // A phone's foot floats over the list, as the chat apps keep it: who is signed in, and a
+        // new chat a thumb away.
+        <div className="pointer-events-none absolute inset-x-4 bottom-4 flex items-end justify-between">
+          <AccountMenu floating />
+          <ThreadListPrimitive.New asChild>
+            <button
+              type="button"
+              onClick={openChat}
+              className="bg-foreground text-background pointer-events-auto flex h-12 shrink-0 items-center gap-2 rounded-full px-5 text-base font-medium whitespace-nowrap shadow-lg active:opacity-90"
+            >
+              <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} className="size-5" />
+              {t.chat.newChat}
+            </button>
+          </ThreadListPrimitive.New>
+        </div>
+      ) : (
+        <SidebarFooter>
+          <AccountMenu />
+        </SidebarFooter>
+      )}
 
       <ResizeHandle
         label={t.shell.resizeSidebar}
