@@ -94,6 +94,11 @@ async def count_live_sandboxes(db: AsyncSession, now: datetime) -> int:
     return await repository.count_live_sandboxes(db, now)
 
 
+async def awake_companies(db: AsyncSession, now: datetime) -> list[uuid.UUID]:
+    """The one read across companies of those someone may open today, of their ids alone."""
+    return await repository.awake(db, now)
+
+
 async def expired_sandboxes(db: AsyncSession, now: datetime, *, limit: int) -> list[uuid.UUID]:
     return await repository.expired_sandboxes(db, now, limit)
 

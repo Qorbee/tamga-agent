@@ -15,19 +15,27 @@ from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
 from app.modules.fx import service as fx
 from app.modules.policy import repository, reserve, rules
-from app.modules.policy.models import PaymentMethod, PaymentsRecorded, Policy
+from app.modules.policy.models import (
+    DraftState,
+    PaymentMethod,
+    PaymentsRecorded,
+    Policy,
+    PolicyDraft,
+)
 from app.modules.policy.reserve import ReserveRule
 from app.modules.policy.schemas import (
     Outcome,
     Picture,
     PolicyChange,
+    PolicyDraftOut,
     PolicyIn,
     PolicyOut,
     Result,
 )
 from app.platform import chain
 from app.platform.auth import Actor, Role
-from app.platform.errors import BadRequest
+from app.platform.clock import utcnow
+from app.platform.errors import BadRequest, Conflict, NotFound
 
 # Until the owner sets a policy: every payment is the owner's to approve, and a subcontractor is
 # paid once the client paid.
@@ -91,9 +99,22 @@ async def set_policy(db: AsyncSession, actor: Actor, body: PolicyIn) -> PolicyOu
 async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> PolicyOut:
     """Puts in force a new version with the fields given changed from the version in force as it
     stands under the lock, so a change made elsewhere meanwhile is kept. Commits."""
+    made = await _change(db, actor, body)
+    await db.commit()
+    return made
+
+
+async def _change(db: AsyncSession, actor: Actor, body: PolicyChange) -> PolicyOut:
+    """``change_policy`` without its commit, for a caller that writes more with it."""
     actor.require(Role.OWNER)
     await repository.lock_versions(db, actor.company_id)
     current = await current_policy(db, actor.company_id)
+    body_in_force = _merged(current, body)
+    return await _put_in_force(db, actor.company_id, body_in_force, actor.user_id, commit=False)
+
+
+def _merged(current: PolicyOut, body: PolicyChange) -> PolicyIn:
+    """The version in force with the change's fields put in it."""
     own = [rule for rule in current.reserve_rules if rule.key != body.remove_rule]
     if body.save_rule is not None:
         own = [rule for rule in own if rule.key != body.save_rule.key] + [body.save_rule]
@@ -108,12 +129,86 @@ async def change_policy(db: AsyncSession, actor: Actor, body: PolicyChange) -> P
     if merged.get("payment_weekday") == -1:
         merged["payment_weekday"] = None
     try:
-        body_in_force = PolicyIn.model_validate(merged)
+        return PolicyIn.model_validate(merged)
     except ValidationError as error:
         # The change is valid alone, but not with what it keeps: the default method dropped
         # from the methods, say.
         raise BadRequest(error.errors()[0]["msg"]) from error
-    return await _put_in_force(db, actor.company_id, body_in_force, actor.user_id)
+
+
+async def draft_change(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    change: PolicyChange,
+    *,
+    said: str,
+    chat_id: uuid.UUID | None,
+) -> PolicyDraftOut:
+    """Drafts a change from the owner's words, in force only once the owner confirms it
+    (``confirm_draft``). Refused when it would not hold with the version in force, or changes
+    nothing. Commits."""
+    current = await current_policy(db, company_id)
+    after = _merged(current, change)
+    company = (await companies.get_companies(db, [company_id]))[company_id]
+    if not fx.quotes(company.country, after.currency):
+        raise BadRequest(f"No reference rate for {after.currency}")
+    before = current.model_dump(include=set(PolicyIn.model_fields)) | {
+        "reserve_rule": current.reserve.key
+    }
+    if after.model_dump() == PolicyIn.model_validate(before).model_dump():
+        raise BadRequest("The policy in force already says this")
+    draft = PolicyDraft(
+        company_id=company_id,
+        change=change.model_dump(mode="json", exclude_none=True),
+        said=said[:500],
+        based_on=current.version,
+        chat_id=chat_id,
+    )
+    await repository.add_draft(db, draft)
+    await db.commit()
+    return PolicyDraftOut.model_validate(draft)
+
+
+async def get_draft(db: AsyncSession, actor: Actor, draft_id: uuid.UUID) -> PolicyDraftOut:
+    draft = await repository.get_draft(db, actor.company_id, draft_id)
+    if draft is None:
+        raise NotFound("No such draft")
+    return PolicyDraftOut.model_validate(draft)
+
+
+async def confirm_draft(db: AsyncSession, actor: Actor, draft_id: uuid.UUID) -> PolicyDraftOut:
+    """Puts a drafted change in force over the version in force now: the owner's only, once.
+    The draft and the new version are written together. Commits."""
+    actor.require(Role.OWNER)
+    draft = await _open_draft(db, actor, draft_id)
+    draft.state = DraftState.CONFIRMED
+    draft.decided_by = actor.user_id
+    draft.decided_at = utcnow()
+    made = await _change(db, actor, PolicyChange.model_validate(draft.change))
+    draft.made_version = made.version
+    await db.commit()
+    return PolicyDraftOut.model_validate(draft)
+
+
+async def discard_draft(db: AsyncSession, actor: Actor, draft_id: uuid.UUID) -> PolicyDraftOut:
+    """Drops a drafted change: the owner's only. Commits."""
+    actor.require(Role.OWNER)
+    draft = await _open_draft(db, actor, draft_id)
+    draft.state = DraftState.DISCARDED
+    draft.decided_by = actor.user_id
+    draft.decided_at = utcnow()
+    await db.commit()
+    return PolicyDraftOut.model_validate(draft)
+
+
+async def _open_draft(db: AsyncSession, actor: Actor, draft_id: uuid.UUID) -> PolicyDraft:
+    """The draft, locked; refused once answered, so a second tap never makes a second version."""
+    draft = await repository.get_draft(db, actor.company_id, draft_id, for_update=True)
+    if draft is None:
+        raise NotFound("No such draft")
+    if draft.state is not DraftState.DRAFT:
+        raise Conflict(f"This draft was {draft.state.value} already")
+    return draft
 
 
 async def seed_policy(db: AsyncSession, company_id: uuid.UUID, body: PolicyIn) -> None:
@@ -128,7 +223,12 @@ async def seed_policy(db: AsyncSession, company_id: uuid.UUID, body: PolicyIn) -
 
 
 async def _put_in_force(
-    db: AsyncSession, company_id: uuid.UUID, body: PolicyIn, created_by: uuid.UUID | None
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    body: PolicyIn,
+    created_by: uuid.UUID | None,
+    *,
+    commit: bool = True,
 ) -> PolicyOut:
     """Under the caller's lock on the company's versions."""
     company = (await companies.get_companies(db, [company_id]))[company_id]
@@ -155,7 +255,8 @@ async def _put_in_force(
         created_by=created_by,
     )
     await repository.add(db, policy)
-    await db.commit()
+    if commit:
+        await db.commit()
     return PolicyOut.model_validate(policy)
 
 

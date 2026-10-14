@@ -289,6 +289,7 @@ function HowYouPaySection() {
   return (
     <section className="flex flex-col">
       <h3 className="pb-2 text-base font-medium">{words.title}</h3>
+      {current.version === 0 ? <p className="text-muted-foreground pb-2 text-sm">{words.defaults}</p> : null}
       <MethodsField
         methods={current.methods}
         first={current.default_method}
@@ -315,6 +316,20 @@ function HowYouPaySection() {
             ))}
           </SelectContent>
         </Select>
+      </Row>
+      <Row label={words.payWhenPaid} hint={words.payWhenPaidHint}>
+        <Segmented
+          options={[
+            { value: "yes", label: t.assistant.policyDraft.yes },
+            { value: "no", label: t.assistant.policyDraft.no },
+          ]}
+          value={current.pay_when_paid ? "yes" : "no"}
+          label={words.payWhenPaid}
+          disabled={!owner || change.isPending}
+          onChange={(chosen) => {
+            if ((chosen === "yes") !== current.pay_when_paid) change.mutate({ pay_when_paid: chosen === "yes" });
+          }}
+        />
       </Row>
       <Row label={words.limit} hint={words.limitHint}>
         <form

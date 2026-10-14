@@ -51,6 +51,8 @@ class CardKind(StrEnum):
     # The bills that waited for the owner's approval when Tamga wrote, together: the first
     # one's decision id, and every one's id and evaluation.
     DECISION_BATCH = "decision_batch"
+    # The morning brief: where the money stands as the card is read, the day's id.
+    MORNING_BRIEF = "morning_brief"
 
 
 class Chat(CompanyScoped, Base):

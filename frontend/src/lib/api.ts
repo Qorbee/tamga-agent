@@ -262,9 +262,15 @@ export type Policy = Schemas["PolicyOut"];
 export const getPolicy = () => request<Policy>("/policy");
 /** A new version of the policy with only these fields changed from the one in force: the owner's
  * only. */
-export const changePolicy = (body: Schemas["PolicyChange"]) =>
+export const changePolicy = (body: Schemas["PolicyChange-Input"]) =>
   request<Policy>("/policy", json("PATCH", body));
-export type PolicyChange = Schemas["PolicyChange"];
+export type PolicyChange = Schemas["PolicyChange-Input"];
+export type PolicyDraft = Schemas["PolicyDraftOut"];
+/** A change to the policy drafted in a chat, and whether the owner answered it. */
+export const getPolicyDraft = (id: string) => request<PolicyDraft>(`/policy/drafts/${id}`);
+/** Puts the drafted change in force over the version in force now: the owner's only. */
+export const confirmPolicyDraft = (id: string) => request<PolicyDraft>(`/policy/drafts/${id}/confirm`, json("POST", {}));
+export const discardPolicyDraft = (id: string) => request<PolicyDraft>(`/policy/drafts/${id}/discard`, json("POST", {}));
 export type PaymentMethod = Schemas["PaymentMethod"];
 export type ReserveRule = Schemas["ReserveRule-Output"];
 /** The currencies the company's official reference rates convert, the base first. */

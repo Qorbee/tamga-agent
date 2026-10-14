@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -7,7 +8,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.policy import reserve
-from app.modules.policy.models import PaymentMethod, PaymentsRecorded
+from app.modules.policy.models import DraftState, PaymentMethod, PaymentsRecorded
 from app.modules.policy.reserve import ReserveRule
 
 
@@ -83,6 +84,21 @@ class PolicyChange(BaseModel):
     remove_rule: str | None = None
     # -1 clears it: any day.
     payment_weekday: int | None = Field(default=None, ge=-1, le=6)
+
+
+class PolicyDraftOut(BaseModel):
+    """A change to the policy drafted in a chat, waiting for the owner or answered."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    state: DraftState
+    said: str
+    change: PolicyChange
+    based_on: int
+    made_version: int | None
+    created_at: datetime
+    decided_at: datetime | None
 
 
 # What the hard rules read and give (rules.py)

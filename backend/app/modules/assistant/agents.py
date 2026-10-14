@@ -44,6 +44,8 @@ CONVERSATION: Final = linking.CONVERSATION
 DECISION: Final = "decision"
 # A sandbox's opening, by its first job: Tamga welcomes whoever opened it, once.
 OPENING: Final = "opening"
+# A morning brief, by an id made of the company and its day: Tamga writes one a day.
+BRIEF: Final = "brief"
 # What `waiting` lists of each kind: enough to say what is there, few enough to read.
 _LISTED: Final = 20
 # The projects something can wait in. One the owner rejected keeps the links suggested to it,
@@ -98,6 +100,10 @@ in against what goes out is one view of both, never two.
 - remember: drafts one thing the owner teaches you, for every later chat. Use it when the owner \
 tells you a term, a nickname, who someone is or how they want things done, and asks you to keep \
 it or plainly means it to hold. It waits for the owner's confirmation on its card.
+- draft_policy: drafts a change to how the company pays when the owner states a rule of theirs: \
+a limit above which they approve, paying carriers only once the client paid, the cash kept back, \
+the day they pay on, how bills are paid. Only the rules they spoke of. Nothing changes until \
+they confirm it on its card; say so, and do not repeat the card's before and after.
 - answer_link, put_on_truck, answer_conversation, move_conversation, create_project, \
 update_project, and a truck's answer_truck and add_truck: the draft tools.
 

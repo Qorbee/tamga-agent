@@ -76,3 +76,36 @@ class Policy(CompanyScoped, Base):
     payment_weekday: Mapped[int | None]
     created_by: Mapped[uuid.UUID | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class DraftState(StrEnum):
+    # Drafted from the owner's words in a chat: nothing reads it until the owner confirms it.
+    DRAFT = "draft"
+    # Confirmed: it made a new version of the policy.
+    CONFIRMED = "confirmed"
+    DISCARDED = "discarded"
+
+
+class PolicyDraft(CompanyScoped, Base):
+    """A change to the policy drafted from the owner's words in a chat (ADR-0002: agents
+    propose): only the fields it changes, applied to the version in force when the owner
+    confirms it, so a change made meanwhile elsewhere is kept."""
+
+    __tablename__ = "policy_drafts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    # A ``PolicyChange``: only the fields it changes.
+    change: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # The owner's words it was drafted from, as the chat model quoted them.
+    said: Mapped[str] = mapped_column(String(500))
+    state: Mapped[DraftState] = mapped_column(
+        text_enum(DraftState, "policy_drafts_state_check", length=10),
+        server_default=DraftState.DRAFT.value,
+    )
+    # The version in force when it was drafted, and the one confirming it made.
+    based_on: Mapped[int]
+    made_version: Mapped[int | None]
+    chat_id: Mapped[uuid.UUID | None]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    decided_by: Mapped[uuid.UUID | None]
+    decided_at: Mapped[datetime | None]

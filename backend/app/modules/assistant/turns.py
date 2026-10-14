@@ -25,7 +25,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from itertools import batched
 from typing import Any, Final
 
@@ -38,6 +38,8 @@ from app.config import get_settings
 from app.modules.assistant import agents, context, repository, service
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.seat import Seat
+from app.modules.books import service as books
+from app.modules.books.models import InvoiceDirection
 from app.modules.books.schemas import InvoiceOut
 from app.modules.companies import service as companies
 from app.modules.companies.models import Company, CompanyMode
@@ -46,7 +48,9 @@ from app.modules.decisions.schemas import DecisionOut
 from app.modules.linking import service as linking
 from app.modules.linking.models import Outcome
 from app.modules.linking.schemas import PlacementOut
+from app.modules.money import service as money
 from app.modules.playground import service as playground
+from app.modules.policy import service as policy
 from app.modules.projects import service as projects
 from app.modules.projects.models import Project, ProjectStatus
 from app.platform import chain, clock, events, llm
@@ -96,6 +100,14 @@ _APPROVALS: Final = (
 ADVICE_WAIT: Final = timedelta(minutes=15)
 # The most bills one message and its card hold: what one approval of the card can answer.
 BATCH: Final = 50
+# From this hour of a company's business day (UTC, nine in Turkey), Tamga writes its brief.
+BRIEF_HOUR: Final = 6
+_BRIEF: Final = (
+    "\nIt is the start of the owner's day. Write a short good morning, three sentences at most: "
+    "what matters today in these numbers and what you would look at first. Open a project or a "
+    "bill only if one needs them today. The numbers are the code's; never work out others. A "
+    "card under your message shows where the money stands, so do not list every figure."
+)
 _QUESTION: Final = (
     "\nRead the conversation and open the projects it could belong to. Then write the owner "
     "a short message: what the conversation is about, what speaks for each project, and "
@@ -133,6 +145,8 @@ async def speak_pending() -> int:
             set(await linking.companies_awaiting_owner(db))
             | set(await decisions.companies_awaiting_owner(db))
             | set(await playground.just_opened(db))
+            # Each is due its morning brief once a day.
+            | set(await companies.awake_companies(db, utcnow()))
         )
     written = 0
     for company_id in company_ids:
@@ -163,6 +177,7 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
     """What waits for the owner and Tamga has not written about: bills to approve first, then
     the oldest placements first. A sandbox that just opened is welcomed before anything."""
     findings = [*await _opening(db, company_id), *await _approvals(db, company_id)]
+    company = (await companies.get_companies(db, [company_id]))[company_id]
     waiting: list[PlacementOut] = []
     # Every page of them: the list comes newest first, and the oldest is written about first.
     while True:
@@ -242,7 +257,70 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
                     card={"kind": CardKind.CONVERSATION_QUESTION.value, "id": str(item.id)},
                 )
             )
-    return findings
+    # Last: what waits for an answer comes before the day's numbers.
+    return [*findings, *await _morning(db, company)]
+
+
+def brief_id(company_id: uuid.UUID, day: date) -> uuid.UUID:
+    """A brief's record: one a company a day."""
+    return uuid.uuid5(company_id, day.isoformat())
+
+
+async def _morning(db: AsyncSession, company: Company) -> list[Finding]:
+    """The day's brief, once its business morning came: the money's numbers, worked out by
+    code, for a few words of the model's. Not on the day a company opens, when Tamga already
+    met the owner, and in the chat of the week's briefs while there is one."""
+    now = clock.now(company)
+    today = now.date()
+    if now.hour < BRIEF_HOUR or today <= company.created_at.date():
+        return []
+    record_id = brief_id(company.id, today)
+    if await repository.raised(db, company.id, agents.BRIEF, [record_id]):
+        return []
+    return [
+        Finding(
+            record=(agents.BRIEF, record_id),
+            also=(),
+            # The week's chat: the earlier briefs of the same week, Monday on, so a chat holds
+            # one week and the next Monday opens another.
+            related=tuple(
+                (agents.BRIEF, brief_id(company.id, today - timedelta(days=back)))
+                for back in range(1, today.weekday() + 1)
+            ),
+            title="Morning brief",
+            prompt=_told(
+                "the company's money this morning", await _figures(db, company, today), _BRIEF
+            ),
+            card={"kind": CardKind.MORNING_BRIEF.value, "id": str(record_id)},
+        )
+    ]
+
+
+async def _figures(db: AsyncSession, company: Company, today: date) -> list[str]:
+    """The brief's numbers, in the policy's currency where they are one sum; amounts in other
+    currencies are said apart, never added up."""
+    actor = Actor.of_tamga(company.id)
+    currency = (await policy.current_policy(db, company.id)).currency
+    held = await money.holdings_of(db, company.id, currency)
+    waiting = await decisions.awaiting_owner(db, company.id)
+
+    async def owed(direction: InvoiceDirection, before: date) -> str:
+        totals = await books.invoice_totals(
+            db, actor, books.InvoiceFilter(direction=direction, outstanding=True, due_before=before)
+        )
+        return "; ".join(f"{t.remaining_amount} {t.currency} ({t.count})" for t in totals) or "none"
+
+    week = today + timedelta(days=8)
+    return [
+        f"Today: {today.isoformat()}",
+        "In the bank and cash accounts: "
+        + (f"{held.total} {currency}" if held.items else "no balance known")
+        + ("" if held.complete else " (an account with no rate is left out)"),
+        f"Bills that wait for the owner's approval: {len(waiting)}",
+        f"Bills to pay due by {week.isoformat()}: {await owed(InvoiceDirection.PAYABLE, week)}",
+        f"Clients' invoices due by then: {await owed(InvoiceDirection.RECEIVABLE, week)}",
+        f"Clients' invoices overdue: {await owed(InvoiceDirection.RECEIVABLE, today)}",
+    ]
 
 
 async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
@@ -382,7 +460,7 @@ async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> 
     """Whether what was found still waits for the owner, who may have answered it on a page
     while the model wrote."""
     kind, record_id = finding.record
-    if kind == agents.OPENING:
+    if kind in (agents.OPENING, agents.BRIEF):
         return True
     if kind == agents.DECISION:
         ids = [record_id for _, record_id in (finding.record, *finding.also)]

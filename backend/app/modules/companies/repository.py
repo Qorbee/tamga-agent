@@ -2,11 +2,11 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.companies.models import Company, CompanyDomain, CompanyKind
+from app.modules.companies.models import Company, CompanyDomain, CompanyKind, CompanyMode
 from app.platform.language import Language
 
 
@@ -109,3 +109,14 @@ async def forget_domain_word(db: AsyncSession, company_id: uuid.UUID, domain: st
             CompanyDomain.company_id == company_id, CompanyDomain.domain == domain
         )
     )
+
+
+async def awake(db: AsyncSession, now: datetime) -> list[uuid.UUID]:
+    """The companies someone may open today: not a replay, and not a sandbox past its time."""
+    rows = await db.scalars(
+        select(Company.id).where(
+            Company.mode != CompanyMode.REPLAY,
+            or_(Company.kind != CompanyKind.SANDBOX, Company.expires_at > now),
+        )
+    )
+    return list(rows)

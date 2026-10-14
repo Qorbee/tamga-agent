@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -10,12 +11,14 @@ from sqlalchemy import func, select, text
 from app.config import get_settings
 from app.modules.assistant import agents, service, turns
 from app.modules.assistant.models import CardKind, Chat, ChatMessage, ChatRecord, ChatRun, Origin
+from app.modules.companies import service as companies
 from app.modules.conversations.models import ThreadCategory
 from app.modules.linking import service as linking
 from app.modules.projects import service as projects
 from app.modules.projects.models import FieldSource, ProjectStatus
 from app.platform import llm
 from app.platform.auth import Actor
+from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import PermissionDenied
 from app.tests.assistant.test_chats import Script, Step, ask, events, user, words
@@ -686,3 +689,46 @@ async def test_the_actor_of_tamgas_own_turns_changes_nothing(client: httpx.Async
             )
         # It reads what the company holds.
         assert (await projects.get_project(db, actor, made.id)).name == "A job"
+
+
+async def test_each_morning_tamga_writes_a_brief_of_codes_numbers_in_one_chat(
+    client: httpx.AsyncClient,
+    tamga: Callable[..., Script],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(turns, "BRIEF_HOUR", 0)
+    company_id = await guest_client(client)
+    script = tamga("Good morning: nothing waits for you, and no bill is due this week.")
+    # Not on the day the company opens: Tamga already met the owner.
+    assert await turns.speak_pending() == 0
+
+    async def skip(days: int) -> None:
+        async with open_session() as db:
+            await companies.advance_clock(db, company_id, timedelta(days=days))
+            await db.commit()
+
+    # To a Tuesday, so the next day is in the same week.
+    await skip(1 + (1 - (utcnow() + timedelta(days=1)).weekday()) % 7)
+    assert await turns.speak_pending() == 1
+    # Once a day.
+    assert await turns.speak_pending() == 0
+    [chat] = await chats_of(client)
+    assert chat["title"] == "Morning brief"
+    [card] = await cards_in(client, chat["id"])
+    assert card["activityType"] == CardKind.MORNING_BRIEF
+    # The numbers the model is given are code's.
+    [told] = script.said(0)
+    assert "Bills that wait for the owner's approval: 0" in told
+    assert "Clients' invoices overdue: none" in told
+
+    script = tamga("Good morning again.")
+    await skip(1)
+    assert await turns.speak_pending() == 1
+    # The next day's goes to the same chat; the next week's to one of its own.
+    [again] = await chats_of(client)
+    assert again["id"] == chat["id"]
+    assert len(await cards_in(client, chat["id"])) == 2
+    tamga("A new week.")
+    await skip(6)
+    assert await turns.speak_pending() == 1
+    assert len(await chats_of(client)) == 2

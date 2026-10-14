@@ -11,6 +11,8 @@ import { BrandMark } from "@/components/brand-mark";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry } from "@/components/memory";
+import { MoneyTiles } from "@/components/money-tiles";
+import { PolicyDraftCard } from "@/components/policy-draft";
 
 import { ShownView } from "./views";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -239,6 +241,17 @@ function Card({ pending, error, children }: { pending: boolean; error: unknown; 
   );
 }
 
+/** The morning brief's card: where the money stands as it is read, the home's own tiles. */
+function BriefCard() {
+  const { t } = useI18n();
+  return (
+    <div data-slot="chat-card" className="my-3 flex flex-col gap-2">
+      <p className="text-muted-foreground text-xs">{t.assistant.cards.briefNow}</p>
+      <MoneyTiles />
+    </div>
+  );
+}
+
 /** The chat protocol's activity messages reach the thread as data parts under this prefix. */
 const card = (kind: CardKind, render: (props: DataMessagePartProps<CardContent>) => ReactNode): AssistantDataUI =>
   makeAssistantDataUI<CardContent>({ name: `agui-activity/${kind}`, render });
@@ -249,6 +262,7 @@ const CARDS: Record<CardKind, AssistantDataUI> = {
   conversation_question: card("conversation_question", QuestionCard),
   decision_approval: card("decision_approval", ApprovalCard),
   decision_batch: card("decision_batch", BatchCard),
+  morning_brief: card("morning_brief", BriefCard),
 };
 
 /** Where the chat was compacted: above it Tamga works from notes, and every message is still here. */
@@ -296,6 +310,13 @@ const Remembered = makeAssistantToolUI<Record<string, unknown>, unknown>({
   render: ({ result }) => (result === undefined ? null : <DraftedEntry result={result} />),
 });
 
+/** What the chat's `draft_policy` drafted, as a card the owner confirms under Tamga's answer. */
+const PolicyDrafted = makeAssistantToolUI<Record<string, unknown>, unknown>({
+  toolName: "draft_policy",
+  display: "standalone",
+  render: ({ result }) => (result === undefined ? null : <PolicyDraftCard result={result} />),
+});
+
 /** Registers the cards and the mark with the chat; rendered once, inside the chat's runtime. */
 export function ChatCards() {
   return (
@@ -306,6 +327,7 @@ export function ChatCards() {
       <Compacted />
       <Began />
       <Remembered />
+      <PolicyDrafted />
       <ShownView />
     </>
   );

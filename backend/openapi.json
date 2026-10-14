@@ -416,7 +416,8 @@
           "project_proposal",
           "conversation_question",
           "decision_approval",
-          "decision_batch"
+          "decision_batch",
+          "morning_brief"
         ],
         "title": "CardKind",
         "type": "string"
@@ -2530,6 +2531,15 @@
           "owner"
         ],
         "title": "DomainSource",
+        "type": "string"
+      },
+      "DraftState": {
+        "enum": [
+          "draft",
+          "confirmed",
+          "discarded"
+        ],
+        "title": "DraftState",
         "type": "string"
       },
       "EventKind": {
@@ -6162,7 +6172,7 @@
         "title": "PlateSource",
         "type": "object"
       },
-      "PolicyChange": {
+      "PolicyChange-Input": {
         "description": "A new version of the company's policy with only these fields changed from the one in force\nwhen it is written: a screen that shows one setting never writes back another's stale value.",
         "properties": {
           "approval_limit": {
@@ -6303,6 +6313,204 @@
           }
         },
         "title": "PolicyChange",
+        "type": "object"
+      },
+      "PolicyChange-Output": {
+        "description": "A new version of the company's policy with only these fields changed from the one in force\nwhen it is written: a screen that shows one setting never writes back another's stale value.",
+        "properties": {
+          "approval_limit": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,15}0*$)\\d{0,12}\\.\\d{0,2}0*$)",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Limit"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "default_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentMethod"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Methods"
+          },
+          "pay_when_paid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pay When Paid"
+          },
+          "payment_weekday": {
+            "anyOf": [
+              {
+                "maximum": 6.0,
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Weekday"
+          },
+          "payments_recorded": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentsRecorded"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remainder_tolerance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainder Tolerance"
+          },
+          "remove_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remove Rule"
+          },
+          "reserve_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Rule"
+          },
+          "save_rule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReserveRule-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PolicyChange",
+        "type": "object"
+      },
+      "PolicyDraftOut": {
+        "description": "A change to the policy drafted in a chat, waiting for the owner or answered.",
+        "properties": {
+          "based_on": {
+            "title": "Based On",
+            "type": "integer"
+          },
+          "change": {
+            "$ref": "#/components/schemas/PolicyChange-Output"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "made_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Made Version"
+          },
+          "said": {
+            "title": "Said",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DraftState"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "said",
+          "change",
+          "based_on",
+          "made_version",
+          "created_at",
+          "decided_at"
+        ],
+        "title": "PolicyDraftOut",
         "type": "object"
       },
       "PolicyIn": {
@@ -13569,7 +13777,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PolicyChange"
+                "$ref": "#/components/schemas/PolicyChange-Input"
               }
             }
           },
@@ -13648,6 +13856,153 @@
           }
         ],
         "summary": "Set Policy",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/policy/drafts/{draft_id}": {
+      "get": {
+        "description": "A change to the policy drafted in a chat, and whether the owner answered it.",
+        "operationId": "policy.get_policy_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDraftOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Policy Draft",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/policy/drafts/{draft_id}/confirm": {
+      "post": {
+        "description": "Puts the drafted change in force over the version in force now: the owner's only.",
+        "operationId": "policy.confirm_policy_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDraftOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Confirm Policy Draft",
+        "tags": [
+          "policy"
+        ]
+      }
+    },
+    "/policy/drafts/{draft_id}/discard": {
+      "post": {
+        "description": "Drops the drafted change: the owner's only.",
+        "operationId": "policy.discard_policy_draft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyDraftOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Discard Policy Draft",
         "tags": [
           "policy"
         ]

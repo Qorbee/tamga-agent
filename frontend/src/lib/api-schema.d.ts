@@ -1263,6 +1263,66 @@ export interface paths {
         patch: operations["policy.change_policy"];
         trace?: never;
     };
+    "/policy/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Policy Draft
+         * @description A change to the policy drafted in a chat, and whether the owner answered it.
+         */
+        get: operations["policy.get_policy_draft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policy/drafts/{draft_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Policy Draft
+         * @description Puts the drafted change in force over the version in force now: the owner's only.
+         */
+        post: operations["policy.confirm_policy_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policy/drafts/{draft_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard Policy Draft
+         * @description Drops the drafted change: the owner's only.
+         */
+        post: operations["policy.discard_policy_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/policy/reserve-presets": {
         parameters: {
             query?: never;
@@ -1831,7 +1891,7 @@ export interface components {
          *     is about says which record its id names.
          * @enum {string}
          */
-        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch";
+        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch" | "morning_brief";
         /**
          * CardMessage
          * @description A card code put in a chat, carried as the chat protocol's activity message. A client
@@ -2527,6 +2587,11 @@ export interface components {
          * @enum {string}
          */
         DomainSource: "mailbox" | "sent_mail" | "registry" | "owner";
+        /**
+         * DraftState
+         * @enum {string}
+         */
+        DraftState: "draft" | "confirmed" | "discarded";
         /**
          * EventKind
          * @enum {string}
@@ -3733,7 +3798,7 @@ export interface components {
          * @description A new version of the company's policy with only these fields changed from the one in force
          *     when it is written: a screen that shows one setting never writes back another's stale value.
          */
-        PolicyChange: {
+        "PolicyChange-Input": {
             /** Approval Limit */
             approval_limit?: number | string | null;
             /** Currency */
@@ -3753,6 +3818,58 @@ export interface components {
             /** Reserve Rule */
             reserve_rule?: string | null;
             save_rule?: components["schemas"]["ReserveRule-Input"] | null;
+        };
+        /**
+         * PolicyChange
+         * @description A new version of the company's policy with only these fields changed from the one in force
+         *     when it is written: a screen that shows one setting never writes back another's stale value.
+         */
+        "PolicyChange-Output": {
+            /** Approval Limit */
+            approval_limit?: string | null;
+            /** Currency */
+            currency?: string | null;
+            default_method?: components["schemas"]["PaymentMethod"] | null;
+            /** Methods */
+            methods?: components["schemas"]["PaymentMethod"][] | null;
+            /** Pay When Paid */
+            pay_when_paid?: boolean | null;
+            /** Payment Weekday */
+            payment_weekday?: number | null;
+            payments_recorded?: components["schemas"]["PaymentsRecorded"] | null;
+            /** Remainder Tolerance */
+            remainder_tolerance?: string | null;
+            /** Remove Rule */
+            remove_rule?: string | null;
+            /** Reserve Rule */
+            reserve_rule?: string | null;
+            save_rule?: components["schemas"]["ReserveRule-Output"] | null;
+        };
+        /**
+         * PolicyDraftOut
+         * @description A change to the policy drafted in a chat, waiting for the owner or answered.
+         */
+        PolicyDraftOut: {
+            /** Based On */
+            based_on: number;
+            change: components["schemas"]["PolicyChange-Output"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Made Version */
+            made_version: number | null;
+            /** Said */
+            said: string;
+            state: components["schemas"]["DraftState"];
         };
         /**
          * PolicyIn
@@ -7134,7 +7251,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PolicyChange"];
+                "application/json": components["schemas"]["PolicyChange-Input"];
             };
         };
         responses: {
@@ -7145,6 +7262,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PolicyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "policy.get_policy_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyDraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "policy.confirm_policy_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyDraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "policy.discard_policy_draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyDraftOut"];
                 };
             };
             /** @description Validation Error */
