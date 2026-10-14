@@ -54,7 +54,7 @@ class Policy(CompanyScoped, Base):
     pay_when_paid: Mapped[bool]
     payments_recorded: Mapped[PaymentsRecorded] = mapped_column(
         text_enum(PaymentsRecorded, "policies_payments_recorded_check"),
-        server_default=PaymentsRecorded.ON_ACCOUNT.value,
+        server_default=PaymentsRecorded.PER_INVOICE.value,
     )
     # A remainder at or under this percentage of an invoice's total reads paid, with a difference
     # (a bank fee, a rate difference).

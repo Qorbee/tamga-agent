@@ -6565,7 +6565,7 @@
           },
           "payments_recorded": {
             "$ref": "#/components/schemas/PaymentsRecorded",
-            "default": "on_account"
+            "default": "per_invoice"
           },
           "remainder_tolerance": {
             "anyOf": [

@@ -38,7 +38,8 @@ export const THEME_SCRIPT = `(() => {
 export function applyTheme(theme: Theme): void {
   document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=31536000; samesite=lax`;
   const hold = document.createElement("style");
-  hold.textContent = "*,*::before,*::after{transition:none!important}";
+  // All but a selector's sliding part, which is the theme picker's own answer to the tap.
+  hold.textContent = "*:not([data-slot=segment-slide]),*::before,*::after{transition:none!important}";
   document.head.appendChild(hold);
 
   const root = document.documentElement;

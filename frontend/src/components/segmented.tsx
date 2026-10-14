@@ -42,7 +42,7 @@ export function Segmented<T extends string>(
 ) {
   const { options, label, fill = false, size = "sm", disabled, className } = props;
   const single = !props.multiple;
-  const { track: trackRef, place, sliding } = useSlide(single ? (props.value ?? null) : null);
+  const { track: trackRef, place } = useSlide(single ? (props.value ?? null) : null);
   const items = options.map((option) => {
     const item = (
       <ToggleGroupItem
@@ -57,6 +57,8 @@ export function Segmented<T extends string>(
           "text-muted-foreground hover:text-foreground h-auto min-h-7 rounded-[0.6rem] border border-transparent px-3 py-1 hover:bg-transparent",
           "aria-checked:bg-segment aria-checked:border-segment-border aria-checked:text-foreground aria-checked:shadow-xs",
           "aria-pressed:bg-segment aria-pressed:border-segment-border aria-pressed:text-foreground aria-pressed:shadow-xs",
+          // The toggle's own "on" fill (the track's grey) never shows: chosen is the raised white.
+          "data-[state=on]:bg-transparent data-[state=on]:aria-pressed:bg-segment data-[state=on]:aria-checked:bg-segment",
           // Once the sliding part is placed, it is the chosen option's ground: nothing of the
           // option's own covers it, the toggle's "on" fill included (an option with a hint has
           // the tooltip's state instead, which is why one without showed the bug).
@@ -111,9 +113,10 @@ export function Segmented<T extends string>(
       {place ? (
         <span
           aria-hidden
+          data-slot="segment-slide"
           className={cn(
             "bg-segment border-segment-border pointer-events-none absolute top-0 left-0 rounded-[0.6rem] border shadow-xs",
-            sliding && "transition-[translate,width,height] duration-250 ease-out motion-reduce:transition-none",
+            place.slide && "transition-[translate,width,height] duration-250 ease-out motion-reduce:transition-none",
           )}
           style={{ translate: `${place.x}px ${place.y}px`, width: place.width, height: place.height }}
         />
@@ -123,37 +126,45 @@ export function Segmented<T extends string>(
   );
 }
 
-type Place = { x: number; y: number; width: number; height: number };
+type Place = { x: number; y: number; width: number; height: number; slide: boolean };
 
 /**
- * Where the chosen option sits in its track, measured after layout and again when the track
- * changes size; `sliding` turns on only after the first placement, so a selector that appears
- * never slides in from the corner.
+ * Where the chosen option sits in its track, measured after layout. It slides only when the
+ * choice changes while shown; anything else that moves it (the track resized, its labels in
+ * another language, a part of Settings shown again) puts it in place at once.
  */
 function useSlide(value: string | null) {
   const track = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<Place | null>(null);
-  const [sliding, setSliding] = useState(false);
+  // The choice last placed while the track was shown.
+  const placed = useRef<string | null>(null);
   useLayoutEffect(() => {
     const root = track.current;
     if (!root) return;
-    const measure = () => {
+    const measure = (chose: boolean) => {
       const chosen = root.querySelector<HTMLElement>("[aria-checked=true]");
-      setPlace(
-        chosen
-          ? { x: chosen.offsetLeft, y: chosen.offsetTop, width: chosen.offsetWidth, height: chosen.offsetHeight }
-          : null,
+      // Hidden (a part of Settings not shown): nothing to measure until it shows.
+      if (!chosen || root.offsetWidth === 0) return;
+      const slide = chose && placed.current !== null && placed.current !== value;
+      placed.current = value;
+      const next = { x: chosen.offsetLeft, y: chosen.offsetTop, width: chosen.offsetWidth, height: chosen.offsetHeight };
+      // A resize that moved nothing leaves a slide under way to finish.
+      setPlace((now) =>
+        !chose && now && now.x === next.x && now.y === next.y && now.width === next.width && now.height === next.height
+          ? now
+          : { ...next, slide },
       );
     };
-    measure();
-    const frame = requestAnimationFrame(() => setSliding(true));
-    const observer = new ResizeObserver(measure);
+    measure(true);
+    // An observer reports every element once as it starts: that is no change of size.
+    let started = false;
+    const observer = new ResizeObserver(() => {
+      if (started) measure(false);
+      started = true;
+    });
     observer.observe(root);
     for (const child of Array.from(root.children)) observer.observe(child);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
+    return () => observer.disconnect();
   }, [value]);
-  return { track, place, sliding };
+  return { track, place };
 }

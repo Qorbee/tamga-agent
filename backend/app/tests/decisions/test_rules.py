@@ -133,7 +133,9 @@ def test_the_firms_account_narrows_what_is_paid_whatever_the_setting() -> None:
 
 def test_an_account_that_cannot_speak_is_noted_only_where_payments_go_on_account() -> None:
     silent = dataclasses.replace(CLEAR, owed_on_account=None, account_on=None)
-    assert failed(silent)["on_account"] is Outcome.PROPOSE
+    on_account = POLICY.model_copy(update={"payments_recorded": PaymentsRecorded.ON_ACCOUNT})
+    _, results = policies.evaluate(silent, on_account)
+    assert [r.outcome for r in results if r.rule == "on_account"] == [Outcome.PROPOSE]
     per_invoice = POLICY.model_copy(update={"payments_recorded": PaymentsRecorded.PER_INVOICE})
     _, results = policies.evaluate(silent, per_invoice)
     assert [r.outcome for r in results if r.rule == "on_account"] == [Outcome.OK]

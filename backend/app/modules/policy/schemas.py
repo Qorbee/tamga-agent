@@ -39,7 +39,7 @@ class PolicyIn(BaseModel):
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     approval_limit: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     pay_when_paid: bool
-    payments_recorded: PaymentsRecorded = PaymentsRecorded.ON_ACCOUNT
+    payments_recorded: PaymentsRecorded = PaymentsRecorded.PER_INVOICE
     remainder_tolerance: Decimal = Field(default=Decimal("2.00"), ge=0, le=20, decimal_places=2)
     # The ways the company pays (ADR-0027); without a vault method, crypto is off.
     methods: list[PaymentMethod] = Field(

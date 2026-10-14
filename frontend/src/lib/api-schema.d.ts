@@ -3888,7 +3888,7 @@ export interface components {
             pay_when_paid: boolean;
             /** Payment Weekday */
             payment_weekday?: number | null;
-            /** @default on_account */
+            /** @default per_invoice */
             payments_recorded: components["schemas"]["PaymentsRecorded"];
             /**
              * Remainder Tolerance

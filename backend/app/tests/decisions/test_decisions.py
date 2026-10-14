@@ -567,6 +567,8 @@ async def test_a_bill_the_firms_account_shows_paid_is_held_and_read_by_the_setti
     client: httpx.AsyncClient, vault: Vault
 ) -> None:
     await a_sandbox(client)
+    # Per invoice is the default; this company records payments on the firm's account.
+    await client.patch("/policy", json={"payments_recorded": "on_account"})
     await service.evaluate_pending()
     delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
     # Paid on the firm's account in the books, the bill left open (ADR-0022).
@@ -601,11 +603,11 @@ async def test_a_policy_change_keeps_what_it_does_not_name(client: httpx.AsyncCl
     whole = {"currency": "EUR", "approval_limit": "500.00", "pay_when_paid": False}
     assert (await client.put("/policy", json=whole)).status_code == 200
 
-    changed = await client.patch("/policy", json={"payments_recorded": "per_invoice"})
+    changed = await client.patch("/policy", json={"payments_recorded": "on_account"})
 
     assert changed.status_code == 200, changed.text
     policy = changed.json()
-    assert (policy["version"], policy["payments_recorded"]) == (2, "per_invoice")
+    assert (policy["version"], policy["payments_recorded"]) == (2, "on_account")
     assert (policy["currency"], policy["approval_limit"], policy["pay_when_paid"]) == (
         "EUR",
         "500.00",
