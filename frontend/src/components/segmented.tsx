@@ -57,8 +57,11 @@ export function Segmented<T extends string>(
           "text-muted-foreground hover:text-foreground h-auto min-h-7 rounded-[0.6rem] border border-transparent px-3 py-1 hover:bg-transparent",
           "aria-checked:bg-segment aria-checked:border-segment-border aria-checked:text-foreground aria-checked:shadow-xs",
           "aria-pressed:bg-segment aria-pressed:border-segment-border aria-pressed:text-foreground aria-pressed:shadow-xs",
-          // Once the sliding part is placed, it is the chosen option's ground.
-          place && "relative aria-checked:border-transparent aria-checked:bg-transparent aria-checked:shadow-none",
+          // Once the sliding part is placed, it is the chosen option's ground: nothing of the
+          // option's own covers it, the toggle's "on" fill included (an option with a hint has
+          // the tooltip's state instead, which is why one without showed the bug).
+          place &&
+            "relative aria-checked:border-transparent aria-checked:bg-transparent aria-checked:shadow-none data-[state=on]:bg-transparent",
           size === "default" && "min-h-8",
           fill && "min-w-0 flex-1 px-2",
           option.className,
