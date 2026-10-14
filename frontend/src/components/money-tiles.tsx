@@ -5,7 +5,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { usePaymentRun } from "@/components/payment-run";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getHoldings, getPolicy, listDecisions, listInvoiceTotals, type InvoiceTotal } from "@/lib/api";
-import { formatDays, formatMoneyShort, todayIso } from "@/lib/format";
+import { formatDays, formatMoneyCompact, formatMoneyShort, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -46,17 +46,24 @@ export function MoneyTiles({ className }: { className?: string }) {
   if (policy.isPending || run.isPending || holdings.isPending) return <Skeleton className={cn("h-20 rounded-2xl", className)} />;
   if (!currency) return null;
 
-  const money = (amount: number, unit = currency) => formatMoneyShort(amount, unit, locale);
+  // Each figure in full and short ("₺4.7M"): a narrow tile shows the short one, never a cut one.
+  const money = (amount: number, unit = currency) => ({
+    full: formatMoneyShort(amount, unit, locale),
+    short: formatMoneyCompact(amount, unit, locale, "symbol"),
+  });
+  const none = { full: "—", short: "—" };
   // What the books say is owed by then, held bills included: a hold is no less a debt.
   const totalOf = (totals: InvoiceTotal[] | undefined) => {
     const amounts = (totals ?? []).filter((total) => total.currency && Number(total.remaining_amount ?? 0) > 0);
-    if (amounts.length === 0) return "—";
-    return amounts.map((total) => money(Number(total.remaining_amount), total.currency ?? currency)).join(" · ");
+    if (amounts.length === 0) return none;
+    const each = amounts.map((total) => money(Number(total.remaining_amount), total.currency ?? currency));
+    return { full: each.map((one) => one.full).join(" · "), short: each.map((one) => one.short).join(" · ") };
   };
-  const tiles: { label: string; value: string; tone?: string }[] = [
+  const count = waiting.data ? String(waiting.data.total) : "—";
+  const tiles: { label: string; value: { full: string; short: string }; tone?: string }[] = [
     {
       label: t.tiles.available,
-      value: holdings.data && holdings.data.items.length > 0 ? money(Number(holdings.data.total)) : "—",
+      value: holdings.data && holdings.data.items.length > 0 ? money(Number(holdings.data.total)) : none,
     },
     {
       label: run.data ? t.tiles.dueBy(formatDays(run.data.through, null, locale)) : t.tiles.due,
@@ -66,7 +73,7 @@ export function MoneyTiles({ className }: { className?: string }) {
     {
       label: t.tiles.toApprove,
       // Unknown until it loads: never a zero that says nothing waits.
-      value: waiting.data ? String(waiting.data.total) : "—",
+      value: { full: count, short: count },
       tone: (waiting.data?.total ?? 0) > 0 ? "text-danger-foreground" : undefined,
     },
   ];
@@ -76,9 +83,12 @@ export function MoneyTiles({ className }: { className?: string }) {
     <div className={cn("@container", className)}>
     <dl className="grid grid-cols-2 gap-2 @2xl:grid-cols-4">
       {tiles.map((tile) => (
-        <div key={tile.label} className="border-border bg-card min-w-0 rounded-2xl border px-3.5 py-3">
+        <div key={tile.label} className="border-border bg-card @container min-w-0 rounded-2xl border px-3.5 py-3">
           <dt className="text-muted-foreground truncate text-[11px] font-medium tracking-[0.08em] uppercase">{tile.label}</dt>
-          <dd className={cn("mt-1 truncate text-lg font-medium tabular-nums", tile.tone)}>{tile.value}</dd>
+          <dd className={cn("mt-1 truncate text-lg font-medium tabular-nums", tile.tone)} title={tile.value.full}>
+            <span className="hidden @[13rem]:inline">{tile.value.full}</span>
+            <span className="@[13rem]:hidden">{tile.value.short}</span>
+          </dd>
         </div>
       ))}
     </dl>

@@ -709,7 +709,7 @@ async def test_each_morning_tamga_writes_a_brief_of_codes_numbers_in_one_chat(
     # Once a day.
     assert await turns.speak_pending() == 0
     [chat] = await chats_of(client)
-    assert chat["title"] == "Morning brief"
+    assert chat["title"] in turns.BRIEF_TITLES.values()
     [card] = await cards_in(client, chat["id"])
     assert card["activityType"] == CardKind.MORNING_BRIEF
     # The numbers the model is given are code's.

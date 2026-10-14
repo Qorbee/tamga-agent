@@ -7,8 +7,8 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   Invoice01Icon,
+  FilterHorizontalIcon,
   Search01Icon,
-  SortByDown02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -21,8 +21,11 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -37,7 +40,7 @@ import {
   type InvoiceTotal,
   type Party,
 } from "@/lib/api";
-import { formatDays, formatMoney, todayIso } from "@/lib/format";
+import { formatDays, formatMoney, formatMoneyCompact, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { usePagedList } from "@/lib/use-paged-list";
 import { cn } from "@/lib/utils";
@@ -137,8 +140,8 @@ export function BooksPage() {
         options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.books.views[value]}</span> }))}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-48 flex-1">
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
           <HugeiconsIcon
             icon={Search01Icon}
             strokeWidth={1.75}
@@ -153,13 +156,21 @@ export function BooksPage() {
             className="ps-9"
           />
         </div>
+        {/* Everything but the search behind one button, as the chat apps keep their filters: a
+            mark on it says when the list is not the usual one. */}
         {view === "firms" ? (
-          <Segments label={t.books.balancesLabel} value={balances} options={BALANCES} words={t.books.balances} onChange={setBalances} />
+          <FilterMenu
+            changed={balances !== "all"}
+            groups={[{ label: t.books.balancesLabel, value: balances, options: BALANCES, words: t.books.balances, onChange: setBalances }]}
+          />
         ) : (
-          <>
-            <Segments label={t.books.shownLabel} value={shown} options={SHOWN} words={t.books.shown} onChange={setShown} />
-            <SortMenu value={sort} onChange={setSort} />
-          </>
+          <FilterMenu
+            changed={shown !== "open" || sort !== "-issue_date"}
+            groups={[
+              { label: t.books.shownLabel, value: shown, options: SHOWN, words: t.books.shown, onChange: setShown },
+              { label: t.books.sort.label, value: sort, options: SORTS, words: t.books.sort.options, onChange: setSort },
+            ]}
+          />
         )}
       </div>
 
@@ -190,54 +201,45 @@ export function BooksPage() {
   );
 }
 
-function Segments<T extends string>({
-  label,
-  value,
-  options,
-  words,
-  onChange,
-}: {
+type FilterGroup = {
   label: string;
-  value: T;
-  options: readonly T[];
-  words: Record<T, string>;
-  onChange: (next: T) => void;
-}) {
-  return (
-    <Segmented
-      label={label}
-      value={value}
-      onChange={onChange}
-      options={options.map((option) => ({ value: option, label: words[option] }))}
-    />
-  );
-}
+  value: string;
+  options: readonly string[];
+  words: Record<string, string>;
+  onChange: (next: never) => void;
+};
 
-function SortMenu({ value, onChange }: { value: Sort; onChange: (next: Sort) => void }) {
+/** The list's filters and its order, each a group of choices in one menu. */
+function FilterMenu({ changed, groups }: { changed: boolean; groups: FilterGroup[] }) {
   const { t } = useI18n();
-  const words = t.books.sort;
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" aria-label={`${words.label}: ${words.options[value]}`}>
-          <HugeiconsIcon icon={SortByDown02Icon} strokeWidth={1.75} />
-          {words.options[value]}
+        <Button variant="outline" size="icon" className="relative size-9 shrink-0 rounded-lg" aria-label={t.books.filter}>
+          <HugeiconsIcon icon={FilterHorizontalIcon} strokeWidth={1.75} />
+          {changed ? <span aria-hidden className="bg-primary absolute -top-0.5 -right-0.5 size-2.5 rounded-full" /> : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuRadioGroup
-          value={value}
-          onValueChange={(next) => {
-            const option = SORTS.find((each) => each === next);
-            if (option) onChange(option);
-          }}
-        >
-          {SORTS.map((option) => (
-            <DropdownMenuRadioItem key={option} value={option}>
-              {words.options[option]}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+      <DropdownMenuContent align="end" className="w-56">
+        {groups.map((group, index) => (
+          <DropdownMenuGroup key={group.label}>
+            {index > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuLabel className="text-muted-foreground text-xs">{group.label}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={group.value}
+              onValueChange={(next) => {
+                const option = group.options.find((each) => each === next);
+                if (option) (group.onChange as (next: string) => void)(option);
+              }}
+            >
+              {group.options.map((option) => (
+                <DropdownMenuRadioItem key={option} value={option}>
+                  {group.words[option]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -305,38 +307,50 @@ function Invoices({
   );
 }
 
-/** What the list adds up to, a card per currency, never summed across them: what is left of the
- * open ones, coloured by the side of the books (or as late, for the overdue), else the total. */
+/** What the list adds up to, one tinted card with a figure per currency side by side, never
+ * summed across them: what is left of the open ones, coloured by the side of the books (or as
+ * late, for the overdue), else the total. A narrow figure is written short ("₺4.2M"). */
 function Totals({ totals, side, shown }: { totals: InvoiceTotal[]; side: Exclude<Side, "both">; shown: Shown }) {
   const { t, locale } = useI18n();
   const words = t.books.totals;
   const open = shown !== "all";
   const tone: Tone = shown === "overdue" ? "late" : SIDE_TONE[side];
-  const label = words.labels[shown][side];
+  const style = TONES[tone];
   return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
-      {totals.map((total) => {
-        const amount = open ? total.remaining_amount : total.total_amount;
-        const left = total.remaining_amount;
-        const money = (value: string | null) =>
-          value !== null && total.currency ? formatMoney(Number(value), total.currency, locale) : null;
-        const detail = [
-          !open && left !== null && Number(left) > 0 ? words.left(money(left) ?? "") : null,
-          words.invoices(total.count),
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        return (
-          <Stat
-            key={total.currency ?? "none"}
-            tone={tone}
-            label={label}
-            figure={money(amount) ?? words.unknown}
-            detail={detail}
-          />
-        );
-      })}
-    </ul>
+    <section className={cn("rounded-2xl px-3.5 py-3", style.card)}>
+      <p className={cn("flex items-center gap-2 text-xs font-medium", style.ink)}>
+        <span className={cn("grid size-6 shrink-0 place-items-center rounded-full", style.chip)} aria-hidden>
+          <HugeiconsIcon icon={style.icon} strokeWidth={1.75} className="size-3.5" />
+        </span>
+        {words.labels[shown][side]}
+      </p>
+      <ul className="mt-2.5 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-x-4 gap-y-3">
+        {totals.map((total) => {
+          const amount = open ? total.remaining_amount : total.total_amount;
+          const left = total.remaining_amount;
+          const currency = total.currency;
+          const full = amount !== null && currency ? formatMoney(Number(amount), currency, locale) : words.unknown;
+          const short = amount !== null && currency ? formatMoneyCompact(Number(amount), currency, locale, "symbol") : words.unknown;
+          const detail = [
+            words.invoices(total.count),
+            !open && left !== null && Number(left) > 0 && currency
+              ? words.left(formatMoneyCompact(Number(left), currency, locale, "symbol"))
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <li key={currency ?? "none"} className="@container grid min-w-0">
+              <span className="text-foreground truncate text-lg leading-tight font-semibold tabular-nums" title={full}>
+                <span className="hidden @[11rem]:inline">{full}</span>
+                <span className="@[11rem]:hidden">{short}</span>
+              </span>
+              <span className="text-muted-foreground truncate text-xs">{detail}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

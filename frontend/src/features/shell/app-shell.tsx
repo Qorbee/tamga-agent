@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
+import { PullRefresh } from "@/components/pull-refresh";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useAppHeight } from "@/lib/use-app-height";
 
@@ -87,6 +88,7 @@ export function AppShell({
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
       <CompanyEvents />
+      <PullRefresh />
     </ShellActionsContext.Provider>
   );
 }

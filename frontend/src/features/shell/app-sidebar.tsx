@@ -77,7 +77,7 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       {/* On a phone the header floats over the list, which fades out beneath it instead of being
           cut by a band; the foot does the same below. */}
-      <SidebarHeader className="h-14 flex-row items-center justify-between px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 max-md:from-sidebar max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-20 max-md:items-start max-md:bg-linear-to-b max-md:from-65% max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
+      <SidebarHeader className="h-14 flex-row items-center justify-between px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 max-md:from-sidebar max-md:via-sidebar/85 max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-16 max-md:items-start max-md:bg-linear-to-b max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
         <Link
           href={CHAT_PATH}
           onClick={picked}
@@ -193,7 +193,7 @@ export function AppSidebar({
       {isMobile ? (
         // A phone's foot floats over the list, as the chat apps keep it: who is signed in, and a
         // new chat a thumb away.
-        <div className="from-sidebar pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-linear-to-t from-55% to-transparent px-4 pt-12 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="from-sidebar via-sidebar/80 pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-linear-to-t to-transparent px-4 pt-6 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <AccountMenu floating />
           <ThreadListPrimitive.New asChild>
             <button

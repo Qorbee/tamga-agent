@@ -58,6 +58,7 @@ from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import NotFound, TooManyRequests
+from app.platform.language import Language
 from app.platform.pagination import MAX_LIMIT, PageParams
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,8 @@ ADVICE_WAIT: Final = timedelta(minutes=15)
 BATCH: Final = 50
 # From this hour of a company's business day (UTC, nine in Turkey), Tamga writes its brief.
 BRIEF_HOUR: Final = 6
+# The brief's chat is named in the company's language, as Tamga writes there.
+BRIEF_TITLES: Final = {Language.EN: "Morning brief", Language.TR: "Sabah özeti"}
 _BRIEF: Final = (
     "\nIt is the start of the owner's day. Write a short good morning, three sentences at most: "
     "what matters today in these numbers and what you would look at first. Open a project or a "
@@ -297,7 +300,7 @@ async def _morning(db: AsyncSession, company: Company) -> list[Finding]:
                 (agents.BRIEF, brief_id(company.id, today - timedelta(days=back)))
                 for back in range(1, today.weekday() + 1)
             ),
-            title="Morning brief",
+            title=BRIEF_TITLES[company.language],
             prompt=_told("the company's money this morning", figures.lines, _BRIEF),
             card={"kind": CardKind.MORNING_BRIEF.value, "id": str(record_id)},
         )

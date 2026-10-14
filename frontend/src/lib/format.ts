@@ -34,14 +34,22 @@ export function formatMoneyShort(amount: number, currency: string, locale: Local
 }
 
 /** A figure on a chart: "€6.5K", the currency as its sign, where the chart already says which. */
-export function formatMoneyCompact(amount: number, currency: string, locale: Locale): string {
+/** A figure written short ("€1.9K"): with the currency's narrow sign ("$") where something beside it
+ * names the currency (a chart's caption), else with its own sign ("US$"), which tells one dollar
+ * from another. */
+export function formatMoneyCompact(
+  amount: number,
+  currency: string,
+  locale: Locale,
+  display: "narrowSymbol" | "symbol" = "narrowSymbol",
+): string {
   if (STABLECOINS.has(currency)) {
     return `${new Intl.NumberFormat(intlLocale[locale], { notation: "compact", maximumFractionDigits: 1 }).format(amount)} ${currency}`;
   }
   return new Intl.NumberFormat(intlLocale[locale], {
     style: "currency",
     currency,
-    currencyDisplay: "narrowSymbol",
+    currencyDisplay: display,
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(amount);

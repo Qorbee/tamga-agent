@@ -17,6 +17,7 @@ export const en = {
     money: "Money",
   },
   shell: {
+    refreshing: "Refreshing",
     sidebar: "Sidebar",
     closeSidebar: "Close the menu",
     toggleSidebar: "Toggle sidebar",
@@ -251,6 +252,7 @@ export const en = {
     notFound: "This project is not here any more.",
     /** The project's file, newest first, a day at a time. */
     timeline: "File",
+    showLabel: "What it shows",
     show: { all: "All", mail: "Mail", files: "Files", invoices: "Invoices" },
     noItems: "Nothing is tied to this project yet.",
     noneShown: "Nothing of this kind yet.",
@@ -350,6 +352,7 @@ export const en = {
     notFound: "This invoice is not here any more.",
     views: { collect: "To collect", pay: "To pay", firms: "Firms" },
     shown: { open: "Open", overdue: "Overdue", all: "All" },
+    filter: "Filter",
     shownLabel: "Which invoices",
     sort: {
       label: "Sort",
@@ -1042,7 +1045,6 @@ export const en = {
     stale: "Not read lately",
     vault: "Test USDC, not money held",
     noBalance: "Balance not known",
-    atRate: (amount: string) => `${amount} in all, at the official rate`,
     aboutHint: "Each account stays in its own currency; this total converts at the official rate.",
     incomplete: "An account with no rate is left out.",
     next: "Next 4 weeks",

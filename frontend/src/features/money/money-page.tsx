@@ -3,7 +3,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Hint } from "@/components/hint";
-import { MoneyTiles } from "@/components/money-tiles";
 import { between, PeriodBars, SeriesLegend, type Series } from "@/components/period-bars";
 import { useRuleWords } from "@/components/policy-settings";
 import { Button } from "@/components/ui/button";
@@ -53,8 +52,9 @@ const CATEGORIES: readonly MovementCategory[] = [
  */
 export function MoneyPage() {
   return (
+    // No tiles here: the home and Payments carry them, and this page's own accounts and outlook
+    // are those figures in full. It opens on what the accounts hold.
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
-      <MoneyTiles />
       <Holdings />
       <Accounts />
       <Outlook />
@@ -81,25 +81,27 @@ function Holdings() {
     );
   if (!policy.data || !holdings.data) return <Skeleton className="h-20 rounded-2xl" />;
   const reserve = read(policy.data.reserve, policy.data.currency);
-  // One line under the tiles, whose Available is the total: how it is counted, and the reserve in
-  // force, each explained by its hint rather than a paragraph.
+  // The page's headline: what the accounts hold, then how it is counted and the reserve in force,
+  // each explained in a line rather than a tooltip a phone never shows.
   return (
-    <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-      {holdings.data.items.length > 0 ? (
-        <Hint label={`${t.money.aboutHint}${holdings.data.complete ? "" : ` ${t.money.incomplete}`}`}>
-          <span tabIndex={0} className="text-xs underline decoration-dotted underline-offset-4">
-            {t.money.atRate(formatMoney(Number(holdings.data.total), holdings.data.currency, locale))}
+    <section className="grid gap-1.5">
+      <p className="text-muted-foreground text-[11px] font-medium tracking-[0.08em] uppercase">{t.tiles.available}</p>
+      <p className="text-3xl font-medium tracking-tight tabular-nums">
+        {holdings.data.items.length > 0 ? formatMoney(Number(holdings.data.total), holdings.data.currency, locale) : "—"}
+      </p>
+      <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span>
+          {holdings.data.items.length > 0
+            ? `${t.money.aboutHint}${holdings.data.complete ? "" : ` ${t.money.incomplete}`}`
+            : t.money.noAccounts}
+        </span>
+        <Hint label={reserve.body}>
+          <span tabIndex={0} className="bg-secondary text-foreground rounded-full px-2.5 py-0.5">
+            {t.money.reserve(reserve.name)}
           </span>
         </Hint>
-      ) : (
-        <span>{t.money.noAccounts}</span>
-      )}
-      <Hint label={reserve.body}>
-        <span tabIndex={0} className="bg-secondary rounded-full px-2.5 py-0.5 text-xs">
-          {t.money.reserve(reserve.name)}
-        </span>
-      </Hint>
-    </p>
+      </p>
+    </section>
   );
 }
 
@@ -316,7 +318,7 @@ function MovementRow({ movement }: { movement: Movement }) {
           )}
         </span>
       </span>
-      <span className={cn("shrink-0 text-end text-sm font-medium tabular-nums", amount > 0 && "text-success-foreground")}>
+      <span className={cn("shrink-0 text-end text-sm font-medium tabular-nums", amount > 0 ? "text-success-foreground" : amount < 0 && "text-warning-foreground")}>
         {amount > 0 ? "+" : ""}
         {formatMoney(amount, movement.currency, locale)}
       </span>

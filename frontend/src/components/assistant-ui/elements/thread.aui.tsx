@@ -210,8 +210,9 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
       className="aui-root aui-thread-root group/chat bg-background @container flex h-full flex-col"
       style={{
         ["--thread-max-width" as string]: "48rem",
+        // Opaque: the composer floats over the messages, which must not show through it.
         ["--composer-bg" as string]:
-          "color-mix(in oklab, var(--color-muted) 30%, transparent)",
+          "color-mix(in oklab, var(--color-muted) 30%, var(--color-background))",
         ["--composer-radius" as string]: "1rem",
         ["--composer-padding" as string]: "8px",
       }}
@@ -223,7 +224,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
       >
         <div
           className={cn(
-            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-6 max-md:pt-16",
+            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-16",
             isEmpty && "justify-center",
           )}
         >
@@ -246,9 +247,12 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
 
           <ThreadPrimitive.ViewportFooter
             className={cn(
-              "aui-thread-viewport-footer bg-background flex flex-col gap-4 overflow-visible pb-4 md:pb-6",
-              !isEmpty &&
-                "sticky bottom-0 mt-auto rounded-t-(--composer-radius)",
+              "aui-thread-viewport-footer flex flex-col gap-4 overflow-visible pb-4 md:pb-6",
+              // Docked, the composer floats: the messages pass under it, and only the strip below
+              // it is the page's own colour, fading out above.
+              isEmpty
+                ? "bg-background"
+                : "from-background sticky bottom-0 mt-auto bg-linear-to-t from-35% to-transparent pt-4",
             )}
           >
             <ThreadScrollToBottom />

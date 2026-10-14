@@ -22,6 +22,7 @@ import { PersonAvatar } from "@/components/person-avatar";
 import { RowAnswer } from "@/components/placement-rows";
 import { ProjectPicker } from "@/components/project-picker";
 import { T } from "@/components/translated";
+import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -196,21 +197,23 @@ export function ProjectTimeline({
                 <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} aria-hidden />
               </Button>
             ) : null}
-            {(Object.keys(SHOWN) as Show[]).map((each) =>
-              each === "all" || counts[each] > 0 ? (
-                <Button
-                  key={each}
-                  size="xs"
-                  variant={show === each ? "secondary" : "ghost"}
-                  aria-pressed={show === each}
-                  className="rounded-full"
-                  onClick={() => setShow(each)}
-                >
-                  {t.project.show[each]}
-                  <span className="text-muted-foreground tabular-nums">{counts[each]}</span>
-                </Button>
-              ) : null,
-            )}
+            <Segmented
+              label={t.project.showLabel}
+              value={show}
+              onChange={setShow}
+              options={(Object.keys(SHOWN) as Show[])
+                .filter((each) => each === "all" || counts[each] > 0)
+                .map((each) => ({
+                  value: each,
+                  className: "gap-1.5",
+                  label: (
+                    <>
+                      {t.project.show[each]}
+                      <span className="text-muted-foreground tabular-nums">{counts[each]}</span>
+                    </>
+                  ),
+                }))}
+            />
           </div>
         ) : null}
       </div>

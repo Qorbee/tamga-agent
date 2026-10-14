@@ -283,7 +283,10 @@ function MobileSidebar({ dir, children }: { dir?: string; children: React.ReactN
         data-mobile="true"
         data-open={openMobile || undefined}
         style={{ "--sidebar-width": SIDEBAR_WIDTH_MOBILE } as React.CSSProperties}
-        className="fixed top-0 left-0 z-50 flex h-(--app-height,100dvh) w-full -translate-x-full flex-col overflow-hidden rounded-r-[1.75rem] bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-open:translate-x-0 motion-reduce:transition-none"
+        // Rounded where it meets the page only while it moves: open, it fills the screen square,
+        // so no gap shows under a browser's own bar. The corners round at once on leaving and
+        // square once the slide in has ended.
+        className="fixed top-0 left-0 z-50 flex h-(--app-height,100dvh) w-full -translate-x-full flex-col overflow-hidden rounded-r-[1.75rem] bg-sidebar text-sidebar-foreground [transition:translate_300ms_cubic-bezier(0.32,0.72,0,1),border-radius_0ms] data-open:translate-x-0 data-open:rounded-r-none data-open:[transition:translate_300ms_cubic-bezier(0.32,0.72,0,1),border-radius_150ms_ease_300ms] motion-reduce:transition-none"
       >
         {children}
       </div>

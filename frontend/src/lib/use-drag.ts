@@ -11,6 +11,8 @@ const FLICK = 0.4;
 const EASE = "300ms cubic-bezier(0.32, 0.72, 0, 1)";
 // Another layer open over the page: a Radix dialog or sheet, or a modal of our own (the image
 // lightbox); the menu itself is left out.
+// The drawer's corners while it moves; settled open, the classes square them.
+const MOVING = "0 1.75rem 1.75rem 0";
 const LAYER = "[role=dialog][data-state=open], [role=dialog][aria-modal=true]:not([data-mobile])";
 
 /**
@@ -54,6 +56,7 @@ export function useMenuDrag({
         element.style.transition = "";
         element.style.translate = "";
         element.style.opacity = "";
+        element.style.borderRadius = "";
       }
     };
 
@@ -92,6 +95,7 @@ export function useMenuDrag({
         at = touch.clientX;
         flick.reset(at);
         drawer.style.transition = "none";
+        drawer.style.borderRadius = MOVING;
         shade.style.transition = "none";
       }
       if (event.cancelable) event.preventDefault();

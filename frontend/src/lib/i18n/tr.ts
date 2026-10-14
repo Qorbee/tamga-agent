@@ -19,6 +19,7 @@ export const tr: Dictionary = {
     money: "Para",
   },
   shell: {
+    refreshing: "Yenileniyor",
     sidebar: "Kenar çubuğu",
     closeSidebar: "Menüyü kapat",
     toggleSidebar: "Kenar çubuğunu aç veya kapat",
@@ -244,6 +245,7 @@ export const tr: Dictionary = {
     cargo: "Yük",
     notFound: "Bu proje artık burada değil.",
     timeline: "Dosya",
+    showLabel: "Gösterilen",
     show: { all: "Tümü", mail: "Posta", files: "Belgeler", invoices: "Faturalar" },
     noItems: "Bu projeye henüz bir şey bağlanmadı.",
     noneShown: "Bu türden henüz bir şey yok.",
@@ -341,6 +343,7 @@ export const tr: Dictionary = {
     notFound: "Bu fatura artık burada değil.",
     views: { collect: "Alacaklar", pay: "Borçlar", firms: "Firmalar" },
     shown: { open: "Açık", overdue: "Vadesi geçen", all: "Tümü" },
+    filter: "Filtrele",
     shownLabel: "Hangi faturalar",
     sort: {
       label: "Sırala",
@@ -1009,7 +1012,6 @@ export const tr: Dictionary = {
     stale: "Son zamanlarda okunmadı",
     vault: "Test USDC, eldeki para değil",
     noBalance: "Bakiye bilinmiyor",
-    atRate: (amount: string) => `Resmî kurla toplam ${amount}`,
     aboutHint: "Her hesap kendi para biriminde kalır; bu toplam resmi kurla çevrilir.",
     incomplete: "Kuru olmayan hesap toplamın dışında.",
     next: "Önümüzdeki 4 hafta",

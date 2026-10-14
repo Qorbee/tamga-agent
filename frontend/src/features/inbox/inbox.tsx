@@ -11,8 +11,8 @@ import { PersonAvatar } from "@/components/person-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { decideProposal, listProposals, listThreads, type FieldProposal } from "@/lib/api";
-import { formatDays, formatListDate } from "@/lib/format";
+import { decideProposal, getMe, listProposals, listThreads, type FieldProposal } from "@/lib/api";
+import { formatDate, formatDays, formatListDate, todayIso } from "@/lib/format";
 import { conversationName, ownSnippet } from "@/lib/mail-text";
 import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -108,6 +108,7 @@ function display(field: string, value: unknown, locale: Locale): string {
 
 function Mail() {
   const { t, locale } = useI18n();
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
   const threads = usePagedList(
@@ -142,53 +143,59 @@ function Mail() {
         <p className="text-muted-foreground text-sm">{t.inbox.mailEmpty}</p>
       ) : (
         <>
-          <ul className="divide-border border-border divide-y overflow-hidden rounded-2xl border">
-            {threads.items.map((thread) => {
-              const who = thread.participants.slice(0, 3).join(", ") || thread.latest.sender || "—";
-              return (
-                <li key={thread.thread_key}>
-                  <CanvasLink
-                    view={{ kind: "mail", id: thread.latest.id }}
-                    className="hover:bg-accent/40 aria-[current=true]:bg-secondary flex items-start gap-3 px-4 py-3"
-                  >
-                    <PersonAvatar name={thread.participants[0] ?? who} className="mt-0.5" />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-2">
-                        <span className="truncate text-sm font-medium">{who}</span>
-                        {thread.message_count > 1 ? (
-                          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                            {thread.message_count}
+          {/* By day, as a mail app lists them: each day's threads on a card of their own. */}
+          {byDay(threads.items, locale, me.data?.today ?? todayIso(), { today: t.chat.threadsToday, yesterday: t.chat.threadsYesterday }).map(([day, items]) => (
+            <section key={day} className="grid gap-1.5">
+              <h3 className="text-muted-foreground px-1 text-xs font-medium">{day}</h3>
+              <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-2xl border">
+                {items.map((thread) => {
+                  const who = thread.participants.slice(0, 3).join(", ") || thread.latest.sender || "—";
+                  return (
+                    <li key={thread.thread_key}>
+                      <CanvasLink
+                        view={{ kind: "mail", id: thread.latest.id }}
+                        className="hover:bg-accent/50 aria-[current=true]:bg-accent flex items-start gap-3 px-4 py-3.5 transition-colors"
+                      >
+                        <PersonAvatar name={thread.participants[0] ?? who} className="mt-0.5 size-9" />
+                        <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-0.5">
+                          <span className="flex items-baseline gap-2">
+                            <span className="truncate text-sm font-semibold">{who}</span>
+                            {thread.message_count > 1 ? (
+                              <span className="bg-secondary text-secondary-foreground shrink-0 rounded-full px-1.5 text-[11px] font-medium tabular-nums">
+                                {thread.message_count}
+                              </span>
+                            ) : null}
+                            <time
+                              dateTime={thread.last_sent_at}
+                              className="text-muted-foreground ms-auto shrink-0 text-xs tabular-nums"
+                            >
+                              {formatListDate(new Date(thread.last_sent_at), locale)}
+                            </time>
                           </span>
-                        ) : null}
-                        <time
-                          dateTime={thread.last_sent_at}
-                          className="text-muted-foreground ms-auto shrink-0 text-xs tabular-nums"
-                        >
-                          {formatListDate(new Date(thread.last_sent_at), locale)}
-                        </time>
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-sm">
-                          {thread.subject ? conversationName(thread.subject) : t.inbox.noSubject}
+                          <span className="flex items-center gap-2">
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                              {thread.subject ? conversationName(thread.subject) : t.inbox.noSubject}
+                            </span>
+                            {thread.attachment_count > 0 ? (
+                              <HugeiconsIcon
+                                icon={Attachment01Icon}
+                                strokeWidth={1.75}
+                                aria-label={t.inbox.hasFiles}
+                                className="text-muted-foreground size-3.5 shrink-0"
+                              />
+                            ) : null}
+                          </span>
+                          <span className="text-muted-foreground line-clamp-2 text-[13px] leading-snug">
+                            {ownSnippet(thread.latest.snippet)}
+                          </span>
                         </span>
-                        {thread.attachment_count > 0 ? (
-                          <HugeiconsIcon
-                            icon={Attachment01Icon}
-                            strokeWidth={1.75}
-                            aria-label={t.inbox.hasFiles}
-                            className="text-muted-foreground size-3.5 shrink-0"
-                          />
-                        ) : null}
-                      </span>
-                      <span className="text-muted-foreground block truncate text-xs">
-                        {ownSnippet(thread.latest.snippet)}
-                      </span>
-                    </span>
-                  </CanvasLink>
-                </li>
-              );
-            })}
-          </ul>
+                      </CanvasLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
           {threads.more ? (
             <Button
               variant="ghost"
@@ -204,4 +211,28 @@ function Mail() {
       )}
     </Section>
   );
+}
+
+/** The threads by the day of their last message, newest first: "Today", "Yesterday", then the
+ * date. Keyed by the calendar day, the label only shown; "today" is the company's business day,
+ * which a sandbox's skip moves on. */
+function byDay<T extends { last_sent_at: string }>(
+  threads: T[],
+  locale: Locale,
+  today: string,
+  words: { today: string; yesterday: string },
+): [string, T[]][] {
+  const key = (date: Date) => todayIso(date);
+  const [year = 1970, month = 1, day = 1] = today.split("-").map(Number);
+  const yesterday = key(new Date(year, month - 1, day - 1));
+  const days = new Map<string, { label: string; items: T[] }>();
+  for (const thread of threads) {
+    const date = new Date(thread.last_sent_at);
+    const at = key(date);
+    const label = at === today ? words.today : at === yesterday ? words.yesterday : formatDate(date, locale);
+    const group = days.get(at) ?? { label, items: [] };
+    group.items.push(thread);
+    days.set(at, group);
+  }
+  return [...days.values()].map((group) => [group.label, group.items]);
 }

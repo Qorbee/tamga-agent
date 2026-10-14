@@ -19,7 +19,7 @@ export function TopBar({ title, children, className }: { title?: ReactNode; chil
   return (
     <div
       className={cn(
-        "from-background pointer-events-none flex h-16 shrink-0 items-center gap-2 bg-linear-to-b from-60% to-transparent px-3 pb-2",
+        "from-background pointer-events-none flex h-16 shrink-0 items-center gap-2 bg-linear-to-b from-45% to-transparent px-3 pb-2",
         className,
       )}
     >
