@@ -46,6 +46,8 @@ DECISION: Final = "decision"
 OPENING: Final = "opening"
 # A morning brief, by an id made of the company and its day: Tamga writes one a day.
 BRIEF: Final = "brief"
+# The numbers a brief gave, by an id made of them: the same picture is never briefed twice.
+BRIEF_PICTURE: Final = "brief_picture"
 # What `waiting` lists of each kind: enough to say what is there, few enough to read.
 _LISTED: Final = 20
 # The projects something can wait in. One the owner rejected keeps the links suggested to it,

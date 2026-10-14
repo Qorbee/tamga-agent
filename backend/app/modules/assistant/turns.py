@@ -268,8 +268,10 @@ def brief_id(company_id: uuid.UUID, day: date) -> uuid.UUID:
 
 async def _morning(db: AsyncSession, company: Company) -> list[Finding]:
     """The day's brief, once its business morning came: the money's numbers, worked out by
-    code, for a few words of the model's. Not on the day a company opens, when Tamga already
-    met the owner, and in the chat of the week's briefs while there is one."""
+    code, for a few words of the model's. Only when there is something to say: something waits
+    for the owner or falls due, and the picture is not one a brief already gave. Otherwise no
+    run, so a quiet day costs nothing. Not on the day a company opens, when Tamga already met
+    the owner, and in the chat of the week's briefs while there is one."""
     now = clock.now(company)
     today = now.date()
     if now.hour < BRIEF_HOUR or today <= company.created_at.date():
@@ -277,10 +279,18 @@ async def _morning(db: AsyncSession, company: Company) -> list[Finding]:
     record_id = brief_id(company.id, today)
     if await repository.raised(db, company.id, agents.BRIEF, [record_id]):
         return []
+    figures = await _figures(db, company, today)
+    if not figures.news:
+        return []
+    # The picture itself is a record: a brief raises it, so the same numbers are never briefed
+    # twice, however many days apart.
+    picture = uuid.uuid5(company.id, "\n".join(figures.values))
+    if await repository.raised(db, company.id, agents.BRIEF_PICTURE, [picture]):
+        return []
     return [
         Finding(
             record=(agents.BRIEF, record_id),
-            also=(),
+            also=((agents.BRIEF_PICTURE, picture),),
             # The week's chat: the earlier briefs of the same week, Monday on, so a chat holds
             # one week and the next Monday opens another.
             related=tuple(
@@ -288,21 +298,29 @@ async def _morning(db: AsyncSession, company: Company) -> list[Finding]:
                 for back in range(1, today.weekday() + 1)
             ),
             title="Morning brief",
-            prompt=_told(
-                "the company's money this morning", await _figures(db, company, today), _BRIEF
-            ),
+            prompt=_told("the company's money this morning", figures.lines, _BRIEF),
             card={"kind": CardKind.MORNING_BRIEF.value, "id": str(record_id)},
         )
     ]
 
 
-async def _figures(db: AsyncSession, company: Company, today: date) -> list[str]:
+@dataclass(frozen=True)
+class Figures:
+    """A brief's numbers: its lines for the model, what asks something of the owner without the
+    day's dates (to tell a new picture from one already given), and whether any does."""
+
+    lines: list[str]
+    values: list[str]
+    news: bool
+
+
+async def _figures(db: AsyncSession, company: Company, today: date) -> Figures:
     """The brief's numbers, in the policy's currency where they are one sum; amounts in other
     currencies are said apart, never added up."""
     actor = Actor.of_tamga(company.id)
     currency = (await policy.current_policy(db, company.id)).currency
     held = await money.holdings_of(db, company.id, currency)
-    waiting = await decisions.awaiting_owner(db, company.id)
+    waiting = len(await decisions.awaiting_owner(db, company.id))
 
     async def owed(direction: InvoiceDirection, before: date) -> str:
         totals = await books.invoice_totals(
@@ -311,16 +329,26 @@ async def _figures(db: AsyncSession, company: Company, today: date) -> list[str]
         return "; ".join(f"{t.remaining_amount} {t.currency} ({t.count})" for t in totals) or "none"
 
     week = today + timedelta(days=8)
-    return [
-        f"Today: {today.isoformat()}",
-        "In the bank and cash accounts: "
-        + (f"{held.total} {currency}" if held.items else "no balance known")
-        + ("" if held.complete else " (an account with no rate is left out)"),
-        f"Bills that wait for the owner's approval: {len(waiting)}",
-        f"Bills to pay due by {week.isoformat()}: {await owed(InvoiceDirection.PAYABLE, week)}",
-        f"Clients' invoices due by then: {await owed(InvoiceDirection.RECEIVABLE, week)}",
-        f"Clients' invoices overdue: {await owed(InvoiceDirection.RECEIVABLE, today)}",
-    ]
+    cash = (f"{held.total} {currency}" if held.items else "no balance known") + (
+        "" if held.complete else " (an account with no rate is left out)"
+    )
+    to_pay = await owed(InvoiceDirection.PAYABLE, week)
+    to_come = await owed(InvoiceDirection.RECEIVABLE, week)
+    overdue = await owed(InvoiceDirection.RECEIVABLE, today)
+    return Figures(
+        lines=[
+            f"Today: {today.isoformat()}",
+            f"In the bank and cash accounts: {cash}",
+            f"Bills that wait for the owner's approval: {waiting}",
+            f"Bills to pay due by {week.isoformat()}: {to_pay}",
+            f"Clients' invoices due by then: {to_come}",
+            f"Clients' invoices overdue: {overdue}",
+        ],
+        # Cash moves every day; what asks something of the owner is the news.
+        values=[str(waiting), to_pay, to_come, overdue],
+        # Cash alone asks nothing of the owner.
+        news=bool(waiting) or any(value != "none" for value in (to_pay, to_come, overdue)),
+    )
 
 
 async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
