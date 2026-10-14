@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Cancel01Icon } from "@hugeicons/core-free-icons"
 import { useI18n } from "@/lib/i18n/client"
+import { useSheetDrag } from "@/lib/use-drag"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
@@ -88,6 +89,21 @@ function SheetContent({
   )
 }
 
+/**
+ * A bottom sheet's handle and title, which a finger pulls down to close it (`useSheetDrag`). The
+ * sheet below it keeps scrolling as usual.
+ */
+function SheetGrip({ onDismiss, children }: { onDismiss: () => void; children?: React.ReactNode }) {
+  const grip = React.useRef<HTMLDivElement>(null)
+  useSheetDrag({ grip, onDismiss })
+  return (
+    <div ref={grip} data-slot="sheet-grip" className="touch-none select-none">
+      <span aria-hidden className="mx-auto mb-2 block h-1 w-10 rounded-full bg-border" />
+      {children}
+    </div>
+  )
+}
+
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -142,6 +158,7 @@ export {
   SheetTrigger,
   SheetClose,
   SheetContent,
+  SheetGrip,
   SheetHeader,
   SheetFooter,
   SheetTitle,

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
@@ -9,13 +10,6 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Tooltip,
@@ -25,6 +19,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react"
 import { SidebarLeftIcon } from "@hugeicons/core-free-icons"
 import { useI18n } from "@/lib/i18n/client"
+import { useMenuDrag } from "@/lib/use-drag"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
@@ -163,8 +158,7 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
-  const { t } = useI18n()
+  const { isMobile, state } = useSidebar()
 
   if (collapsible === "none") {
     return (
@@ -182,30 +176,7 @@ function Sidebar({
   }
 
   if (isMobile) {
-    return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetContent
-          dir={dir}
-          data-sidebar="sidebar"
-          data-slot="sidebar"
-          data-mobile="true"
-          // A phone's sidebar is a page of its own: it covers the screen, as the chat apps' do.
-          className="w-full bg-sidebar p-0 text-sidebar-foreground data-[side=left]:w-full data-[side=left]:border-r-0 data-[side=left]:sm:max-w-none data-[side=right]:w-full data-[side=right]:sm:max-w-none [&>button]:hidden"
-          style={
-            {
-              "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
-          side={side}
-        >
-          <SheetHeader className="sr-only">
-            <SheetTitle>{t.shell.sidebar}</SheetTitle>
-            <SheetDescription>{t.shell.sidebarDescription}</SheetDescription>
-          </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
-        </SheetContent>
-      </Sheet>
-    )
+    return <MobileSidebar dir={dir}>{children}</MobileSidebar>
   }
 
   return (
@@ -251,6 +222,73 @@ function Sidebar({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * A phone's sidebar: a page of its own over the screen, rounded where it meets the page, as the
+ * chat apps keep it. It stays mounted and slides by `transform` alone, so opening it renders
+ * nothing new and a finger can drag it part-way (`useMenuDrag`).
+ */
+function MobileSidebar({ dir, children }: { dir?: string; children: React.ReactNode }) {
+  const { openMobile, setOpenMobile } = useSidebar()
+  const { t } = useI18n()
+  const panel = React.useRef<HTMLDivElement>(null)
+  const scrim = React.useRef<HTMLDivElement>(null)
+  useMenuDrag({ panel, scrim, open: openMobile, setOpen: setOpenMobile })
+
+  // Open, it is modal as the sheet it replaced was: the rest of the page is inert, focus moves
+  // into it and goes back where it was on closing, and Escape closes it.
+  React.useEffect(() => {
+    if (!openMobile) return
+    const from = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const behind = Array.from(document.body.children).filter(
+      (element): element is HTMLElement =>
+        element instanceof HTMLElement && element !== panel.current && element !== scrim.current && !element.inert
+    )
+    for (const element of behind) element.inert = true
+    panel.current?.querySelector<HTMLElement>("a[href], button:not([disabled])")?.focus({ preventScroll: true })
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMobile(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      for (const element of behind) element.inert = false
+      // Not back into a field on a touch screen: that would bring the keyboard up again.
+      const field = from?.matches("input, textarea, [contenteditable=true]")
+      if (from && !(field && window.matchMedia("(pointer: coarse)").matches)) from.focus({ preventScroll: true })
+    }
+  }, [openMobile, setOpenMobile])
+
+  // At the body, as a dialog is: a transformed ancestor would pin a fixed panel to itself.
+  return createPortal(
+    <>
+      <div
+        ref={scrim}
+        aria-hidden
+        data-open={openMobile || undefined}
+        onClick={() => setOpenMobile(false)}
+        className="pointer-events-none fixed inset-0 z-50 bg-scrim/40 opacity-0 transition-opacity duration-300 data-open:pointer-events-auto data-open:opacity-100 motion-reduce:transition-none"
+      />
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal={openMobile}
+        aria-label={t.shell.sidebar}
+        inert={!openMobile}
+        dir={dir}
+        data-sidebar="sidebar"
+        data-slot="sidebar"
+        data-mobile="true"
+        data-open={openMobile || undefined}
+        style={{ "--sidebar-width": SIDEBAR_WIDTH_MOBILE } as React.CSSProperties}
+        className="fixed top-0 left-0 z-50 flex h-(--app-height,100dvh) w-full -translate-x-full flex-col overflow-hidden rounded-r-[1.75rem] bg-sidebar text-sidebar-foreground transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] data-open:translate-x-0 motion-reduce:transition-none"
+      >
+        {children}
+      </div>
+    </>,
+    document.body
   )
 }
 

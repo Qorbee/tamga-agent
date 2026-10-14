@@ -18,7 +18,6 @@ export const en = {
   },
   shell: {
     sidebar: "Sidebar",
-    sidebarDescription: "Pages and past chats",
     closeSidebar: "Close the menu",
     toggleSidebar: "Toggle sidebar",
     resizeSidebar: "Resize sidebar",

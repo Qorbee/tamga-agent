@@ -28,7 +28,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useI18n } from "@/lib/i18n/client";
-import { useMenuSwipe } from "@/lib/use-menu-swipe";
 import { SIDEBAR_SIZE, saveSize } from "@/lib/panel-sizes";
 import { cn } from "@/lib/utils";
 
@@ -56,8 +55,7 @@ export function AppSidebar({
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
-  const { isMobile, setOpen, openMobile, setOpenMobile } = useSidebar();
-  useMenuSwipe({ enabled: isMobile, open: openMobile, setOpen: setOpenMobile });
+  const { isMobile, setOpen, setOpenMobile } = useSidebar();
   const { openSearch } = useShellActions();
   const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
   const chatOpen = pathname === CHAT_PATH;
@@ -77,7 +75,9 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="h-14 flex-row items-center justify-between px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2">
+      {/* On a phone the header floats over the list, which fades out beneath it instead of being
+          cut by a band; the foot does the same below. */}
+      <SidebarHeader className="h-14 flex-row items-center justify-between px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 max-md:from-sidebar max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-20 max-md:items-start max-md:bg-linear-to-b max-md:from-65% max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
         <Link
           href={CHAT_PATH}
           onClick={picked}
@@ -95,7 +95,7 @@ export function AppSidebar({
               picked();
               openSearch();
             }}
-            className="text-muted-foreground hover:bg-sidebar-accent ms-auto flex size-10 items-center justify-center rounded-full"
+            className="text-muted-foreground ms-auto flex size-10 items-center justify-center"
           >
             <HugeiconsIcon icon={Search01Icon} strokeWidth={1.75} className="size-5" />
           </button>
@@ -107,7 +107,7 @@ export function AppSidebar({
             type="button"
             aria-label={t.shell.closeSidebar}
             onClick={() => setOpenMobile(false)}
-            className="text-muted-foreground hover:bg-sidebar-accent flex size-10 items-center justify-center rounded-full"
+            className="text-muted-foreground flex size-10 items-center justify-center"
           >
             <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.75} className="size-5" />
           </button>
@@ -127,7 +127,7 @@ export function AppSidebar({
         </button>
       </div>
 
-      <SidebarContent className="max-md:pb-24">
+      <SidebarContent className="max-md:pt-16 max-md:pb-28">
         <SidebarGroup className="pt-0">
           <SidebarMenu className="gap-0.5">
             <SidebarMenuItem className="max-md:hidden">
@@ -193,13 +193,13 @@ export function AppSidebar({
       {isMobile ? (
         // A phone's foot floats over the list, as the chat apps keep it: who is signed in, and a
         // new chat a thumb away.
-        <div className="pointer-events-none absolute inset-x-4 bottom-4 flex items-end justify-between">
+        <div className="from-sidebar pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-linear-to-t from-55% to-transparent px-4 pt-12 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <AccountMenu floating />
           <ThreadListPrimitive.New asChild>
             <button
               type="button"
               onClick={openChat}
-              className="bg-foreground text-background pointer-events-auto flex h-12 shrink-0 items-center gap-2 rounded-full px-5 text-base font-medium whitespace-nowrap shadow-lg active:opacity-90"
+              className="bg-foreground text-background pointer-events-auto flex h-12 shrink-0 items-center gap-2 rounded-full px-5 text-base font-medium whitespace-nowrap active:opacity-90"
             >
               <HugeiconsIcon icon={PlusSignIcon} strokeWidth={2} className="size-5" />
               {t.chat.newChat}

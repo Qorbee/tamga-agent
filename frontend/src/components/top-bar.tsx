@@ -12,8 +12,7 @@ import { cn } from "@/lib/utils";
 /**
  * A phone's bar over a page or a chat, as a chat app keeps it: no solid band, only the page's own
  * colour fading out beneath the buttons, so what scrolls under it stays in view and the screen
- * keeps its height for the content. The sidebar button floats on its own, edged as the sidebar's
- * rows are. Shared by every page, the chat and the settings, so the way back to the menu is the
+ * keeps its height for the content. The sidebar button is the icon alone. Shared by every page, the chat and the settings, so the way back to the menu is the
  * same button everywhere.
  */
 export function TopBar({ title, children, className }: { title?: ReactNode; children?: ReactNode; className?: string }) {
@@ -31,7 +30,8 @@ export function TopBar({ title, children, className }: { title?: ReactNode; chil
   );
 }
 
-const FLOATING = "bg-background/90 pointer-events-auto size-9 rounded-full shadow-[0_0_0_1px_var(--sidebar-border)] shadow-xs";
+// Only the icon: the page's fade beneath it is all the ground it needs.
+const FLOATING = "pointer-events-auto size-9 hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent";
 
 /** The sidebar button as it floats over a page on a phone. */
 export function FloatingTrigger() {

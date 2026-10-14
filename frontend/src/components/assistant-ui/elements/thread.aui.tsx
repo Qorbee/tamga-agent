@@ -25,6 +25,7 @@ import {
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useFinePointer } from "@/hooks/use-mobile";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import {
@@ -64,6 +65,8 @@ import {
 import {
   createContext,
   useContext,
+  useEffect,
+  useRef,
   type ComponentType,
   type FC,
   type PropsWithChildren,
@@ -442,6 +445,15 @@ const Composer: FC<{ autoFocus: boolean; placeholder: string }> = ({
   placeholder,
 }) => {
   const { t } = useI18n();
+  // On a touch screen the composer waits for a tap: focus would bring the keyboard up over the
+  // home's cards before anyone asked to write.
+  const fine = useFinePointer();
+  const input = useRef<HTMLTextAreaElement>(null);
+  // Read at mount, not through the hook: hydration renders with the server's guess (touch), and
+  // a native autoFocus changed after mount focuses nothing.
+  useEffect(() => {
+    if (autoFocus && window.matchMedia("(pointer: fine)").matches) input.current?.focus();
+  }, [autoFocus]);
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
       <ComposerPrimitive.AttachmentDropzone asChild>
@@ -454,7 +466,10 @@ const Composer: FC<{ autoFocus: boolean; placeholder: string }> = ({
             placeholder={placeholder}
             className="aui-composer-input caret-primary placeholder:text-muted-foreground/60 max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-sm leading-6 outline-none"
             rows={1}
-            autoFocus={autoFocus}
+            ref={input}
+            unstable_focusOnRunStart={fine}
+            unstable_focusOnScrollToBottom={fine}
+            unstable_focusOnThreadSwitched={fine}
             enterKeyHint="send"
             aria-label={t.chat.messageInput}
           />

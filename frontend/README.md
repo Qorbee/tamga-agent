@@ -70,11 +70,14 @@ re-apply them:
 - `ui/sidebar.tsx`: no width animation while a resize handle inside it is dragged
   (`group-has-data-dragging/sidebar-wrapper:transition-none`); `SidebarContent` shows its scrollbar
   (no `no-scrollbar`) with a stable gutter.
-- `ui/sidebar.tsx`: on a phone the drawer covers the whole screen (`SIDEBAR_WIDTH_MOBILE`).
+- `ui/sidebar.tsx`: on a phone the drawer is our own `MobileSidebar`, not a `Sheet`: it covers
+  the whole screen (`SIDEBAR_WIDTH_MOBILE`), stays mounted and follows the finger (`useMenuDrag`).
 - `ui/sheet.tsx`, `ui/dialog.tsx`: no backdrop blur on a touch screen; a left sheet on a phone
-  slides in whole, without fading.
+  slides in whole, without fading. `ui/sheet.tsx` adds `SheetGrip`, a bottom sheet's handle that
+  pulls it down to close.
 - `thread.aui.tsx`: the root is a named group (`group/chat`), so the home's cards can step aside
-  while the composer has focus; the column starts below the phone's see-through top bar.
+  while the composer has focus; the column starts below the phone's see-through top bar; the
+  composer takes focus by itself only with a mouse (`useFinePointer`).
 - `tool-group.aui.tsx`, `tool-fallback.aui.tsx`, `reasoning.aui.tsx`: a step that opens or closes
   holds the scroll with `keep-in-place.ts`, not assistant-ui's `useScrollLock`, which hid the
   scrollbar for the animation and made the page jump beside it.

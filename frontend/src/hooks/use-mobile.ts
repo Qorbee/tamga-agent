@@ -18,3 +18,21 @@ export function useIsMobile() {
     () => false
   )
 }
+
+const FINE = "(pointer: fine)"
+
+function subscribeFine(onChange: () => void) {
+  const mql = window.matchMedia(FINE)
+  mql.addEventListener("change", onChange)
+  return () => mql.removeEventListener("change", onChange)
+}
+
+// Whether the main pointer is a mouse or a pen: a field may take focus by itself there, while on a
+// touch screen focus brings the keyboard up over half the screen. The server render assumes touch.
+export function useFinePointer() {
+  return React.useSyncExternalStore(
+    subscribeFine,
+    () => window.matchMedia(FINE).matches,
+    () => false
+  )
+}

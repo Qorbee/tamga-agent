@@ -3,11 +3,12 @@
 import { ArrowDown01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { Hint } from "@/components/hint";
 import { Segmented } from "@/components/segmented";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetGrip, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getAssistant } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
@@ -32,6 +33,8 @@ export function RunChoiceChip() {
   const offered = useQuery({ queryKey: ASSISTANT_KEY, queryFn: getAssistant, staleTime: OFFER_FRESH }).data;
   const choice = useRunChoice();
   const mobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = () => setSheetOpen(false);
   if (!offered || !asks) return null;
   const { model, effort } = chosen(offered, choice);
   const words = t.assistant.choice;
@@ -96,13 +99,14 @@ export function RunChoiceChip() {
   // A phone's own pickers come up from the bottom, clear of the keyboard and the composer.
   if (mobile) {
     return (
-      <Sheet>
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetTrigger asChild>{chip}</SheetTrigger>
         <SheetContent side="bottom" className="max-h-[85dvh] gap-0 overflow-y-auto rounded-t-3xl px-3 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <span aria-hidden className="bg-border mx-auto mb-2 h-1 w-10 rounded-full" />
-          <SheetHeader className="px-2 pt-1 pb-2">
-            <SheetTitle className="text-base">{words.label}</SheetTitle>
-          </SheetHeader>
+          <SheetGrip onDismiss={closeSheet}>
+            <SheetHeader className="px-2 pt-1 pb-2">
+              <SheetTitle className="text-base">{words.label}</SheetTitle>
+            </SheetHeader>
+          </SheetGrip>
           {panel}
         </SheetContent>
       </Sheet>

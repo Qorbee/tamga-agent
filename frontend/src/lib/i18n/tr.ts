@@ -20,7 +20,6 @@ export const tr: Dictionary = {
   },
   shell: {
     sidebar: "Kenar çubuğu",
-    sidebarDescription: "Sayfalar ve geçmiş sohbetler",
     closeSidebar: "Menüyü kapat",
     toggleSidebar: "Kenar çubuğunu aç veya kapat",
     resizeSidebar: "Kenar çubuğunu boyutlandır",
