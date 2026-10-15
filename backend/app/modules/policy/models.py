@@ -74,6 +74,8 @@ class Policy(CompanyScoped, Base):
     # The day of the week the owner likes to pay on, Monday 0; None for any day. A preference
     # for gathering payments, never a rule: nothing is held for the day.
     payment_weekday: Mapped[int | None]
+    # The company's own payment rules (ADR-0033), as ``custom.CustomRule`` writes them.
+    custom_rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
     created_by: Mapped[uuid.UUID | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 

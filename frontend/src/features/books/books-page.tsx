@@ -47,6 +47,8 @@ import { usePagedList } from "@/lib/use-paged-list";
 import { useCanEdit } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
+import { FirmGroups } from "./firm-groups";
+
 const PAGE = 50;
 const VIEWS = ["collect", "pay", "firms"] as const;
 /** A tab, or `both`: a firm's invoices on either side, shown when one is chosen from Firms. */
@@ -537,6 +539,7 @@ function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClo
         </div>
         <IconButton label={t.books.everyFirm} icon={Cancel01Icon} onClick={onClose} />
       </div>
+      <FirmGroups partyId={party.id} />
       {totals.isError ? (
         <p className="text-muted-foreground text-sm" role="status">
           {words.unavailable}

@@ -317,6 +317,14 @@ const PolicyDrafted = makeAssistantToolUI<Record<string, unknown>, unknown>({
   render: ({ result }) => (result === undefined ? null : <PolicyDraftCard result={result} />),
 });
 
+/** A payment rule of the owner's own the chat's `draft_rule` drafted: the same card, which shows
+ * the rule in words and the bills it applies to now (ADR-0033). */
+const RuleDrafted = makeAssistantToolUI<Record<string, unknown>, unknown>({
+  toolName: "draft_rule",
+  display: "standalone",
+  render: ({ result }) => (result === undefined ? null : <PolicyDraftCard result={result} />),
+});
+
 /** Registers the cards and the mark with the chat; rendered once, inside the chat's runtime. */
 export function ChatCards() {
   return (
@@ -328,6 +336,7 @@ export function ChatCards() {
       <Began />
       <Remembered />
       <PolicyDrafted />
+      <RuleDrafted />
       <ShownView />
     </>
   );

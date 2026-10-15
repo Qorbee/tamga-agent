@@ -2,6 +2,7 @@
 
 import type { BillCall, Call } from "@/components/bill-call";
 import type { Decision } from "@/lib/api";
+import { useCustomResultWords } from "@/components/custom-rule";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +58,7 @@ export type CallReason = { text: string; advice: boolean } | null;
 
 export function useCallReason(): (decision: Decision, bill: BillCall) => CallReason {
   const { t } = useI18n();
+  const customWords = useCustomResultWords();
   return (decision, bill) => {
     const word = (text: string | null | undefined): CallReason => (text ? { text, advice: false } : null);
     if (bill.unchecked) return word(t.payments.reserveUnchecked);
@@ -68,6 +70,7 @@ export function useCallReason(): (decision: Decision, bill: BillCall) => CallRea
     const advice = decision.advice?.evaluation === decision.evaluation ? decision.advice : null;
     if ((bill.call === "hold" || bill.call === "needs_you") && advice && (!bill.rule || bill.rule === "approval_limit"))
       return { text: advice.reason, advice: true };
+    if (bill.rule?.startsWith("custom:")) return word(customWords(bill.rule) ?? t.settings.yourRules.ownRule);
     if (bill.rule) return word(t.payments.rules[bill.rule]);
     if (bill.call === "held" && decision.decided_by) return word(t.payments.heldByYou);
     return null;

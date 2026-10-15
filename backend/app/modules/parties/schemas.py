@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.parties.models import PartyKind
 
@@ -43,6 +43,28 @@ class PartyChange(BaseModel):
 
 class PartyPage(BaseModel):
     items: list[PartyOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class PartyGroupIn(BaseModel):
+    """A group of firms the company names, with its members."""
+
+    name: str = Field(min_length=1, max_length=60)
+    party_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+
+
+class PartyGroupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    party_ids: list[uuid.UUID]
+
+
+class PartyGroupPage(BaseModel):
+    items: list[PartyGroupOut]
     total: int
     limit: int
     offset: int

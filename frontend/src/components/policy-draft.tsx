@@ -4,11 +4,14 @@ import { ArrowRight02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useCustomRuleWords } from "@/components/custom-rule";
 import { useRuleWords } from "@/components/policy-settings";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   confirmPolicyDraft,
+  type CustomRule,
+  decisionsMatching,
   discardPolicyDraft,
   getPolicy,
   getPolicyDraft,
@@ -77,13 +80,20 @@ function Drafted({ draft, policy }: { draft: PolicyDraft; policy: Policy }) {
       queryClient.setQueryData(["policy-draft", draft.id], answered);
       if (answered.state !== "confirmed") return;
       // As a change made in Settings: the next evaluation reads the new version.
-      for (const key of ["policy", "decisions", "invoices", "invoice", "payment-run"]) {
+      for (const key of ["policy", "decisions", "invoices", "invoice", "payment-run", "party-groups"]) {
         void queryClient.invalidateQueries({ queryKey: [key] });
       }
     },
   });
   const change = draft.change;
   const open = draft.state === "draft";
+  // A rule of the owner's own is confirmed only once the bills it applies to now are shown.
+  const preview = useQuery({
+    queryKey: ["rule-applies", draft.id],
+    queryFn: () => decisionsMatching(change.save_custom!),
+    enabled: open && Boolean(change.save_custom),
+  });
+  const waitsForPreview = Boolean(change.save_custom) && !preview.isSuccess;
   // While it waits, only what it would change: a rule the owner restated as it stands is left out.
   const fields = (Object.keys(FIELDS) as Field[]).filter(
     (field) =>
@@ -113,10 +123,12 @@ function Drafted({ draft, policy }: { draft: PolicyDraft; policy: Policy }) {
           </div>
         ))}
       </dl>
+      {change.save_custom ? <OwnRule rule={change.save_custom} open={open} draftId={draft.id} /> : null}
+      {change.remove_custom ? <TakenAway ruleKey={change.remove_custom} policy={policy} /> : null}
       {open ? (
         owner ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" disabled={answer.isPending} onClick={() => answer.mutate(true)}>
+            <Button size="sm" disabled={answer.isPending || waitsForPreview} onClick={() => answer.mutate(true)}>
               {words.confirm}
             </Button>
             <Button size="sm" variant="ghost" disabled={answer.isPending} onClick={() => answer.mutate(false)}>
@@ -137,6 +149,59 @@ function Drafted({ draft, policy }: { draft: PolicyDraft; policy: Policy }) {
           {t.errors.generic}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/** A rule of the company's own the draft adds, in words, and while it waits the bills it applies
+ * to now, so the owner sees what confirming it does before it does it. */
+function OwnRule({ rule, open, draftId }: { rule: CustomRule; open: boolean; draftId: string }) {
+  const { t, locale } = useI18n();
+  const words = t.settings.yourRules;
+  const say = useCustomRuleWords();
+  const applies = useQuery({
+    queryKey: ["rule-applies", draftId],
+    queryFn: () => decisionsMatching(rule),
+    enabled: open,
+  });
+  const shown = applies.data?.slice(0, 5) ?? [];
+  return (
+    <div className="grid gap-1.5 text-sm">
+      <p className="text-muted-foreground text-xs">{words.newRule}</p>
+      <p className="font-medium text-pretty">{say(rule)}</p>
+      {open && applies.isError ? (
+        <p className="text-danger-foreground text-xs" role="alert">
+          {t.errors.load}
+        </p>
+      ) : null}
+      {open && applies.data ? (
+        <>
+          <p className="text-muted-foreground">{words.appliesNow(applies.data.length)}</p>
+          <ul className="grid gap-1">
+            {shown.map((decision) => (
+              <li key={decision.id} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate">{decision.invoice?.party_name ?? decision.invoice?.number ?? "—"}</span>
+                <span className="text-muted-foreground shrink-0 tabular-nums">
+                  {decision.currency ? formatMoney(Number(decision.amount), decision.currency, locale) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** A rule of the company's own the draft takes away, as it stands. */
+function TakenAway({ ruleKey, policy }: { ruleKey: string; policy: Policy }) {
+  const { t } = useI18n();
+  const say = useCustomRuleWords();
+  const rule = policy.custom_rules?.find((one) => one.key === ruleKey);
+  return (
+    <div className="grid gap-1 text-sm">
+      <p className="text-muted-foreground text-xs">{t.settings.yourRules.removes}</p>
+      <p className="text-muted-foreground line-through">{rule ? say(rule) : ruleKey}</p>
     </div>
   );
 }

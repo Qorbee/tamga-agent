@@ -19,6 +19,7 @@ from app.modules.decisions.schemas import (
     RunApproved,
 )
 from app.modules.identity.deps import ActorDep
+from app.modules.policy.custom import CustomRule
 from app.platform.db import SessionDep
 from app.platform.pagination import PageDep
 
@@ -69,6 +70,15 @@ async def act_on_decision(
     """The owner's answer to the evaluation it names: 409 when it was evaluated again since, or
     when a rule does not allow it."""
     return await service.act(db, actor, decision_id, body)
+
+
+@decisions.post("/decisions/matching")
+async def decisions_matching(
+    actor: ActorDep, db: SessionDep, rule: CustomRule
+) -> list[DecisionOut]:
+    """The open bills a payment rule of the company's own applies to now, as each was last
+    evaluated (ADR-0033): what confirming it would order, ask or hold. Changes nothing."""
+    return await runs.rule_applies(db, actor, rule)
 
 
 @decisions.get("/decision-events")

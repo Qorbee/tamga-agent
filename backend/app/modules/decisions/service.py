@@ -133,6 +133,11 @@ class _Standing:
     dues: dict[uuid.UUID, tuple[date | None, Decimal | None]] = field(default_factory=dict)
     # The bills approved and not paid yet.
     approved: dict[uuid.UUID, Decimal | None] = field(default_factory=dict)
+    # What the company's own rules read of firms, read once a pass where it has one: each firm's
+    # groups, every group that exists, and each firm's kind as asked.
+    groups: dict[uuid.UUID, frozenset[uuid.UUID]] | None = None
+    known_groups: frozenset[uuid.UUID] = frozenset()
+    kinds: dict[uuid.UUID, str | None] = field(default_factory=dict)
 
     def committed(self, bill_id: uuid.UUID) -> Decimal | None:
         """What the reserve keeps for bills other than this one: the approved ones, and those due
@@ -288,6 +293,43 @@ async def _on_chain(company_id: uuid.UUID, bills: Sequence[InvoiceOut]) -> _OnCh
     )
 
 
+async def _facts(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    bill: InvoiceOut,
+    picture: Picture,
+    policy: PolicyOut,
+    standing: _Standing,
+) -> policies.Facts | None:
+    """What the company's own rules read of a bill (ADR-0033); None while it has none, so a
+    company with no rule of its own reads nothing more."""
+    if not policy.custom_rules:
+        return None
+    if standing.groups is None:
+        every = await parties.all_groups(db, company_id)
+        standing.known_groups = frozenset(group.id for group in every)
+        standing.groups = {}
+        for group in every:
+            for member in group.party_ids:
+                standing.groups[member] = standing.groups.get(member, frozenset()) | {group.id}
+    if bill.party_id is not None and bill.party_id not in standing.kinds:
+        party = (await parties.get_parties(db, company_id, [bill.party_id])).get(bill.party_id)
+        standing.kinds[bill.party_id] = party.kind.value if party is not None else None
+    return policies.Facts(
+        party_id=bill.party_id,
+        groups=standing.groups.get(bill.party_id, frozenset()) if bill.party_id else frozenset(),
+        known_groups=standing.known_groups,
+        party_kind=standing.kinds.get(bill.party_id) if bill.party_id else None,
+        issued_on=bill.issue_date,
+        due_on=bill.due_date,
+        today=standing.today,
+        in_policy_currency=picture.in_policy_currency,
+        currency=bill.currency,
+        method=picture.method,
+        client_paid=None if picture.client_invoices == 0 else picture.client_unpaid == 0,
+    )
+
+
 async def _decide(
     db: AsyncSession,
     company_id: uuid.UUID,
@@ -339,7 +381,9 @@ async def _decide(
     picture = await _picture(
         db, company_id, bill, amount, account, policy, seen, reference, method, iban, standing
     )
-    outcome, results = policies.evaluate(picture, policy)
+    outcome, results = policies.evaluate(
+        picture, policy, await _facts(db, company_id, bill, picture, policy, standing)
+    )
     mirrored = policies.mirror(amount, bill.currency)
     pay = await _pay(
         db,
@@ -467,21 +511,12 @@ def _to_pay(bill: InvoiceOut, account: Account | None) -> Decimal:
     return owed if owed is not None and 0 < owed < left else left
 
 
-async def _picture(
-    db: AsyncSession,
-    company_id: uuid.UUID,
-    bill: InvoiceOut,
-    amount: Decimal,
-    account: Account | None,
-    policy: PolicyOut,
-    seen: _OnChain,
-    reference: fx.Converted | None,
-    method: PaymentMethod,
-    iban: bool,
-    standing: _Standing,
-) -> Picture:
-    """What code knows of the bill, for the rules."""
-    links = await projects.links_of_items(db, company_id, ItemKind.INVOICE, [bill.id])
+async def _clients(
+    db: AsyncSession, company_id: uuid.UUID, bill_id: uuid.UUID, policy: PolicyOut
+) -> tuple[list[uuid.UUID], int, int]:
+    """The jobs that hold a bill, their client invoices, and how many of those are not paid as
+    the company records payments."""
+    links = await projects.links_of_items(db, company_id, ItemKind.INVOICE, [bill_id])
     jobs = sorted({link.project_id for link in links if projects.is_evidence(link)})
     client_bills = [
         link.item_id
@@ -496,6 +531,36 @@ async def _picture(
     on_clients = await books.account_readings(
         db, company_id, {client.party_id for client in clients if client.party_id}
     )
+    unpaid = sum(
+        1 for client in clients if not _client_paid(client, on_clients.get(client.id), policy)
+    )
+    return jobs, len(clients), unpaid
+
+
+async def client_paid(
+    db: AsyncSession, company_id: uuid.UUID, bill_id: uuid.UUID, policy: PolicyOut
+) -> bool | None:
+    """Whether the client of a bill's jobs paid them, as pay-when-paid reads it; None where the
+    jobs hold no client invoice."""
+    _, invoices, unpaid = await _clients(db, company_id, bill_id, policy)
+    return None if invoices == 0 else unpaid == 0
+
+
+async def _picture(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    bill: InvoiceOut,
+    amount: Decimal,
+    account: Account | None,
+    policy: PolicyOut,
+    seen: _OnChain,
+    reference: fx.Converted | None,
+    method: PaymentMethod,
+    iban: bool,
+    standing: _Standing,
+) -> Picture:
+    """What code knows of the bill, for the rules."""
+    jobs, client_invoices, client_unpaid = await _clients(db, company_id, bill.id, policy)
     trucks = tuple(await _delivery[0](db, company_id, bill.id)) if _delivery and jobs else None
     mirrored = policies.mirror(amount, bill.currency)
     payee = seen.payees.get(bill.party_id) if bill.party_id else None
@@ -512,10 +577,8 @@ async def _picture(
         in_policy_currency=reference.amount if reference is not None else None,
         projects=len(jobs),
         trucks=trucks,
-        client_invoices=len(clients),
-        client_unpaid=sum(
-            1 for client in clients if not _client_paid(client, on_clients.get(client.id), policy)
-        ),
+        client_invoices=client_invoices,
+        client_unpaid=client_unpaid,
         paid_on_chain=bill.id in seen.paid,
         paid_as_another=await repository.approved_among(
             db, company_id, await books.namesakes(db, company_id, bill.id)

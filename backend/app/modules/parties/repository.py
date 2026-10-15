@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, case, exists, func, or_, select
+from sqlalchemy import ColumnElement, case, delete, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from app.modules.parties.models import (
     IdentifierKind,
     IdentifierSource,
     Party,
+    PartyGroup,
     PartyIdentifier,
     PartyKind,
 )
@@ -277,3 +278,43 @@ async def named_from(db: AsyncSession, company_id: uuid.UUID, start: str) -> Seq
         .order_by(Party.name)
     )
     return parties.all()
+
+
+async def list_groups(
+    db: AsyncSession, company_id: uuid.UUID, page: PageParams
+) -> tuple[Sequence[PartyGroup], int]:
+    where = PartyGroup.company_id == company_id
+    total = await db.scalar(select(func.count()).select_from(PartyGroup).where(where)) or 0
+    rows = await db.scalars(
+        select(PartyGroup)
+        .where(where)
+        .order_by(PartyGroup.name, PartyGroup.id)
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return rows.all(), total
+
+
+async def all_groups(db: AsyncSession, company_id: uuid.UUID) -> Sequence[PartyGroup]:
+    rows = await db.scalars(
+        select(PartyGroup).where(PartyGroup.company_id == company_id).order_by(PartyGroup.name)
+    )
+    return rows.all()
+
+
+async def get_group(
+    db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID, *, for_update: bool = False
+) -> PartyGroup | None:
+    statement = select(PartyGroup).where(
+        PartyGroup.company_id == company_id, PartyGroup.id == group_id
+    )
+    group: PartyGroup | None = await db.scalar(
+        statement.with_for_update() if for_update else statement
+    )
+    return group
+
+
+async def delete_group(db: AsyncSession, company_id: uuid.UUID, group_id: uuid.UUID) -> None:
+    await db.execute(
+        delete(PartyGroup).where(PartyGroup.company_id == company_id, PartyGroup.id == group_id)
+    )

@@ -14,7 +14,8 @@ import {
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+
+import { CustomRulesField } from "@/components/custom-rule";import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import {
   Dialog,
@@ -392,6 +393,7 @@ function HowYouPaySection() {
         disabled={!owner || change.isPending}
         onChange={(day) => change.mutate({ payment_weekday: day ?? -1 })}
       />
+      <CustomRulesField policy={current} owner={owner} />
       {me.data && !owner ? <span className="text-muted-foreground text-xs">{t.settings.ownerOnly}</span> : null}
       {change.isError ? (
         <span className="text-danger-foreground text-xs" role="alert">

@@ -86,6 +86,32 @@ export const en = {
     back: "Back to Settings",
     /** What a part holds, under its name in the phone's list. */
     holds: { payments: "Ways, reserve, pay day", memory: "What Tamga knows of you" },
+    /** The company's own payment rules (ADR-0033), each said in words by code. */
+    yourRules: {
+      title: "Your rules",
+      hint: "Rules of your own on top of these. Tell Tamga in a chat, and confirm the card.",
+      none: "None yet. Say one in a chat: “pay those who need cash first”.",
+      remove: "Remove",
+      effects: { first: "Pay first", last: "Pay last", ask: "Ask me", hold: "Hold" },
+      join: " and ",
+      group: (names: string, out: boolean) => (out ? `firms not in ${names}` : `firms in ${names}`),
+      firm: (names: string, out: boolean) => (out ? `any firm but ${names}` : names),
+      kind: { person: "firms that are people", organisation: "firms that are companies" } as Record<"person" | "organisation", string>,
+      daysOwed: (days: number, above: boolean) => (above ? `owed over ${days} days` : `owed under ${days} days`),
+      daysToDue: (days: number, above: boolean) =>
+        above ? `due in over ${days} days` : days <= 0 ? `overdue over ${-days} days` : `due within ${days} days`,
+      amount: (money: string, above: boolean) => (above ? `over ${money}` : `under ${money}`),
+      currency: (codes: string, out: boolean) => (out ? `not in ${codes}` : `in ${codes}`),
+      method: (method: string) => `paid by ${method}`,
+      clientPaid: (paid: boolean): string => (paid ? "the client has paid" : "the client has not paid"),
+      appliesNow: (count: number) =>
+        count === 0 ? "No bill waiting now is touched by it." : `It applies now to ${count} ${count === 1 ? "bill" : "bills"}:`,
+      newRule: "A rule of your own",
+      removes: "Takes away",
+      ownRule: "Your rule",
+      unknownGroup: "a group no longer here",
+      firmsCount: (count: number) => `${count} ${count === 1 ? "firm" : "firms"} you named`,
+    },
     howYouPay: {
       title: "How you pay",
       methods: "Ways you pay",
@@ -356,6 +382,8 @@ export const en = {
     noFile: "Your books hold no PDF for this invoice.",
     booksUnreachable: "Your books could not be asked just now. Try again later.",
     firmKindLabel: "This firm is a",
+    /** A firm's groups, which the company's own payment rules may name. */
+    groups: { label: "Groups", new: "New group with this firm" },
     views: { collect: "To collect", pay: "To pay", firms: "Firms" },
     shown: { open: "Open", overdue: "Overdue", all: "All" },
     filter: "Filter",
@@ -646,6 +674,9 @@ export const en = {
       search_parties: "Searched the firms",
       recall: "Looked in what you taught Tamga",
       remember: "Drafted something to remember",
+      draft_policy: "Drafted a change to how you pay",
+      draft_rule: "Drafted a rule of your own",
+      group_firms: "Grouped firms",
       project_file: "Opened a project's file",
       open_file: "Opened a file",
       answer_link: "Answered an item of a project",

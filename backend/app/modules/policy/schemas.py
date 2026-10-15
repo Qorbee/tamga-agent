@@ -8,6 +8,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.policy import reserve
+from app.modules.policy.custom import CustomRule
 from app.modules.policy.models import DraftState, PaymentMethod, PaymentsRecorded
 from app.modules.policy.reserve import ReserveRule
 
@@ -30,6 +31,8 @@ class PolicyOut(BaseModel):
     reserve_rules: list[ReserveRule]
     # The day the owner likes to pay on, Monday 0; None for any day. Never a rule.
     payment_weekday: int | None
+    # The company's own rules (ADR-0033), each run after the hard rules.
+    custom_rules: list[CustomRule] = Field(default_factory=list)
     created_at: datetime | None
 
 
@@ -50,9 +53,12 @@ class PolicyIn(BaseModel):
     reserve_rule: str = "off"
     reserve_rules: list[ReserveRule] = Field(default_factory=list)
     payment_weekday: int | None = Field(default=None, ge=0, le=6)
+    custom_rules: list[CustomRule] = Field(default_factory=list, max_length=30)
 
     @model_validator(mode="after")
     def _consistent(self) -> Self:
+        if len({rule.key for rule in self.custom_rules}) != len(self.custom_rules):
+            raise ValueError("each rule of your own once")
         if len(set(self.methods)) != len(self.methods):
             raise ValueError("each method once")
         if self.default_method not in self.methods:
@@ -82,6 +88,10 @@ class PolicyChange(BaseModel):
     # rules never undo each other.
     save_rule: ReserveRule | None = None
     remove_rule: str | None = None
+    # One payment rule of the company's own, added or replacing the one with its key; and one
+    # taken away by its key. Merged the same way.
+    save_custom: CustomRule | None = None
+    remove_custom: str | None = None
     # -1 clears it: any day.
     payment_weekday: int | None = Field(default=None, ge=-1, le=6)
 

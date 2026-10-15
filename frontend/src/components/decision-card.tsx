@@ -38,6 +38,7 @@ import {
   type PaymentMethod,
 } from "@/lib/api";
 import { formatDate, formatDays, formatMoney, formatUsdc } from "@/lib/format";
+import { useCustomResultWords } from "@/components/custom-rule";
 import { useI18n } from "@/lib/i18n/client";
 import { useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,7 @@ export function DecisionRow({
   inRun?: boolean;
 }) {
   const { t, locale } = useI18n();
+  const customWords = useCustomResultWords();
   // A payment the owner undid is kept for the record, and shows as none.
   const payment = given?.voided_at ? undefined : given;
   const isOwner = useIsOwner();
@@ -282,7 +284,7 @@ export function DecisionRow({
               {stopping.map((rule) => (
                 <li key={rule.rule} className="text-warning-foreground flex items-center gap-1.5">
                   <span className="bg-warning size-1.5 shrink-0 rounded-full" aria-hidden />
-                  {t.payments.rules[rule.rule] ?? rule.reason}
+                  {customWords(rule.rule) ?? t.payments.rules[rule.rule] ?? rule.reason}
                 </li>
               ))}
             </ul>

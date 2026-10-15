@@ -347,6 +347,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/decisions/matching": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decisions Matching
+         * @description The open bills a payment rule of the company's own applies to now, as each was last
+         *     evaluated (ADR-0033): what confirming it would order, ask or hold. Changes nothing.
+         */
+        post: operations["decisions.decisions_matching"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/decisions/{decision_id}": {
         parameters: {
             query?: never;
@@ -1069,6 +1090,66 @@ export interface paths {
         head?: never;
         /** Change Party */
         patch: operations["parties.change_party"];
+        trace?: never;
+    };
+    "/party-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Groups */
+        get: operations["parties.list_groups"];
+        put?: never;
+        /** Add Group */
+        post: operations["parties.add_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/party-groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Group */
+        put: operations["parties.save_group"];
+        post?: never;
+        /** Delete Group */
+        delete: operations["parties.delete_group"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/party-groups/{group_id}/members/{party_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add Member
+         * @description Puts one firm in the group, leaving its other members as they are now.
+         */
+        put: operations["parties.add_member"];
+        post?: never;
+        /**
+         * Remove Member
+         * @description Takes one firm out of the group, leaving the others as they are now.
+         */
+        delete: operations["parties.remove_member"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/payment-runs/approvals": {
@@ -2284,6 +2365,76 @@ export interface components {
         /** CompanyUpdate */
         CompanyUpdate: {
             language: components["schemas"]["Language"];
+        };
+        /** Condition */
+        "Condition-Input": {
+            /**
+             * Attribute
+             * @enum {string}
+             */
+            attribute: "group" | "firm" | "firm_kind" | "days_owed" | "days_to_due" | "amount" | "currency" | "method" | "client_paid";
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "is" | "in" | "not_in" | "above" | "below";
+            /** Value */
+            value: boolean | number | string | string[];
+        };
+        /** Condition */
+        "Condition-Output": {
+            /**
+             * Attribute
+             * @enum {string}
+             */
+            attribute: "group" | "firm" | "firm_kind" | "days_owed" | "days_to_due" | "amount" | "currency" | "method" | "client_paid";
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "is" | "in" | "not_in" | "above" | "below";
+            /** Value */
+            value: boolean | number | string | string[];
+        };
+        /**
+         * CustomRule
+         * @description One of the company's own payment rules.
+         */
+        "CustomRule-Input": {
+            /** Key */
+            key: string;
+            /**
+             * Said
+             * @default
+             */
+            said: string;
+            /**
+             * Then
+             * @enum {string}
+             */
+            then: "first" | "last" | "ask" | "hold";
+            /** When */
+            when: components["schemas"]["Condition-Input"][];
+        };
+        /**
+         * CustomRule
+         * @description One of the company's own payment rules.
+         */
+        "CustomRule-Output": {
+            /** Key */
+            key: string;
+            /**
+             * Said
+             * @default
+             */
+            said: string;
+            /**
+             * Then
+             * @enum {string}
+             */
+            then: "first" | "last" | "ask" | "hold";
+            /** When */
+            when: components["schemas"]["Condition-Output"][];
         };
         /**
          * DecisionAction
@@ -3551,6 +3702,39 @@ export interface components {
             kind: components["schemas"]["PartyKind"];
         };
         /**
+         * PartyGroupIn
+         * @description A group of firms the company names, with its members.
+         */
+        PartyGroupIn: {
+            /** Name */
+            name: string;
+            /** Party Ids */
+            party_ids?: string[];
+        };
+        /** PartyGroupOut */
+        PartyGroupOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Party Ids */
+            party_ids: string[];
+        };
+        /** PartyGroupPage */
+        PartyGroupPage: {
+            /** Items */
+            items: components["schemas"]["PartyGroupOut"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /**
          * PartyKind
          * @enum {string}
          */
@@ -3864,10 +4048,13 @@ export interface components {
             payments_recorded?: components["schemas"]["PaymentsRecorded"] | null;
             /** Remainder Tolerance */
             remainder_tolerance?: number | string | null;
+            /** Remove Custom */
+            remove_custom?: string | null;
             /** Remove Rule */
             remove_rule?: string | null;
             /** Reserve Rule */
             reserve_rule?: string | null;
+            save_custom?: components["schemas"]["CustomRule-Input"] | null;
             save_rule?: components["schemas"]["ReserveRule-Input"] | null;
         };
         /**
@@ -3890,10 +4077,13 @@ export interface components {
             payments_recorded?: components["schemas"]["PaymentsRecorded"] | null;
             /** Remainder Tolerance */
             remainder_tolerance?: string | null;
+            /** Remove Custom */
+            remove_custom?: string | null;
             /** Remove Rule */
             remove_rule?: string | null;
             /** Reserve Rule */
             reserve_rule?: string | null;
+            save_custom?: components["schemas"]["CustomRule-Output"] | null;
             save_rule?: components["schemas"]["ReserveRule-Output"] | null;
         };
         /**
@@ -3931,6 +4121,8 @@ export interface components {
             approval_limit: number | string;
             /** Currency */
             currency: string;
+            /** Custom Rules */
+            custom_rules?: components["schemas"]["CustomRule-Input"][];
             /** @default vault_usdc */
             default_method: components["schemas"]["PaymentMethod"];
             /** Methods */
@@ -3962,6 +4154,8 @@ export interface components {
             created_at: string | null;
             /** Currency */
             currency: string;
+            /** Custom Rules */
+            custom_rules?: components["schemas"]["CustomRule-Output"][];
             default_method: components["schemas"]["PaymentMethod"];
             /** Methods */
             methods: components["schemas"]["PaymentMethod"][];
@@ -5446,6 +5640,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DecisionPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "decisions.decisions_matching": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomRule-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionOut"][];
                 };
             };
             /** @description Validation Error */
@@ -6960,6 +7187,199 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.list_groups": {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyGroupPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.add_group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyGroupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyGroupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.save_group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyGroupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyGroupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.delete_group": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.add_member": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyGroupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.remove_member": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyGroupOut"];
                 };
             };
             /** @description Validation Error */

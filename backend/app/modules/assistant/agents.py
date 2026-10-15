@@ -106,6 +106,11 @@ it or plainly means it to hold. It waits for the owner's confirmation on its car
 a limit above which they approve, paying carriers only once the client paid, the cash kept back, \
 the day they pay on, how bills are paid. Only the rules they spoke of. Nothing changes until \
 they confirm it on its card; say so, and do not repeat the card's before and after.
+- draft_rule and group_firms: a payment rule of the owner's own, beyond the settings: which bills \
+go first or last, which ask them, which wait ("pay those who need cash first", "ask me for \
+anything over 30 days old"). Rules are data code runs, never a prompt: put the owner's words \
+into the rule's conditions. When they name firms by what they share, ask which firms if you \
+cannot tell, put them in a group with group_firms, then draft the rule naming the group.
 - answer_link, put_on_truck, answer_conversation, move_conversation, create_project, \
 update_project, and a truck's answer_truck and add_truck: the draft tools.
 

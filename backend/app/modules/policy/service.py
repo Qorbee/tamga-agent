@@ -14,7 +14,12 @@ from app.config import get_settings
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyKind
 from app.modules.fx import service as fx
-from app.modules.policy import repository, reserve, rules
+from app.modules.policy import custom, repository, reserve, rules
+from app.modules.policy.custom import Condition as Condition
+from app.modules.policy.custom import CustomRule as CustomRule
+from app.modules.policy.custom import Facts as Facts
+from app.modules.policy.custom import applies as applies
+from app.modules.policy.custom import order_of as order_of
 from app.modules.policy.models import (
     DraftState,
     PaymentMethod,
@@ -118,13 +123,23 @@ def _merged(current: PolicyOut, body: PolicyChange) -> PolicyIn:
     own = [rule for rule in current.reserve_rules if rule.key != body.remove_rule]
     if body.save_rule is not None:
         own = [rule for rule in own if rule.key != body.save_rule.key] + [body.save_rule]
+    customs = [rule for rule in current.custom_rules if rule.key != body.remove_custom]
+    if body.save_custom is not None:
+        customs = [rule for rule in customs if rule.key != body.save_custom.key] + [
+            body.save_custom
+        ]
     kept = current.model_dump(include=set(PolicyIn.model_fields)) | {
         "reserve_rule": current.reserve.key
     }
     merged = (
         kept
-        | body.model_dump(exclude_none=True, exclude={"save_rule", "remove_rule"})
-        | {"reserve_rules": [rule.model_dump() for rule in own]}
+        | body.model_dump(
+            exclude_none=True, exclude={"save_rule", "remove_rule", "save_custom", "remove_custom"}
+        )
+        | {
+            "reserve_rules": [rule.model_dump() for rule in own],
+            "custom_rules": [rule.model_dump() for rule in customs],
+        }
     )
     if merged.get("payment_weekday") == -1:
         merged["payment_weekday"] = None
@@ -252,12 +267,22 @@ async def _put_in_force(
         reserve=in_force.model_dump(mode="json"),
         reserve_rules=[rule.model_dump(mode="json") for rule in body.reserve_rules],
         payment_weekday=body.payment_weekday,
+        custom_rules=[rule.model_dump(mode="json") for rule in body.custom_rules],
         created_by=created_by,
     )
     await repository.add(db, policy)
     if commit:
         await db.commit()
     return PolicyOut.model_validate(policy)
+
+
+# What a rule of the company's own gives where it applies: ordering leaves the outcome alone.
+_OWN: Final = {
+    "first": Outcome.OK,
+    "last": Outcome.OK,
+    "ask": Outcome.PROPOSE,
+    "hold": Outcome.HOLD,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +303,17 @@ def mirror(amount: Decimal, currency: str | None) -> Mirror | None:
     return Mirror(rate=rate, units=int(units))
 
 
-def evaluate(picture: Picture, policy: PolicyOut) -> tuple[Outcome, list[Result]]:
-    """Every hard rule's result for a payable's picture, and the worst of them, which decides."""
+def evaluate(
+    picture: Picture, policy: PolicyOut, facts: custom.Facts | None = None
+) -> tuple[Outcome, list[Result]]:
+    """Every hard rule's result for a payable's picture, then each of the company's own rules
+    that applies to the bill's facts, and the worst of them all, which decides. A rule of the
+    company's own only tightens or orders (ADR-0033)."""
     results = rules.evaluate(picture, policy)
+    if facts is not None:
+        results += [
+            Result(custom.result_id(rule), _OWN[rule.then], f"Your rule: {rule.key}")
+            for rule in policy.custom_rules
+            if custom.applies(rule, facts)
+        ]
     return rules.verdict(results), results

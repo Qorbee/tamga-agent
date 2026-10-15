@@ -22,6 +22,7 @@ from app.modules.decisions.schemas import (
     RunItem,
     RunRefusal,
 )
+from app.modules.parties import service as parties
 from app.modules.policy import service as policies
 from app.platform.auth import Actor
 from app.platform.errors import Conflict, NotFound
@@ -72,10 +73,17 @@ async def payment_run(db: AsyncSession, actor: Actor, on: date | None) -> Paymen
             continue
         due.append(DecisionOut.model_validate(row).model_copy(update={"invoice": bill}))
 
-    def order(item: DecisionOut) -> tuple[bool, date, uuid.UUID]:
-        # What is approved is spent already; then the oldest due first, a bill with no day last.
+    def order(item: DecisionOut) -> tuple[bool, int, date, uuid.UUID]:
+        # What is approved is spent already; then what the company's own rules put first, and
+        # last what they put last (ADR-0033); within each, the oldest due first, no day last.
         due_on = item.invoice.due_date if item.invoice else None
-        return (item.state is not DecisionState.APPROVED, due_on or date.max, item.id)
+        first_or_last = policies.order_of([result.rule for result in item.rules])
+        return (
+            item.state is not DecisionState.APPROVED,
+            first_or_last,
+            due_on or date.max,
+            item.id,
+        )
 
     in_run = sorted((item for item in due if item.state in _IN_RUN), key=order)
     held = sorted((item for item in due if item.state is DecisionState.HELD), key=order)
@@ -150,3 +158,63 @@ async def approve(db: AsyncSession, actor: Actor, body: RunApprove) -> RunApprov
             continue
         approved.append(item.decision_id)
     return RunApproved(approved=approved, refused=refused)
+
+
+async def rule_applies(
+    db: AsyncSession, actor: Actor, rule: policies.CustomRule
+) -> list[DecisionOut]:
+    """The bills waiting for the owner or held that a rule of the company's own applies to now:
+    what confirming it would put first or last, ask or hold (ADR-0033). An approved bill is the
+    executor's, and no rule moves it. It changes nothing."""
+    policy = await policies.current_policy(db, actor.company_id)
+    standing = await service._standing(db, actor.company_id, policy)
+    rows: list[Decision] = []
+    while True:
+        page, total = await repository.list_decisions(
+            db,
+            actor.company_id,
+            states=[DecisionState.AWAITING_OWNER, DecisionState.HELD],
+            invoice_id=None,
+            party_id=None,
+            page=PageParams(limit=_PAGE, offset=len(rows)),
+        )
+        rows.extend(page)
+        if not page or len(rows) >= total:
+            break
+    bills = {
+        bill.id: bill
+        for bill in await books.get_invoices(db, actor.company_id, [row.invoice_id for row in rows])
+    }
+    firms = await parties.get_parties(db, actor.company_id, list({row.party_id for row in rows}))
+    groups = await parties.all_groups(db, actor.company_id)
+    asks_client = any(each.attribute == "client_paid" for each in rule.when)
+    found: list[DecisionOut] = []
+    for row in rows:
+        bill = bills.get(row.invoice_id)
+        if bill is None:
+            continue
+        party = firms.get(row.party_id)
+        facts = policies.Facts(
+            party_id=row.party_id,
+            groups=frozenset(group.id for group in groups if row.party_id in group.party_ids),
+            known_groups=frozenset(group.id for group in groups),
+            party_kind=party.kind.value if party is not None else None,
+            issued_on=bill.issue_date,
+            due_on=bill.due_date,
+            today=standing.today,
+            in_policy_currency=_in_policy(row, policy.currency),
+            currency=bill.currency,
+            method=row.method,
+            client_paid=await service.client_paid(db, actor.company_id, bill.id, policy)
+            if asks_client
+            else None,
+        )
+        if policies.applies(rule, facts):
+            found.append(DecisionOut.model_validate(row).model_copy(update={"invoice": bill}))
+    return found
+
+
+def _in_policy(row: Decision, currency: str) -> Decimal | None:
+    if row.currency == currency:
+        return row.amount
+    return row.amount * row.reference_rate if row.reference_rate is not None else None

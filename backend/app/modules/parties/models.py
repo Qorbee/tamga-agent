@@ -4,16 +4,19 @@ from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
+    ARRAY,
     CheckConstraint,
     ForeignKeyConstraint,
     Index,
     Numeric,
     String,
     UniqueConstraint,
+    Uuid,
     false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import text
 
 from app.platform.db import Base, text_enum
 from app.platform.tenancy import CompanyScoped
@@ -110,4 +113,25 @@ class PartyIdentifier(CompanyScoped, Base):
     # From the books or the owner. An extracted identifier waits for the owner, and until then it
     # only suggests who sent something; it never decides a payee (ADR-0002).
     confirmed: Mapped[bool]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class PartyGroup(CompanyScoped, Base):
+    """Firms the company names together ("needs cash", "key carriers"), for its own payment rules
+    to name at once (ADR-0033). A firm may be in several."""
+
+    __tablename__ = "party_groups"
+    # A name is the company's once, whatever its case: the chat finds a group by its name.
+    __table_args__ = (
+        Index(
+            "party_groups_company_id_lower_name_key",
+            "company_id",
+            text("lower(name)"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    name: Mapped[str] = mapped_column(String(60))
+    party_ids: Mapped[list[uuid.UUID]] = mapped_column(ARRAY(Uuid), server_default="{}")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

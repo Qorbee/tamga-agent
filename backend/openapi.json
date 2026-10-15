@@ -1497,6 +1497,215 @@
         "title": "CompanyUpdate",
         "type": "object"
       },
+      "Condition-Input": {
+        "properties": {
+          "attribute": {
+            "enum": [
+              "group",
+              "firm",
+              "firm_kind",
+              "days_owed",
+              "days_to_due",
+              "amount",
+              "currency",
+              "method",
+              "client_paid"
+            ],
+            "title": "Attribute",
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "is",
+              "in",
+              "not_in",
+              "above",
+              "below"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "attribute",
+          "operator",
+          "value"
+        ],
+        "title": "Condition",
+        "type": "object"
+      },
+      "Condition-Output": {
+        "properties": {
+          "attribute": {
+            "enum": [
+              "group",
+              "firm",
+              "firm_kind",
+              "days_owed",
+              "days_to_due",
+              "amount",
+              "currency",
+              "method",
+              "client_paid"
+            ],
+            "title": "Attribute",
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "is",
+              "in",
+              "not_in",
+              "above",
+              "below"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "attribute",
+          "operator",
+          "value"
+        ],
+        "title": "Condition",
+        "type": "object"
+      },
+      "CustomRule-Input": {
+        "description": "One of the company's own payment rules.",
+        "properties": {
+          "key": {
+            "pattern": "^rule:[a-z0-9]{1,16}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "said": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Said",
+            "type": "string"
+          },
+          "then": {
+            "enum": [
+              "first",
+              "last",
+              "ask",
+              "hold"
+            ],
+            "title": "Then",
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "$ref": "#/components/schemas/Condition-Input"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "When",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "when",
+          "then"
+        ],
+        "title": "CustomRule",
+        "type": "object"
+      },
+      "CustomRule-Output": {
+        "description": "One of the company's own payment rules.",
+        "properties": {
+          "key": {
+            "pattern": "^rule:[a-z0-9]{1,16}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "said": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Said",
+            "type": "string"
+          },
+          "then": {
+            "enum": [
+              "first",
+              "last",
+              "ask",
+              "hold"
+            ],
+            "title": "Then",
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "$ref": "#/components/schemas/Condition-Output"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "When",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "when",
+          "then"
+        ],
+        "title": "CustomRule",
+        "type": "object"
+      },
       "DecisionAction": {
         "description": "The owner's answer to the evaluation it names: one for an evaluation since replaced is\nrefused. ``edit`` changes the amount and ``pay_by`` the way it is paid, each a new proposal:\nevery rule runs again, and it comes back to the owner. ``mark_paid`` says the owner paid it\nin the bank, for what left their account (ADR-0027); ``undo_paid`` takes that back, for a\nbank transfer settled by mistake, with the owner's reason if they give one.",
         "properties": {
@@ -5364,6 +5573,90 @@
         "title": "PartyChange",
         "type": "object"
       },
+      "PartyGroupIn": {
+        "description": "A group of firms the company names, with its members.",
+        "properties": {
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "party_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Party Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PartyGroupIn",
+        "type": "object"
+      },
+      "PartyGroupOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "party_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Party Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "party_ids"
+        ],
+        "title": "PartyGroupOut",
+        "type": "object"
+      },
+      "PartyGroupPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PartyGroupOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PartyGroupPage",
+        "type": "object"
+      },
       "PartyKind": {
         "enum": [
           "organisation",
@@ -6348,6 +6641,17 @@
             ],
             "title": "Remainder Tolerance"
           },
+          "remove_custom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remove Custom"
+          },
           "remove_rule": {
             "anyOf": [
               {
@@ -6369,6 +6673,16 @@
               }
             ],
             "title": "Reserve Rule"
+          },
+          "save_custom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomRule-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "save_rule": {
             "anyOf": [
@@ -6482,6 +6796,17 @@
             ],
             "title": "Remainder Tolerance"
           },
+          "remove_custom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remove Custom"
+          },
           "remove_rule": {
             "anyOf": [
               {
@@ -6503,6 +6828,16 @@
               }
             ],
             "title": "Reserve Rule"
+          },
+          "save_custom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomRule-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "save_rule": {
             "anyOf": [
@@ -6603,6 +6938,14 @@
             "title": "Currency",
             "type": "string"
           },
+          "custom_rules": {
+            "items": {
+              "$ref": "#/components/schemas/CustomRule-Input"
+            },
+            "maxItems": 30,
+            "title": "Custom Rules",
+            "type": "array"
+          },
           "default_method": {
             "$ref": "#/components/schemas/PaymentMethod",
             "default": "vault_usdc"
@@ -6694,6 +7037,13 @@
           "currency": {
             "title": "Currency",
             "type": "string"
+          },
+          "custom_rules": {
+            "items": {
+              "$ref": "#/components/schemas/CustomRule-Output"
+            },
+            "title": "Custom Rules",
+            "type": "array"
           },
           "default_method": {
             "$ref": "#/components/schemas/PaymentMethod"
@@ -10276,6 +10626,57 @@
         ]
       }
     },
+    "/decisions/matching": {
+      "post": {
+        "description": "The open bills a payment rule of the company's own applies to now, as each was last\nevaluated (ADR-0033): what confirming it would order, ask or hold. Changes nothing.",
+        "operationId": "decisions.decisions_matching",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomRule-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DecisionOut"
+                  },
+                  "title": "Response Decisions.Decisions Matching",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Decisions Matching",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
     "/decisions/{decision_id}": {
       "get": {
         "operationId": "decisions.get_decision",
@@ -13324,6 +13725,324 @@
           }
         ],
         "summary": "Change Party",
+        "tags": [
+          "parties"
+        ]
+      }
+    },
+    "/party-groups": {
+      "get": {
+        "operationId": "parties.list_groups",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyGroupPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Groups",
+        "tags": [
+          "parties"
+        ]
+      },
+      "post": {
+        "operationId": "parties.add_group",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyGroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyGroupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Add Group",
+        "tags": [
+          "parties"
+        ]
+      }
+    },
+    "/party-groups/{group_id}": {
+      "delete": {
+        "operationId": "parties.delete_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Group",
+        "tags": [
+          "parties"
+        ]
+      },
+      "put": {
+        "operationId": "parties.save_group",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyGroupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyGroupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Save Group",
+        "tags": [
+          "parties"
+        ]
+      }
+    },
+    "/party-groups/{group_id}/members/{party_id}": {
+      "delete": {
+        "description": "Takes one firm out of the group, leaving the others as they are now.",
+        "operationId": "parties.remove_member",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyGroupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Remove Member",
+        "tags": [
+          "parties"
+        ]
+      },
+      "put": {
+        "description": "Puts one firm in the group, leaving its other members as they are now.",
+        "operationId": "parties.add_member",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Group Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyGroupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Add Member",
         "tags": [
           "parties"
         ]

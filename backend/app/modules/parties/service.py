@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any, Final
 
 from sqlalchemy import ColumnElement, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies import service as companies
@@ -26,13 +27,23 @@ from app.modules.parties.models import (
     IdentifierKind,
     IdentifierSource,
     Party,
+    PartyGroup,
     PartyIdentifier,
     PartyKind,
 )
-from app.modules.parties.schemas import BalanceSide, PartyChange, PartyOut, PartyPage, PartySort
+from app.modules.parties.schemas import (
+    BalanceSide,
+    PartyChange,
+    PartyGroupIn,
+    PartyGroupOut,
+    PartyGroupPage,
+    PartyOut,
+    PartyPage,
+    PartySort,
+)
 from app.platform import maildomains
 from app.platform.auth import Actor, Role
-from app.platform.errors import NotFound
+from app.platform.errors import Conflict, NotFound
 from app.platform.pagination import PageParams
 
 _CONFIRMING: Final = frozenset({IdentifierSource.BOOKS, IdentifierSource.OWNER})
@@ -434,3 +445,86 @@ async def list_parties(
         limit=page.limit,
         offset=page.offset,
     )
+
+
+# Groups of firms the company names (ADR-0033). The company's own payment rules name them, so
+# only the owner changes them, as only the owner changes the policy.
+
+
+class GroupNameTaken(Conflict):
+    code = "group_name_taken"
+
+
+async def list_groups(db: AsyncSession, actor: Actor, page: PageParams) -> PartyGroupPage:
+    rows, total = await repository.list_groups(db, actor.company_id, page)
+    return PartyGroupPage(
+        items=[PartyGroupOut.model_validate(row) for row in rows],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+async def all_groups(db: AsyncSession, company_id: uuid.UUID) -> list[PartyGroupOut]:
+    """Every group of the company's, for code that reads them all (a pass of the rules)."""
+    return [
+        PartyGroupOut.model_validate(row) for row in await repository.all_groups(db, company_id)
+    ]
+
+
+async def save_group(
+    db: AsyncSession, actor: Actor, body: PartyGroupIn, group_id: uuid.UUID | None = None
+) -> PartyGroupOut:
+    """Adds a group, or renames one and sets its members. Every member is a firm of the
+    company's; a name is the company's once, whatever its case. Commits."""
+    actor.require(Role.OWNER)
+    members = list(dict.fromkeys(body.party_ids))
+    await _check_members(db, actor.company_id, members)
+    if group_id is None:
+        group = PartyGroup(company_id=actor.company_id, name=body.name.strip(), party_ids=members)
+        db.add(group)
+    else:
+        found = await repository.get_group(db, actor.company_id, group_id, for_update=True)
+        if found is None:
+            raise NotFound("No such group")
+        group = found
+        group.name, group.party_ids = body.name.strip(), members
+    return await _committed(db, group)
+
+
+async def change_member(
+    db: AsyncSession, actor: Actor, group_id: uuid.UUID, party_id: uuid.UUID, *, inside: bool
+) -> PartyGroupOut:
+    """Puts one firm in a group or takes it out, under a lock on the group, so two changes to
+    one group never undo each other. Commits."""
+    actor.require(Role.OWNER)
+    await _check_members(db, actor.company_id, [party_id])
+    group = await repository.get_group(db, actor.company_id, group_id, for_update=True)
+    if group is None:
+        raise NotFound("No such group")
+    others = [member for member in group.party_ids if member != party_id]
+    group.party_ids = [*others, party_id] if inside else others
+    return await _committed(db, group)
+
+
+async def delete_group(db: AsyncSession, actor: Actor, group_id: uuid.UUID) -> None:
+    """Removes a group; a rule that names it can no longer be read for anyone. Commits."""
+    actor.require(Role.OWNER)
+    await repository.delete_group(db, actor.company_id, group_id)
+    await db.commit()
+
+
+async def _check_members(
+    db: AsyncSession, company_id: uuid.UUID, members: Sequence[uuid.UUID]
+) -> None:
+    if members and len(await repository.get_many(db, company_id, members)) != len(members):
+        raise NotFound("No such firm")
+
+
+async def _committed(db: AsyncSession, group: PartyGroup) -> PartyGroupOut:
+    try:
+        await db.commit()
+    except IntegrityError as error:
+        await db.rollback()
+        raise GroupNameTaken("A group of that name exists") from error
+    return PartyGroupOut.model_validate(group)

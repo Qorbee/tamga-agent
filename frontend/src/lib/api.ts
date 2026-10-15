@@ -267,6 +267,21 @@ export const getPolicy = () => request<Policy>("/policy");
 export const changePolicy = (body: Schemas["PolicyChange-Input"]) =>
   request<Policy>("/policy", json("PATCH", body));
 export type PolicyChange = Schemas["PolicyChange-Input"];
+/** A payment rule of the company's own (ADR-0033), and a group of firms one may name. */
+export type CustomRule = Schemas["CustomRule-Output"];
+export type PartyGroup = Schemas["PartyGroupOut"];
+/** Every group of the company's: a company names a few, so one page of the most there is. */
+export const listPartyGroups = async () =>
+  (await request<Schemas["PartyGroupPage"]>("/party-groups?limit=100")).items;
+/** One firm put in a group, or taken out, leaving its other members as they are now. */
+export const setGroupMember = (groupId: string, partyId: string, inside: boolean) =>
+  request<PartyGroup>(`/party-groups/${groupId}/members/${partyId}`, { method: inside ? "PUT" : "DELETE" });
+export const addPartyGroup = (body: Schemas["PartyGroupIn"]) => request<PartyGroup>("/party-groups", json("POST", body));
+export const savePartyGroup = (id: string, body: Schemas["PartyGroupIn"]) =>
+  request<PartyGroup>(`/party-groups/${id}`, json("PUT", body));
+/** The open bills a rule of the company's own applies to now; nothing changes. */
+export const decisionsMatching = (rule: Schemas["CustomRule-Input"]) =>
+  request<Decision[]>("/decisions/matching", json("POST", rule));
 export type PolicyDraft = Schemas["PolicyDraftOut"];
 /** A change to the policy drafted in a chat, and whether the owner answered it. */
 export const getPolicyDraft = (id: string) => request<PolicyDraft>(`/policy/drafts/${id}`);
