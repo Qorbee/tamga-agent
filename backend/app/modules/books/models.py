@@ -79,6 +79,9 @@ class Invoice(CompanyScoped, Base):
     # The record of the same bill in another of the source's lists: an incoming e-invoice's
     # purchase, once it was booked. A project holds the bill once, as that record.
     same_as_id: Mapped[uuid.UUID | None]
+    # The invoice's own file as its source rendered it (the e-invoice's PDF), stored once it was
+    # asked for: a company's document.
+    document_id: Mapped[uuid.UUID | None]
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB)
     synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

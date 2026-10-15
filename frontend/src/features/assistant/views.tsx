@@ -247,7 +247,7 @@ function TotalsView({ shown }: { shown: Shown }) {
   const ready = totals.every((query) => query.data);
   const side = (index: number) => totals.slice(index * cutoffs.length, (index + 1) * cutoffs.length).map((query) => query.data ?? []);
   // Settled invoices have nothing left on them: what they came to is their total.
-  const field = outstanding ? "remaining_amount" : "total_amount";
+  const field = outstanding ? "owed_amount" : "total_amount";
   const periods = cutoffs.map((cutoff, index) => ({
     key: cutoff,
     label: index === 0 ? t.money.overdue : new Intl.DateTimeFormat(locale, { month: "short" }).format(new Date(`${cutoffs[index - 1]}T12:00:00`)),

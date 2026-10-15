@@ -335,6 +335,20 @@ async def invoice_totals(
     return rows.all()
 
 
+async def open_invoices(
+    db: AsyncSession, company_id: uuid.UUID, which: InvoiceFilter
+) -> Sequence[Invoice]:
+    """Every invoice a list holds that the books show open: not cancelled, something left."""
+    rows = await db.scalars(
+        select(Invoice).where(
+            *which.where(company_id),
+            Invoice.cancelled.is_(False),
+            Invoice.remaining_amount > 0,
+        )
+    )
+    return rows.all()
+
+
 _INVOICE_SORTS: dict[str, list[ColumnElement[Any]]] = {
     "-issue_date": [Invoice.issue_date.desc().nulls_last()],
     "issue_date": [Invoice.issue_date.asc().nulls_last()],
@@ -386,6 +400,42 @@ async def invoices_of_source(
         .order_by(Invoice.id)
     )
     return rows.all()
+
+
+async def e_document_of(db: AsyncSession, company_id: uuid.UUID, invoice: Invoice) -> str | None:
+    """The e-document id an invoice carries, or the one its other record does: a purchase booked
+    from an incoming e-invoice names none itself."""
+    if invoice.e_document_id:
+        return invoice.e_document_id
+    twin: str | None = await db.scalar(
+        select(Invoice.e_document_id)
+        .where(
+            Invoice.company_id == company_id,
+            Invoice.same_as_id == invoice.id,
+            Invoice.e_document_id.is_not(None),
+        )
+        .limit(1)
+    )
+    return twin
+
+
+async def open_months(db: AsyncSession, company_id: uuid.UUID, source: str) -> list[date]:
+    """The first day of each month that holds an invoice of ``source`` still open: what is left of
+    it above zero, and not cancelled."""
+    month = func.date_trunc("month", Invoice.issue_date)
+    rows = await db.scalars(
+        select(month)
+        .where(
+            Invoice.company_id == company_id,
+            Invoice.source == source,
+            Invoice.remaining_amount > 0,
+            Invoice.cancelled.is_(False),
+            Invoice.issue_date.is_not(None),
+        )
+        .group_by(month)
+        .order_by(month)
+    )
+    return [first.date() for first in rows.all()]
 
 
 async def same_as(

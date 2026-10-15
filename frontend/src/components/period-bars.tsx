@@ -175,7 +175,12 @@ export function PeriodBars({
   );
 }
 
-type Cumulative = { currency: string | null; remaining_amount: string | null; total_amount?: string | null };
+type Cumulative = {
+  currency: string | null;
+  remaining_amount: string | null;
+  owed_amount?: string | null;
+  total_amount?: string | null;
+};
 
 /** What is left per currency up to cutoff `index` (or what was invoiced, by `field`), less the
  * same up to the one before: the books' totals are cumulative up to each cutoff, so no list is cut
@@ -183,12 +188,13 @@ type Cumulative = { currency: string | null; remaining_amount: string | null; to
 export function between(
   cumulative: Cumulative[][],
   index: number,
-  field: "remaining_amount" | "total_amount" = "remaining_amount",
+  field: "remaining_amount" | "owed_amount" | "total_amount" = "owed_amount",
 ): [string, number][] {
   const sum = (totals: Cumulative[] | undefined) => {
     const out = new Map<string, number>();
     for (const total of totals ?? []) {
-      const amount = total[field];
+      // What is owed falls back to the books' remainder where nothing was read.
+      const amount = field === "owed_amount" ? (total.owed_amount ?? total.remaining_amount) : total[field];
       if (total.currency && amount !== null && amount !== undefined) out.set(total.currency, Number(amount));
     }
     return out;

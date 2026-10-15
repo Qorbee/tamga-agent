@@ -329,7 +329,10 @@ async def _figures(db: AsyncSession, company: Company, today: date) -> Figures:
         totals = await books.invoice_totals(
             db, actor, books.InvoiceFilter(direction=direction, outstanding=True, due_before=before)
         )
-        return "; ".join(f"{t.remaining_amount} {t.currency} ({t.count})" for t in totals) or "none"
+        return (
+            "; ".join(f"{t.owed_amount} {t.currency} ({t.count})" for t in totals if t.owed_amount)
+            or "none"
+        )
 
     week = today + timedelta(days=8)
     cash = (f"{held.total} {currency}" if held.items else "no balance known") + (

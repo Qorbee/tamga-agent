@@ -29,9 +29,9 @@ from app.modules.parties.models import (
     PartyIdentifier,
     PartyKind,
 )
-from app.modules.parties.schemas import BalanceSide, PartyOut, PartyPage, PartySort
+from app.modules.parties.schemas import BalanceSide, PartyChange, PartyOut, PartyPage, PartySort
 from app.platform import maildomains
-from app.platform.auth import Actor
+from app.platform.auth import Actor, Role
 from app.platform.errors import NotFound
 from app.platform.pagination import PageParams
 
@@ -390,6 +390,20 @@ async def get_party(db: AsyncSession, actor: Actor, party_id: uuid.UUID) -> Part
     if not found:
         raise NotFound("No such party")
     return PartyOut.model_validate(found[0])
+
+
+async def change_party(
+    db: AsyncSession, actor: Actor, party_id: uuid.UUID, body: PartyChange
+) -> PartyOut:
+    """Sets what a party is, over what the books say; the next sync keeps it. Commits."""
+    actor.require(Role.OWNER, Role.OPS)
+    found = await repository.get_many(db, actor.company_id, [party_id])
+    if not found:
+        raise NotFound("No such party")
+    party = found[0]
+    party.kind, party.kind_chosen = body.kind, True
+    await db.commit()
+    return PartyOut.model_validate(party)
 
 
 async def list_parties(

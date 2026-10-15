@@ -50,11 +50,17 @@ class InvoiceOut(BaseModel):
     description: str | None
     # The record of the same bill in another list (an incoming e-invoice's booked purchase).
     same_as_id: uuid.UUID | None
+    # Its own file, once one was asked for and found (``POST /invoices/{id}/file``).
+    document_id: uuid.UUID | None = None
     synced_at: datetime
     # Read, never written to the books (ADR-0022): what an open invoice reads as under how the
     # company records payments, and what the firm's account says is owed on it as of a day. Null
     # where a list does not read them, and for an invoice the books show paid or cancelled.
     settled: Settled | None = None
+    # What is still owed of it as read: what is left by the books, none where the firm's account
+    # shows it paid or what is left is within the tolerance, and no more than the account lays
+    # on it. Null where the books give no remainder.
+    owed: Decimal | None = None
     account_owed: Decimal | None = None
     account_on: date | None = None
 
@@ -77,3 +83,13 @@ class InvoiceTotal(BaseModel):
     # What is left of those not cancelled, and what was paid of them.
     remaining_amount: Decimal | None
     paid_amount: Decimal | None
+    # What is still owed of them as read: the remainder, less what the firms' accounts show paid
+    # where the company records payments on account (each invoice's ``owed``).
+    owed_amount: Decimal | None = None
+
+
+class InvoiceFile(BaseModel):
+    """The document that holds an invoice's own file: one its mail carried, or the one its source
+    rendered."""
+
+    document_id: uuid.UUID

@@ -10,6 +10,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -65,6 +66,8 @@ class Party(CompanyScoped, Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     name: Mapped[str] = mapped_column(String(300))
     kind: Mapped[PartyKind] = mapped_column(text_enum(PartyKind, "parties_kind_check"))
+    # Whether a person in the company said what it is: a sync keeps their word over the books'.
+    kind_chosen: Mapped[bool] = mapped_column(default=False, server_default=false())
     # The accounting card this party is synced from (its source and id), so a re-sync updates it.
     source: Mapped[str | None] = mapped_column(String(40))
     source_id: Mapped[str | None] = mapped_column(String(100))

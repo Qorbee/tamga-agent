@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, Query
 
 from app.modules.books import service
 from app.modules.books.models import InvoiceDirection, InvoiceKind
-from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort, InvoiceTotal
+from app.modules.books.schemas import (
+    InvoiceFile,
+    InvoiceOut,
+    InvoicePage,
+    InvoiceSort,
+    InvoiceTotal,
+)
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
 from app.platform.pagination import PageDep
@@ -66,3 +72,11 @@ async def invoice_totals(
 @invoices.get("/invoices/{invoice_id}")
 async def get_invoice(invoice_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> InvoiceOut:
     return await service.get_invoice(db, actor, invoice_id)
+
+
+@invoices.post("/invoices/{invoice_id}/file")
+async def invoice_file(invoice_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> InvoiceFile:
+    """The document holding the invoice's own file: one its mail carried, else the file the books'
+    source renders for its e-document, read once and kept. 404 ``no_invoice_file`` when there is
+    none."""
+    return await service.invoice_file(db, actor, invoice_id)

@@ -20,7 +20,8 @@ function sideOf(invoices: Invoice[], direction: Invoice["direction"]): Side {
     const add = (into: Map<string, number>, amount: string | null) =>
       into.set(invoice.currency ?? "", (into.get(invoice.currency ?? "") ?? 0) + Number(amount ?? 0));
     add(side.total, invoice.total_amount);
-    add(side.left, invoice.remaining_amount);
+    // What is owed as read: on the firm's account, an invoice its account shows paid is paid.
+    add(side.left, invoice.owed ?? invoice.remaining_amount);
   }
   return side;
 }

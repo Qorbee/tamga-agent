@@ -11,7 +11,7 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
@@ -31,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  changeParty,
   getMe,
   getParty,
   listInvoices,
@@ -43,6 +44,7 @@ import {
 import { formatDays, formatMoney, formatMoneyCompact, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { usePagedList } from "@/lib/use-paged-list";
+import { useCanEdit } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 const PAGE = 50;
@@ -326,8 +328,10 @@ function Totals({ totals, side, shown }: { totals: InvoiceTotal[]; side: Exclude
       </p>
       <ul className="mt-2.5 grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-x-4 gap-y-3">
         {totals.map((total) => {
-          const amount = open ? total.remaining_amount : total.total_amount;
-          const left = total.remaining_amount;
+          // What is owed as read: on the firm's account, less what the accounts show paid.
+          const owed = total.owed_amount ?? total.remaining_amount;
+          const amount = open ? owed : total.total_amount;
+          const left = owed;
           const currency = total.currency;
           const full = amount !== null && currency ? formatMoney(Number(amount), currency, locale) : words.unknown;
           const short = amount !== null && currency ? formatMoneyCompact(Number(amount), currency, locale, "symbol") : words.unknown;
@@ -494,6 +498,13 @@ function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClo
   const { t, locale } = useI18n();
   const words = t.books.totals;
   const sides = view === "both" ? (["collect", "pay"] as const) : ([view] as const);
+  const queryClient = useQueryClient();
+  const canEdit = useCanEdit();
+  // What the firm is, as someone here says: the books' word until then, and kept over it after.
+  const kind = useMutation({
+    mutationFn: (next: Party["kind"]) => changeParty(party.id, { kind: next }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["parties"] }),
+  });
   const totals = useQuery({
     queryKey: ["invoice-totals", { party_id: party.id, firm: true }],
     queryFn: async () => {
@@ -515,6 +526,14 @@ function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClo
               {t.books.balance.asOf(formatDays(party.balance_on, null, locale))}
             </span>
           ) : null}
+          <Segmented
+            label={t.books.firmKindLabel}
+            value={kind.isError ? party.kind : (kind.variables ?? party.kind)}
+            disabled={!canEdit || kind.isPending}
+            onChange={(next) => kind.mutate(next)}
+            options={(["organisation", "person"] as const).map((value) => ({ value, label: t.books.firmKinds[value] }))}
+            className="mt-1 w-fit"
+          />
         </div>
         <IconButton label={t.books.everyFirm} icon={Cancel01Icon} onClick={onClose} />
       </div>
@@ -533,13 +552,14 @@ function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClo
                 total.paid_amount !== null && total.remaining_amount !== null
                   ? String(Number(total.paid_amount) + Number(total.remaining_amount))
                   : null;
-              const left = Number(total.remaining_amount ?? 0);
+              const owed = total.owed_amount ?? total.remaining_amount;
+              const left = Number(owed ?? 0);
               return (
                 <Stat
                   key={`${side}-${total.currency ?? "none"}`}
                   tone={left > 0 ? SIDE_TONE[side] : "plain"}
                   label={words.labels.open[side]}
-                  figure={money(total.remaining_amount) ?? words.unknown}
+                  figure={money(owed) ?? words.unknown}
                   detail={[
                     invoiced !== null
                       ? words.paidOf(money(total.paid_amount) ?? "", money(invoiced) ?? "")

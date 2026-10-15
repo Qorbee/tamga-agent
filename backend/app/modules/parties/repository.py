@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, exists, func, or_, select
+from sqlalchemy import ColumnElement, case, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,8 +50,12 @@ async def upsert_from_source(
         statement.on_conflict_do_update(
             index_elements=[Party.company_id, Party.source, Party.source_id],
             set_={
-                column: statement.excluded[column]
-                for column in ("name", "kind", "balance", "balance_currency", "balance_on")
+                **{
+                    column: statement.excluded[column]
+                    for column in ("name", "balance", "balance_currency", "balance_on")
+                },
+                # What a person in the company said the party is stands over the books.
+                "kind": case((Party.kind_chosen, Party.kind), else_=statement.excluded.kind),
             },
         )
         .returning(Party)

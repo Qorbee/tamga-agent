@@ -350,6 +350,12 @@ export const en = {
     cancelled: "Cancelled",
     read: "Read from the books",
     notFound: "This invoice is not here any more.",
+    /** An invoice shown as its own file or as the books' figures. */
+    shows: { file: "PDF", details: "Details" },
+    showsLabel: "Show the invoice as",
+    noFile: "Your books hold no PDF for this invoice.",
+    booksUnreachable: "Your books could not be asked just now. Try again later.",
+    firmKindLabel: "This firm is a",
     views: { collect: "To collect", pay: "To pay", firms: "Firms" },
     shown: { open: "Open", overdue: "Overdue", all: "All" },
     filter: "Filter",

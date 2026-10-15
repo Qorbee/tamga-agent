@@ -9,7 +9,7 @@ skipped rather than failing every sync.
 import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
@@ -117,6 +117,34 @@ class TaxRegistry(Protocol):
 
     async def taxpayer(self, tax_id: str) -> Taxpayer | None:
         """The holder of ``tax_id``, or None when the registry has none on record."""
+        ...
+
+
+class ChangesUnknown(Exception):
+    """The source cannot say which of its records changed: the caller reads the open ones again
+    instead."""
+
+
+@runtime_checkable
+class ChangeFeed(Protocol):
+    """A source that can list the invoices whose record changed since a time, however old the
+    invoice: a payment recorded today on last spring's invoice changes it, and a sync that reads
+    by date never sees it again. It only reads."""
+
+    def changed_invoices(self, since: datetime) -> AsyncIterator[InvoiceRecord]:
+        """Invoices whose record changed on or after ``since``, in the source's own time; raises
+        ChangesUnknown, before or while yielding, when the source cannot tell."""
+        ...
+
+
+@runtime_checkable
+class InvoiceFiles(Protocol):
+    """A source that can hand over an invoice's own file, as its e-invoice system rendered it.
+    It only reads."""
+
+    async def invoice_file(self, e_document_id: str) -> tuple[bytes, str] | None:
+        """The file of the e-document ``e_document_id`` names, with its media type; None when the
+        source has none for it."""
         ...
 
 

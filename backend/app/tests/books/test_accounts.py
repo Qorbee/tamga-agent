@@ -97,3 +97,23 @@ def test_what_an_open_invoice_reads_as() -> None:
     assert accounts.settled(fee, None, per_invoice, tolerance) is Settled.PAID_WITH_DIFFERENCE
     closed = bill.model_copy(update={"remaining_amount": Decimal("0.00")})
     assert accounts.settled(closed, paid, on_account, tolerance) is None
+
+
+def test_what_is_still_owed_as_read() -> None:
+    old, new = invoice(date(2026, 8, 1), "200.00"), invoice(date(2026, 9, 1), "300.00")
+    laid = accounts.lay(accounts.Balance(Decimal("-350.00"), "EUR", ON), [old, new])
+
+    def read(bill: InvoiceOut, recorded: PaymentsRecorded) -> Decimal | None:
+        account = laid.get(bill.id) if recorded is PaymentsRecorded.ON_ACCOUNT else None
+        return accounts.owed(bill, accounts.settled(bill, account, recorded, Decimal(2)), account)
+
+    # On the firm's account: the newest owed whole, the one before only what the balance leaves.
+    assert [read(each, PaymentsRecorded.ON_ACCOUNT) for each in (old, new)] == [
+        Decimal("50.00"),
+        Decimal("300.00"),
+    ]
+    # Per invoice, what the books leave is owed, whatever the account says.
+    assert [read(each, PaymentsRecorded.PER_INVOICE) for each in (old, new)] == [
+        Decimal("200.00"),
+        Decimal("300.00"),
+    ]

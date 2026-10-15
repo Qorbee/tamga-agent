@@ -134,6 +134,7 @@ async def test_invoices_are_listed_by_kind_by_what_is_left_and_in_the_order_aske
             "total_amount": "1100.00",
             "remaining_amount": "1000.00",
             "paid_amount": "0.00",
+            "owed_amount": "1000.00",
         }
     ]
     open_sales = (
@@ -180,6 +181,7 @@ async def test_totals_are_never_summed_across_currencies(client: httpx.AsyncClie
             "total_amount": "500.00",
             "remaining_amount": "300.00",
             "paid_amount": "200.00",
+            "owed_amount": "300.00",
         },
         {
             "currency": "TRY",
@@ -187,6 +189,7 @@ async def test_totals_are_never_summed_across_currencies(client: httpx.AsyncClie
             "total_amount": "1000.00",
             "remaining_amount": "400.00",
             "paid_amount": "600.00",
+            "owed_amount": "400.00",
         },
     ]
 
@@ -205,6 +208,7 @@ async def test_totals_are_never_summed_across_currencies(client: httpx.AsyncClie
         "total_amount": "550.00",
         "remaining_amount": None,
         "paid_amount": None,
+        "owed_amount": None,
     }
     # Another company's invoices are in none of them.
     await guest_client(client)

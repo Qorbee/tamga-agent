@@ -1,10 +1,12 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 
+import { useOpenFromCanvas } from "@/components/canvas-link";
+import { Segmented } from "@/components/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, getInvoice, type Invoice } from "@/lib/api";
+import { ApiError, getInvoice, getInvoiceFile, type Invoice } from "@/lib/api";
 import { formatDate, formatDays, formatMoney } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -30,6 +32,23 @@ export function InvoiceTitle({ id }: { id: string }) {
 export function InvoiceView({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const invoice = useInvoice(id);
+  const queryClient = useQueryClient();
+  const open = useOpenFromCanvas();
+  // The file is asked for once someone wants it: finding it may cost the books a read. It opens
+  // in the canvas, whose back button returns here.
+  const file = useMutation({
+    mutationFn: () => getInvoiceFile(id),
+    onSuccess: (found) => {
+      void queryClient.invalidateQueries({ queryKey: invoiceKey(id) });
+      open({ kind: "document", id: found.document_id });
+    },
+  });
+  const [shown, setShown] = useState<"file" | "details">("details");
+  // Asked each time: a file kept before may have been deleted since, and the server finds it again.
+  const show = (next: "file" | "details") => {
+    setShown(next);
+    if (next === "file" && !file.isPending) file.mutate();
+  };
 
   if (invoice.isError)
     return (
@@ -54,8 +73,29 @@ export function InvoiceView({ id }: { id: string }) {
     [t.books.eDocument, bill.e_document_id ? <span className="font-mono text-xs break-all">{bill.e_document_id}</span> : null],
   ];
 
+  const views = (
+    <Segmented
+      label={t.books.showsLabel}
+      value={shown === "file" && file.isError ? "details" : shown}
+      disabled={file.isPending}
+      onChange={show}
+      options={(["file", "details"] as const).map((value) => ({ value, label: t.books.shows[value] }))}
+    />
+  );
   return (
     <div className="grid grid-cols-1 gap-6 p-4 sm:p-5">
+      <div className="grid gap-2">
+        {views}
+        {shown === "file" && file.isError ? (
+          <p className="text-muted-foreground text-sm" role="status">
+            {file.error instanceof ApiError && file.error.status === 404
+              ? t.books.noFile
+              : file.error instanceof ApiError && file.error.status === 503
+                ? t.books.booksUnreachable
+                : t.errors.load}
+          </p>
+        ) : null}
+      </div>
       <header className="grid gap-1">
         <span className="text-muted-foreground text-sm">
           {t.books.kinds[bill.kind]}

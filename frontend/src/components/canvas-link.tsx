@@ -194,6 +194,24 @@ export function useKeptScroll(scroller: RefObject<HTMLElement | null>): void {
   }, [scroller, key]);
 }
 
+/** Opens a record from the one the canvas shows, keeping the way back to it for the panel's back
+ * button: what a `CanvasLink` inside the canvas does, for a record known only once asked for. */
+export function useOpenFromCanvas(): (view: CanvasView) => void {
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
+  const current = useCanvasView();
+  const trail = useCanvasTrail();
+  return useCallback(
+    (view: CanvasView) =>
+      router.replace(
+        hrefWith(pathname, search, view, current && !sameView(current, view) ? [...trail, current] : []),
+        { scroll: false },
+      ),
+    [router, pathname, search, current, trail],
+  );
+}
+
 /** Shows a record in place of the open one, with no way back to it: the open one is gone. */
 export function useShowInCanvas(): (view: CanvasView) => void {
   const router = useRouter();

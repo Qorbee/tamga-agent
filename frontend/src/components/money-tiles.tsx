@@ -54,9 +54,9 @@ export function MoneyTiles({ className }: { className?: string }) {
   const none = { full: "—", short: "—" };
   // What the books say is owed by then, held bills included: a hold is no less a debt.
   const totalOf = (totals: InvoiceTotal[] | undefined) => {
-    const amounts = (totals ?? []).filter((total) => total.currency && Number(total.remaining_amount ?? 0) > 0);
+    const amounts = (totals ?? []).filter((total) => total.currency && Number(owedOf(total) ?? 0) > 0);
     if (amounts.length === 0) return none;
-    const each = amounts.map((total) => money(Number(total.remaining_amount), total.currency ?? currency));
+    const each = amounts.map((total) => money(Number(owedOf(total)), total.currency ?? currency));
     return { full: each.map((one) => one.full).join(" · "), short: each.map((one) => one.short).join(" · ") };
   };
   const count = waiting.data ? String(waiting.data.total) : "—";
@@ -94,4 +94,10 @@ export function MoneyTiles({ className }: { className?: string }) {
     </dl>
     </div>
   );
+}
+
+/** What is still owed of a list's invoices as read (on the firm's account, less what the accounts
+ * show paid), or the books' own remainder where nothing was read. */
+function owedOf(total: { owed_amount?: string | null; remaining_amount: string | null }): string | null {
+  return total.owed_amount ?? total.remaining_amount;
 }

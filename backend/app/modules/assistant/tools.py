@@ -20,7 +20,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.assistant.seat import Seat
-from app.modules.books.schemas import InvoiceOut
+from app.modules.books.schemas import InvoiceOut, Settled
 from app.modules.linking import service as linking
 from app.modules.memory import service as memory
 from app.modules.memory.models import MemoryKind
@@ -341,9 +341,13 @@ def bill_line(invoice: InvoiceOut) -> str:
         if invoice.total_amount is not None
         else "no amount"
     )
+    # What is owed as read where it was read: on the firm's account, an invoice the account
+    # shows paid is paid, whatever the books keep against the invoice itself.
+    owed = invoice.owed if invoice.settled is not None else invoice.remaining_amount
     left = (
-        f", {invoice.remaining_amount} left to pay"
-        if invoice.remaining_amount is not None and not invoice.cancelled
+        f", {owed} left to pay"
+        + (" (paid on the firm's account)" if invoice.settled is Settled.PAID_ON_ACCOUNT else "")
+        if owed is not None and not invoice.cancelled
         else ""
     )
     return (

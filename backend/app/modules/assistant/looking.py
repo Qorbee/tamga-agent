@@ -186,8 +186,12 @@ async def _invoices(
     seat: Seat, q: str, since: date | None, until: date | None, limit: int
 ) -> list[str]:
     async with open_session() as db:
-        found = await books.find_invoices(
-            db, seat.company_id, q=q or None, since=since, until=until, limit=limit
+        found = await books.read_invoices(
+            db,
+            seat.company_id,
+            await books.find_invoices(
+                db, seat.company_id, q=q or None, since=since, until=until, limit=limit
+            ),
         )
         held = await _projects_holding(db, seat, ItemKind.INVOICE, [bill.id for bill in found])
     return [
@@ -301,8 +305,10 @@ async def _project(seat: Seat, number: str) -> str | None:
         files = await documents.get_documents(db, seat.company_id, ids_of(links, ItemKind.DOCUMENT))
         bills = {
             bill.id: bill
-            for bill in await books.get_invoices(
-                db, seat.company_id, ids_of(links, ItemKind.INVOICE)
+            for bill in await books.read_invoices(
+                db,
+                seat.company_id,
+                await books.get_invoices(db, seat.company_id, ids_of(links, ItemKind.INVOICE)),
             )
         }
         items = await checklist.list_items(db, seat.actor, [project.id])

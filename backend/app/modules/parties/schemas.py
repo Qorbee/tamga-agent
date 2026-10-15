@@ -22,6 +22,8 @@ class PartyOut(BaseModel):
     id: uuid.UUID
     name: str
     kind: PartyKind
+    # Whether a person in the company set the kind; a sync never changes it then.
+    kind_chosen: bool
     # The accounting system it is synced from, or null for one read from mail or added by hand.
     source: str | None
     # Its account balance in the books (the cari): positive when it owes the company, negative
@@ -30,6 +32,13 @@ class PartyOut(BaseModel):
     balance_currency: str | None
     balance_on: date | None
     created_at: datetime
+
+
+class PartyChange(BaseModel):
+    """What a person in the company says a party is: a person (a sole trader too) or an
+    organisation."""
+
+    kind: PartyKind
 
 
 class PartyPage(BaseModel):

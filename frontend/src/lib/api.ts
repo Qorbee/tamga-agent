@@ -155,6 +155,8 @@ export const answerProjectParty = (id: string, body: Schemas["ProjectPartyAnswer
 export type Party = Schemas["PartyOut"];
 export type PartyPage = Schemas["PartyPage"];
 type PartyQuery = NonNullable<operations["parties.list_parties"]["parameters"]["query"]>;
+export type PartyChange = Schemas["PartyChange"];
+export const changeParty = (id: string, body: PartyChange) => request<Party>(`/parties/${id}`, json("PATCH", body));
 export const listParties = (params: PartyQuery) =>
   request<PartyPage>(`/parties${query({ ...params, limit: params.limit ?? 20 })}`);
 export const getParty = (id: string) => request<Party>(`/parties/${id}`);
@@ -286,6 +288,9 @@ type InvoiceTotalQuery = NonNullable<operations["invoices.invoice_totals"]["para
 export const listInvoiceTotals = (params: InvoiceTotalQuery) =>
   request<InvoiceTotal[]>(`/invoice-totals${query(params)}`);
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
+export type InvoiceFile = Schemas["InvoiceFile"];
+/** The invoice's own file: one its mail carried, or the one the books render (read once, kept). */
+export const getInvoiceFile = (id: string) => request<InvoiceFile>(`/invoices/${id}/file`, { method: "POST" });
 
 // The company's memory (ADR-0024): what the owner taught Tamga; only the owner makes it hold.
 export type MemoryEntry = Schemas["MemoryEntryOut"];

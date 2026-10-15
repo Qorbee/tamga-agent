@@ -14,6 +14,13 @@ export function useAsks(): boolean {
   return me.data?.role === "owner" || me.data?.role === "ops";
 }
 
+/** Whether the signed-in user may change what Tamga holds of the company (a firm's kind, its
+ * groups): the owner and ops; a viewer only reads. */
+export function useCanEdit(): boolean {
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  return me.data?.role === "owner" || me.data?.role === "ops";
+}
+
 /** Whether the signed-in user may change a project: the owner and ops; a viewer only reads. */
 export function useCanEditProjects(): boolean {
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });

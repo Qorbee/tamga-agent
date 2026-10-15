@@ -12,20 +12,31 @@ import logging
 import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
+from http import HTTPStatus
 from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.modules.books import accounts, repository, sources
-from app.modules.books.models import InvoiceKind
+from app.modules.books.models import Invoice, InvoiceKind
 from app.modules.books.repository import InvoiceFilter as InvoiceFilter
-from app.modules.books.schemas import InvoiceOut, InvoicePage, InvoiceSort, InvoiceTotal
+from app.modules.books.schemas import (
+    InvoiceFile,
+    InvoiceOut,
+    InvoicePage,
+    InvoiceSort,
+    InvoiceTotal,
+)
 from app.modules.books.sources import (
     BooksSource,
     BudgetSpent,
+    ChangeFeed,
+    ChangesUnknown,
     DispatchRecord,
+    InvoiceFiles,
     InvoiceRecord,
     PartyCard,
     TaxRegistry,
@@ -33,6 +44,7 @@ from app.modules.books.sources import (
 from app.modules.books.sources import Taxpayer as Taxpayer
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
+from app.modules.documents import service as documents
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.modules.facts.service import NewFact
@@ -44,7 +56,7 @@ from app.modules.policy.models import PaymentsRecorded
 from app.platform import clock, events
 from app.platform.auth import Actor
 from app.platform.db import open_session
-from app.platform.errors import NotFound
+from app.platform.errors import DomainError, NotFound
 from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
@@ -55,6 +67,14 @@ WINDOW: Final = timedelta(days=31)
 # Each sync reads back this far behind its cursor: an invoice paid or corrected since the last
 # sync is read again.
 OVERLAP: Final = timedelta(days=7)
+# The cursor of what changed: the day the source last said, or the open invoices were last read.
+CHANGES: Final = "invoice_changes"
+# The shortest invoice number a mailed file is matched by alone: an e-invoice's 16, a series and
+# year with a sequence, never a short count that repeats across suppliers.
+_FILE_NUMBER_LENGTH: Final = 10
+# Where nothing lists what changed: the last sweep of the year's months, and how often one runs.
+SWEEP: Final = "invoice_sweep"
+SWEEP_EVERY: Final = timedelta(days=7)
 # Cards are read again at most this often.
 PARTIES_EVERY: Final = timedelta(days=1)
 # What wrote an invoice's own facts: the books, as their source holds them.
@@ -86,6 +106,8 @@ class SyncResult:
     parties: int = 0
     invoices: int = 0
     dispatches: int = 0
+    # Invoices read again because they changed or were still open: a payment recorded since.
+    rechecked: int = 0
     # True when the read budget ran out before the sync reached today.
     budget_spent: bool = False
     skipped: list[str] = field(default_factory=list)
@@ -160,6 +182,7 @@ async def sync_source(company_id: uuid.UUID, source: BooksSource) -> SyncResult:
         try:
             await _sync_parties(db, company_id, source, today, result)
             await _sync_windows(db, company_id, source, "invoices", today, result)
+            await _sync_changes(db, company_id, source, today, result)
             await _sync_windows(db, company_id, source, "dispatches", today, result)
         except BudgetSpent as exc:
             # What was read before the budget ran out is kept; the cursor shows how far it got.
@@ -248,6 +271,52 @@ async def _sync_windows(
         await repository.save_cursor(db, company_id, source.name, resource, end)
         await db.commit()
         start = end + timedelta(days=1)
+
+
+async def _sync_changes(
+    db: AsyncSession, company_id: uuid.UUID, source: BooksSource, today: date, result: SyncResult
+) -> None:
+    """Reads again the invoices a sync by date never returns to: older ones paid, corrected or
+    cancelled since they were read. A source that can list what changed is asked for that, back
+    to a day before its last answer; one that cannot, or the first time, has the months that
+    hold an open invoice read again, once a day, since only an open invoice can become paid, and
+    every month of the year once a week, for one reopened or corrected."""
+    since = await repository.get_cursor(db, company_id, source.name, CHANGES)
+    if since is not None and isinstance(source, ChangeFeed):
+        try:
+            start = datetime.combine(since - timedelta(days=1), time.min)
+            async for invoice in source.changed_invoices(start):
+                await _store_invoice(db, company_id, source.name, invoice)
+                result.rechecked += 1
+        except ChangesUnknown as exc:
+            logger.warning(
+                "%s cannot list what changed (%s): open invoices are read again", source.name, exc
+            )
+        else:
+            await repository.save_cursor(db, company_id, source.name, CHANGES, today)
+            await db.commit()
+            return
+    if since == today:
+        return
+    months = set(await repository.open_months(db, company_id, source.name))
+    # A closed invoice reopened, corrected or cancelled is caught by a weekly sweep of the year.
+    swept = await repository.get_cursor(db, company_id, source.name, SWEEP)
+    sweep = swept is None or today - swept >= SWEEP_EVERY
+    if sweep:
+        first = (today - timedelta(days=365)).replace(day=1)
+        while first <= today:
+            months.add(first)
+            first = (first + timedelta(days=32)).replace(day=1)
+    for first in sorted(months):
+        last = (first + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        async for invoice in source.invoices(first, min(last, today)):
+            await _store_invoice(db, company_id, source.name, invoice)
+            result.rechecked += 1
+        await db.commit()
+    await repository.save_cursor(db, company_id, source.name, CHANGES, today)
+    if sweep:
+        await repository.save_cursor(db, company_id, source.name, SWEEP, today)
+    await db.commit()
 
 
 async def _store_invoice(
@@ -443,7 +512,9 @@ async def list_invoices(
 ) -> InvoicePage:
     rows, total = await repository.list_invoices(db, actor.company_id, which, sort=sort, page=page)
     return InvoicePage(
-        items=await _read(db, actor.company_id, [InvoiceOut.model_validate(row) for row in rows]),
+        items=await read_invoices(
+            db, actor.company_id, [InvoiceOut.model_validate(row) for row in rows]
+        ),
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -455,17 +526,45 @@ async def invoice_totals(
 ) -> list[InvoiceTotal]:
     """What the invoices a list holds add up to, one figure per currency: amounts in different
     currencies are never summed together."""
-    return [
+    totals = [
         InvoiceTotal(
             currency=currency,
             count=count,
             total_amount=total,
             remaining_amount=left,
             paid_amount=paid,
+            owed_amount=left,
         )
         for currency, count, total, left, paid in await repository.invoice_totals(
             db, actor.company_id, which
         )
+    ]
+    # What is owed is each open invoice as read, summed per currency: what the firm's account
+    # shows paid, and a remainder within the tolerance, owe nothing.
+    open_ones = await read_invoices(
+        db,
+        actor.company_id,
+        [
+            InvoiceOut.model_validate(row)
+            for row in await repository.open_invoices(db, actor.company_id, which)
+        ],
+    )
+    owed: dict[str | None, Decimal] = {}
+    unknown: set[str | None] = set()
+    for invoice in open_ones:
+        if invoice.owed is None:
+            unknown.add(invoice.currency)
+        else:
+            owed[invoice.currency] = owed.get(invoice.currency, Decimal(0)) + invoice.owed
+    return [
+        total.model_copy(
+            update={
+                "owed_amount": None
+                if total.remaining_amount is None or total.currency in unknown
+                else owed.get(total.currency, Decimal("0.00"))
+            }
+        )
+        for total in totals
     ]
 
 
@@ -489,6 +588,7 @@ async def find_invoices(
 async def get_invoices(
     db: AsyncSession, company_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> list[InvoiceOut]:
+    """The invoices as the books give them; ``read_invoices`` adds what is read of them."""
     rows = await repository.get_invoices(db, company_id, ids)
     return [InvoiceOut.model_validate(row) for row in rows]
 
@@ -517,7 +617,110 @@ async def get_invoice(db: AsyncSession, actor: Actor, invoice_id: uuid.UUID) -> 
     found = await get_invoices(db, actor.company_id, [invoice_id])
     if not found:
         raise NotFound("No such invoice")
-    return (await _read(db, actor.company_id, found))[0]
+    return (await read_invoices(db, actor.company_id, found))[0]
+
+
+class NoInvoiceFile(NotFound):
+    code = "no_invoice_file"
+
+
+class BooksUnreachable(DomainError):
+    """The books could not be asked just now: the month's reads are spent, or the source failed.
+    Asking again later may find what is there."""
+
+    status = HTTPStatus.SERVICE_UNAVAILABLE
+    code = "books_unreachable"
+
+
+async def invoice_file(db: AsyncSession, actor: Actor, invoice_id: uuid.UUID) -> InvoiceFile:
+    """The document holding an invoice's own file: the one found before; else one its mail
+    carried, by the e-document id or the number the file was read with, which costs no read;
+    else the file the books' source renders for its e-document, asked once and kept. Commits.
+    Raises NoInvoiceFile when there is none to be had."""
+    rows = await repository.get_invoices(db, actor.company_id, [invoice_id])
+    if not rows:
+        raise NotFound("No such invoice")
+    invoice = rows[0]
+    if invoice.document_id is not None and (
+        await documents.get_documents(db, actor.company_id, [invoice.document_id])
+    ):
+        return InvoiceFile(document_id=invoice.document_id)
+    found = await _mailed_file(db, actor.company_id, invoice)
+    if found is None:
+        found = await _rendered_file(db, actor.company_id, invoice)
+    if found is None:
+        raise NoInvoiceFile("The books hold no file for this invoice")
+    invoice.document_id = found
+    await db.commit()
+    return InvoiceFile(document_id=found)
+
+
+async def _mailed_file(
+    db: AsyncSession, company_id: uuid.UUID, invoice: Invoice
+) -> uuid.UUID | None:
+    """A file the mail carried that is read to hold this invoice: its e-document id under any
+    key kind a pack reads one as, else its number. Either names one document."""
+    e_document_id = await repository.e_document_of(db, company_id, invoice)
+    pairs = (
+        [(kind, e_document_id.lower()) for kind in sorted(extractors.key_kinds())]
+        if e_document_id
+        else []
+    )
+    if invoice.number and extractors.is_reference(invoice.number):
+        pairs.append((extractors.INVOICE_NUMBER, extractors.reference(invoice.number)))
+    shared = await facts.items_sharing_each(db, company_id=company_id, pairs=pairs, per_pair=20)
+    for pair in pairs:
+        files = {fact.item_id for fact in shared[pair] if fact.item_kind is ItemKind.DOCUMENT}
+        # An e-document id names one file. A number is no proof unless it names one file only
+        # and is long enough not to repeat across suppliers ("2026/118" does).
+        number = pair[0] == extractors.INVOICE_NUMBER
+        if files and (not number or (len(files) == 1 and len(pair[1]) >= _FILE_NUMBER_LENGTH)):
+            return min(files)
+    return None
+
+
+async def _rendered_file(
+    db: AsyncSession, company_id: uuid.UUID, invoice: Invoice
+) -> uuid.UUID | None:
+    company = (await companies.get_companies(db, [company_id])).get(company_id)
+    e_document_id = await repository.e_document_of(db, company_id, invoice)
+    registered = sources.registered().get(invoice.source)
+    if (
+        company is None
+        or company.mode is CompanyMode.REPLAY
+        or e_document_id is None
+        or registered is None
+    ):
+        return None
+    source = registered.factory(
+        company_id, DbReadBudget(company_id, invoice.source, registered.monthly_reads())
+    )
+    if source is None:
+        return None
+    try:
+        if not isinstance(source, InvoiceFiles):
+            return None
+        got = await source.invoice_file(e_document_id)
+    except BudgetSpent as exc:
+        raise BooksUnreachable("The month's reads of the books are spent") from exc
+    except Exception as exc:
+        # The source's own message: never the request, whose headers carry its key.
+        logger.warning("%s gave no file for an invoice: %s", invoice.source, exc)
+        raise BooksUnreachable("The books could not be asked just now") from exc
+    finally:
+        await source.close()
+    if got is None:
+        return None
+    data, media = got
+    extension = "pdf" if media == "application/pdf" else "html"
+    stored = await documents.store_file(
+        db,
+        company_id=company_id,
+        data=data,
+        filename=f"{invoice.number or e_document_id}.{extension}",
+        content_type=media,
+    )
+    return stored.id
 
 
 async def account_readings(
@@ -537,10 +740,12 @@ async def account_readings(
     return readings
 
 
-async def _read(
+async def read_invoices(
     db: AsyncSession, company_id: uuid.UUID, invoices: list[InvoiceOut]
 ) -> list[InvoiceOut]:
-    """The invoices with what is read of them beside the books' own figures."""
+    """The invoices with what is read of them beside the books' own figures: how each is
+    settled and what is still owed, under how the company records payments. Everything that
+    shows an invoice's state reads it through here, so a page, a brief and an agent agree."""
     policy = await policies.current_policy(db, company_id)
     # Read per invoice, an invoice is shown as the books give it, its firm's account aside.
     alone = policy.payments_recorded is PaymentsRecorded.PER_INVOICE
@@ -561,6 +766,7 @@ async def _read(
             invoice.model_copy(
                 update={
                     "settled": settled,
+                    "owed": accounts.owed(invoice, settled, account),
                     "account_owed": account.owed if account and settled else None,
                     "account_on": account.on if account and settled else None,
                 }

@@ -753,6 +753,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invoices/{invoice_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invoice File
+         * @description The document holding the invoice's own file: one its mail carried, else the file the books'
+         *     source renders for its e-document, read once and kept. 404 ``no_invoice_file`` when there is
+         *     none.
+         */
+        post: operations["invoices.invoice_file"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -1045,7 +1067,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Change Party */
+        patch: operations["parties.change_party"];
         trace?: never;
     };
     "/payment-runs/approvals": {
@@ -2775,6 +2798,18 @@ export interface components {
          */
         InvoiceDirection: "receivable" | "payable";
         /**
+         * InvoiceFile
+         * @description The document that holds an invoice's own file: one its mail carried, or the one its source
+         *     rendered.
+         */
+        InvoiceFile: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+        };
+        /**
          * InvoiceKind
          * @enum {string}
          */
@@ -2792,6 +2827,8 @@ export interface components {
             /** Description */
             description: string | null;
             direction: components["schemas"]["InvoiceDirection"];
+            /** Document Id */
+            document_id?: string | null;
             /** Due Date */
             due_date: string | null;
             /** E Document Id */
@@ -2808,6 +2845,8 @@ export interface components {
             net_amount: string | null;
             /** Number */
             number: string | null;
+            /** Owed */
+            owed?: string | null;
             /** Party Id */
             party_id: string | null;
             /** Party Name */
@@ -2853,6 +2892,8 @@ export interface components {
             count: number;
             /** Currency */
             currency: string | null;
+            /** Owed Amount */
+            owed_amount?: string | null;
             /** Paid Amount */
             paid_amount: string | null;
             /** Remaining Amount */
@@ -3502,6 +3543,14 @@ export interface components {
             tax_id: string;
         };
         /**
+         * PartyChange
+         * @description What a person in the company says a party is: a person (a sole trader too) or an
+         *     organisation.
+         */
+        PartyChange: {
+            kind: components["schemas"]["PartyKind"];
+        };
+        /**
          * PartyKind
          * @enum {string}
          */
@@ -3525,6 +3574,8 @@ export interface components {
              */
             id: string;
             kind: components["schemas"]["PartyKind"];
+            /** Kind Chosen */
+            kind_chosen: boolean;
             /** Name */
             name: string;
             /** Source */
@@ -6198,6 +6249,37 @@ export interface operations {
             };
         };
     };
+    "invoices.invoice_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceFile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "me.get_me": {
         parameters: {
             query?: never;
@@ -6835,6 +6917,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "parties.change_party": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyChange"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

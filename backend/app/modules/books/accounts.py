@@ -96,6 +96,18 @@ def settled(
     return Settled.PAID_ON_ACCOUNT if account.owed <= 0 else Settled.OPEN
 
 
+def owed(invoice: InvoiceOut, read: Settled | None, account: Account | None) -> Decimal | None:
+    """What is still owed of an invoice as read: none where the account shows it paid or what is
+    left is within the tolerance, no more than the account lays on it, else what the books
+    leave; null where the books give no remainder."""
+    if invoice.cancelled or read in (Settled.PAID_ON_ACCOUNT, Settled.PAID_WITH_DIFFERENCE):
+        return Decimal("0.00")
+    left = invoice.remaining_amount
+    if left is None or read is not Settled.OPEN or account is None or account.owed is None:
+        return left
+    return min(left, account.owed)
+
+
 def within(invoice: InvoiceOut, tolerance: Decimal) -> bool:
     """Whether what is left of an invoice is at or under ``tolerance`` percent of its total."""
     left, total = invoice.remaining_amount, invoice.total_amount

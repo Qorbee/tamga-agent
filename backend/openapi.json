@@ -3008,6 +3008,21 @@
         "title": "InvoiceDirection",
         "type": "string"
       },
+      "InvoiceFile": {
+        "description": "The document that holds an invoice's own file: one its mail carried, or the one its source\nrendered.",
+        "properties": {
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "title": "InvoiceFile",
+        "type": "object"
+      },
       "InvoiceKind": {
         "enum": [
           "sales",
@@ -3072,6 +3087,18 @@
           },
           "direction": {
             "$ref": "#/components/schemas/InvoiceDirection"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
           },
           "due_date": {
             "anyOf": [
@@ -3138,6 +3165,18 @@
               }
             ],
             "title": "Number"
+          },
+          "owed": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owed"
           },
           "party_id": {
             "anyOf": [
@@ -3327,6 +3366,18 @@
               }
             ],
             "title": "Currency"
+          },
+          "owed_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owed Amount"
           },
           "paid_amount": {
             "anyOf": [
@@ -5300,6 +5351,19 @@
         "title": "OwnTaxId",
         "type": "object"
       },
+      "PartyChange": {
+        "description": "What a person in the company says a party is: a person (a sole trader too) or an\norganisation.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/PartyKind"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "PartyChange",
+        "type": "object"
+      },
       "PartyKind": {
         "enum": [
           "organisation",
@@ -5358,6 +5422,10 @@
           "kind": {
             "$ref": "#/components/schemas/PartyKind"
           },
+          "kind_chosen": {
+            "title": "Kind Chosen",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -5378,6 +5446,7 @@
           "id",
           "name",
           "kind",
+          "kind_chosen",
           "source",
           "balance",
           "balance_currency",
@@ -11769,6 +11838,55 @@
         ]
       }
     },
+    "/invoices/{invoice_id}/file": {
+      "post": {
+        "description": "The document holding the invoice's own file: one its mail carried, else the file the books'\nsource renders for its e-document, read once and kept. 404 ``no_invoice_file`` when there is\nnone.",
+        "operationId": "invoices.invoice_file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invoice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Invoice File",
+        "tags": [
+          "invoices"
+        ]
+      }
+    },
     "/me": {
       "get": {
         "operationId": "me.get_me",
@@ -13150,6 +13268,62 @@
           }
         ],
         "summary": "Get Party",
+        "tags": [
+          "parties"
+        ]
+      },
+      "patch": {
+        "operationId": "parties.change_party",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "party_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Party Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Change Party",
         "tags": [
           "parties"
         ]

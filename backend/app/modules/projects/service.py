@@ -1391,7 +1391,10 @@ async def _with_items(
     files = await documents.document_outs(db, company_id, file_ids)
     carriers = await conversations.first_carriers(db, company_id, file_ids)
     invoices = {
-        each.id: each for each in await books.get_invoices(db, company_id, ids(ItemKind.INVOICE))
+        each.id: each
+        for each in await books.read_invoices(
+            db, company_id, await books.get_invoices(db, company_id, ids(ItemKind.INVOICE))
+        )
     }
     briefs: dict[uuid.UUID, ItemBrief] = {}
     for id_, message in messages.items():
