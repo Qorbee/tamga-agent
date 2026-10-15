@@ -22,6 +22,9 @@ class MemoryKind(StrEnum):
     PREFERENCE = "preference"
     # How the company works.
     PRACTICE = "practice"
+    # What someone at the company told about themselves: their family, what they like, how
+    # they work.
+    PERSONAL = "personal"
 
 
 class MemoryState(StrEnum):
@@ -38,6 +41,9 @@ class MemorySource(StrEnum):
     CHAT = "chat"
     # Written by the owner in Settings, or drafted there from what someone wrote.
     SETTINGS = "settings"
+    # Drafted by the weekly learner from the owner's corrections and the week's chats
+    # (ADR-0032).
+    LEARNER = "learner"
 
 
 class MemoryEntry(CompanyScoped, Base):
@@ -71,6 +77,9 @@ class MemoryEntry(CompanyScoped, Base):
     )
     # Where a chat drafted it.
     chat_id: Mapped[uuid.UUID | None]
+    # A draft that changes another entry: kept, it takes that entry's place, which retires
+    # (ADR-0032).
+    replaces_id: Mapped[uuid.UUID | None]
     state: Mapped[MemoryState] = mapped_column(text_enum(MemoryState, "memory_entries_state_check"))
     # Who wrote it: the user who typed it, or None for Tamga's draft.
     written_by: Mapped[uuid.UUID | None]

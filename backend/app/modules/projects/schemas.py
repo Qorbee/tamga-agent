@@ -19,6 +19,7 @@ from app.modules.projects.models import (
     ProjectStatus,
     ProposalStatus,
     ProposalTarget,
+    RejectReason,
 )
 from app.platform.items import ItemKind
 
@@ -208,6 +209,8 @@ class LinkOut(BaseModel):
     evidence: list[uuid.UUID]
     status: LinkStatus
     proof_of_delivery: bool
+    because: RejectReason | None
+    because_note: str | None
     decided_by: uuid.UUID | None
     decided_at: datetime | None
     created_at: datetime
@@ -237,6 +240,9 @@ class LinkUpdate(BaseModel):
     # Which truck the item belongs to; null to detach it from one.
     shipment_id: uuid.UUID | None = None
     proof_of_delivery: bool | None = None
+    # Why a rejected item was rejected, and a line of the owner's for "other".
+    because: RejectReason | None = None
+    note: str | None = Field(default=None, max_length=200)
 
 
 class ProposalOut(BaseModel):

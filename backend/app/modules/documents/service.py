@@ -1494,6 +1494,11 @@ async def get_documents(
     return {row.id: row for row in await repository.get_many(db, company_id, ids)}
 
 
+async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """The owner's word that a file only signs its sender's mail (ADR-0032). Does not commit."""
+    await repository.mark_signature(db, company_id, document_id)
+
+
 async def find_documents(
     db: AsyncSession, company_id: uuid.UUID, q: str, limit: int
 ) -> list[Document]:

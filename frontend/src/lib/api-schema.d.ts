@@ -1995,7 +1995,7 @@ export interface components {
          *     is about says which record its id names.
          * @enum {string}
          */
-        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch" | "morning_brief";
+        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch" | "morning_brief" | "learned";
         /**
          * CardMessage
          * @description A card code put in a chat, carried as the chat protocol's activity message. A client
@@ -3152,6 +3152,9 @@ export interface components {
         LinkMethod: "key" | "scored" | "agent" | "owner" | "mail";
         /** LinkOut */
         LinkOut: {
+            because: components["schemas"]["RejectReason"] | null;
+            /** Because Note */
+            because_note: string | null;
             /** Confidence */
             confidence: number;
             /**
@@ -3208,6 +3211,9 @@ export interface components {
         LinkStatus: "suggested" | "confirmed" | "rejected";
         /** LinkUpdate */
         LinkUpdate: {
+            because?: components["schemas"]["RejectReason"] | null;
+            /** Note */
+            note?: string | null;
             /** Proof Of Delivery */
             proof_of_delivery?: boolean | null;
             /** Shipment Id */
@@ -3375,6 +3381,8 @@ export interface components {
             party_id: string | null;
             /** Project Id */
             project_id: string | null;
+            /** Replaces Id */
+            replaces_id: string | null;
             source: components["schemas"]["MemorySource"];
             state: components["schemas"]["MemoryState"];
             /** Text */
@@ -3407,7 +3415,7 @@ export interface components {
          * @description What an entry of the company's memory is (ADR-0024).
          * @enum {string}
          */
-        MemoryKind: "term" | "alias" | "person" | "preference" | "practice";
+        MemoryKind: "term" | "alias" | "person" | "preference" | "practice" | "personal";
         /** MemoryPage */
         MemoryPage: {
             /** Items */
@@ -3419,7 +3427,7 @@ export interface components {
          * MemorySource
          * @enum {string}
          */
-        MemorySource: "chat" | "settings";
+        MemorySource: "chat" | "settings" | "learner";
         /**
          * MemoryState
          * @enum {string}
@@ -4466,6 +4474,12 @@ export interface components {
          * @enum {string}
          */
         RegistryStatus: "found" | "not_found" | "not_asked";
+        /**
+         * RejectReason
+         * @description Why the owner rejected an item, when they say (ADR-0032).
+         * @enum {string}
+         */
+        RejectReason: "signature" | "another_job" | "not_work" | "other";
         /** ReserveRule */
         "ReserveRule-Input": {
             /** Active */

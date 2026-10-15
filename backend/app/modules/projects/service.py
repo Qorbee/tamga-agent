@@ -49,6 +49,7 @@ from app.modules.projects.models import (
     ProjectStatus,
     ProposalStatus,
     ProposalTarget,
+    RejectReason,
 )
 from app.modules.projects.schemas import (
     DocumentBrief,
@@ -1215,11 +1216,37 @@ async def update_link(
         link.status = LinkStatus(status)
         link.decided_by = actor.user_id
         link.decided_at = clock.now(company)
+    if "because" in changes or "note" in changes:
+        if link.status is not LinkStatus.REJECTED:
+            raise BadRequest("Only a rejected item is told why")
+        because = changes.get("because")
+        link.because = RejectReason(because) if because else None
+        link.because_note = " ".join(str(changes.get("note") or "").split())[:200] or None
+        if link.because is RejectReason.OTHER and not link.because_note:
+            raise BadRequest("Say in a line why it is not this project's")
     await _flush_link(db, link)
     if link.status is LinkStatus.CONFIRMED:
         await repository.activate_if_draft(db, actor.company_id, link.project_id)
     if link.item_kind is ItemKind.MESSAGE:
         await carry_files(db, actor.company_id, [link.item_id])
+    if link.because is RejectReason.SIGNATURE and link.item_kind is ItemKind.DOCUMENT:
+        # Code's to act on: the picture signs its sender's mail, so it leaves every project.
+        await conversations.mark_signature(db, actor.company_id, link.item_id)
+        carriers = await conversations.messages_attaching(db, actor.company_id, [link.item_id])
+        await carry_files(db, actor.company_id, carriers.get(link.item_id, []))
+        now = clock.now(company)
+        for other in await repository.links_of_items(
+            db, actor.company_id, ItemKind.DOCUMENT, [link.item_id]
+        ):
+            # What code linked it to goes too; another answer of the owner's stays (ADR-0021).
+            if other.method is LinkMethod.OWNER or other.status is LinkStatus.REJECTED:
+                continue
+            other.status, other.method, other.because = (
+                LinkStatus.REJECTED,
+                LinkMethod.OWNER,
+                RejectReason.SIGNATURE,
+            )
+            other.decided_by, other.decided_at = actor.user_id, now
     await db.commit()
     return LinkOut.model_validate(link)
 
@@ -1518,3 +1545,28 @@ def _json(value: Any) -> Any:
     if isinstance(value, uuid.UUID):
         return str(value)
     return value
+
+
+@dataclass(frozen=True, slots=True)
+class Refused:
+    """An item the owner took out of a project, and why they said (ADR-0032)."""
+
+    item_kind: ItemKind
+    item_id: uuid.UUID
+    project: str
+    because: str
+    note: str | None
+
+
+async def reasons_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> list[Refused]:
+    """What the owner took out of projects since then and said why, oldest first."""
+    return [
+        Refused(
+            item_kind=link.item_kind,
+            item_id=link.item_id,
+            project=f"{project.number} · {project.name}",
+            because=str(link.because),
+            note=link.because_note,
+        )
+        for link, project in await repository.reasons_since(db, company_id, since)
+    ]

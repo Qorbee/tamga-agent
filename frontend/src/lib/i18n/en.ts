@@ -247,6 +247,16 @@ export const en = {
     clear: "Clear",
     readFromMail: "read from mail",
     notInBooks: "named in mail, not in your books",
+    why: {
+      ask: "Why?",
+      signature: "Signature or logo",
+      another_job: "Another job",
+      not_work: "Not work",
+      other: "Other",
+      placeholder: "In a line…",
+      send: "Send",
+      skip: "Skip",
+    },
     askAgainstMail: (name: string, role: string, mail: string) =>
       `The mail names ${mail}. Is ${name} the ${role.toLowerCase()}?`,
     suggestedFirm: "suggested",
@@ -605,6 +615,7 @@ export const en = {
       person: "Person",
       preference: "How you want it",
       practice: "How you work",
+      personal: "About you",
     },
     /** The headings the entries are listed under. */
     sections: {
@@ -613,6 +624,7 @@ export const en = {
       term: "Terms",
       practice: "How you work",
       preference: "How you want it",
+      personal: "About you",
     },
     tell: "Tell Tamga what to remember, change or forget…",
     whatChanges: "What should change?",
@@ -630,6 +642,17 @@ export const en = {
     justNow: "just now",
     waitsCount: (count: number) => `Waits for you · ${count}`,
     ownerConfirms: "The owner confirms it.",
+    /** The card a chat's draft shows on. */
+    card: {
+      keep: "Keep",
+      kept: "Kept",
+      discarded: "Discarded",
+      forgotten: "Forgotten",
+      forgetAsk: "Forget this?",
+      forget: "Forget",
+      keepIt: "Keep it",
+      was: "Was",
+    },
     confirm: "Confirm",
     confirmAll: "Confirm all",
     edit: "Edit",
@@ -677,6 +700,7 @@ export const en = {
       search_parties: "Searched the firms",
       recall: "Looked in what you taught Tamga",
       remember: "Drafted something to remember",
+      forget: "Asked to forget something",
       draft_policy: "Drafted a change to how you pay",
       draft_rule: "Drafted a rule of your own",
       group_firms: "Grouped firms",

@@ -404,7 +404,7 @@ async def _store_new_mail(
             document_id=document.id,
             filename=attachment.filename,
             inline=attachment.inline,
-            signature=attachment.signature,
+            signature=attachment.signature or document.signature,
         )
     return message
 
@@ -477,7 +477,12 @@ async def _mark_inline(
     signed = {hashlib.sha256(file.data).digest() for file in parsed.attachments if file.signature}
     # One file shown in the body and also attached beside it is an attachment, as when stored.
     inline = {document_id for document_id, file in files.items() if file.sha256 in shown - beside}
-    signature = {document_id for document_id, file in files.items() if file.sha256 in signed}
+    # A picture the body shows below its writer's contact lines, or a file the owner said signs.
+    signature = {
+        document_id
+        for document_id, file in files.items()
+        if (document_id in inline and file.sha256 in signed) or file.signature
+    }
     await repository.set_inline(db, company_id, message_id, inline, signature)
 
 
@@ -610,6 +615,13 @@ async def _furniture(
     }
 
 
+async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """The owner's word that a file only signs its sender's mail (ADR-0032): in no mail of the
+    company is it read as a job's file again, nor in one that brings it later. Does not commit."""
+    await documents.mark_signature(db, company_id, document_id)
+    await repository.mark_signature(db, company_id, document_id)
+
+
 async def carried_files(
     db: AsyncSession, company_id: uuid.UUID, message_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[uuid.UUID]]:
@@ -635,8 +647,10 @@ async def carried_files(
     )
     rows = await repository.carriers_of(db, company_id, kept)
     furniture = await _furniture(db, company_id, sorted({row[0] for row in rows if row[2]}))
-    for document_id, message_id, inline, bulk in rows:
-        if document_id not in nothing and (not inline or not (bulk or document_id in furniture)):
+    for document_id, message_id, inline, bulk, signature in rows:
+        if document_id in nothing or signature:
+            continue
+        if not inline or not (bulk or document_id in furniture):
             carried[document_id].append(message_id)
     for container_id in kept:
         for member in inside[container_id]:
@@ -1115,9 +1129,12 @@ async def model_reads_left(db: AsyncSession, company_id: uuid.UUID) -> int:
     return get_settings().mail_model_reads_per_day - spent
 
 
-async def model_reads_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
-    """How many requests sent the company's mail to a model since then, by every agent."""
-    return await repository.model_reads_since(db, company_id, since)
+async def model_reads_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, agent: str | None = None
+) -> int:
+    """How many requests sent the company's mail to a model since then, by every agent or by
+    the one ``agent`` names."""
+    return await repository.model_reads_since(db, company_id, since, agent)
 
 
 async def count_model_reads(
@@ -1364,3 +1381,10 @@ def _summary(message: Message, attachment_count: int) -> MessageSummary:
         sent_at=message.sent_at,
         attachment_count=attachment_count,
     )
+
+
+async def own_senders(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, limit: int = 15
+) -> list[tuple[str, str, int]]:
+    """The people who wrote from the company's own mailboxes since then: name, address, mails."""
+    return list(await repository.own_senders(db, company_id, since, limit))

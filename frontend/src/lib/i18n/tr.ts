@@ -239,6 +239,16 @@ export const tr: Dictionary = {
     clear: "Temizle",
     readFromMail: "postadan okundu",
     notInBooks: "postada adı geçiyor, defterinizde yok",
+    why: {
+      ask: "Neden?",
+      signature: "İmza ya da logo",
+      another_job: "Başka bir iş",
+      not_work: "İşle ilgisi yok",
+      other: "Başka",
+      placeholder: "Bir satırla…",
+      send: "Gönder",
+      skip: "Geç",
+    },
     askAgainstMail: (name: string, role: string, mail: string) =>
       `Postada ${mail} geçiyor. ${name} ${role.toLocaleLowerCase("tr")} mi?`,
     suggestedFirm: "önerilen",
@@ -582,6 +592,7 @@ export const tr: Dictionary = {
       person: "Kişi",
       preference: "Nasıl istediğiniz",
       practice: "Nasıl çalıştığınız",
+      personal: "Sizinle ilgili",
     },
     /** The headings the entries are listed under. */
     sections: {
@@ -590,6 +601,7 @@ export const tr: Dictionary = {
       term: "Terimler",
       practice: "Nasıl çalıştığınız",
       preference: "Nasıl istediğiniz",
+      personal: "Sizinle ilgili",
     },
     tell: "Tamga'ya neyi hatırlamasını, değiştirmesini ya da unutmasını istediğinizi yazın…",
     whatChanges: "Ne değişmeli?",
@@ -607,6 +619,17 @@ export const tr: Dictionary = {
     justNow: "az önce",
     waitsCount: (count: number) => `Onayınızı bekliyor · ${count}`,
     ownerConfirms: "Firma sahibi onaylar.",
+    /** The card a chat's draft shows on. */
+    card: {
+      keep: "Sakla",
+      kept: "Saklandı",
+      discarded: "Atıldı",
+      forgotten: "Unutuldu",
+      forgetAsk: "Bu unutulsun mu?",
+      forget: "Unut",
+      keepIt: "Kalsın",
+      was: "Önceki",
+    },
     confirm: "Onayla",
     confirmAll: "Tümünü onayla",
     edit: "Düzenle",
@@ -660,6 +683,7 @@ export const tr: Dictionary = {
       add_truck: "Bir araç ekledi",
       recall: "Tamga'ya öğrettiklerinize baktı",
       remember: "Hatırlamak için bir taslak yazdı",
+      forget: "Bir şeyi unutmayı sordu",
       draft_policy: "Ödeme şeklinizde bir değişiklik taslağı yazdı",
       draft_rule: "Size ait bir kural taslağı yazdı",
       group_firms: "Carileri grupladı",

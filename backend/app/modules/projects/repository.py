@@ -24,6 +24,7 @@ from app.modules.projects.models import (
     ProjectStatus,
     ProposalStatus,
     ProposalTarget,
+    RejectReason,
 )
 from app.platform.items import ItemKind
 from app.platform.pagination import PageParams, escape_like
@@ -800,3 +801,23 @@ async def move_marks(
         .values(project_id=target_id)
         .execution_options(synchronize_session=False)
     )
+
+
+async def reasons_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime
+) -> Sequence[tuple[ProjectLink, Project]]:
+    """The links the owner rejected since then and said why, each with its project. A signature
+    is not among them: code acted on it, there is nothing to learn."""
+    rows = await db.execute(
+        select(ProjectLink, Project)
+        .join(Project, Project.id == ProjectLink.project_id)
+        .where(
+            ProjectLink.company_id == company_id,
+            Project.company_id == company_id,
+            ProjectLink.because.is_not(None),
+            ProjectLink.because != RejectReason.SIGNATURE,
+            ProjectLink.decided_at >= since,
+        )
+        .order_by(ProjectLink.decided_at)
+    )
+    return rows.tuples().all()

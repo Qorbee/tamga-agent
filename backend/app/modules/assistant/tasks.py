@@ -1,6 +1,6 @@
 import logging
 
-from app.modules.assistant import context, turns
+from app.modules.assistant import context, learning, turns
 from app.platform import jobs
 
 logger = logging.getLogger(__name__)
@@ -21,3 +21,11 @@ async def summarize(timestamp: int) -> None:
     written = await context.summarize_quiet()
     if written:
         logger.info("summarized %d chats", written)
+
+
+@jobs.periodic("assistant.learn", cron="17 * * * *")
+async def learn(timestamp: int) -> None:
+    """Once a week a company's lessons, drafted for the owner to keep or skip (ADR-0032)."""
+    written = await learning.learn_pending()
+    if written:
+        logger.info("wrote %d weeks' lessons", written)

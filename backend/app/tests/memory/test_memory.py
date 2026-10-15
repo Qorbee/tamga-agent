@@ -362,3 +362,44 @@ async def test_changing_memory_waits_for_the_budget_and_too_many_changes_change_
     assert refused.status_code == 409 and len(sent) == 2
     assert (await client.get("/memory")).json()["total"] == 0
     assert await requests_counted(company_id) == 2
+
+
+async def test_a_chat_changes_or_forgets_an_entry_only_as_the_owner_keeps_it(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    await guest_client(client)
+    lucy = (
+        await client.post(
+            "/memory", json={"kind": "personal", "title": "Lucy", "text": "My dog is Lucy"}
+        )
+    ).json()
+    chat_id = await new_chat(client)
+    script = model(
+        ("remember", {"kind": "personal", "name": "", "text": "My dog is Max", "replaces": 1}),
+        ("forget", {"entry": 1}),
+        ("remember", {"kind": "personal", "name": "Max", "text": "x", "replaces": 7}),
+        ("remember", {"kind": "personal", "name": "", "text": "My dog is Rex", "replaces": 1}),
+        "Noted: the card waits for you.",
+    )
+
+    await ask(client, chat_id, user("My dog is Max now, not Lucy"))
+
+    # The chat reads the memory by the handles it changes it by.
+    assert "m1 personal: My dog is Lucy" in instructions(script, 0)
+    drafted = (await client.get("/memory", params={"chat_id": chat_id})).json()["items"]
+    [change, rival] = sorted(
+        (entry for entry in drafted if entry["replaces_id"] == lucy["id"]),
+        key=lambda entry: entry["text"] != "My dog is Max",
+    )
+    assert (change["state"], change["text"]) == ("proposed", "My dog is Max")
+    # Forgetting writes nothing: the card asks the owner.
+    assert lucy["id"] in script.returned(2) and "asked" in script.returned(2)
+    assert "Use the number of an entry" in script.returned(3)
+    assert (await client.get(f"/memory/{lucy['id']}")).json()["state"] == "held"
+
+    kept = await client.patch(f"/memory/{change['id']}", json={"state": "held"})
+    assert kept.json()["state"] == "held"
+    assert (await client.get(f"/memory/{lucy['id']}")).json()["state"] == "retired"
+    # Two changes of one entry never hold side by side: the second finds it changed.
+    assert (await client.patch(f"/memory/{rival['id']}", json={"state": "held"})).status_code == 409

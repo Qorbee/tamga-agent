@@ -78,13 +78,13 @@ _WRITE_FIRST: Final = (
 )
 _PROPOSAL: Final = (
     "\nOpen the project and read its conversations. Then write the owner a short message: "
-    "what the job is, why it looks like a job of its own, and what you need from them. A "
-    "card under your message lets them confirm or reject the project, so do not say how."
+    "what the job is, why it looks like a job of its own, and what you need from them. The "
+    "card with your message lets them confirm or reject the project, so do not say how."
 )
 _OPENING: Final = (
     "\nSomeone just opened this company to try Tamga. Open the project and look at its trucks, "
     "papers and bills. Then write a short welcome, under five sentences: what the company faces "
-    "today and what you would look at first. Do not explain the app; a card under your message "
+    "today and what you would look at first. Do not explain the app; the card with your message "
     "shows the job."
 )
 _APPROVALS: Final = (
@@ -92,7 +92,7 @@ _APPROVALS: Final = (
     "Then write the owner one short message about the bills together, four sentences at most: "
     "how many wait and what they come to, which you would pay now and which you would hold, "
     "each with one reason. A rule that could not be checked was not checked: never say it was "
-    "breached or broken. A card under your message lists every bill with what Tamga would do and "
+    "breached or broken. The card with your message lists every bill with what Tamga would do and "
     "lets them approve or hold, so do not go through the bills one by one or say how. Nothing is "
     "paid until they approve."
 )
@@ -108,13 +108,13 @@ BRIEF_TITLES: Final = {Language.EN: "Morning brief", Language.TR: "Sabah özeti"
 _BRIEF: Final = (
     "\nIt is the start of the owner's day. Write a short good morning, three sentences at most: "
     "what matters today in these numbers and what you would look at first. Open a project or a "
-    "bill only if one needs them today. The numbers are the code's; never work out others. A "
-    "card under your message shows where the money stands, so do not list every figure."
+    "bill only if one needs them today. The numbers are the code's; never work out others. The "
+    "card with your message shows where the money stands, so do not list every figure."
 )
 _QUESTION: Final = (
     "\nRead the conversation and open the projects it could belong to. Then write the owner "
     "a short message: what the conversation is about, what speaks for each project, and "
-    "which one you would choose if the records lean to one. A card under your message lets "
+    "which one you would choose if the records lean to one. The card with your message lets "
     "them choose, so do not say how."
 )
 
@@ -167,7 +167,7 @@ async def speak_pending() -> int:
             findings = await _findings(db, company_id)
         for finding in findings[:TURNS_A_PASS]:
             try:
-                written += await _speak(company, finding)
+                written += await speak(company, finding)
             except Exception as error:  # one finding that fails never stops the others
                 # The error's type only: a provider's error can quote what it was sent.
                 logger.warning(
@@ -225,7 +225,7 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
                     also=(),
                     related=(),
                     title=f"{project.number} · {project.name}",
-                    prompt=_told(
+                    prompt=told(
                         "a project Tamga proposes",
                         [
                             f"Project {project.number}: {project.name}",
@@ -245,7 +245,7 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
                     also=(),
                     related=tuple((agents.PROJECT, project.id) for project in between),
                     title=subject,
-                    prompt=_told(
+                    prompt=told(
                         "a conversation Tamga could not choose a project for",
                         [
                             f"Conversation: {subject}",
@@ -301,7 +301,7 @@ async def _morning(db: AsyncSession, company: Company) -> list[Finding]:
                 for back in range(1, today.weekday() + 1)
             ),
             title=BRIEF_TITLES[company.language],
-            prompt=_told("the company's money this morning", figures.lines, _BRIEF),
+            prompt=told("the company's money this morning", figures.lines, _BRIEF),
             card={"kind": CardKind.MORNING_BRIEF.value, "id": str(record_id)},
         )
     ]
@@ -383,7 +383,7 @@ async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
             also=(),
             related=((agents.PROJECT, project.id),),
             title=scenario.title,
-            prompt=_told(
+            prompt=told(
                 "the company that just opened",
                 [
                     f"Scenario: {scenario.title}. {scenario.summary}",
@@ -464,7 +464,7 @@ def _batch(
         also=tuple((agents.DECISION, item.id) for item in waiting[1:]),
         related=tuple((agents.PROJECT, project_id) for project_id in related),
         title=title,
-        prompt=_told("the bills that wait for the owner's approval", lines[:-1], _APPROVALS),
+        prompt=told("the bills that wait for the owner's approval", lines[:-1], _APPROVALS),
         # Every bill stays on the card, as the message speaks of all of them: one answered
         # meanwhile shows as answered there.
         card={
@@ -494,7 +494,7 @@ async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> 
     """Whether what was found still waits for the owner, who may have answered it on a page
     while the model wrote."""
     kind, record_id = finding.record
-    if kind in (agents.OPENING, agents.BRIEF):
+    if kind in (agents.OPENING, agents.BRIEF, agents.LEARNED):
         return True
     if kind == agents.DECISION:
         ids = [record_id for _, record_id in (finding.record, *finding.also)]
@@ -515,11 +515,11 @@ def _reason(item: PlacementOut) -> list[str]:
     return [f"The linker's reason: {item.reason}"] if item.reason else []
 
 
-def _told(label: str, lines: list[str], ask: str) -> str:
+def told(label: str, lines: list[str], ask: str) -> str:
     return _WRITE_FIRST + llm.fenced_text(label, "\n".join(lines)) + ask
 
 
-async def _speak(company: Company, finding: Finding) -> int:
+async def speak(company: Company, finding: Finding) -> int:
     """Writes about one finding: admits the turn (where it goes, the chat free, the day's
     chats and budget), runs the assistant with no transaction open, and keeps what it wrote
     with the card, unless the finding was answered or the chat moved on meanwhile. Returns 1

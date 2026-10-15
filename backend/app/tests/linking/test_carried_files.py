@@ -15,11 +15,14 @@ from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.modules.conversations import service as conversations
 from app.modules.conversations.models import MessageAttachment, ThreadCategory
 from app.modules.documents import service as documents
 from app.modules.linking import service
+from app.modules.projects.models import LinkMethod, LinkStatus, ProjectLink
 from app.platform import events, llm
 from app.platform.db import open_session
+from app.platform.items import ItemKind
 from app.tests.conftest import guest_client
 from app.tests.documents import pdfs
 from app.tests.documents.archives import zip_of
@@ -475,3 +478,62 @@ async def test_an_upload_no_mail_carried_tells_its_projects_when_typed(
     # Its row in the project's timeline shows the type: the project is read again.
     assert typed.status_code == 200, typed.text
     assert events.EventKind.PROJECTS in told
+
+
+async def test_a_file_rejected_as_a_signature_is_no_jobs_file_again(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    placement = await proposed(client, model)
+    company_id = uuid.UUID(placement["company_id"])
+    [cmr] = (await files_of(client, placement["project_id"])).values()
+
+    document_id = uuid.UUID(cmr["item_id"])
+    # Code also linked it to another project.
+    elsewhere = (await client.post("/projects", json={"name": "Elsewhere"})).json()["id"]
+    async with open_session() as db:
+        db.add(
+            ProjectLink(
+                company_id=company_id,
+                project_id=uuid.UUID(elsewhere),
+                item_kind=ItemKind.DOCUMENT,
+                item_id=document_id,
+                method=LinkMethod.KEY,
+                confidence=0.9,
+                evidence=[],
+                status=LinkStatus.SUGGESTED,
+            )
+        )
+        await db.commit()
+
+    # Why is asked of a rejected item only, and "other" is said in a line.
+    early = await client.patch(f"/project-links/{cmr['id']}", json={"because": "other"})
+    assert early.status_code == 400
+    bare = await client.patch(
+        f"/project-links/{cmr['id']}", json={"status": "rejected", "because": "other", "note": " "}
+    )
+    assert bare.status_code == 400
+    answered = await client.patch(
+        f"/project-links/{cmr['id']}",
+        json={"status": "rejected", "because": "signature", "note": "  their   banner "},
+    )
+
+    assert answered.status_code == 200, answered.text
+    assert (answered.json()["because"], answered.json()["because_note"]) == (
+        "signature",
+        "their banner",
+    )
+    # It left the project code linked it to, as the owner's answer.
+    [other] = (await files_of(client, elsewhere)).values()
+    assert (other["status"], other["method"], other["because"]) == (
+        "rejected",
+        "owner",
+        "signature",
+    )
+    # In no mail that carried it is it a job's file again, nor in one that brings it later.
+    await arrive(company_id, 2, mail("<later@x>", subject="Later", attach=CMR), category=None)
+    async with open_session() as db:
+        carriers = await conversations.messages_attaching(db, company_id, [document_id])
+        carried = await conversations.carried_files(db, company_id, carriers[document_id])
+    assert len(carriers[document_id]) == 2
+    assert carried == {document_id: []}

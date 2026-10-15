@@ -53,6 +53,9 @@ class CardKind(StrEnum):
     DECISION_BATCH = "decision_batch"
     # The morning brief: where the money stands as the card is read, the day's id.
     MORNING_BRIEF = "morning_brief"
+    # A week's lessons for the owner to keep or skip (ADR-0032): the week's id, the drafted
+    # entries' ids and those of entries asked to be forgotten.
+    LEARNED = "learned"
 
 
 class Chat(CompanyScoped, Base):

@@ -94,6 +94,16 @@ class LinkStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class RejectReason(StrEnum):
+    """Why the owner rejected an item, when they say (ADR-0032)."""
+
+    # A picture that only signs its sender's mail: code makes it that sender's signature.
+    SIGNATURE = "signature"
+    ANOTHER_JOB = "another_job"
+    NOT_WORK = "not_work"
+    OTHER = "other"
+
+
 class ProposalTarget(StrEnum):
     PROJECT = "project"
     # Logistics pack: the shipment's fields are written through the target it registers.
@@ -269,6 +279,11 @@ class ProjectLink(CompanyScoped, Base):
     status: Mapped[LinkStatus] = mapped_column(text_enum(LinkStatus, "project_links_status_check"))
     # A CMR or signed delivery note: at most one confirmed shipment link.
     proof_of_delivery: Mapped[bool] = mapped_column(default=False)
+    # Why the owner rejected it, when they said: read by the weekly learner (ADR-0032).
+    because: Mapped[RejectReason | None] = mapped_column(
+        text_enum(RejectReason, "project_links_because_check")
+    )
+    because_note: Mapped[str | None] = mapped_column(String(200))
     # Null with a decided_at: decided by code (a key link above the threshold, a replay).
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")

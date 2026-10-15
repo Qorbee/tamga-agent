@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, and_, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.memory.models import MemoryEntry, MemoryKind, MemoryState
+from app.modules.memory.models import MemoryEntry, MemoryKind, MemorySource, MemoryState
 from app.platform import search
 from app.platform.pagination import PageParams, escape_like
 
@@ -131,3 +131,19 @@ def _found(term: search.Term) -> ColumnElement[bool]:
         compact = func.replace(MemoryEntry.search_text, " ", "")
         return compact.like(f"%{escape_like(term.compact)}%", escape="\\")
     return MemoryEntry.search_text.like(f"% {escape_like(term.words)}%", escape="\\")
+
+
+async def learned_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime
+) -> Sequence[MemoryEntry]:
+    found = await db.scalars(
+        select(MemoryEntry)
+        .where(
+            MemoryEntry.company_id == company_id,
+            MemoryEntry.source == MemorySource.LEARNER,
+            MemoryEntry.state == MemoryState.PROPOSED,
+            MemoryEntry.created_at >= since,
+        )
+        .order_by(MemoryEntry.created_at)
+    )
+    return found.all()

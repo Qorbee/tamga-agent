@@ -10,7 +10,7 @@ import { callOf, waits } from "@/components/bill-call";
 import { BrandMark } from "@/components/brand-mark";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
-import { DraftedEntry } from "@/components/memory";
+import { DraftedEntry, Lessons } from "@/components/memory";
 import { MoneyTiles } from "@/components/money-tiles";
 import { PolicyDraftCard } from "@/components/policy-draft";
 
@@ -263,6 +263,7 @@ const CARDS: Record<CardKind, AssistantDataUI> = {
   decision_approval: card("decision_approval", ApprovalCard),
   decision_batch: card("decision_batch", BatchCard),
   morning_brief: card("morning_brief", BriefCard),
+  learned: card("learned", ({ data }) => <Lessons ids={data.ids ?? []} />),
 };
 
 /** Where the chat was compacted: above it Tamga works from notes, and every message is still here. */
@@ -301,11 +302,18 @@ function TurnBegan({ data }: DataMessagePartProps<TurnContent>) {
 
 const Began = makeAssistantDataUI<TurnContent>({ name: "agui-activity/tamga_turn", render: TurnBegan });
 
-/** What the chat's `remember` drafted, as a card the owner confirms under Tamga's answer
+/** What the chat's `remember` drafted, as a card the owner keeps with Tamga's answer
  * (ADR-0024); until the tool has answered, nothing. */
 const Remembered = makeAssistantToolUI<Record<string, unknown>, unknown>({
   toolName: "remember",
   // Shown on its own, not folded into the run's closed list of steps: the owner confirms here.
+  display: "standalone",
+  render: ({ result }) => (result === undefined ? null : <DraftedEntry result={result} />),
+});
+
+/** An entry the chat's `forget` asks the owner to retire: the same card, with Forget. */
+const Forgot = makeAssistantToolUI<Record<string, unknown>, unknown>({
+  toolName: "forget",
   display: "standalone",
   render: ({ result }) => (result === undefined ? null : <DraftedEntry result={result} />),
 });
@@ -335,6 +343,7 @@ export function ChatCards() {
       <Compacted />
       <Began />
       <Remembered />
+      <Forgot />
       <PolicyDrafted />
       <RuleDrafted />
       <ShownView />

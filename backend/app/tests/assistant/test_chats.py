@@ -623,6 +623,7 @@ async def test_a_chat_holds_the_records_its_runs_open(
         "investigate",
         "read_file",
         "remember",
+        "forget",
         "draft_policy",
         "draft_rule",
         "group_firms",

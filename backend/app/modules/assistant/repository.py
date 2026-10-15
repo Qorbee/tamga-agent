@@ -501,3 +501,21 @@ def _found(term: search.Term) -> ColumnElement[bool]:
         compact = func.replace(Chat.search_text, " ", "")
         return compact.like(f"%{escape_like(term.compact)}%", escape="\\")
     return Chat.search_text.like(f"% {escape_like(term.words)}%", escape="\\")
+
+
+async def summaries_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, limit: int
+) -> Sequence[Chat]:
+    """The chats the owner began that were summarized and spoken in since then, newest first."""
+    found = await db.scalars(
+        select(Chat)
+        .where(
+            Chat.company_id == company_id,
+            Chat.origin == Origin.OWNER,
+            Chat.summary != "",
+            Chat.last_message_at >= since,
+        )
+        .order_by(Chat.last_message_at.desc())
+        .limit(limit)
+    )
+    return found.all()

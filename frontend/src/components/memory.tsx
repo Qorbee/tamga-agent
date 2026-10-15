@@ -30,7 +30,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { useAsks, useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
-const KINDS: MemoryKind[] = ["person", "alias", "term", "practice", "preference"];
+const KINDS: MemoryKind[] = ["personal", "person", "alias", "term", "practice", "preference"];
 /** The longest text one message to the memorist reads (`MemoryText`). */
 const TOLD = 2000;
 
@@ -457,34 +457,146 @@ function MemoryBox({ onDone }: { onDone: (changes: Changes) => void }) {
   );
 }
 
-/** The entry a chat's `remember` drafted, read by the id its result names: the card under
- * Tamga's answer, with the owner's Confirm. */
+/**
+ * The entry a chat's `remember` drafted, or one its `forget` asks about, read live by the id its
+ * result names, under the key every change to the memory refreshes: kept, discarded or forgotten
+ * in Settings, it says so here rather than offering what can no longer be done.
+ */
 export function DraftedEntry({ result }: { result: unknown }) {
-  const { t } = useI18n();
-  const id = draftedId(result);
-  const read = useQuery({
-    queryKey: ["memory", "entry", id],
-    queryFn: () => getMemoryEntry(id ?? ""),
-    enabled: id !== null,
-    retry: false,
-  });
-  if (id === null) return null;
+  const asked = draftedOf(result);
+  if (asked === null) return null;
   return (
-    <div data-slot="chat-card" className="border-border bg-card my-3 rounded-2xl border px-4 py-1">
-      {read.data ? (
-        <MemoryRow entry={read.data} />
-      ) : read.isError ? (
-        <p className="text-muted-foreground py-2.5 text-sm">{t.assistant.cards.gone}</p>
-      ) : (
-        <Skeleton className="my-2.5 h-10 rounded-xl" />
-      )}
+    <div data-slot="chat-card" className="border-border bg-card my-3 rounded-2xl border px-4 py-3">
+      <EntryById id={asked.id} forget={asked.forget} />
     </div>
   );
 }
 
-/** The entry's id in what `remember` returned: an object, or the same as JSON; nothing when the
- * tool refused. */
-function draftedId(result: unknown): string | null {
+/** A week's lessons from the learner (ADR-0032), each to keep, edit or discard. */
+export function Lessons({ ids }: { ids: string[] }) {
+  return (
+    <ul data-slot="chat-card" className="border-border bg-card divide-border my-3 divide-y rounded-2xl border px-4">
+      {ids.map((id) => (
+        <li key={id} className="py-3">
+          <EntryById id={id} forget={false} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** One entry read by its id. */
+function EntryById({ id, forget }: { id: string; forget: boolean }) {
+  const { t } = useI18n();
+  const read = useQuery({
+    queryKey: ["memory", "entry", id],
+    queryFn: () => getMemoryEntry(id),
+    retry: false,
+  });
+  return read.isError ? (
+    // Checked before what was read: a draft discarded since is gone, not as it last was.
+    <p className="text-muted-foreground text-sm" role="status">
+      {read.error instanceof ApiError && read.error.status === 404 ? t.memory.card.discarded : t.errors.load}
+    </p>
+  ) : read.data ? (
+    <EntryCard entry={read.data} forget={forget} />
+  ) : (
+    <Skeleton className="h-12 rounded-xl" />
+  );
+}
+
+/** One entry on a chat's card: what it is, the sentence it held before a change, its own, and
+ * the owner's choice while it waits for one. */
+function EntryCard({ entry, forget }: { entry: MemoryEntry; forget: boolean }) {
+  const { t } = useI18n();
+  const words = t.memory;
+  const card = words.card;
+  const owner = useIsOwner();
+  const refresh = useRefresh();
+  const [editing, setEditing] = useState(false);
+  const draft = entry.state === "proposed";
+  const replaced = useQuery({
+    queryKey: ["memory", "entry", entry.replaces_id],
+    queryFn: () => getMemoryEntry(entry.replaces_id ?? ""),
+    enabled: draft && entry.replaces_id !== null,
+    retry: false,
+  });
+  const change = useMutation({
+    mutationFn: (body: Parameters<typeof changeMemoryEntry>[1]) => changeMemoryEntry(entry.id, body),
+    onSettled: refresh,
+  });
+  const discard = useMutation({ mutationFn: () => discardMemoryEntry(entry.id), onSettled: refresh });
+  const busy = change.isPending || discard.isPending;
+  // What waits for the owner: a draft to keep, or an entry that holds to forget.
+  const waits = forget ? entry.state === "held" : draft;
+  const outcome =
+    entry.state === "retired" ? card.forgotten : !forget && entry.state === "held" ? card.kept : null;
+
+  return (
+    <div className="grid gap-1.5">
+      <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
+        <span className="shrink-0">{words.kinds[entry.kind]}</span>
+        {entry.title ? (
+          <>
+            <span aria-hidden>·</span>
+            <span className="text-foreground truncate font-medium">{entry.title}</span>
+          </>
+        ) : null}
+      </p>
+      {replaced.data ? (
+        <p className="text-muted-foreground text-sm text-pretty break-words">
+          <span className="sr-only">{card.was}: </span>
+          <s>{replaced.data.text}</s>
+        </p>
+      ) : null}
+      <p className={cn("text-sm text-pretty break-words", entry.state === "retired" && "text-muted-foreground line-through")}>
+        {entry.text}
+      </p>
+      <Subject entry={entry} />
+      {editing ? <EditBox entry={entry} onClose={() => setEditing(false)} /> : null}
+      {waits && owner && !editing ? (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {forget ? (
+            <>
+              <span className="text-muted-foreground text-xs">{card.forgetAsk}</span>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => change.mutate({ state: "retired" })}>
+                {card.forget}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" disabled={busy} onClick={() => change.mutate({ state: "held" })}>
+                {card.keep}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(true)}>
+                {words.edit}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => discard.mutate()}>
+                {words.discard}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : null}
+      {waits && !owner ? <p className="text-muted-foreground text-xs">{words.ownerConfirms}</p> : null}
+      {outcome ? (
+        <p className="text-muted-foreground flex items-center gap-1 text-xs" role="status">
+          <HugeiconsIcon icon={Tick02Icon} strokeWidth={1.75} className="size-3.5" />
+          {outcome}
+        </p>
+      ) : null}
+      {change.isError || discard.isError ? (
+        <p className="text-danger-foreground text-xs" role="alert">
+          {t.errors.generic}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** What `remember` or `forget` returned: the entry's id, and whether it is asked to be
+ * forgotten; nothing when the tool refused. The result is an object, or the same as JSON. */
+function draftedOf(result: unknown): { id: string; forget: boolean } | null {
   let value = result;
   if (typeof value === "string") {
     try {
@@ -494,7 +606,7 @@ function draftedId(result: unknown): string | null {
     }
   }
   if (value && typeof value === "object" && "entry_id" in value && typeof value.entry_id === "string") {
-    return value.entry_id;
+    return { id: value.entry_id, forget: "forget" in value };
   }
   return null;
 }

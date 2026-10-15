@@ -9,7 +9,7 @@ from pydantic_ai.exceptions import UnexpectedModelBehavior
 from sqlalchemy import func, select, text
 
 from app.config import get_settings
-from app.modules.assistant import agents, service, turns
+from app.modules.assistant import agents, learning, service, turns
 from app.modules.assistant.models import CardKind, Chat, ChatMessage, ChatRecord, ChatRun, Origin
 from app.modules.companies import service as companies
 from app.modules.conversations.models import ThreadCategory
@@ -764,3 +764,47 @@ async def skip(company_id: uuid.UUID, days: int) -> None:
     async with open_session() as db:
         await companies.advance_clock(db, company_id, timedelta(days=days))
         await db.commit()
+
+
+async def test_once_a_week_tamga_drafts_what_it_learned_and_nothing_holds_until_kept(
+    client: httpx.AsyncClient,
+    tamga: Callable[..., Script],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "mail_model_reads_per_day", 40)
+    company_id = await guest_client(client)
+    # A week that left nothing to learn from: no model run, no chat.
+    script = tamga()
+    assert await learning.learn(company_id) == 0
+    assert script.requests == []
+
+    # The owner took a file out of a project and said why.
+    await playground.seed(company_id)
+    [link] = (
+        await client.get("/project-links", params={"item_kind": "document", "limit": 1})
+    ).json()["items"]
+    said = {"status": "rejected", "because": "other", "note": "the customs agent's form"}
+    assert (await client.patch(f"/project-links/{link['id']}", json=said)).status_code == 200
+    lesson = {
+        "action": "add",
+        "kind": "practice",
+        "name": "Customs forms",
+        "text": "The customs agent's forms belong to no job of the company's.",
+    }
+    script = tamga(
+        ("final_result", {"changes": [lesson], "reason": "From a file you took out."}),
+        "This week I learned that customs forms belong to no job.",
+    )
+    assert await learning.learn(company_id) == 1
+
+    # The learner read why; the week's chat holds one card of its drafts, which wait.
+    assert "the customs agent's form" in str(script.requests[0])
+    [chat] = await chats_of(client)
+    assert chat["title"] in learning.TITLES.values()
+    [card] = await cards_in(client, chat["id"])
+    assert card["activityType"] == CardKind.LEARNED
+    [entry_id] = card["content"]["ids"]
+    entry = (await client.get(f"/memory/{entry_id}")).json()
+    assert (entry["state"], entry["source"]) == ("proposed", "learner")
+    # Once a week.
+    assert await learning.learn(company_id) == 0

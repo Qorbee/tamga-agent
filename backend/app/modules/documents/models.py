@@ -117,6 +117,9 @@ class Document(CompanyScoped, Base):
     vision_pages: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
     # What the vision model said the file is, in a line; empty unless it read it.
     description: Mapped[str] = mapped_column(String(300), default="", server_default="")
+    # The owner's word that the file only signs its sender's mail (ADR-0032): every mail that
+    # carries it, now or later, carries it as a signature, whatever the mail's parser saw.
+    signature: Mapped[bool] = mapped_column(default=False, server_default=false())
     # What was read stops short of the file: pages past the hundredth, sheets, rows or columns past
     # what a workbook is read for, text past a million characters. What is missing may matter.
     truncated: Mapped[bool] = mapped_column(default=False, server_default=false())

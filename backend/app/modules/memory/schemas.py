@@ -23,6 +23,8 @@ class MemoryEntryOut(BaseModel):
     project_id: uuid.UUID | None
     source: MemorySource
     chat_id: uuid.UUID | None
+    # The entry this draft changes: keeping it retires that one.
+    replaces_id: uuid.UUID | None
     state: MemoryState
     written_by: uuid.UUID | None
     confirmed_by: uuid.UUID | None

@@ -242,7 +242,9 @@ async def _memory(
     async with open_session() as db:
         found = await memory.recall(db, seat.company_id, q)
         await db.commit()
-    return [f"- {entry.kind.value}: {entry.text}" for entry in found[:limit]]
+    return [
+        f"- {seat.name('m', entry.id)} {entry.kind.value}: {entry.text}" for entry in found[:limit]
+    ]
 
 
 async def _chats(

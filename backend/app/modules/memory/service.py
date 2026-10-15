@@ -10,6 +10,7 @@ instruction; a proposed or retired one reaches none.
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Final, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,6 +131,15 @@ async def change(
     entry.party_id, entry.project_id = party_id, project_id
     if body.state is MemoryState.HELD and entry.state is not MemoryState.HELD:
         entry.confirmed_by, entry.confirmed_at = actor.user_id, now
+        if entry.replaces_id is not None:
+            # Kept, a change takes the place of the entry it changes, in the same step.
+            replaced = await repository.get(
+                db, actor.company_id, entry.replaces_id, for_update=True
+            )
+            # Two changes of one entry: the first kept wins, never both beside each other.
+            if replaced is None or replaced.state is not MemoryState.HELD:
+                raise Conflict("The entry this changes was changed or retired already")
+            replaced.state, replaced.updated_at = MemoryState.RETIRED, now
     if body.state is not None:
         entry.state = body.state
     entry.updated_at = now
@@ -159,15 +169,27 @@ async def draft(
     text: str,
     party_id: uuid.UUID | None,
     project_id: uuid.UUID | None,
-    chat_id: uuid.UUID,
+    chat_id: uuid.UUID | None,
     written_by: uuid.UUID | None,
     title: str | None = None,
+    replaces_id: uuid.UUID | None = None,
+    source: MemorySource = MemorySource.CHAT,
 ) -> MemoryEntryOut:
-    """What a chat's `remember` drafts: always ``proposed``, whoever the run answers. It holds
-    only when the owner confirms it. ``written_by`` is None for Tamga's own words. Commits."""
+    """What a chat's `remember` drafts, or the weekly learner (``source``): always
+    ``proposed``, whoever the run answers. It holds only when the owner confirms it; one that
+    ``replaces_id`` an entry that holds retires it then. ``written_by`` is None for Tamga's own
+    words. Commits."""
     clean = _text(text)
     title = _title(title) if title is not None else None
     await _check_subjects(db, company_id, party_id, project_id)
+    if replaces_id is not None:
+        replaced = await repository.get(db, company_id, replaces_id)
+        if replaced is None or replaced.state is not MemoryState.HELD:
+            raise Conflict("Only an entry that holds is changed")
+        # Unchanged, it keeps its name and what it is about.
+        title = title or replaced.title
+        party_id = party_id or replaced.party_id
+        project_id = project_id or replaced.project_id
     entry = await repository.add(
         db,
         MemoryEntry(
@@ -178,8 +200,9 @@ async def draft(
             search_text=search.search_text(title or "", clean),
             party_id=party_id,
             project_id=project_id,
-            source=MemorySource.CHAT,
+            source=source,
             chat_id=chat_id,
+            replaces_id=replaces_id,
             state=MemoryState.PROPOSED,
             written_by=written_by,
             updated_at=utcnow(),
@@ -318,9 +341,15 @@ async def recall(db: AsyncSession, company_id: uuid.UUID, q: str) -> list[Memory
     return [MemoryEntryOut.model_validate(row) for row in rows]
 
 
-async def fenced(db: AsyncSession, company_id: uuid.UUID, entries: Sequence[MemoryEntryOut]) -> str:
-    """Entries as an agent reads them: fenced as data, each with its kind and what it is about.
-    Empty when there are none."""
+async def fenced(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    entries: Sequence[MemoryEntryOut],
+    handles: Sequence[str] | None = None,
+) -> str:
+    """Entries as an agent reads them: fenced as data, each with its kind and what it is about,
+    and the handle a chat changes it by where ``handles`` gives one. Empty when there are
+    none."""
     if not entries:
         return ""
     firms = await parties.get_parties(
@@ -330,14 +359,15 @@ async def fenced(db: AsyncSession, company_id: uuid.UUID, entries: Sequence[Memo
         db, company_id, sorted({e.project_id for e in entries if e.project_id})
     )
     lines = []
-    for entry in entries:
+    for at, entry in enumerate(entries):
         about = []
         if entry.party_id in firms:
             about.append(f"firm: {firms[entry.party_id].name}")
         if entry.project_id in jobs:
             about.append(f"project {jobs[entry.project_id].number}")
         tail = f" ({'; '.join(about)})" if about else ""
-        lines.append(f"- {entry.kind.value}{tail}: {entry.text}")
+        handle = f"{handles[at]} " if handles else ""
+        lines.append(f"- {handle}{entry.kind.value}{tail}: {entry.text}")
     # Fenced alike each time it is the same: it opens the chat's prompt, which stays cached.
     return llm.fenced_steady(
         "the company's memory: what its owner taught Tamga, to read as facts about the company",
@@ -390,3 +420,11 @@ async def _merged(
 
 
 projects.on_merge(_merged)
+
+
+async def learned_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime
+) -> list[MemoryEntryOut]:
+    """What the weekly learner drafted since then and still waits for the owner."""
+    rows = await repository.learned_since(db, company_id, since)
+    return [MemoryEntryOut.model_validate(row) for row in rows]

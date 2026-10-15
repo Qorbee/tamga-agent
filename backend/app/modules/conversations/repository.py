@@ -127,6 +127,18 @@ async def add_attachment(
     )
 
 
+async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    """Marks a file as its senders' signature in every mail of the company that carried it."""
+    await db.execute(
+        update(MessageAttachment)
+        .where(
+            MessageAttachment.company_id == company_id,
+            MessageAttachment.document_id == document_id,
+        )
+        .values(signature=True)
+    )
+
+
 async def set_inline(
     db: AsyncSession,
     company_id: uuid.UUID,
@@ -134,7 +146,7 @@ async def set_inline(
     document_ids: set[uuid.UUID],
     signed: set[uuid.UUID],
 ) -> None:
-    """Marks which of a mail's files its body shows, and of those its writer's signature."""
+    """Marks which of a mail's files its body shows, and which sign its writer's mail."""
     await db.execute(
         update(MessageAttachment)
         .where(
@@ -143,7 +155,7 @@ async def set_inline(
         )
         .values(
             inline=MessageAttachment.document_id.in_(document_ids),
-            signature=MessageAttachment.document_id.in_(signed & document_ids),
+            signature=MessageAttachment.document_id.in_(signed),
         )
     )
 
@@ -462,10 +474,9 @@ async def thread_messages(
 
 async def carriers_of(
     db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
-) -> list[tuple[uuid.UUID, uuid.UUID, bool, bool]]:
+) -> list[tuple[uuid.UUID, uuid.UUID, bool, bool, bool]]:
     """Every mail of the company that carried each of these files: the file, the mail, whether
-    the mail's body showed it, and whether it is no job's: bulk mail's, or its writer's
-    signature."""
+    the mail's body showed it, whether the mail is bulk mail, and whether the file signs it."""
     if not document_ids:
         return []
     rows = await db.execute(
@@ -473,7 +484,8 @@ async def carriers_of(
             MessageAttachment.document_id,
             MessageAttachment.message_id,
             MessageAttachment.inline,
-            Message.bulk | MessageAttachment.signature,
+            Message.bulk,
+            MessageAttachment.signature,
         )
         .join(Message, Message.id == MessageAttachment.message_id)
         .where(
@@ -726,14 +738,19 @@ async def unsorted_threads(
     return list(rows)
 
 
-async def model_reads_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
-    """Calls in which a model was sent this company's mail since then, whatever came of them."""
-    count = await db.scalar(
+async def model_reads_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, agent: str | None = None
+) -> int:
+    """Calls in which a model was sent this company's mail since then, whatever came of them;
+    of one agent's, where ``agent`` names it."""
+    query = (
         select(func.count())
         .select_from(MailModelRead)
         .where(MailModelRead.company_id == company_id, MailModelRead.read_at >= since)
     )
-    return count or 0
+    if agent is not None:
+        query = query.where(MailModelRead.agent == agent)
+    return await db.scalar(query) or 0
 
 
 async def add_model_read(db: AsyncSession, company_id: uuid.UUID, agent: str, at: datetime) -> None:
@@ -1031,3 +1048,25 @@ async def outbound_among(
         )
     )
     return set(rows)
+
+
+async def own_senders(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, limit: int
+) -> Sequence[tuple[str, str, int]]:
+    """Who wrote the company's own mail since then, by name and address, with how many mails,
+    the busiest first."""
+    count = func.count(Message.id)
+    rows = await db.execute(
+        select(Message.sender_name, Message.sender, count)
+        .where(
+            Message.company_id == company_id,
+            Message.direction == Direction.OUTBOUND,
+            Message.sent_at >= since,
+            Message.sender_name.is_not(None),
+            Message.sender.is_not(None),
+        )
+        .group_by(Message.sender_name, Message.sender)
+        .order_by(count.desc())
+        .limit(limit)
+    )
+    return [(name, sender, mails) for name, sender, mails in rows.tuples() if name and sender]

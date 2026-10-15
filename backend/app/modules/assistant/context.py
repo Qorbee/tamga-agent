@@ -184,7 +184,7 @@ def transcript(
         lines.append(f"Notes of the chat before this part:\n{before}\n")
     for row in rows:
         if row.kind is MessageKind.CARD:
-            lines.append(f"[A card under Tamga's message: {row.message['kind']}]")
+            lines.append(f"[A card with Tamga's message: {row.message['kind']}]")
             continue
         if row.kind is not MessageKind.MODEL:
             continue

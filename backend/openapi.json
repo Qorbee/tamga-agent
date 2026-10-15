@@ -417,7 +417,8 @@
           "conversation_question",
           "decision_approval",
           "decision_batch",
-          "morning_brief"
+          "morning_brief",
+          "learned"
         ],
         "title": "CardKind",
         "type": "string"
@@ -3921,6 +3922,27 @@
       },
       "LinkOut": {
         "properties": {
+          "because": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RejectReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "because_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Because Note"
+          },
           "confidence": {
             "title": "Confidence",
             "type": "number"
@@ -4043,6 +4065,8 @@
           "evidence",
           "status",
           "proof_of_delivery",
+          "because",
+          "because_note",
           "decided_by",
           "decided_at",
           "created_at"
@@ -4092,6 +4116,28 @@
       },
       "LinkUpdate": {
         "properties": {
+          "because": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RejectReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
           "proof_of_delivery": {
             "anyOf": [
               {
@@ -4612,6 +4658,18 @@
             ],
             "title": "Project Id"
           },
+          "replaces_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Id"
+          },
           "source": {
             "$ref": "#/components/schemas/MemorySource"
           },
@@ -4660,6 +4718,7 @@
           "project_id",
           "source",
           "chat_id",
+          "replaces_id",
           "state",
           "written_by",
           "confirmed_by",
@@ -4722,7 +4781,8 @@
           "alias",
           "person",
           "preference",
-          "practice"
+          "practice",
+          "personal"
         ],
         "title": "MemoryKind",
         "type": "string"
@@ -4751,7 +4811,8 @@
       "MemorySource": {
         "enum": [
           "chat",
-          "settings"
+          "settings",
+          "learner"
         ],
         "title": "MemorySource",
         "type": "string"
@@ -7861,6 +7922,17 @@
           "not_asked"
         ],
         "title": "RegistryStatus",
+        "type": "string"
+      },
+      "RejectReason": {
+        "description": "Why the owner rejected an item, when they say (ADR-0032).",
+        "enum": [
+          "signature",
+          "another_job",
+          "not_work",
+          "other"
+        ],
+        "title": "RejectReason",
         "type": "string"
       },
       "ReserveRule-Input": {

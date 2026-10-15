@@ -11,7 +11,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
@@ -35,6 +35,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   createLink,
@@ -59,6 +60,11 @@ import { useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
 
 import { plateOf, useChecklist, useTrucks } from "./truck-board";
+
+/** What was just rejected here, asked why once (ADR-0032): what the owner says reaches the
+ * weekly learner, and a signature is code's to act on. */
+type Rejected = { links: ProjectLink[]; kind: "mail" | "file" | "invoice" };
+const AskWhy = createContext<(rejected: Rejected) => void>(() => {});
 
 export const linksKey = (id: string) => ["project-links", { project_id: id, expand: "item" }] as const;
 export const placementsKey = (id: string) => ["placements", { projects: [id] }] as const;
@@ -153,6 +159,7 @@ export function ProjectTimeline({
 }) {
   const { t, locale } = useI18n();
   const [show, setShow] = useState<Show>("all");
+  const [rejected, setRejected] = useState<Rejected | null>(null);
   const links = useQuery({ queryKey: linksKey(id), queryFn: () => readLinks(id) });
   const placements = useQuery({ queryKey: placementsKey(id), queryFn: () => readPlacements(id) });
   const trucks = (useTrucks(id).data ?? []).filter((each) => each.state !== "rejected");
@@ -179,6 +186,7 @@ export function ProjectTimeline({
   }
 
   return (
+    <AskWhy.Provider value={setRejected}>
     <section className="grid grid-cols-1 gap-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h4 className="text-sm font-medium">{t.project.timeline}</h4>
@@ -217,6 +225,13 @@ export function ProjectTimeline({
           </div>
         ) : null}
       </div>
+      {rejected ? (
+        <WhyRejected
+          key={rejected.links.map((link) => link.id).join()}
+          rejected={rejected}
+          onDone={() => setRejected(null)}
+        />
+      ) : null}
       {links.isError ? (
         <p className="text-danger-foreground text-sm" role="alert">
           {t.errors.load}
@@ -261,6 +276,7 @@ export function ProjectTimeline({
         </ol>
       )}
     </section>
+    </AskWhy.Provider>
   );
 }
 
@@ -332,6 +348,7 @@ function MailRow({ row }: { row: Extract<Row, { kind: "mail" }> }) {
   const isOwner = useIsOwner();
   const invalidate = useInvalidatePlacements();
   const [moving, setMoving] = useState(false);
+  const askWhy = useContext(AskWhy);
   const waiting = row.links.filter((link) => link.status === "suggested");
   const decide = useMutation({
     mutationFn: async (answer: "confirmed" | "rejected") => {
@@ -339,7 +356,10 @@ function MailRow({ row }: { row: Extract<Row, { kind: "mail" }> }) {
       if (row.placement) await decidePlacement(row.placement.id, { links: answer });
       else for (const link of waiting) await updateLink(link.id, { status: answer });
     },
-    onSuccess: invalidate,
+    onSuccess: (_, answer) => {
+      invalidate();
+      if (answer === "rejected" && waiting.length > 0) askWhy({ links: waiting, kind: "mail" });
+    },
   });
   const latest = row.mails.reduce((a, b) => (a.sent_at > b.sent_at ? a : b));
   const who = latest.sender_name || latest.sender || "—";
@@ -493,9 +513,13 @@ function ItemRow({
   const isOwner = useIsOwner();
   const invalidate = useInvalidatePlacements();
   const [moving, setMoving] = useState(false);
+  const askWhy = useContext(AskWhy);
   const decide = useMutation({
     mutationFn: (answer: "confirmed" | "rejected") => updateLink(link.id, { status: answer }),
-    onSuccess: invalidate,
+    onSuccess: (_, answer) => {
+      invalidate();
+      if (answer === "rejected") askWhy({ links: [link], kind: isFile ? "file" : "invoice" });
+    },
   });
   const place = useMutation({
     mutationFn: (shipmentId: string | null) => updateLink(link.id, { shipment_id: shipmentId }),
@@ -649,6 +673,76 @@ function GapRow({ item, trucks }: { item: ChecklistItem; trucks: Shipment[] }) {
   );
 }
 
+/** Why something just left the project, in one optional tap: a file can be a signature or a
+ * logo, which code then keeps out of every project; anything can be another job, not work, or
+ * something else said in a line. */
+function WhyRejected({ rejected, onDone }: { rejected: Rejected; onDone: () => void }) {
+  const { t } = useI18n();
+  const words = t.project.why;
+  const invalidate = useInvalidatePlacements();
+  const [other, setOther] = useState(false);
+  const [note, setNote] = useState("");
+  const tell = useMutation({
+    mutationFn: async ({ because, said }: { because: WhyReason; said?: string }) => {
+      for (const link of rejected.links) await updateLink(link.id, { because, note: said || null });
+    },
+    onSuccess: () => {
+      invalidate();
+      onDone();
+    },
+  });
+  const reasons: WhyReason[] =
+    rejected.kind === "file" ? ["signature", "another_job", "not_work", "other"] : ["another_job", "not_work", "other"];
+  return (
+    <div className="border-border bg-card flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2 text-sm" role="status">
+      <span className="text-muted-foreground">{words.ask}</span>
+      {other ? (
+        <form
+          className="flex min-w-0 flex-1 items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (note.trim()) tell.mutate({ because: "other", said: note.trim() });
+          }}
+        >
+          <Input
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            maxLength={200}
+            placeholder={words.placeholder}
+            aria-label={words.other}
+            className="h-8 min-w-0 flex-1"
+            autoFocus
+          />
+          <Button size="xs" type="submit" disabled={tell.isPending || !note.trim()}>
+            {words.send}
+          </Button>
+        </form>
+      ) : (
+        reasons.map((reason) => (
+          <Button
+            key={reason}
+            size="xs"
+            variant="outline"
+            className="rounded-full"
+            disabled={tell.isPending}
+            onClick={() => (reason === "other" ? setOther(true) : tell.mutate({ because: reason }))}
+          >
+            {words[reason]}
+          </Button>
+        ))
+      )}
+      <IconButton icon={Cancel01Icon} label={words.skip} size="icon-xs" className="text-muted-foreground ms-auto" onClick={onDone} />
+      {tell.isError ? (
+        <span className="text-danger-foreground w-full text-xs" role="alert">
+          {t.errors.generic}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+type WhyReason = NonNullable<Parameters<typeof updateLink>[1]["because"]>;
+
 function Answer({
   waiting,
   confidence,
@@ -759,7 +853,8 @@ function MoveItemDialog({
         project_id: projectId,
         proof_of_delivery: false,
       });
-      await updateLink(link.id, { status: "rejected" });
+      // Moved, it is another job's: what the weekly learner reads of it.
+      await updateLink(link.id, { status: "rejected", because: "another_job" });
     },
     onSuccess: () => {
       invalidate();

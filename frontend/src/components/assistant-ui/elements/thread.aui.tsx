@@ -629,9 +629,11 @@ const AssistantMessage: FC = () => {
         stepsOnly ? "-mb-4" : actions ? "-mb-7.5 pb-7.5" : "",
       )}
     >
+      {/* A card that waits for the owner, or a view, shows after the message's words wherever
+          the tool was called, so the words never point at it as above or below. */}
       <div
         data-slot="aui_assistant-message-content"
-        className="text-foreground text-sm leading-relaxed wrap-break-word"
+        className="text-foreground flex flex-col text-sm leading-relaxed wrap-break-word [&>[data-slot=chat-card]]:order-last [&>[data-slot=chat-view]]:order-last"
       >
         <MessagePrimitive.GroupedParts groupBy={groupBy}>
           {({ part, children }) => {

@@ -463,6 +463,14 @@ async def lock_document(
     return document
 
 
+async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+    await db.execute(
+        update(Document)
+        .where(Document.company_id == company_id, Document.id == document_id)
+        .values(signature=True)
+    )
+
+
 async def delete_document(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
     """Deletes the row; its uploads go with it (their foreign key cascades)."""
     await db.execute(
