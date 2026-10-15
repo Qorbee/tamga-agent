@@ -7199,6 +7199,14 @@
             ],
             "title": "Destination"
           },
+          "not_in_books": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Not In Books",
+            "type": "array"
+          },
           "origin": {
             "anyOf": [
               {

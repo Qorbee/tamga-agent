@@ -48,6 +48,9 @@ class ProjectJob(BaseModel):
     destination: str | None = None
     cargo: str | None = None
     trucks: int | None = None
+    # Of the client and the subcontractors, those no card in the books is named as: named in
+    # mail only, so a firm the books suggest in that role may be another.
+    not_in_books: list[str] = []
 
 
 class ProjectOut(BaseModel):

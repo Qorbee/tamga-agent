@@ -13,6 +13,7 @@ import {
   useAui,
   useAuiState,
 } from "@assistant-ui/react";
+import { TypedText } from "@/components/typed-text";
 import { DeleteChatDialog } from "@/components/delete-chat-dialog";
 import { useChats, useReadAhead } from "@/lib/use-chats";
 import {
@@ -348,6 +349,7 @@ export const ThreadListItem: FC = () => {
   const isRunning = useAuiState((s) => s.threadListItem.isRunning) || answeredElsewhere === true;
   const isUnread = useUnreadChats().has(id);
   const isArchived = useAuiState((s) => s.threadListItem.status === "archived");
+  const title = useAuiState((s) => s.threadListItem.title);
   const readAhead = useReadAhead();
   const [isRenaming, setIsRenaming] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -398,7 +400,7 @@ export const ThreadListItem: FC = () => {
             data-slot="aui_thread-list-item-title"
             className={cn("truncate-fade min-w-0 flex-1", isUnread && "font-medium")}
           >
-            <ThreadListItemPrimitive.Title fallback={t.chat.newChat} />
+            <TypedText text={title ?? t.chat.newChat} />
           </span>
           {isRunning && <span className="sr-only">{t.chat.running}</span>}
           {isUnread && <span className="sr-only">{t.chat.unread}</span>}

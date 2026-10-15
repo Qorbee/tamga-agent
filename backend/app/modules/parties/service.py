@@ -334,6 +334,15 @@ async def named_like(db: AsyncSession, company_id: uuid.UUID, name: str) -> list
     return [party for party in found if same_firm(name, party.name)]
 
 
+async def named_like_many(
+    db: AsyncSession, company_id: uuid.UUID, names: Sequence[str]
+) -> dict[str, list[Party]]:
+    """``named_like`` for many names in one query: each name with the firms named as it is."""
+    firsts = {name: words[0] for name in names if (words := name_key(name).split())}
+    found = await repository.named_from_any(db, company_id, sorted(set(firsts.values())))
+    return {name: [party for party in found if same_firm(name, party.name)] for name in names}
+
+
 async def one_per_firm(
     db: AsyncSession, company_id: uuid.UUID, party_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, uuid.UUID]:

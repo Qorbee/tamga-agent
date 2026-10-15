@@ -98,6 +98,7 @@ export function ProjectProperties({ project }: { project: Project }) {
         chosen={held(role, "confirmed")}
         suggested={held(role, "suggested")}
         read={read}
+        notInBooks={job?.not_in_books ?? []}
         canEdit={canEdit}
         several={role === "subcontractor"}
       />
@@ -203,6 +204,7 @@ function PartyField({
   chosen,
   suggested,
   read,
+  notInBooks,
   canEdit,
   several = false,
 }: {
@@ -212,6 +214,8 @@ function PartyField({
   // Firms Tamga suggests in the role, from what names them.
   suggested: ProjectParty[];
   read: string[];
+  // Of the names read, those no card in the books holds.
+  notInBooks: string[];
   canEdit: boolean;
   several?: boolean;
 }) {
@@ -254,14 +258,24 @@ function PartyField({
       </span>
     ) : read.length > 0 ? (
       <span className="[overflow-wrap:anywhere]">
-        {read.join(", ")} <span className="text-muted-foreground text-xs">· {t.project.readFromMail}</span>
+        {read.join(", ")}{" "}
+        <span className="text-muted-foreground text-xs">
+          · {read.every((name) => notInBooks.includes(name)) ? t.project.notInBooks : t.project.readFromMail}
+        </span>
       </span>
     ) : (
       <span className="text-muted-foreground">{t.project.empty}</span>
     );
 
   const asked =
-    unanswered.length > 0 ? <SuggestedFirms project={project} role={role} firms={unanswered} /> : null;
+    unanswered.length > 0 ? (
+      <SuggestedFirms
+        project={project}
+        role={role}
+        firms={unanswered}
+        mailNames={chosen.length === 0 ? read.filter((name) => notInBooks.includes(name)) : []}
+      />
+    ) : null;
   if (!canEdit)
     return (
       <span className="grid gap-1">
@@ -352,7 +366,22 @@ function PartyField({
  * it was read from: two kinds of signal agreeing are said as such, one alone is asked. The owner
  * answers yes or no; a no keeps the firm from being suggested there again.
  */
-function SuggestedFirms({ project, role, firms }: { project: Project; role: "client" | "subcontractor"; firms: ProjectParty[] }) {
+/**
+ * Firms Tamga suggests in a role, each to confirm or refuse. Where the mail names a firm in that
+ * role that is not in the books (``mailNames``), a firm only one kind of signal names is asked
+ * against it: the books' firm may be another, or the same under its legal name.
+ */
+function SuggestedFirms({
+  project,
+  role,
+  firms,
+  mailNames,
+}: {
+  project: Project;
+  role: "client" | "subcontractor";
+  firms: ProjectParty[];
+  mailNames: string[];
+}) {
   const { t } = useI18n();
   const isOwner = useIsOwner();
   const queryClient = useQueryClient();
@@ -375,7 +404,11 @@ function SuggestedFirms({ project, role, firms }: { project: Project; role: "cli
           <li key={firm.id} className="bg-secondary/60 grid gap-0.5 rounded-lg px-2 py-1.5 text-xs">
             <span className="flex items-start gap-1.5">
               <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-                {agreed(firm) ? firm.party_name : t.project.askFirm(firm.party_name, label)}
+                {agreed(firm)
+                  ? firm.party_name
+                  : mailNames.length > 0
+                    ? t.project.askAgainstMail(firm.party_name, label, mailNames.join(", "))
+                    : t.project.askFirm(firm.party_name, label)}
               </span>
               {isOwner ? (
                 <span className="flex shrink-0 items-center gap-0.5">

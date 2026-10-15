@@ -102,6 +102,9 @@ class Message(CompanyScoped, Base):
     sender: Mapped[str | None] = mapped_column(String(320))
     sender_name: Mapped[str | None] = mapped_column(String(200))
     recipients: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    # Of the recipients, those only copied (Cc): a mail between two other firms the company is
+    # copied on asks nothing of it.
+    copied: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
     subject: Mapped[str | None] = mapped_column(Text)
     body_text: Mapped[str] = mapped_column(Text, default="")
     # What a search looks in, folded (`platform/search.py`): subject, sender, recipients, the names
@@ -235,3 +238,5 @@ class MessageAttachment(CompanyScoped, Base):
     filename: Mapped[str] = mapped_column(String(300))
     # Shown inside the mail's HTML body by its Content-ID (a signature logo, a pasted screenshot).
     inline: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Shown below its writer's contact lines: the sender's signature, never a job's picture.
+    signature: Mapped[bool] = mapped_column(default=False, server_default=false())

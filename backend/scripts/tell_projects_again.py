@@ -1,13 +1,14 @@
-"""Works out again the name and days Tamga gave each project from what its conversations say, after
-the way they are worked out changed: what most conversations say, each firm in one role, firms by
-their short names. The owner's own names and days are left as they are.
+"""Works out again the days Tamga gave each project from what its conversations say, and queues
+the titler to name again each project only Tamga named, after the way they are worked out
+changed. The owner's own names and days are left as they are.
 
 uv run python scripts/tell_projects_again.py                  (the pilot company, a dry run)
 uv run python scripts/tell_projects_again.py --write
 uv run python scripts/tell_projects_again.py --company-id <id> --write
 
-A dry run prints what would change and writes nothing. Only Tamga's own database is written; no
-model is asked and nothing reaches a mailbox or the books. Safe to run again.
+A dry run prints which projects would be named and writes nothing. Only Tamga's own database is
+written; the worker then asks the small model once a project (the titler), within the day's budget
+of model reads. Nothing reaches a mailbox or the books. Safe to run again.
 """
 
 import argparse
@@ -25,14 +26,14 @@ from app.modules.linking import service  # noqa: E402
 from app.platform.db import dispose_db, init_db, open_session  # noqa: E402
 
 
-async def tell(company_id: uuid.UUID, *, write: bool) -> list[tuple[str, str, str]]:
+async def tell(company_id: uuid.UUID, *, write: bool) -> list[str]:
     packs.register_all()
     init_db(str(get_settings().database_url))
     try:
         async with open_session() as db:
-            renamed = await service.tell_projects_again(db, company_id)
+            named = await service.tell_projects_again(db, company_id)
             await (db.commit() if write else db.rollback())
-            return renamed
+            return named
     finally:
         await dispose_db()
 
@@ -44,11 +45,11 @@ def main() -> int:
     args = parser.parse_args()
     if args.company_id is None:
         parser.error("set PILOT_COMPANY_ID or pass --company-id")
-    renamed = asyncio.run(tell(args.company_id, write=args.write))
-    for number, old, new in renamed:
-        print(f"{number}: {old}\n{' ' * len(number)}  → {new}")
+    named = asyncio.run(tell(args.company_id, write=args.write))
+    print(", ".join(named))
     print(
-        f"{len(renamed)} project(s) renamed" + ("" if args.write else " (dry run, nothing written)")
+        f"{len(named)} project(s) to be named by the titler"
+        + ("" if args.write else " (dry run, nothing written)")
     )
     return 0
 

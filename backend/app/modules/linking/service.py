@@ -51,7 +51,7 @@ from app.modules.projects.models import (
     ProjectStatus,
 )
 from app.modules.projects.schemas import ProjectJob
-from app.platform import events, llm
+from app.platform import events, jobs, llm
 from app.platform.auth import Actor, Role
 from app.platform.clock import utcnow
 from app.platform.db import open_session
@@ -127,6 +127,12 @@ _DAYS: Final = ("starts_on", "ends_on")
 _FIRMS: Final = ("client", "subcontractor", "consignee", "party")
 # The roles a reading gives a firm in a job; a firm holds one of them in a project.
 _ROLES: Final = ("client", "subcontractor")
+# What a conversation says of a job that names its project, and how many subjects the titler
+# reads; the quotes and full stops a model may wrap a name in.
+_NAMED_BY: Final = frozenset({"client", "origin", "destination", "cargo", "starts_on"})
+_TITLE_SUBJECTS: Final = 3
+_WRAPPED: Final = " \"'“”‘’«».`"
+_NAME_LENGTH: Final = 120
 _ADDRESS: Final = re.compile(r"\S+@\S+|(?:www\.)?[\w-]+(?:\.[\w-]+)*\.[^\W\d_]{2,}")
 
 
@@ -762,13 +768,13 @@ async def _second_opinion(
     )
 
 
-async def _count(company_id: uuid.UUID, requests: int) -> None:
-    """Counts the requests of a run after its first against the budget: each was sent the
-    conversation again."""
+async def _count(company_id: uuid.UUID, requests: int, agent: str = agents.LINKER) -> None:
+    """Counts requests against the budget: those of a linker's run after its first, each sent
+    the conversation again, or a titler's."""
     if requests <= 0:
         return
     async with open_session() as db:
-        await conversations.count_model_reads(db, company_id, agents.LINKER, requests=requests)
+        await conversations.count_model_reads(db, company_id, agent, requests=requests)
         await db.commit()
 
 
@@ -1129,23 +1135,31 @@ def _from_model(
             cited=cited,
         )
     if placing.decision == "new_project" and placing.new_project is not None:
-        name = " ".join(placing.new_project.name.replace("\x00", "").split())[:300]
-        job = placing.new_project.model_dump(exclude={"name"}, exclude_none=True)
-        title = _title(_as_read(job) or {})
-        # The model's own words name the project only when the job does not, and an address
-        # is no more a project's name than a firm's.
-        if not title and (not name or _ADDRESS.fullmatch(name)):
+        if _only_copied(thread):
+            return unplaced
+        read = _as_read(placing.new_project.model_dump(exclude_none=True) | party) or {}
+        # Code names a project, never the model's words: by its job where the mail shows it,
+        # else by the firm it is with and the day it began.
+        name = _title(read) or _firm_and_day(read, thread)
+        if not name:
             return unplaced
         return _Decision(
             Outcome.PROPOSED,
             agents.MODEL_PLACED,
-            new_name=title or name,
+            new_name=name,
             confidence=placing.confidence,
             reason=reason,
             cited=cited,
-            reading=_as_read(job | party),
+            reading=read or None,
         )
     return unplaced
+
+
+def _only_copied(thread: ThreadRead) -> bool:
+    """Whether the company is only copied on a conversation: no mail of it is written to the
+    company or by it. Other firms arranging their own work start no project of the company's."""
+    reached = {"by" if mail.outbound else mail.addressed for mail in thread.mails}
+    return "cc" in reached and not reached & {"to", "by"}
 
 
 def _town(place: str | None) -> str:
@@ -1172,6 +1186,19 @@ def _title(job: Mapping[str, Any]) -> str | None:
     first = _day(job, "starts_on")
     parts = [client, route, f"{first:%d.%m.%Y}" if first else ""]
     return " · ".join(part for part in parts if part)[:300]
+
+
+def _firm_and_day(read: Mapping[str, Any], thread: ThreadRead) -> str | None:
+    """A project whose job shows neither its client nor its route, by the firm the conversation
+    is with and the job's first day, or the conversation's ("Stone GmbH · 03.08.2026"). None when
+    nothing but an address tells who wrote."""
+    writers = [mail.sender_name for mail in thread.mails if not mail.outbound]
+    for each in (read.get("party"), *writers):
+        firm = parties.short_name(" ".join(str(each or "").split()))[:120]
+        if firm and not _ADDRESS.fullmatch(firm):
+            first = _day(read, "starts_on") or thread.mails[0].sent_at.date()
+            return f"{firm} · {first:%d.%m.%Y}"
+    return None
 
 
 def _known(readings: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -1300,11 +1327,18 @@ async def _jobs(
 ) -> dict[uuid.UUID, ProjectJob]:
     """Each project's job as its conversations describe it together, for the projects shown."""
     readings = await _readings(db, company_id, project_ids)
-    return {
+    jobs = {
         project_id: job
         for project_id, read in readings.items()
         if (job := _job(_known(read))) is not None
     }
+    names = {name for job in jobs.values() for name in (job.client, *job.subcontractors) if name}
+    cards = await parties.named_like_many(db, company_id, sorted(names))
+    for job in jobs.values():
+        job.not_in_books = [
+            name for name in (job.client, *job.subcontractors) if name and not cards.get(name)
+        ]
+    return jobs
 
 
 projects.read_jobs_with(_jobs)
@@ -1418,7 +1452,83 @@ async def _apply(
     if placement.placed_by == agents.MODEL_PLACED and project_id is not None and reading:
         await db.flush()
         await _tell_project(db, company_id, project_id, said=said, evidence=decision.cited)
+    if project_id is not None and (decision.new_name or _NAMED_BY & said.keys()):
+        await _name_later(db, company_id, project_id)
     return True
+
+
+async def _name_later(db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID) -> None:
+    """Has the titler name a project within the minute, in the caller's transaction."""
+    from app.modules.linking import tasks
+
+    await jobs.defer(
+        db,
+        tasks.name_project,
+        args={"company_id": str(company_id), "project_id": str(project_id)},
+        # One company's at a time: each reads what is left of the day's budget before it asks.
+        lock=f"project-name:{company_id}",
+    )
+
+
+async def name_project(company_id: uuid.UUID, project_id: uuid.UUID) -> None:
+    """Names a project while nobody but Tamga named it: the titler's few words from what its
+    conversations say of the job and their subjects, in the company's language. One request of
+    a small model, from the day's budget of model reads; with none left, or no answer, the
+    job's client and route name it where they are known, and otherwise the name stays."""
+    async with open_session() as db:
+        project = (await projects.get_projects(db, company_id, [project_id])).get(project_id)
+        if (
+            project is None
+            or project.status is ProjectStatus.REJECTED
+            or project.field_sources.get("name") == FieldSource.OWNER
+        ):
+            return
+        known = _known((await _readings(db, company_id, [project_id])).get(project_id, []))
+        threads = await repository.threads_in(db, company_id, project_id, limit=_TITLE_SUBJECTS)
+        briefs = await conversations.thread_briefs(db, company_id, threads)
+        subjects = [brief.summary.subject for brief in briefs.values() if brief.summary.subject]
+        left = await conversations.model_reads_left(db, company_id)
+        company = (await companies.get_companies(db, [company_id])).get(company_id)
+    name = _title(known)
+    if company is not None and left > 0 and (known or subjects):
+        usage = RunUsage()
+        try:
+            run = await llm.run(
+                agents.project_titler,
+                agents.project_facts(known, subjects),
+                deps=None,
+                limits=UsageLimits(request_limit=1),
+                language=company.language,
+                trace_content=companies.traces_content(company.kind),
+                usage=usage,
+                settings_name=agents.TITLER_SETTINGS,
+            )
+            name = _titled(run.output) or name
+        except Exception as error:
+            # The error's type only: a provider's error can quote what it was sent.
+            logger.warning("naming project %s failed: %s", project_id, type(error).__name__)
+        await _count(company_id, usage.requests, agents.PROJECT_TITLER)
+    if not name:
+        return
+    async with open_session() as db:
+        await projects.propose_project_fields(
+            db,
+            company_id=company_id,
+            project_id=project_id,
+            values={"name": name},
+            source=FieldSource.SUGGESTION,
+            evidence=(),
+            leave_owner=("name",),
+        )
+        await db.commit()
+    await events.publish_now(company_id, [events.EventKind.PROJECTS])
+
+
+def _titled(said: str) -> str:
+    """The titler's words as a name: one line, no quotes or full stop around it, and never an
+    address."""
+    name = " ".join(said.split()).strip(_WRAPPED)[:_NAME_LENGTH]
+    return "" if not name or _ADDRESS.fullmatch(name) else name
 
 
 async def _tell_project(
@@ -1429,18 +1539,17 @@ async def _tell_project(
     said: Mapping[str, Any] | None,
     evidence: Sequence[uuid.UUID],
 ) -> None:
-    """Brings a project up to what its conversations say of the job together: its days, and its
-    name while nobody but Tamga named it. ``said`` is what the conversation just placed says: a
-    day it states is written, or proposed when the owner set that day, with ``evidence`` as its
-    proof. With ``said`` None a conversation has left the project (the owner's answer): what
-    Tamga derived is worked out again from those that remain, and nothing the owner set is
-    touched or proposed over."""
+    """Brings a project's days up to what its conversations say of the job together. ``said`` is
+    what the conversation just placed says: a day it states is written, or proposed when the
+    owner set that day, with ``evidence`` as its proof. With ``said`` None a conversation has
+    left the project (the owner's answer): what Tamga derived is worked out again from those
+    that remain, its name too (``name_project``), and nothing the owner set is touched or
+    proposed over."""
     readings = await _readings(db, company_id, [project_id])
     known = _known(readings.get(project_id, []))
     values: dict[str, Any] = {}
-    name = _title(known)
-    if name:
-        values["name"] = name
+    if said is None:
+        await _name_later(db, company_id, project_id)
     for field in _DAYS:
         if said is None:
             values[field] = known.get(field)
@@ -1454,28 +1563,24 @@ async def _tell_project(
             values=values,
             source=FieldSource.SUGGESTION,
             evidence=evidence,
-            leave_owner=("name",) if said is not None else ("name", *_DAYS),
+            leave_owner=_DAYS if said is None else (),
         )
 
 
-async def tell_projects_again(
-    db: AsyncSession, company_id: uuid.UUID
-) -> list[tuple[str, str, str]]:
-    """Works out again, from what its conversations say, the name and days Tamga gave each of the
-    company's projects: for when the way they are worked out changed. The owner's own are left
-    as they are. Returns the number, the old name and the new one of each project renamed. Does
-    not commit."""
+async def tell_projects_again(db: AsyncSession, company_id: uuid.UUID) -> list[str]:
+    """Works out again, from what its conversations say, the days Tamga gave each of the company's
+    projects, and has the titler name again each one only Tamga named (``name_project``, one job
+    a project): for when the way they are worked out changed. The owner's own are left as they
+    are. Returns the numbers of the projects to be named. Does not commit."""
     placed = await repository.read_projects(db, company_id)
-    before = await projects.get_projects(db, company_id, placed)
-    names = {project_id: project.name for project_id, project in before.items()}
     for project_id in placed:
         await _tell_project(db, company_id, project_id, said=None, evidence=())
-    await db.flush()
-    after = await projects.get_projects(db, company_id, placed)
+    held = await projects.get_projects(db, company_id, placed)
     return sorted(
-        (project.number, names[project_id], project.name)
-        for project_id, project in after.items()
-        if project.name != names[project_id]
+        project.number
+        for project in held.values()
+        if project.status is not ProjectStatus.REJECTED
+        and project.field_sources.get("name") != FieldSource.OWNER
     )
 
 

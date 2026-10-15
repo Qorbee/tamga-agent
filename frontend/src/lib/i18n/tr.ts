@@ -238,6 +238,9 @@ export const tr: Dictionary = {
     empty: "Boş",
     clear: "Temizle",
     readFromMail: "postadan okundu",
+    notInBooks: "postada adı geçiyor, defterinizde yok",
+    askAgainstMail: (name: string, role: string, mail: string) =>
+      `Postada ${mail} geçiyor. ${name} ${role.toLocaleLowerCase("tr")} mi?`,
     suggestedFirm: "önerilen",
     askFirm: (name: string, role: string) => `${name} ${role.toLocaleLowerCase("tr")} mi?`,
     firmSignals: { reading: "postada adı geçiyor", sender: "e-posta adresi", invoice: "faturası" } as Record<

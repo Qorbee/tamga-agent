@@ -33,7 +33,7 @@ pytestmark = pytest.mark.integration
 
 ADA = Identifier(IdentifierKind.EMAIL, "ada@stone.example")
 TAX = Identifier(IdentifierKind.TAX_ID, "1234567890")
-CLIENT_READ = answer("new_project", new_project={"name": "coils", "client": "Stone GmbH"})
+CLIENT_READ = answer("new_project", new_project={"client": "Stone GmbH"})
 
 
 async def card(company_id: uuid.UUID, name: str, *identifiers: Identifier) -> uuid.UUID:
@@ -75,6 +75,21 @@ async def suggested_again(company_id: uuid.UUID) -> None:
     async with open_session() as db:
         await firms.suggest_firms(db, company_id)
         await db.commit()
+
+
+async def test_a_firm_named_only_in_mail_is_told_apart_from_one_in_the_books(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    company_id = await guest_client(client)
+    project_id = await placed(client, model, company_id, mail("<order@x>"))
+    job = (await client.get(f"/projects/{project_id}")).json()["job"]
+    assert job["not_in_books"] == ["Stone GmbH"]
+
+    # Its card in the books, under its legal name.
+    await card(company_id, "STONE GMBH")
+    job = (await client.get(f"/projects/{project_id}")).json()["job"]
+    assert job["client"] == "Stone GmbH" and job["not_in_books"] == []
 
 
 async def test_the_firm_a_reading_and_its_senders_address_name_is_the_projects_client(

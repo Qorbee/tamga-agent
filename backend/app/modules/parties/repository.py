@@ -280,6 +280,27 @@ async def named_from(db: AsyncSession, company_id: uuid.UUID, start: str) -> Seq
     return parties.all()
 
 
+async def named_from_any(
+    db: AsyncSession, company_id: uuid.UUID, starts: Sequence[str]
+) -> Sequence[Party]:
+    """Parties one of whose names, compared without spaces, starts with one of ``starts``."""
+    if not starts:
+        return []
+    compact = func.replace(PartyIdentifier.normalised, " ", "")
+    parties = await db.scalars(
+        select(Party)
+        .join(PartyIdentifier, PartyIdentifier.party_id == Party.id)
+        .where(
+            Party.company_id == company_id,
+            PartyIdentifier.company_id == company_id,
+            PartyIdentifier.kind == IdentifierKind.NAME,
+            or_(*(compact.like(f"{escape_like(start)}%", escape="\\") for start in starts)),
+        )
+        .distinct()
+    )
+    return parties.all()
+
+
 async def list_groups(
     db: AsyncSession, company_id: uuid.UUID, page: PageParams
 ) -> tuple[Sequence[PartyGroup], int]:

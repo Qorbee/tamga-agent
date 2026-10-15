@@ -18,10 +18,10 @@ import imaplib
 import logging
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Final
+from typing import Final, Literal
 
 from pydantic_ai import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -373,6 +373,7 @@ async def _store_new_mail(
         sender=parsed.sender,
         sender_name=parsed.sender_name,
         recipients=parsed.recipients,
+        copied=parsed.copied,
         subject=parsed.subject,
         body_text=parsed.body_text,
         search_text=_search_text(parsed),
@@ -403,6 +404,7 @@ async def _store_new_mail(
             document_id=document.id,
             filename=attachment.filename,
             inline=attachment.inline,
+            signature=attachment.signature,
         )
     return message
 
@@ -454,6 +456,7 @@ async def reread_stored_mail(
             logger.warning("stored mail %s could not be parsed again", message.id)
             continue
         message.sender_name = parsed.sender_name
+        message.copied = parsed.copied
         message.search_text = _search_text(parsed)
         message.bulk = parsed.bulk
         await _mark_inline(db, company_id, message.id, parsed)
@@ -471,9 +474,11 @@ async def _mark_inline(
     files = await documents.get_documents(
         db, company_id, [attachment.document_id for attachment in attachments]
     )
+    signed = {hashlib.sha256(file.data).digest() for file in parsed.attachments if file.signature}
     # One file shown in the body and also attached beside it is an attachment, as when stored.
     inline = {document_id for document_id, file in files.items() if file.sha256 in shown - beside}
-    await repository.set_inline(db, company_id, message_id, inline)
+    signature = {document_id for document_id, file in files.items() if file.sha256 in signed}
+    await repository.set_inline(db, company_id, message_id, inline, signature)
 
 
 # Processing what arrived
@@ -588,9 +593,10 @@ async def _files_to_read(db: AsyncSession, message: Message) -> list[uuid.UUID]:
     the pictures of bulk mail, a newsletter's, nor one that several conversations already show,
     a sender's furniture; how small a picture holds nothing is the reader's to say (documents)."""
     attachments = await repository.attachments_of(db, message.company_id, message.id)
-    shown = [file.document_id for file in attachments if file.inline]
+    shown = [file.document_id for file in attachments if file.inline and not file.signature]
     left = set(shown) if message.bulk else await _furniture(db, message.company_id, shown)
-    return [file.document_id for file in attachments if file.document_id not in left]
+    signed = {file.document_id for file in attachments if file.signature}
+    return [file.document_id for file in attachments if file.document_id not in left | signed]
 
 
 async def _furniture(
@@ -609,11 +615,11 @@ async def carried_files(
 ) -> dict[uuid.UUID, list[uuid.UUID]]:
     """The files these mails carried, each with every mail of the company that carried it as part
     of a job (ADR-0021): a file beside a mail's text, or a picture its body shows unless the mail
-    is bulk mail or the picture a sender's furniture. A file so many conversations carry that it
-    is standing paper comes back with no mail, so it leaves the projects it was in, and so does
-    one that holds nothing of a job: a signature's picture, a logo, a picture not read yet (it
-    joins once it is read with something on it). What an archive among them held rides with the
-    archive."""
+    is bulk mail or the picture a sender's furniture or signature. A file so many conversations
+    carry that it is standing paper comes back with no mail, so it leaves the projects it was in,
+    and so does one that holds nothing of a job: a signature's picture, a logo, a picture not read
+    yet (it joins once it is read with something on it). What an archive among them held rides
+    with the archive."""
     if not message_ids:
         return {}
     attached = await repository.attachments_of_each(db, company_id, message_ids)
@@ -791,6 +797,25 @@ def _outbound(message: Message) -> bool:
     return message.direction == Direction.OUTBOUND
 
 
+def _addressed(message: Message, boxes: set[str], domains: set[str]) -> Literal["to", "cc", "none"]:
+    """How a mail reached the company: written to one of its addresses, only copied, or neither
+    (a forward, a list, a blind copy). An address is the company's when it is a mailbox Tamga
+    reads (``boxes``), or on one of those mailboxes' own domains (``domains``, never a shared
+    provider's)."""
+    copied = {address.lower() for address in message.copied}
+    to = [address for address in message.recipients if address.lower() not in copied]
+
+    def ours(addresses: Iterable[str]) -> bool:
+        return any(
+            address.lower() in boxes or maildomains.address_domain(address) in domains
+            for address in addresses
+        )
+
+    if ours(to):
+        return "to"
+    return "cc" if ours(copied) else "none"
+
+
 # For what reads conversations next
 
 
@@ -806,8 +831,9 @@ class MailRead:
     sent_at: datetime
     sender: str | None
     sender_name: str | None
-    # Written by the company itself.
+    # Written by the company itself; and how it reached the company: to it, only copied, or neither.
     outbound: bool
+    addressed: Literal["to", "cc", "none"]
     subject: str | None
     # What its writer typed, without the history it quotes.
     text: str
@@ -1035,8 +1061,20 @@ async def _as_read_threads(
     db: AsyncSession, company_id: uuid.UUID, threads: Sequence[Thread]
 ) -> list[ThreadRead]:
     mails = await repository.mail_as_read(db, company_id, [thread.thread_key for thread in threads])
+    boxes = {box.lower() for box in await repository.mailboxes(db, company_id)}
+    # A shared provider's domain (gmail.com) is no one's: there, only the mailbox itself is.
+    domains = {
+        domain
+        for box in boxes
+        if (domain := maildomains.address_domain(box)) and not maildomains.is_shared(domain)
+    }
     attached = await repository.attachments_of_each(db, company_id, [mail.id for mail in mails])
-    shown = [file.document_id for files in attached.values() for file in files if file.inline]
+    shown = [
+        file.document_id
+        for files in attached.values()
+        for file in files
+        if file.inline and not file.signature
+    ]
     pictures = await documents.for_the_vision_model(db, company_id, shown)
     pictures -= await _furniture(db, company_id, shown)
     by_key: dict[str, list[MailRead]] = {}
@@ -1048,6 +1086,7 @@ async def _as_read_threads(
                 sender=mail.sender,
                 sender_name=mail.sender_name,
                 outbound=_outbound(mail),
+                addressed=_addressed(mail, boxes, domains),
                 subject=mail.subject,
                 # A reply of nothing but quoted history has no text of its own.
                 text=mail.own_text,

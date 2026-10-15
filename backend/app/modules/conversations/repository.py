@@ -105,6 +105,7 @@ async def add_attachment(
     document_id: uuid.UUID,
     filename: str,
     inline: bool,
+    signature: bool = False,
 ) -> None:
     statement = insert(MessageAttachment).values(
         company_id=company_id,
@@ -112,27 +113,38 @@ async def add_attachment(
         document_id=document_id,
         filename=filename[:300],
         inline=inline,
+        signature=signature,
     )
     await db.execute(
         statement.on_conflict_do_update(
             index_elements=[MessageAttachment.message_id, MessageAttachment.document_id],
             # One file shown in the body and also attached beside it is an attachment.
-            set_={"inline": MessageAttachment.inline & statement.excluded.inline},
+            set_={
+                "inline": MessageAttachment.inline & statement.excluded.inline,
+                "signature": MessageAttachment.signature & statement.excluded.signature,
+            },
         )
     )
 
 
 async def set_inline(
-    db: AsyncSession, company_id: uuid.UUID, message_id: uuid.UUID, document_ids: set[uuid.UUID]
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    message_id: uuid.UUID,
+    document_ids: set[uuid.UUID],
+    signed: set[uuid.UUID],
 ) -> None:
-    """Marks which of a mail's files its body shows, and only those."""
+    """Marks which of a mail's files its body shows, and of those its writer's signature."""
     await db.execute(
         update(MessageAttachment)
         .where(
             MessageAttachment.company_id == company_id,
             MessageAttachment.message_id == message_id,
         )
-        .values(inline=MessageAttachment.document_id.in_(document_ids))
+        .values(
+            inline=MessageAttachment.document_id.in_(document_ids),
+            signature=MessageAttachment.document_id.in_(signed & document_ids),
+        )
     )
 
 
@@ -452,7 +464,8 @@ async def carriers_of(
     db: AsyncSession, company_id: uuid.UUID, document_ids: Sequence[uuid.UUID]
 ) -> list[tuple[uuid.UUID, uuid.UUID, bool, bool]]:
     """Every mail of the company that carried each of these files: the file, the mail, whether
-    the mail's body showed it, and whether the mail is bulk mail."""
+    the mail's body showed it, and whether it is no job's: bulk mail's, or its writer's
+    signature."""
     if not document_ids:
         return []
     rows = await db.execute(
@@ -460,7 +473,7 @@ async def carriers_of(
             MessageAttachment.document_id,
             MessageAttachment.message_id,
             MessageAttachment.inline,
-            Message.bulk,
+            Message.bulk | MessageAttachment.signature,
         )
         .join(Message, Message.id == MessageAttachment.message_id)
         .where(

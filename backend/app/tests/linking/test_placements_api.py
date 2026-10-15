@@ -21,6 +21,7 @@ from app.tests.linking.test_placing import (
     links,
     mail,
     model,  # noqa: F401  (the fixture)
+    name_projects,
     owner_project,
     the_projects,
     tool,
@@ -212,7 +213,7 @@ async def test_an_answer_given_while_the_model_read_is_not_overwritten(
     answered = (await client.get("/placements")).json()["items"][0]
     assert answered["outcome"] == "unplaced" and answered["placed_by"] == "owner"
     assert [project.name for project in await the_projects(company_id)] == [
-        "Stone, Istanbul to Munich"
+        "Ada Stone · 03.08.2026"
     ]
 
 
@@ -271,14 +272,14 @@ async def test_two_projects_that_are_one_job_are_merged_and_everything_follows(
     model(
         answer(
             "new_project",
-            new_project={"name": "Munich again", "client": "Stone GmbH", "destination": "Munich"},
+            new_project={"client": "Stone GmbH", "destination": "Munich"},
         )
     )
     assert await service.place_pending() == 1
     stays = next(p for p in await the_projects(company_id) if str(p.id) != gone["id"])
     await arrive(company_id, 4, mail("<which@x>", subject="POD"), category=ThreadCategory.WORK)
     model(
-        tool("search_projects", words="Munich"),
+        tool("search_projects", words="Stone"),
         answer("ask", alternatives=[gone["number"], stays.number]),
     )
     assert await service.place_pending() == 1
@@ -295,12 +296,13 @@ async def test_two_projects_that_are_one_job_are_merged_and_everything_follows(
     assert (same.status_code, unknown.status_code) == (400, 404)
     assert merged.status_code == 200, merged.text
     kept = merged.json()
-    # One project, found by either number, confirmed as the one that went was, and named by
-    # what all its conversations say of the job together.
+    # One project, found by either number, confirmed as the one that went was, and named again
+    # from what all its conversations say of the job together.
     assert (await client.get(f"/projects/{gone['id']}")).status_code == 404
     assert kept["id"] == str(stays.id) and kept["aliases"] == [gone["number"]]
     assert (kept["status"], kept["confirmed_links"], kept["suggested_links"]) == ("active", 2, 2)
-    assert kept["name"] == "Stone GmbH · Istanbul → Munich"
+    [named] = await name_projects(company_id, model)
+    assert named.name == "Stone GmbH · Istanbul → Munich"
     found = (await client.get("/projects", params={"q": gone["number"]})).json()
     assert [item["id"] for item in found["items"]] == [kept["id"]]
     placed = (await client.get("/placements", params={"project_id": kept["id"]})).json()

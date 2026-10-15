@@ -225,6 +225,23 @@ async def naming(
     return rows.all()
 
 
+async def threads_in(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID, *, limit: int
+) -> list[uuid.UUID]:
+    """The conversations placed in a project, the one it was proposed for first."""
+    rows = await db.scalars(
+        select(Placement.thread_id)
+        .where(
+            Placement.company_id == company_id,
+            Placement.project_id == project_id,
+            Placement.outcome.in_((Outcome.LINKED, Outcome.PROPOSED)),
+        )
+        .order_by(Placement.created_at, Placement.id)
+        .limit(limit)
+    )
+    return list(rows)
+
+
 async def companies_awaiting_owner(db: AsyncSession) -> list[uuid.UUID]:
     """The one read across companies, of their ids alone: those holding a placement that waits
     for the owner's answer."""

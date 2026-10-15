@@ -7,6 +7,7 @@ mail unstored, and its folder stuck behind it.
 """
 
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 from html.parser import HTMLParser
+from typing import Final
 from urllib.parse import unquote
 
 from app.platform import filetypes
@@ -25,6 +27,19 @@ logger = logging.getLogger(__name__)
 # RFC 5321: no deliverable address is longer. A longer one is not an address.
 _MAX_ADDRESS = 254
 _MAX_NAME = 200
+# A line that tells how to reach its writer: a mail or web address, a phone number written
+# internationally or under its label. A date or an order number is none.
+_CONTACT: Final = re.compile(
+    r"\S+@\S+\.\w{2,}|(?:www\.|https?://)\S+|\+\d[\d\s().-]{7,}\d|"
+    r"\b(?:tel|phone|telefon|gsm|mobile|mob|cep|fax|faks|[tmpf])\b\.?\s*:?\s*\(?\+?\d",
+    re.I,
+)
+# How many lines above a picture its writer's contact lines may be, how many a signature has
+# (a phone and a mail or web address: one alone can be a driver's number in a message), and how
+# many words a line of the writer's own message has more than (a signature's lines have fewer).
+_SIGNATURE_REACH: Final = 8
+_SIGNATURE_CONTACTS: Final = 2
+_SENTENCE_WORDS: Final = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +49,8 @@ class Attachment:
     data: bytes
     # Shown inside the HTML body (a signature logo, a pasted screenshot), not attached beside it.
     inline: bool = False
+    # Shown below its writer's contact lines: the sender's signature, never a job's picture.
+    signature: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +68,8 @@ class ParsedMail:
     attachments: list[Attachment] = field(default_factory=list)
     # Sent to a list, not written to this reader: its headers carry what bulk senders add.
     bulk: bool = False
+    # Of the recipients, those only copied (Cc).
+    copied: list[str] = field(default_factory=list)
 
 
 UNREADABLE = ParsedMail(
@@ -80,6 +99,7 @@ def parse_mail(raw: bytes) -> ParsedMail:
         sender=_address(message, "From"),
         sender_name=_name(message, "From"),
         recipients=_addresses(message, "To", "Cc"),
+        copied=_addresses(message, "Cc"),
         subject=_header(message, "Subject"),
         body_text=_text_of(body) if body is not None else "",
         sent_at=_date(message),
@@ -183,20 +203,49 @@ def shown_images(html: str) -> set[str]:
     nothing, so the part it names stays a file beside the text."""
     parser = _ImageSources()
     parser.feed(html)
-    return parser.cids
+    return {cid for _, cid in parser.drawn}
+
+
+def signature_images(html: str) -> set[str]:
+    """The Content-IDs an HTML body draws below its writer's contact lines: two lines with a mail
+    or web address or a phone number among the lines just above the picture, and no sentence of
+    the writer's own between them. That is a signature's banner or logo, however a model would
+    read its picture; a screenshot pasted above the sign-off has no contact line above it, and a
+    photo under one driver's number has only one."""
+    parser = _ImageSources()
+    parser.feed(html)
+    found: set[str] = set()
+    for at, cid in parser.drawn:
+        contacts = 0
+        for line in reversed(parser.lines[max(0, at - _SIGNATURE_REACH) : at]):
+            if len(line.split()) > _SENTENCE_WORDS and not _CONTACT.search(line):
+                break
+            contacts += bool(_CONTACT.search(line))
+            if contacts >= _SIGNATURE_CONTACTS:
+                found.add(cid)
+                break
+    return found
 
 
 class _ImageSources(HTMLParser):
+    """The pictures an HTML body draws by Content-ID, each with how many lines of text came
+    before it."""
+
     def __init__(self) -> None:
         super().__init__()
-        self.cids: set[str] = set()
+        self.lines: list[str] = []
+        self.drawn: list[tuple[int, str]] = []
+
+    def handle_data(self, data: str) -> None:
+        self.lines.extend(line for each in data.splitlines() if (line := " ".join(each.split())))
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "img":
             return
         for name, value in attrs:
             if name == "src" and value and value.strip().lower().startswith("cid:"):
-                self.cids.add(unquote(value.strip()[4:]).strip("<> ").lower())
+                cid = unquote(value.strip()[4:]).strip("<> ").lower()
+                self.drawn.append((len(self.lines), cid))
 
 
 def own_parts(message: Message) -> Iterator[Message]:
@@ -225,6 +274,7 @@ def _attachments(message: Message, body: Message | None) -> list[Attachment]:
     text. The file is still stored, as a pasted screenshot can be the document itself."""
     html = html_part(message)
     shown = shown_images(text_of_part(html)) if html is not None else set()
+    signed = signature_images(text_of_part(html)) if html is not None else set()
     own = {id(part) for part in own_parts(message)}
     found: list[Attachment] = []
     for part in message.walk():
@@ -243,14 +293,14 @@ def _attachments(message: Message, body: Message | None) -> list[Attachment]:
         if not isinstance(data, bytes) or not data:
             continue
         cid = content_id(part)
+        inline = cid in shown and id(part) in own and filetypes.sniff(data) in filetypes.IMAGES
         found.append(
             Attachment(
                 filename=_clean(filename or "") or f"attachment-{len(found) + 1}",
                 content_type=_clean(_declared_type(part)),
                 data=data,
-                inline=(
-                    cid in shown and id(part) in own and filetypes.sniff(data) in filetypes.IMAGES
-                ),
+                inline=inline,
+                signature=inline and cid in signed,
             )
         )
     return found

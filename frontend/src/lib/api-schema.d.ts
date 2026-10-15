@@ -4200,6 +4200,11 @@ export interface components {
             consignee?: string | null;
             /** Destination */
             destination?: string | null;
+            /**
+             * Not In Books
+             * @default []
+             */
+            not_in_books: string[];
             /** Origin */
             origin?: string | null;
             /**

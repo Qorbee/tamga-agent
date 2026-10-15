@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TypedText } from "@/components/typed-text";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -22,6 +23,7 @@ export function ChatTitle() {
   const { t } = useI18n();
   const aui = useAui();
   const title = useAuiState((s) => s.threadListItem.title) ?? t.chat.newChat;
+  const id = useAuiState((s) => s.threadListItem.id);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // Set when a menu item takes focus elsewhere (the name field, the dialog), so the closing menu
@@ -38,7 +40,9 @@ export function ChatTitle() {
             variant="ghost"
             className="-ms-2 h-8 max-w-full min-w-0 gap-1 rounded-lg px-2 text-sm font-medium"
           >
-            <span className="truncate">{title}</span>
+            <span className="truncate">
+              <TypedText key={id} text={title} />
+            </span>
             <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={1.75} className="text-muted-foreground" />
             <span className="sr-only">{t.chat.chatOptions}</span>
           </Button>

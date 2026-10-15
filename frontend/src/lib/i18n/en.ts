@@ -246,6 +246,9 @@ export const en = {
     empty: "Empty",
     clear: "Clear",
     readFromMail: "read from mail",
+    notInBooks: "named in mail, not in your books",
+    askAgainstMail: (name: string, role: string, mail: string) =>
+      `The mail names ${mail}. Is ${name} the ${role.toLowerCase()}?`,
     suggestedFirm: "suggested",
     askFirm: (name: string, role: string) => `Is ${name} the ${role.toLowerCase()}?`,
     firmSignals: { reading: "named in mail", sender: "their mail address", invoice: "their invoice" } as Record<

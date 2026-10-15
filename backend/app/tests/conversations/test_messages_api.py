@@ -144,7 +144,7 @@ async def test_an_html_mail_shows_its_logo_in_the_body_not_as_a_file(
     # Mail stored before the parser knew inline files gets them from the stored original.
     message_id = uuid.UUID(row["id"])
     async with open_session() as db:
-        await repository.set_inline(db, company_id, message_id, set())
+        await repository.set_inline(db, company_id, message_id, set(), set())
         assert await service.reread_stored_mail(db, company_id, after=None) == message_id
         await db.commit()
     detail = (await client.get(f"/messages/{row['id']}")).json()

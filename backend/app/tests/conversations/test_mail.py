@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 from email.message import EmailMessage
 
-from app.modules.conversations.mail import parse_mail
+from app.modules.conversations import service
+from app.modules.conversations.mail import parse_mail, signature_images
+from app.modules.conversations.models import Message
 
 PNG = b"\x89PNG\r\n\x1a\n"
 
@@ -118,6 +120,47 @@ def test_a_file_the_html_body_shows_is_inline_and_an_attached_one_is_not() -> No
     }
 
 
+def test_a_picture_below_its_writers_contact_lines_is_their_signature() -> None:
+    html = (
+        "<p>Truck 34 ABC 12 is loaded, CMR below:</p><img src='cid:cmr'>"
+        "<p>Best regards,</p><p>Ada Stone</p><p>Stone GmbH | Operations</p>"
+        "<p>T: +49 89 123 456 78</p><p>www.stone.example</p><img src='cid:banner'>"
+        "<p>On Mon, Ops wrote:</p><p>&gt; please send the CMR</p>"
+    )
+    # The banner sits below the phone and the web address; the CMR above the sign-off.
+    assert signature_images(html) == {"banner"}
+    # A sentence of the writer's own between the contact line and a picture: the picture is
+    # theirs to show, not their signature's.
+    pasted = (
+        "<p>ada@stone.example</p><p>Here is the photo of the seal you asked for this morning:</p>"
+        "<img src='cid:seal'>"
+    )
+    assert signature_images(pasted) == set()
+    # One number above a photo is a driver's, not a signature.
+    assert signature_images("<p>Driver: +90 555 123 45 67</p><img src='cid:seal'>") == set()
+    # A date, an order number or a plate is no contact line.
+    assert (
+        signature_images("<p>Loading 05.10.2026 09:00, order 4500123456</p><img src='cid:x'>")
+        == set()
+    )
+
+
+def test_a_parsed_mail_marks_its_signature_picture() -> None:
+    message = mail(From="ada@stone.example", Subject="Loaded")
+    message.set_content("Loaded.")
+    message.add_alternative(
+        "<p>Loaded.</p><p>Ada Stone</p><p>Tel: 0049 89 123</p><p>ada@stone.example</p>"
+        "<img src='cid:banner@stone'>",
+        subtype="html",
+    )
+    html = message.get_body(preferencelist=("html",))
+    assert html is not None
+    html.add_related(PNG + b" port", "image", "png", cid="<banner@stone>", filename="image002.jpg")
+
+    [banner] = parse_mail(message.as_bytes()).attachments
+    assert (banner.inline, banner.signature) == (True, True)
+
+
 def test_a_broken_date_is_left_for_the_server_time() -> None:
     message = mail(From="x@example.com", Date="sometime last week")
     message.set_content("hi")
@@ -135,3 +178,12 @@ def test_what_the_database_would_refuse_is_left_out() -> None:
     assert parsed.sender is None
     assert parsed.subject == "ab"
     assert parsed.body_text == "Tır yolda"
+
+
+def test_on_a_shared_provider_only_the_mailbox_itself_is_the_companys() -> None:
+    # The company reads me@gmail.com: a customer on gmail.com is not the company.
+    copied = Message(recipients=["customer@gmail.com", "me@gmail.com"], copied=["me@gmail.com"])
+    assert service._addressed(copied, {"me@gmail.com"}, set()) == "cc"
+    written = Message(recipients=["Ops@Acme.example"], copied=[])
+    assert service._addressed(written, {"me@acme.example"}, {"acme.example"}) == "to"
+    assert service._addressed(written, {"me@gmail.com"}, set()) == "none"

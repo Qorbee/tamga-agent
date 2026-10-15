@@ -13,19 +13,27 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextPart,
     ToolCallPart,
     ToolReturnPart,
 )
 from pydantic_ai.messages import UserPromptPart as UserPrompt
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy import select, update
+from sqlalchemy import text as sql
 
 from app.config import get_settings
 from app.modules.books.models import Invoice, InvoiceDirection, InvoiceKind
 from app.modules.conversations import repository as mail_repository
 from app.modules.conversations import service as conversations
 from app.modules.conversations.adapters.imap import FetchedMail
-from app.modules.conversations.models import MailModelRead, Message, Thread, ThreadCategory
+from app.modules.conversations.models import (
+    MailFolder,
+    MailModelRead,
+    Message,
+    Thread,
+    ThreadCategory,
+)
 from app.modules.conversations.service import ThreadRead
 from app.modules.documents import service as documents
 from app.modules.linking import agents as linking_agents
@@ -68,9 +76,15 @@ def mail(
     references: str | None = None,
     files: tuple[str, ...] = (),
     attach: dict[str, bytes] | None = None,
+    to: str | None = None,
+    cc: str | None = None,
 ) -> bytes:
     message = email.message.EmailMessage()
     message["From"] = sender
+    if to:
+        message["To"] = to
+    if cc:
+        message["Cc"] = cc
     message["Subject"] = subject
     message["Date"] = date
     message["Message-ID"] = message_id
@@ -128,6 +142,8 @@ class Script:
         if isinstance(step, Exception):
             raise step
         name, args = step
+        if name == "text":
+            return ModelResponse(parts=[TextPart(content=args["content"])])
         if name == "answer":
             name = info.output_tools[0].name
         return ModelResponse(parts=[ToolCallPart(tool_name=name, args=args)])
@@ -154,13 +170,18 @@ def tool(name: str, **args: Any) -> Step:
     return name, args
 
 
+def text(content: str) -> Step:
+    """What a model that answers in words, such as the titler, says."""
+    return "text", {"content": content}
+
+
 def answer(decision: str, **fields: Any) -> Step:
     return "answer", {"decision": decision, "reason": "why", "confidence": 0.8, **fields}
 
 
 NEW_PROJECT = answer(
     "new_project",
-    new_project={"name": "Stone, Istanbul to Munich", "origin": "Istanbul", "cargo": "steel coils"},
+    new_project={"origin": "Istanbul", "cargo": "steel coils"},
     cited_mails=[1],
 )
 
@@ -206,6 +227,18 @@ async def links(company_id: uuid.UUID, thread_key: str) -> list[ProjectLink]:
             .order_by(Message.sent_at, ProjectLink.created_at)
         )
         return list(rows.all())
+
+
+async def name_projects(
+    company_id: uuid.UUID, model: Callable[..., Script], *said: str
+) -> list[Project]:
+    """The titler's job on each project in the order they were made, the model saying each of
+    ``said`` in turn; with nothing said it fails, and code names each by its job."""
+    made = await the_projects(company_id)
+    model(*([text(each) for each in said] or [RuntimeError("no model")] * len(made)))
+    for project in made:
+        await service.name_project(company_id, project.id)
+    return await the_projects(company_id)
 
 
 async def the_projects(company_id: uuid.UUID) -> list[Project]:
@@ -267,7 +300,8 @@ async def test_the_linker_proposes_a_project_and_ties_the_mails_as_suggestions(
     assert await service.place_pending() == 0
 
     [project] = await the_projects(company_id)
-    assert (project.name, project.status) == ("Stone, Istanbul to Munich", ProjectStatus.PROPOSED)
+    # Named by code until the titler names it: no client or route read, so who wrote and when.
+    assert (project.name, project.status) == ("Ada Stone · 03.08.2026", ProjectStatus.PROPOSED)
     [link] = await links(company_id, "<order@x>")
     # ADR-0010: a model's reading proposes; only the owner confirms.
     assert (link.project_id, link.status, link.method) == (
@@ -575,7 +609,7 @@ async def test_an_old_thread_answered_with_a_new_order_sends_only_the_new_mail_t
     assert await service.place_pending() == 1
     late = mail("<late@x>", date="Sun, 20 Sep 2026 09:00:00 +0300", references="<order@x>")
     await arrive(company_id, 2, late, category=None)
-    model(answer("new_project", new_project={"name": "Stone, Izmir to Lyon"}))
+    model(answer("new_project", new_project={}))
 
     assert await service.place_pending() == 1
 
@@ -683,7 +717,7 @@ async def test_a_mail_the_owner_ties_while_the_model_reads_is_left_where_the_own
             parts=[
                 ToolCallPart(
                     tool_name=info.output_tools[0].name,
-                    args=proposal | {"new_project": {"name": "Stone, Istanbul to Munich"}},
+                    args=proposal | {"new_project": {}},
                 )
             ]
         )
@@ -884,7 +918,6 @@ async def test_a_project_is_named_by_its_job_and_follows_what_later_mail_says(
         answer(
             "new_project",
             new_project={
-                "name": "a load of coils",
                 "client": "Stone  GmbH",
                 "origin": "Istanbul, Türkiye",
                 "destination": "Munich, Germany",
@@ -924,7 +957,8 @@ async def test_a_project_is_named_by_its_job_and_follows_what_later_mail_says(
     )
     assert await service.place_pending() == 1
 
-    [project] = await the_projects(company_id)
+    # A first day moved renames it, by the titler or, without one, by code.
+    [project] = await name_projects(company_id, model)
     assert project.name == "Stone GmbH · Istanbul → Munich · 08.08.2026"
     assert (project.starts_on, project.ends_on) == (date(2026, 8, 8), date(2026, 8, 14))
 
@@ -953,17 +987,16 @@ async def test_a_project_is_named_by_its_job_and_follows_what_later_mail_says(
 
 
 @pytest.mark.integration
-async def test_a_job_with_neither_client_nor_route_keeps_the_few_words_it_was_given(
+async def test_a_job_with_neither_client_nor_route_is_named_by_who_wrote_and_the_day(
     client: httpx.AsyncClient, model: Callable[..., Script]
 ) -> None:
     company_id = await guest_client(client)
     await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
-    model(
-        answer("new_project", new_project={"name": "Truck position reports", "destination": "Iraq"})
-    )
+    model(answer("new_project", new_project={"destination": "Iraq"}))
     assert await service.place_pending() == 1
     [project] = await the_projects(company_id)
-    assert project.name == "Truck position reports"
+    # Never the model's words: the sender's name and the day of the first mail.
+    assert project.name == "Ada Stone · 03.08.2026"
 
     # Once a conversation names the client, the project is named by it and where it goes.
     await arrive(
@@ -977,7 +1010,7 @@ async def test_a_job_with_neither_client_nor_route_keeps_the_few_words_it_was_gi
         answer("link", project=project.number, job={"client": "Stone GmbH"}),
     )
     assert await service.place_pending() == 1
-    [project] = await the_projects(company_id)
+    [project] = await name_projects(company_id, model)
     assert project.name == "Stone GmbH · → Iraq"
 
 
@@ -994,7 +1027,6 @@ async def test_a_mail_address_or_a_domain_is_no_firms_name(
             party="ada@stone.example",
             party_role="client",
             new_project={
-                "name": "Coils for Munich",
                 "client": "stone.example",
                 "consignee": "Weber Logistik GmbH",
             },
@@ -1002,12 +1034,92 @@ async def test_a_mail_address_or_a_domain_is_no_firms_name(
     )
     assert await service.place_pending() == 1
 
-    # The project is named by the few words on the job, not by a domain, and no firm is kept
-    # that is only an address; a firm named by its name stays.
+    # The project is named by who wrote and the day, not by a domain, and no firm is kept that
+    # is only an address; a firm named by its name stays.
     [project] = await the_projects(company_id)
-    assert project.name == "Coils for Munich"
+    assert project.name == "Ada Stone · 03.08.2026"
     placed = await placement(company_id, "<order@x>")
     assert placed.reading == {"consignee": "Weber Logistik GmbH"}
+
+
+@pytest.mark.integration
+async def test_a_conversation_the_company_is_only_copied_on_starts_no_project(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    # The mailbox read is the company's: its domain tells who a mail was written to.
+    async with open_session() as db:
+        db.add(
+            MailFolder(
+                company_id=company_id, mailbox=OWN, folder="INBOX", uidvalidity=1, last_uid=0
+            )
+        )
+        await db.commit()
+    shipped = mail(
+        "<ship@x>",
+        subject="Three trucks onto the ship",
+        body="Please take our three trucks onto Friday's ship.",
+        to="Port Desk <desk@port.example>",
+        cc=OWN,
+    )
+    await arrive(company_id, 1, shipped, category=ThreadCategory.WORK)
+    script = model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+
+    # Other firms arranging their own work: the model is told so, and whatever it answers, no
+    # project starts.
+    assert "From: Ada Stone <ada@stone.example> (the company only copied)" in script.prompt()
+    assert await the_projects(company_id) == []
+    assert (await placement(company_id, "<ship@x>")).outcome is Outcome.UNPLACED
+
+    # A later mail of it written to the company can start one.
+    asked = mail(
+        "<ask@x>",
+        subject="Re: Three trucks onto the ship",
+        body="Could you carry them to the port on Thursday?",
+        date="Tue, 04 Aug 2026 09:00:00 +0300",
+        references="<ship@x>",
+        to=OWN,
+    )
+    await arrive(company_id, 2, asked, category=None)
+    script = model(NEW_PROJECT)
+    assert await service.place_pending() == 1
+    assert "(to the company)" in script.prompt()
+    assert [p.status for p in await the_projects(company_id)] == [ProjectStatus.PROPOSED]
+
+
+@pytest.mark.integration
+async def test_the_titler_names_a_project_and_never_over_the_owners_name(
+    client: httpx.AsyncClient, model: Callable[..., Script]
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
+    job = {"client": "Stone GmbH", "origin": "Istanbul", "destination": "Munich"}
+    model(answer("new_project", new_project=job | {"cargo": "steel coils"}))
+    assert await service.place_pending() == 1
+    async with open_session() as db:
+        queued = await db.scalar(
+            sql(
+                "SELECT count(*) FROM procrastinate_jobs"
+                " WHERE task_name = 'linking.name_project' AND status = 'todo'"
+            )
+        )
+        left = await conversations.model_reads_left(db, company_id)
+    assert queued == 1
+
+    # Its words, cleaned of what a model wraps them in, from the day's budget.
+    [project] = await name_projects(company_id, model, '"Stone · Istanbul → Munich · coils."')
+    assert project.name == "Stone · Istanbul → Munich · coils"
+    async with open_session() as db:
+        assert await conversations.model_reads_left(db, company_id) == left - 1
+
+    # A name the owner gave is never asked for again.
+    renamed = await client.patch(f"/projects/{project.id}", json={"name": "Stone coils"})
+    assert renamed.status_code == 200
+    script = model(text("Something else"))
+    await service.name_project(company_id, project.id)
+    assert script.requests == []
+    assert [p.name for p in await the_projects(company_id)] == ["Stone coils"]
 
 
 @pytest.mark.integration
@@ -1016,9 +1128,11 @@ async def test_a_project_is_not_proposed_under_an_address_alone(
     client: httpx.AsyncClient, model: Callable[..., Script], address: str
 ) -> None:
     company_id = await guest_client(client)
-    await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
-    # The model has no words for the job either: the address is all it names it by.
-    model(answer("new_project", new_project={"name": address, "client": address}))
+    await arrive(
+        company_id, 1, mail("<order@x>", sender="ada@stone.example"), category=ThreadCategory.WORK
+    )
+    # Nothing but an address tells who wrote, and the model names the client by it.
+    model(answer("new_project", new_project={"client": address}, party=address))
     assert await service.place_pending() == 1
 
     assert await the_projects(company_id) == []
@@ -1031,7 +1145,7 @@ async def test_a_conversation_the_owner_rejects_no_longer_names_or_dates_the_pro
 ) -> None:
     company_id = await guest_client(client)
     await arrive(company_id, 1, mail("<order@x>"), category=ThreadCategory.WORK)
-    job = {"name": "coils", "client": "Stone GmbH", "origin": "Istanbul", "destination": "Munich"}
+    job = {"client": "Stone GmbH", "origin": "Istanbul", "destination": "Munich"}
     model(answer("new_project", new_project=job | {"starts_on": "2026-08-10"}))
     assert await service.place_pending() == 1
     [project] = await the_projects(company_id)
@@ -1050,14 +1164,14 @@ async def test_a_conversation_the_owner_rejects_no_longer_names_or_dates_the_pro
         ),
     )
     assert await service.place_pending() == 1
-    [project] = await the_projects(company_id)
+    [project] = await name_projects(company_id, model)
     assert project.name == "Stone GmbH · Istanbul → Munich · 08.08.2026"
 
     # The owner says that conversation is not of this job: what it said leaves the project.
     wrong = await placement(company_id, "<truck@x>")
     answered = await client.patch(f"/placements/{wrong.id}", json={"links": "rejected"})
     assert answered.status_code == 200
-    [project] = await the_projects(company_id)
+    [project] = await name_projects(company_id, model)
     assert project.name == "Stone GmbH · Istanbul → Munich · 10.08.2026"
     assert (project.starts_on, project.ends_on) == (date(2026, 8, 10), None)
 
@@ -1072,7 +1186,6 @@ async def test_a_project_shows_its_job_as_its_conversations_say_it_together(
         answer(
             "new_project",
             new_project={
-                "name": "coils",
                 "client": "Stone GmbH",
                 "subcontractor": "Hauler Transport",
                 "origin": "Istanbul",
@@ -1114,6 +1227,8 @@ async def test_a_project_shows_its_job_as_its_conversations_say_it_together(
         "destination": "Munich",
         "cargo": None,
         "trucks": 2,
+        # No card in the books is named as either: both are named in mail only.
+        "not_in_books": ["Stone GmbH", "Hauler Transport"],
     }
     listed = (await client.get("/projects")).json()["items"]
     assert [item["job"] for item in listed] == [shown["job"]]
@@ -1142,9 +1257,7 @@ async def test_a_reply_naming_a_truck_its_job_has_not_had_is_read_as_maybe_the_n
     assert script.requests == []
 
     # Another truck in the same thread three days on: the next load, which a model reads.
-    script = model(
-        answer("new_project", new_project={"name": "Stone, the next load"}, cited_mails=[3])
-    )
+    script = model(answer("new_project", new_project={}, cited_mails=[3]))
     other = mail(
         "<next@x>",
         date="Sat, 08 Aug 2026 09:00:00 +0300",
@@ -1202,7 +1315,7 @@ async def test_a_reply_waits_for_its_files_before_it_follows(
 
     # Read, the file names another truck: a model reads the reply.
     await documents.read_pending()
-    script = model(answer("new_project", new_project={"name": "The next load"}, cited_mails=[2]))
+    script = model(answer("new_project", new_project={}, cited_mails=[2]))
     assert await service.place_pending() == 1
     assert "plate XY 987 ZW" in script.prompt()
 
@@ -1242,7 +1355,7 @@ async def test_a_split_conversation_keeps_its_place_among_the_project_readings(
     company_id = await guest_client(client)
     early = mail("<early@x>", subject="Izmir load", body="Steel coils, truck AB 123 CD.")
     await arrive(company_id, 1, early, category=ThreadCategory.WORK)
-    model(answer("new_project", new_project={"name": "coils", "origin": "Izmir"}))
+    model(answer("new_project", new_project={"origin": "Izmir"}))
     await service.place_pending()
     [project] = await the_projects(company_id)
     order = mail("<order@x>", body="We confirm the load for Monday. Truck: AB 123 CD")
@@ -1255,7 +1368,7 @@ async def test_a_split_conversation_keeps_its_place_among_the_project_readings(
     # The two conversations say two origins: the one noted last names it.
     assert (await client.get(f"/projects/{project.id}")).json()["job"]["origin"] == "Istanbul"
 
-    model(answer("new_project", new_project={"name": "The next load"}, cited_mails=[2]))
+    model(answer("new_project", new_project={}, cited_mails=[2]))
     other = mail(
         "<next@x>",
         date="Sat, 08 Aug 2026 09:00:00 +0300",
@@ -1374,9 +1487,7 @@ async def test_a_thread_that_carried_the_next_load_is_placed_again_in_the_order_
     assert (counted.threads, counted.mails, counted.news) == (1, 3, 1)
     assert [link.project_id for link in await links(company_id, "<order@x>")] == [project.id] * 4
 
-    script = model(
-        answer("new_project", new_project={"name": "Stone, the next load"}, cited_mails=[3])
-    )
+    script = model(answer("new_project", new_project={}, cited_mails=[3]))
     done = await service.recut_threads(company_id, write=True, max_reads=5)
 
     # The same truck followed by code; the other truck was read, and is the next load, which
@@ -1405,7 +1516,7 @@ async def test_a_mail_that_fails_to_be_placed_again_waits_for_the_worker(
     assert [link.project_id for link in await links(company_id, "<order@x>")] == [project.id] * 2
     assert (await placement(company_id, "<order@x>")).waiting
 
-    model(answer("new_project", new_project={"name": "Stone, the next load"}, cited_mails=[3, 4]))
+    model(answer("new_project", new_project={}, cited_mails=[3, 4]))
     assert await service.place_pending() == 1
     first, second, third, fourth = await links(company_id, "<order@x>")
     assert first.project_id == second.project_id == project.id
