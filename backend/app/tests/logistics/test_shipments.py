@@ -1,10 +1,13 @@
 import uuid
+from datetime import timedelta
 
 import httpx
 import pytest
 
+from app.modules.assistant import news
 from app.modules.projects.models import FieldSource
-from app.packs.logistics import service
+from app.packs.logistics import assistant, service
+from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
 
@@ -83,3 +86,32 @@ async def test_a_read_plate_waits_for_the_owner_and_is_written_on_accept(
     accepted = (await client.get(f"/shipments/{truck['id']}")).json()
     assert accepted["truck_plate"] == "34 B 2"
     assert accepted["field_sources"]["truck_plate"] == "owner"
+
+
+async def test_a_trucks_reported_position_is_news_on_its_project(
+    client: httpx.AsyncClient,
+) -> None:
+    company_id = await guest_client(client)
+    project = (await client.post("/projects", json={"name": "Istanbul → Munich"})).json()
+    truck = (
+        await client.post(
+            "/shipments", json={"project_id": project["id"], "truck_plate": "34 AB 1"}
+        )
+    ).json()
+    for place in ("Edirne", "Kapıkule"):
+        await client.post(
+            f"/shipments/{truck['id']}/locations",
+            json={"place": place, "raw_text": "", "status": "at_border"},
+        )
+
+    async with open_session() as db:
+        found = await assistant.positions(db, company_id, utcnow() - timedelta(hours=1))
+    assert [item.line for item in found] == [
+        "Truck 34 AB 1: Kapıkule, at border",
+        "Truck 34 AB 1: Edirne, at border",
+    ]
+    # One truck's reports are one line of a message, which names that truck on its project.
+    assert {item.topic for item in found} == {truck["id"]}
+    assert {item.opens for item in found} == {uuid.UUID(truck["id"])}
+    assert {item.project_id for item in found} == {uuid.UUID(project["id"])}
+    assert assistant.positions in news.sources()

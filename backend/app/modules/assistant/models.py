@@ -56,6 +56,8 @@ class CardKind(StrEnum):
     # A week's lessons for the owner to keep or skip (ADR-0032): the week's id, the drafted
     # entries' ids and those of entries asked to be forgotten.
     LEARNED = "learned"
+    # What is new on a project: the project's id, and each item's kind and the record it opens.
+    PROJECT_NEWS = "project_news"
 
 
 class Chat(CompanyScoped, Base):

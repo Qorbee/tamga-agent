@@ -3,9 +3,9 @@ needs the owner, it writes first, in the chat that already holds the finding's r
 new one, and code puts a card under what it wrote.
 
 What makes it speak is a list in code, never a prompt's choice: a project the linker proposes,
-a conversation it cannot choose a project for, and the bills that wait for the owner's approval,
+a conversation it cannot choose a project for, the bills that wait for the owner's approval,
 written about together, in one message with one card, so one pass of the payment path reads as
-one subject.
+one subject, and what is new on a project, in the chat that holds it.
 Each is read from where it stands (the placements and decisions that wait for the owner), so
 nothing is lost when a run fails or the worker stops: what was not written about yet is found
 again.
@@ -23,7 +23,7 @@ is outside text and reaches it fenced. It is one job that never overlaps with it
 
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import batched
@@ -35,7 +35,7 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.assistant import agents, context, repository, service
+from app.modules.assistant import agents, context, news, repository, service
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.seat import Seat
 from app.modules.books import service as books
@@ -53,6 +53,7 @@ from app.modules.playground import service as playground
 from app.modules.policy import service as policy
 from app.modules.projects import service as projects
 from app.modules.projects.models import Project, ProjectStatus
+from app.modules.projects.schemas import LinkOut
 from app.platform import chain, clock, events, llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
@@ -123,6 +124,20 @@ _BRIEF: Final = (
     "bill only if one needs them today. The numbers are the code's; never work out others. The "
     "card with your message shows where the money stands, so do not list every figure."
 )
+_NEWS: Final = (
+    "\nThis is new on the project since Tamga last wrote about it. Open the project and what "
+    "matters among these, and write the owner two sentences at most: what changed and what it "
+    "means for the job (a paper now in, where a truck is, a bill that came). Do not list the "
+    "items: the card with your message shows them."
+)
+# News on a project is told once its newest item has settled this long, so a mail and the files
+# read from it come as one message; and only what came within the window counts, so the first
+# pass after a deploy does not tell old history.
+NEWS_SETTLE: Final = timedelta(minutes=10)
+NEWS_WINDOW: Final = timedelta(hours=48)
+# The most new items read in one pass, and the most one message tells.
+NEWS_READ: Final = 500
+NEWS_SHOWN: Final = 12
 _QUESTION: Final = (
     "\nRead the conversation and open the projects it could belong to. Then write the owner "
     "a short message: what the conversation is about, what speaks for each project, and "
@@ -148,6 +163,9 @@ class Finding:
     # The card under the message: its kind, the id of the record it shows, and for a batch
     # every record's id and evaluation.
     card: dict[str, Any]
+    # Records the chat keeps with the turn, not raised: a news chat holds its project, so the
+    # project's next news finds it whatever the model opened.
+    holds: tuple[tuple[str, uuid.UUID], ...] = ()
 
 
 async def speak_pending() -> int:
@@ -273,8 +291,8 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
                     card={"kind": CardKind.CONVERSATION_QUESTION.value, "id": str(item.id)},
                 )
             )
-    # Last: what waits for an answer comes before the day's numbers.
-    return [*findings, *await _morning(db, company)]
+    # Last: what waits for an answer, then what is new on the projects, before the day's numbers.
+    return [*findings, *await _news(db, company_id), *await _morning(db, company)]
 
 
 def brief_id(company_id: uuid.UUID, day: date) -> uuid.UUID:
@@ -368,6 +386,135 @@ async def _figures(db: AsyncSession, company: Company, today: date) -> Figures:
         # Cash alone asks nothing of the owner.
         news=bool(waiting) or any(value != "none" for value in (to_pay, to_come, overdue)),
     )
+
+
+async def _news(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
+    """What came onto the projects that are under way, and onto those Tamga proposed and wrote
+    about, that it has not told: one message a project, into the chat that holds it, once its
+    newest item has settled. Each item is told once."""
+    now = utcnow()
+    since = now - NEWS_WINDOW
+    found = _linked(await projects.news_since(db, company_id, since, limit=NEWS_READ))
+    for source in news.sources():
+        found.extend(await source(db, company_id, since))
+    told_items = await repository.raised(db, company_id, agents.NEWS, [item.id for item in found])
+    by_project: dict[uuid.UUID, list[news.News]] = {}
+    for item in found:
+        if item.id not in told_items:
+            by_project.setdefault(item.project_id, []).append(item)
+    held = await projects.get_projects(db, company_id, list(by_project))
+    # A project Tamga proposed came with its first mails: only what came after it wrote is news.
+    proposed_at = await repository.raised_at(db, company_id, agents.PROJECT, list(held))
+    findings = []
+    for project_id, items in by_project.items():
+        project = held.get(project_id)
+        if project is None or not _newsworthy(project, proposed_at):
+            continue
+        floor = proposed_at.get(project_id)
+        items = sorted(
+            (item for item in items if floor is None or item.at > floor), key=lambda item: item.at
+        )
+        if not items:
+            continue
+        if items[-1].at > now - NEWS_SETTLE:
+            continue
+        # One line, and one row of the card, for each topic: a conversation's mails are one, a
+        # truck's reports are one, its latest. The oldest topics first; past what one message
+        # tells, the rest wait for the next.
+        topics: dict[object, news.News] = {}
+        for item in items:
+            was = topics.get(item.topic or item.id)
+            if was is None or item.latest >= was.latest:
+                topics[item.topic or item.id] = item
+        told_now = set(list(topics)[:NEWS_SHOWN])
+        shown = [topics[topic] for topic in told_now]
+        covered = [item for item in items if (item.topic or item.id) in told_now]
+        findings.append(
+            Finding(
+                record=(agents.NEWS, uuid.uuid5(project_id, str(covered[-1].id))),
+                also=tuple((agents.NEWS, item.id) for item in covered),
+                related=((agents.PROJECT, project_id),),
+                holds=((agents.PROJECT, project_id),),
+                title=f"{project.number} · {project.name}",
+                prompt=told(
+                    "what is new on a project",
+                    [
+                        f"Project {project.number}: {project.name}",
+                        *(f"- {item.line}" for item in shown),
+                    ],
+                    _NEWS,
+                ),
+                card={
+                    "kind": CardKind.PROJECT_NEWS.value,
+                    "id": str(project_id),
+                    "items": [{"kind": item.kind, "id": str(item.opens)} for item in shown],
+                },
+            )
+        )
+    return findings
+
+
+def _newsworthy(project: Project, proposed_at: Mapping[uuid.UUID, object]) -> bool:
+    """A job under way, or one Tamga proposed and wrote about that still waits for the owner."""
+    return project.status is ProjectStatus.ACTIVE or (
+        project.status is ProjectStatus.PROPOSED and project.id in proposed_at
+    )
+
+
+def _linked(links: Sequence[LinkOut]) -> list[news.News]:
+    """What code or a model put on the projects, as news: a mail by who wrote it and its
+    subject, a file by its type and name, a bill by its firm, number and amount."""
+    found = []
+    for link in links:
+        item = link.item
+        if item is None:
+            continue
+        if item.item_kind == "message":
+            mail = item.message
+            who = mail.sender_name or mail.sender or "someone"
+            found.append(
+                news.News(
+                    id=link.id,
+                    project_id=link.project_id,
+                    at=link.created_at,
+                    kind="message",
+                    opens=link.item_id,
+                    line=f"Mail from {who}: {mail.subject or '(no subject)'}",
+                    topic=mail.thread_key,
+                )
+            )
+        elif item.item_kind == "document":
+            file = item.document
+            found.append(
+                news.News(
+                    id=link.id,
+                    project_id=link.project_id,
+                    at=link.created_at,
+                    kind="document",
+                    opens=link.item_id,
+                    line=f"File: {file.filename}"
+                    + (f" ({file.doc_type})" if file.doc_type else ""),
+                )
+            )
+        else:
+            bill = item.invoice
+            amount = (
+                f"{bill.total_amount} {bill.currency or ''}".strip()
+                if bill.total_amount is not None
+                else "no amount"
+            )
+            found.append(
+                news.News(
+                    id=link.id,
+                    project_id=link.project_id,
+                    at=link.created_at,
+                    kind="invoice",
+                    opens=link.item_id,
+                    line=f"Invoice {bill.number or '(no number)'} ({bill.kind.value}), "
+                    f"{bill.party_name or 'no firm named'}: {amount}",
+                )
+            )
+    return found
 
 
 async def _opening(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
@@ -509,6 +656,14 @@ async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> 
     kind, record_id = finding.record
     if kind in (agents.OPENING, agents.BRIEF, agents.LEARNED):
         return True
+    if kind == agents.NEWS:
+        # The job closed or refused while the model wrote: its news is no longer the owner's.
+        [(_, project_id)] = finding.holds
+        project = (await projects.get_projects(db, company_id, [project_id])).get(project_id)
+        return project is not None and project.status in (
+            ProjectStatus.ACTIVE,
+            ProjectStatus.PROPOSED,
+        )
     if kind == agents.DECISION:
         ids = [record_id for _, record_id in (finding.record, *finding.also)]
         return bool(await decisions.still_waiting(db, company_id, ids))
@@ -692,7 +847,7 @@ async def speak(company: Company, finding: Finding) -> int:
             await repository.give_reason(db, company.id, run_id, finding.title[:200])
             for kind, one in (finding.record, *finding.also):
                 await repository.touch_record(db, kept, kind, one, at, raised=True)
-            for opened_kind, opened_id in dict.fromkeys(seat.opened):
+            for opened_kind, opened_id in dict.fromkeys([*finding.holds, *seat.opened]):
                 await repository.touch_record(db, kept, opened_kind, opened_id, at)
             await events.publish(db, company.id, events.EventKind.CHAT, chat_id, by_tamga=True)
             await db.commit()
@@ -734,6 +889,8 @@ async def _into_digest(db: AsyncSession, company: Company, finding: Finding) -> 
     chat.last_message_at = now
     for kind, one in (finding.record, *finding.also):
         await repository.touch_record(db, chat, kind, one, now, raised=True)
+    for kind, one in finding.holds:
+        await repository.touch_record(db, chat, kind, one, now)
     await events.publish(db, company.id, events.EventKind.CHAT, chat.id, by_tamga=True)
     await db.commit()
     return 1

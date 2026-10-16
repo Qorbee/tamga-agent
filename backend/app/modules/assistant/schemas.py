@@ -49,6 +49,14 @@ class ChatUpdate(BaseModel):
     archived: bool | None = None
 
 
+class NewsItem(BaseModel):
+    """One thing new on a project: what it is, and its record: a mail, a file or a bill opens
+    itself, a truck its project."""
+
+    kind: Literal["message", "document", "invoice", "truck"]
+    id: uuid.UUID
+
+
 class CardContent(BaseModel):
     # The record the card shows; its kind says which (``CardKind``).
     id: uuid.UUID
@@ -56,6 +64,8 @@ class CardContent(BaseModel):
     # wrote about, so a client marks one evaluated again since.
     ids: list[uuid.UUID] = []
     evaluations: list[int] = []
+    # A project's news (``project_news``): each item, as the card shows it.
+    items: list[NewsItem] = []
 
 
 class CardMessage(BaseModel):

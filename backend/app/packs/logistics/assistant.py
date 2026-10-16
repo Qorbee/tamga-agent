@@ -4,12 +4,14 @@ Both go through the pack's service, as the project page's do."""
 
 import uuid
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Literal
 
 from pydantic_ai import RunContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.assistant import tools
+from app.modules.assistant.news import News
 from app.modules.assistant.seat import Seat
 from app.modules.linking import service as linking
 from app.packs.logistics import repository, service
@@ -88,3 +90,28 @@ async def add_truck(
         except DomainError as error:
             return tools.refused(error)
     return f"Added {seat.name('t', made.id)} to {project}: {made.truck_plate}."
+
+
+async def positions(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> list[News]:
+    """Where a project's trucks were reported since then, as news on the project: the plate,
+    the place as it was given, and how far the truck is."""
+    found = []
+    for location, truck in await repository.locations_since(db, company_id, since, limit=200):
+        plates = " + ".join(plate for plate in (truck.truck_plate, truck.trailer_plate) if plate)
+        where = location.place or " ".join(location.raw_text.split())[:120] or "a position"
+        status = f", {location.status.value.replace('_', ' ')}" if location.status else ""
+        found.append(
+            News(
+                id=location.id,
+                project_id=truck.project_id,
+                at=location.created_at,
+                true_at=location.reported_at,
+                kind="truck",
+                # The card names this truck, and opens its project.
+                opens=truck.id,
+                line=f"Truck {plates or 'with no plate yet'}: {where}{status}",
+                # A truck's reports in one message are one line: its latest.
+                topic=str(truck.id),
+            )
+        )
+    return found

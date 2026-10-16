@@ -281,6 +281,23 @@ async def raised(
     return set(found)
 
 
+async def raised_at(
+    db: AsyncSession, company_id: uuid.UUID, record_kind: str, record_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, datetime]:
+    """When Tamga last wrote about each of the records it wrote about, in any chat."""
+    rows = await db.execute(
+        select(ChatRecord.record_id, func.max(ChatRecord.raised_at))
+        .where(
+            ChatRecord.company_id == company_id,
+            ChatRecord.record_kind == record_kind,
+            ChatRecord.record_id.in_(record_ids),
+            ChatRecord.raised_at.is_not(None),
+        )
+        .group_by(ChatRecord.record_id)
+    )
+    return {record_id: at for record_id, at in rows.tuples().all() if at is not None}
+
+
 async def holding(
     db: AsyncSession, company_id: uuid.UUID, records: Sequence[tuple[str, uuid.UUID]]
 ) -> Chat | None:

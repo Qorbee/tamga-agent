@@ -619,6 +619,25 @@ async def list_links(
     return rows.all(), total or 0
 
 
+async def links_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, *, limit: int
+) -> Sequence[ProjectLink]:
+    """What code or a model put on a project since then and the owner has not refused, the newest
+    first: never the owner's own links, nor the files that followed their mail."""
+    rows = await db.scalars(
+        select(ProjectLink)
+        .where(
+            ProjectLink.company_id == company_id,
+            ProjectLink.created_at >= since,
+            ProjectLink.status != LinkStatus.REJECTED,
+            ProjectLink.method.not_in((LinkMethod.OWNER, LinkMethod.MAIL)),
+        )
+        .order_by(ProjectLink.created_at.desc(), ProjectLink.id.desc())
+        .limit(limit)
+    )
+    return rows.all()
+
+
 # Field proposals
 
 

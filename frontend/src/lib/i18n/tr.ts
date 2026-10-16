@@ -698,6 +698,9 @@ export const tr: Dictionary = {
       bills: (count: number) => `Onayınızı bekleyen ${count} fatura`,
       updated: "Tamga yazdıktan sonra değişti",
       done: (count: number) => `${count} yanıtlandı · göster`,
+      truck: "Bir araç",
+      bill: "Bir fatura",
+      newsKinds: { message: "Posta", document: "Dosya", invoice: "Fatura", truck: "Araç" },
       briefNow: "Paranın şu anki durumu",
     },
     policyDraft: {

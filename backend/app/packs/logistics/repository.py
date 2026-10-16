@@ -1,10 +1,11 @@
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.packs.logistics.models import Shipment, ShipmentLocation
+from app.packs.logistics.models import Shipment, ShipmentLocation, ShipmentState
 from app.platform.pagination import PageParams
 
 
@@ -82,3 +83,26 @@ async def list_locations(
         .offset(page.offset)
     )
     return rows.all(), total or 0
+
+
+async def locations_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, *, limit: int
+) -> Sequence[tuple[ShipmentLocation, Shipment]]:
+    """Each position reported since then, with its truck, the newest first: never a truck the
+    owner said is not the job's."""
+    rows = await db.execute(
+        select(ShipmentLocation, Shipment)
+        .join(
+            Shipment,
+            (Shipment.company_id == ShipmentLocation.company_id)
+            & (Shipment.id == ShipmentLocation.shipment_id),
+        )
+        .where(
+            ShipmentLocation.company_id == company_id,
+            ShipmentLocation.created_at >= since,
+            Shipment.state != ShipmentState.REJECTED,
+        )
+        .order_by(ShipmentLocation.created_at.desc(), ShipmentLocation.id.desc())
+        .limit(limit)
+    )
+    return rows.tuples().all()

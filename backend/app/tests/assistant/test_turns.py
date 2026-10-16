@@ -12,16 +12,17 @@ from app.config import get_settings
 from app.modules.assistant import agents, learning, service, turns
 from app.modules.assistant.models import CardKind, Chat, ChatMessage, ChatRecord, ChatRun, Origin
 from app.modules.companies import service as companies
-from app.modules.conversations.models import ThreadCategory
+from app.modules.conversations.models import Message, ThreadCategory
 from app.modules.linking import service as linking
 from app.modules.playground import service as playground
 from app.modules.projects import service as projects
-from app.modules.projects.models import FieldSource, ProjectStatus
+from app.modules.projects.models import FieldSource, LinkMethod, ProjectStatus
 from app.platform import llm
 from app.platform.auth import Actor
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import PermissionDenied
+from app.platform.items import ItemKind
 from app.tests.assistant.test_chats import Script, Step, ask, events, user, words
 from app.tests.assistant.test_chats import model as owner_asks  # noqa: F401  (the fixture)
 from app.tests.conftest import guest_client
@@ -812,3 +813,109 @@ async def test_once_a_week_tamga_drafts_what_it_learned_and_nothing_holds_until_
     assert (entry["state"], entry["source"]) == ("proposed", "learner")
     # Once a week.
     assert await learning.learn(company_id) == 0
+
+
+async def news_now(company_id: uuid.UUID) -> list[turns.Finding]:
+    async with open_session() as db:
+        return await turns._news(db, company_id)
+
+
+def settled(monkeypatch: pytest.MonkeyPatch, later: timedelta) -> None:
+    """Moves the clock Tamga reads news by: what came has had time to settle."""
+    monkeypatch.setattr(turns, "utcnow", lambda: utcnow() + later)
+
+
+async def a_mail_put_on(company_id: uuid.UUID, project_id: uuid.UUID, message_id: str) -> None:
+    """A mail that arrives and that code or a model puts on a project, suggested."""
+    await arrive(company_id, 9, mail(message_id, subject="Customs papers"), category=None)
+    async with open_session() as db:
+        found = await db.scalar(
+            select(Message.id).where(
+                Message.company_id == company_id, Message.rfc_message_id == message_id
+            )
+        )
+        assert found is not None
+        await projects.link_item(
+            db,
+            company_id=company_id,
+            item_kind=ItemKind.MESSAGE,
+            item_id=found,
+            project_id=project_id,
+            method=LinkMethod.AGENT,
+            confidence=0.8,
+        )
+        await db.commit()
+
+
+async def test_what_comes_onto_a_job_under_way_is_told_once_in_the_chat_that_holds_it(
+    client: httpx.AsyncClient,
+    tamga: Callable[..., Script],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = await guest_client(client)
+    await arrive(company_id, 1, mail("<a@x>"), category=ThreadCategory.WORK)
+    project = await owner_project(company_id, "<a@x>", "Munich A")
+    assert (await client.patch(f"/projects/{project.id}", json={"status": "active"})).is_success
+    # The owner's own links are no news.
+    settled(monkeypatch, timedelta(minutes=11))
+    assert await news_now(company_id) == []
+
+    await a_mail_put_on(company_id, project.id, "<customs@x>")
+    # Not yet: a mail's files may still be read and put on the job with it.
+    settled(monkeypatch, timedelta(0))
+    assert await news_now(company_id) == []
+    settled(monkeypatch, timedelta(minutes=11))
+    [finding] = await news_now(company_id)
+    assert finding.card["kind"] == CardKind.PROJECT_NEWS
+    assert finding.card["id"] == str(project.id)
+    assert [item["kind"] for item in finding.card["items"]] == ["message"]
+    assert "Mail from Ada Stone: Customs papers" in finding.prompt
+    assert finding.related == ((agents.PROJECT, project.id),)
+
+    tamga("The customs papers for Munich A came in.")
+    assert await turns.speak_pending() == 1
+    [chat] = await chats_of(client)
+    [card] = await cards_in(client, chat["id"])
+    assert card["activityType"] == CardKind.PROJECT_NEWS
+    assert card["content"]["items"] == finding.card["items"]
+    # Told once, and the chat keeps the job, so its next news comes back here.
+    assert await news_now(company_id) == []
+    async with open_session() as db:
+        kept = await db.scalars(
+            select(ChatRecord.chat_id).where(
+                ChatRecord.company_id == company_id, ChatRecord.record_id == project.id
+            )
+        )
+        assert [str(chat_id) for chat_id in kept.all()] == [chat["id"]]
+
+    # Past what one message tells, the rest wait for the next.
+    monkeypatch.setattr(turns, "NEWS_SHOWN", 1)
+    settled(monkeypatch, timedelta(0))
+    await a_mail_put_on(company_id, project.id, "<one@x>")
+    await a_mail_put_on(company_id, project.id, "<two@x>")
+    settled(monkeypatch, timedelta(minutes=11))
+    [first] = await news_now(company_id)
+    assert len(first.card["items"]) == 1 and len(first.also) == 1
+
+
+async def test_a_proposal_is_no_news_until_tamga_wrote_about_it_and_its_first_mails_never(
+    client: httpx.AsyncClient,
+    linker: Callable[..., Any],  # noqa: F811
+    tamga: Callable[..., Script],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    company_id = await a_proposal(client, linker)
+    settled(monkeypatch, timedelta(minutes=11))
+    # Not raised yet: what the linker put on it is the proposal, which has a card of its own.
+    assert await news_now(company_id) == []
+    [project] = (await client.get("/projects")).json()["items"]
+    monkeypatch.setattr(turns, "utcnow", utcnow)
+    tamga("Stone asks for a truck to Munich.")
+    assert await turns.speak_pending() == 1
+    # Raised now, its first mails stay the proposal's; what comes after is news.
+    settled(monkeypatch, timedelta(minutes=11))
+    assert await news_now(company_id) == []
+    await a_mail_put_on(company_id, uuid.UUID(project["id"]), "<later@x>")
+    settled(monkeypatch, timedelta(minutes=11))
+    [finding] = await news_now(company_id)
+    assert finding.card["id"] == project["id"]

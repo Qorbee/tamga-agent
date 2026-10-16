@@ -50,6 +50,9 @@ BRIEF: Final = "brief"
 BRIEF_PICTURE: Final = "brief_picture"
 # A week's lessons, by an id made of the company and its week: one "What I learned" a week.
 LEARNED: Final = "learned"
+# Something new on a project, told once by its own id (`assistant/news.py`); a message about
+# several is raised under an id made of the project and the newest of them.
+NEWS: Final = "news"
 # What `waiting` lists of each kind: enough to say what is there, few enough to read.
 _LISTED: Final = 20
 # The projects something can wait in. One the owner rejected keeps the links suggested to it,

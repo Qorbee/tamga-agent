@@ -1394,6 +1394,15 @@ documents.on_unpacked(_carry_again)
 documents.on_known(_carry_again)
 
 
+async def news_since(
+    db: AsyncSession, company_id: uuid.UUID, since: datetime, *, limit: int
+) -> list[LinkOut]:
+    """What came onto the company's projects since then, by code or a model, with what each item
+    is: the owner's own links and the files that followed their mail left out."""
+    rows = await repository.links_since(db, company_id, since, limit=limit)
+    return await _with_items(db, company_id, [LinkOut.model_validate(row) for row in rows])
+
+
 async def list_links(
     db: AsyncSession,
     actor: Actor,

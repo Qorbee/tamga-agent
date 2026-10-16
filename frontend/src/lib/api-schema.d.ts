@@ -1988,6 +1988,11 @@ export interface components {
              * @default []
              */
             ids: string[];
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["NewsItem"][];
         };
         /**
          * CardKind
@@ -1995,7 +2000,7 @@ export interface components {
          *     is about says which record its id names.
          * @enum {string}
          */
-        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch" | "morning_brief" | "learned";
+        CardKind: "project_proposal" | "conversation_question" | "decision_approval" | "decision_batch" | "morning_brief" | "learned" | "project_news";
         /**
          * CardMessage
          * @description A card code put in a chat, carried as the chat protocol's activity message. A client
@@ -3670,6 +3675,23 @@ export interface components {
             items: components["schemas"]["MovementOut"][];
             /** Total */
             total: number;
+        };
+        /**
+         * NewsItem
+         * @description One thing new on a project: what it is, and its record: a mail, a file or a bill opens
+         *     itself, a truck its project.
+         */
+        NewsItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "message" | "document" | "invoice" | "truck";
         };
         /** NumberingOut */
         NumberingOut: {

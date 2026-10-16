@@ -1,7 +1,7 @@
 "use client";
 
 import { makeAssistantDataUI, makeAssistantToolUI, type AssistantDataUI, type DataMessagePartProps } from "@assistant-ui/react";
-import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import { ArrowUpRight01Icon, File01Icon, Invoice01Icon, Mail01Icon, TruckIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
@@ -13,6 +13,7 @@ import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry, Lessons } from "@/components/memory";
 import { MoneyGlance } from "@/components/money-glance";
 import { PolicyDraftCard } from "@/components/policy-draft";
+import { T } from "@/components/translated";
 
 import { ShownView } from "./views";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,15 +24,19 @@ import {
   getDecision,
   getPlacement,
   getProject,
+  listAllLinks,
   listAllPlacements,
   listDecisions,
   listPayments,
+  listShipments,
   type CardContent,
   type CardKind,
+  type NewsItem,
   type RunItem,
   type TurnContent,
 } from "@/lib/api";
-import { formatDate, formatMoneyShort } from "@/lib/format";
+import type { CanvasView } from "@/lib/canvas-view";
+import { formatDate, formatMoney, formatMoneyShort } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 
 /**
@@ -251,6 +256,104 @@ function BriefCard() {
   );
 }
 
+type NewsKind = NewsItem["kind"];
+const NEWS_ICONS = { message: Mail01Icon, document: File01Icon, invoice: Invoice01Icon, truck: TruckIcon } as const;
+
+/**
+ * What is new on a project: the project, then one row for each item Tamga told, which opens it
+ * beside the chat. A truck's row names the truck's plates and opens the project, where its
+ * position is.
+ */
+function NewsCard({ data }: DataMessagePartProps<CardContent>) {
+  const { t, locale } = useI18n();
+  const items: NewsItem[] = data.items ?? [];
+  const project = useQuery({ queryKey: ["project", data.id], queryFn: () => getProject(data.id), retry: false });
+  // The project page's own query (`linksKey`), so an answer given on a link refreshes this card.
+  const links = useQuery({
+    queryKey: ["project-links", { project_id: data.id, expand: "item" }],
+    queryFn: () => listAllLinks({ project_id: data.id, status: ["suggested", "confirmed"], expand: ["item"] }),
+  });
+  const trucks = useQuery({
+    queryKey: ["shipments", { projects: [data.id] }],
+    queryFn: () => listShipments([data.id]),
+    enabled: items.some((item) => item.kind === "truck"),
+  });
+  const byItem = new Map((links.data ?? []).map((link) => [link.item_id, link.item]));
+
+  const row = (kind: NewsKind, id: string): { label: string; detail?: string; view: CanvasView } | null => {
+    if (kind === "truck") {
+      const truck = (trucks.data ?? []).find((each) => each.id === id);
+      const plates = truck ? [truck.truck_plate, truck.trailer_plate].filter(Boolean).join(" + ") : "";
+      return { label: plates || t.assistant.cards.truck, view: { kind: "project", id: data.id } };
+    }
+    const item = byItem.get(id);
+    if (!item) return null;
+    if (item.item_kind === "message")
+      return {
+        label: item.message.subject || t.inbox.noSubject,
+        detail: item.message.sender_name || item.message.sender || undefined,
+        view: { kind: "mail", id },
+      };
+    if (item.item_kind === "document") return { label: item.document.filename, view: { kind: "document", id } };
+    const bill = item.invoice;
+    return {
+      label: [bill.party_name, bill.number].filter(Boolean).join(" · ") || t.assistant.cards.bill,
+      detail:
+        bill.total_amount !== null && bill.currency
+          ? formatMoney(Number(bill.total_amount), bill.currency, locale)
+          : undefined,
+      view: { kind: "invoice", id },
+    };
+  };
+
+  return (
+    <Card pending={project.isPending || links.isPending} error={project.error ?? links.error}>
+      {project.data ? (
+        <article className="border-border bg-card overflow-hidden rounded-2xl border">
+          <header className="flex min-w-0 items-baseline gap-2 px-4 pt-3 pb-2">
+            <span className="text-muted-foreground shrink-0 font-mono text-xs">{project.data.number}</span>
+            <CanvasLink
+              view={{ kind: "project", id: project.data.id }}
+              className="decoration-muted-foreground/60 truncate text-sm font-medium underline-offset-4 hover:underline"
+            >
+              <T>{project.data.name}</T>
+            </CanvasLink>
+          </header>
+          <ul className="divide-border border-border divide-y border-t">
+            {items.map((item) => {
+              const shown = row(item.kind, item.id);
+              if (!shown) return null;
+              return (
+                <li key={`${item.kind}:${item.id}`}>
+                  <CanvasLink
+                    view={shown.view}
+                    className="hover:bg-accent/60 flex min-w-0 items-center gap-3 px-4 py-2.5 text-sm"
+                  >
+                    <HugeiconsIcon
+                      icon={NEWS_ICONS[item.kind]}
+                      strokeWidth={1.75}
+                      className="text-muted-foreground size-4 shrink-0"
+                      aria-label={t.assistant.cards.newsKinds[item.kind]}
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      <T>{shown.label}</T>
+                    </span>
+                    {shown.detail ? (
+                      <span className="text-muted-foreground shrink-0 truncate text-xs tabular-nums">
+                        <T>{shown.detail}</T>
+                      </span>
+                    ) : null}
+                  </CanvasLink>
+                </li>
+              );
+            })}
+          </ul>
+        </article>
+      ) : null}
+    </Card>
+  );
+}
+
 /** The chat protocol's activity messages reach the thread as data parts under this prefix. */
 const card = (kind: CardKind, render: (props: DataMessagePartProps<CardContent>) => ReactNode): AssistantDataUI =>
   makeAssistantDataUI<CardContent>({ name: `agui-activity/${kind}`, render });
@@ -263,6 +366,7 @@ const CARDS: Record<CardKind, AssistantDataUI> = {
   decision_batch: card("decision_batch", BatchCard),
   morning_brief: card("morning_brief", BriefCard),
   learned: card("learned", ({ data }) => <Lessons ids={data.ids ?? []} />),
+  project_news: card("project_news", NewsCard),
 };
 
 /** Where the chat was compacted: above it Tamga works from notes, and every message is still here. */

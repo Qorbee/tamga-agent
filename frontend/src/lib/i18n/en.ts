@@ -727,6 +727,9 @@ export const en = {
       updated: "Updated since Tamga wrote",
       done: (count: number) => (count === 1 ? "1 answered · show" : `${count} answered · show`),
       briefNow: "Where the money stands now",
+      truck: "A truck",
+      bill: "A bill",
+      newsKinds: { message: "Mail", document: "File", invoice: "Bill", truck: "Truck" },
     },
     /** A change to the policy drafted from the owner's words (draft_policy). */
     policyDraft: {

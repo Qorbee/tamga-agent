@@ -402,6 +402,14 @@
             },
             "title": "Ids",
             "type": "array"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/NewsItem"
+            },
+            "title": "Items",
+            "type": "array"
           }
         },
         "required": [
@@ -418,7 +426,8 @@
           "decision_approval",
           "decision_batch",
           "morning_brief",
-          "learned"
+          "learned",
+          "project_news"
         ],
         "title": "CardKind",
         "type": "string"
@@ -5516,6 +5525,32 @@
           "total"
         ],
         "title": "MovementPage",
+        "type": "object"
+      },
+      "NewsItem": {
+        "description": "One thing new on a project: what it is, and its record: a mail, a file or a bill opens\nitself, a truck its project.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "message",
+              "document",
+              "invoice",
+              "truck"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ],
+        "title": "NewsItem",
         "type": "object"
       },
       "NumberingOut": {

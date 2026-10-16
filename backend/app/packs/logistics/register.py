@@ -3,7 +3,7 @@ how an accepted field proposal is written onto a shipment, which project cannot 
 another, a freight job's checklist, its trucks in the chat, what delivering means for paying a
 bill, and the freight scenario a judge's sandbox opens with."""
 
-from app.modules.assistant import tools
+from app.modules.assistant import news, tools
 from app.modules.decisions import service as decisions
 from app.modules.documents import registry
 from app.modules.facts import extractors
@@ -35,3 +35,4 @@ extractors.register_key_kind("cmr_number")
 extractors.register_key_kind("order_number")
 # A truck the job has not had, named in a reply, may be the next load.
 extractors.register_load_kind("plate")
+news.register(assistant.positions)
