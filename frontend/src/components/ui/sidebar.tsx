@@ -316,7 +316,7 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <HugeiconsIcon icon={SidebarLeftIcon} strokeWidth={1.75} />
+      <HugeiconsIcon icon={SidebarLeftIcon} strokeWidth={1.5} />
       <span className="sr-only">{t.shell.toggleSidebar}</span>
     </Button>
   )

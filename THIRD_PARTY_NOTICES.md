@@ -12,6 +12,7 @@ These files may have been changed for Tamga; the changes are Tamga's.
 |---|---|---|---|
 | shadcn/ui components (`radix-maia` style) | `frontend/src/components/ui/` | MIT | Copyright (c) 2023 shadcn |
 | assistant-ui components | `frontend/src/components/assistant-ui/` | MIT | Copyright (c) 2025 AgentbaseAI Inc. |
+| DM Sans Bold glyph outlines ("amga" in the logo) | `frontend/src/components/brand/geometry.ts` | SIL OFL 1.1 | Copyright 2014 The DM Sans Project Authors |
 | Procrastinate database schema 3.9.0 | `backend/app/migrations/sql/procrastinate-3.9.0-schema.sql` | MIT | Copyright (c) 2019-2021, PeopleDoc |
 
 ## Git submodules

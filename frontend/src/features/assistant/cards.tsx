@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
 import { callOf, waits } from "@/components/bill-call";
-import { BrandMark } from "@/components/brand-mark";
+import { Seal } from "@/components/brand/logo";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry, Lessons } from "@/components/memory";
@@ -287,7 +287,7 @@ function TurnBegan({ data }: DataMessagePartProps<TurnContent>) {
     <div data-slot="chat-turn-began" role="separator" className="text-muted-foreground my-3 flex items-center gap-3 text-xs">
       <span className="bg-border h-px flex-1" />
       <span className="flex max-w-[80%] items-center gap-1.5 text-center text-pretty">
-        <BrandMark className="size-3.5 shrink-0" />
+        <Seal small className="size-3.5 shrink-0" />
         <span>
           {t.assistant.turnBegan}
           {" · "}

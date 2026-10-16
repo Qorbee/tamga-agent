@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { BrandMark } from "@/components/brand-mark";
+import { Lockup } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { GuestButton } from "@/features/session/guest-button";
 import { getDictionary } from "@/lib/i18n";
@@ -13,9 +13,8 @@ export default async function LandingPage() {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 md:px-10">
       <header className="flex items-center justify-between py-6">
-        <Link href="/" className="flex items-center gap-2.5 font-medium">
-          <BrandMark className="size-7" />
-          <span>Tamga</span>
+        <Link href="/" className="flex items-center">
+          <Lockup open height={28} label={t.meta.title} intro />
         </Link>
         <Button asChild variant="ghost" size="sm">
           <Link href="/app">{t.landing.openApp}</Link>

@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MemorySection } from "@/components/memory";
+import { LOGOS, Seal, saveLogo, useLogo } from "@/components/brand/logo";
 import { Segmented } from "@/components/segmented";
 import {
   copyOf,
@@ -183,6 +184,9 @@ export function SettingsDialog({
                 </Row>
                 <Row label={t.settings.language}>
                   <LanguagePicker />
+                </Row>
+                <Row label={t.settings.logo} hint={t.settings.logoHint}>
+                  <LogoPicker />
                 </Row>
               </Part>
               <NotificationsSection />
@@ -521,6 +525,24 @@ function BrowserNotifications() {
     >
       {t.settings.notifyTurnOn}
     </Button>
+  );
+}
+
+/** Which of the four candidate logos this device shows, while the owner compares them. */
+function LogoPicker() {
+  const { t } = useI18n();
+  const logo = useLogo();
+  return (
+    <Segmented
+      options={LOGOS.map((value) => ({
+        value,
+        hint: t.settings.logos[value],
+        label: <Seal logo={value} className="size-6" />,
+      }))}
+      value={logo}
+      label={t.settings.logo}
+      onChange={saveLogo}
+    />
   );
 }
 

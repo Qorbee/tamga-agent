@@ -365,7 +365,7 @@ export const ThreadListItem: FC = () => {
   return (
     <ThreadListItemPrimitive.Root
       data-slot="aui_thread-list-item"
-      className="group/thread hover:bg-sidebar-accent focus-visible:bg-sidebar-accent in-data-chat-open:data-active:bg-sidebar-accent in-data-chat-open:data-active:font-medium has-focus-visible:bg-sidebar-accent has-data-[state=open]:bg-sidebar-accent relative flex h-9 items-center rounded-lg transition-colors focus-visible:outline-none"
+      className="group/thread hover:bg-sidebar-accent focus-visible:bg-sidebar-accent in-data-chat-open:data-active:bg-sidebar-accent in-data-chat-open:data-active:font-medium has-focus-visible:bg-sidebar-accent has-data-[state=open]:bg-sidebar-accent relative flex h-9.5 items-center rounded-lg transition-colors focus-visible:outline-none"
     >
       {isRenaming ? (
         <ThreadListItemRename
@@ -380,7 +380,7 @@ export const ThreadListItem: FC = () => {
           data-slot="aui_thread-list-item-trigger"
           onPointerEnter={() => readAhead(id)}
           onFocus={() => readAhead(id)}
-          className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-lg px-3 text-start text-sm outline-none group-hover/thread:pe-9 group-has-focus-visible/thread:pe-9 group-has-data-[state=open]/thread:pe-9 focus-visible:ring-1"
+          className="focus-visible:ring-ring/50 flex h-full min-w-0 flex-1 items-center rounded-lg px-3 text-start text-[15px] outline-none group-hover/thread:pe-9 group-has-focus-visible/thread:pe-9 group-has-data-[state=open]/thread:pe-9 focus-visible:ring-1"
         >
           {isRunning && (
             <Loader2Icon

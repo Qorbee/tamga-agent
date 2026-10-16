@@ -1,7 +1,7 @@
 "use client";
 
 import { ThreadListPrimitive, useAuiState } from "@assistant-ui/react";
-import { Cancel01Icon, PlusSignIcon, Search01Icon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, PlusSignIcon, Search01Icon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -12,7 +12,7 @@ import {
   ThreadListItems,
   ThreadListRoot,
 } from "@/components/assistant-ui/elements/thread-list.aui";
-import { BrandMark } from "@/components/brand-mark";
+import { Lockup } from "@/components/brand/logo";
 import { ResizeHandle } from "@/components/resize-handle";
 import {
   Sidebar,
@@ -35,10 +35,10 @@ import { AccountMenu } from "./account-menu";
 import { CHAT_PATH, pages } from "./pages";
 import { useShellActions } from "./shell-actions";
 
-// Every row, pages and past chats alike, is 36px with an 18px icon; collapsed, a 40px square; on
-// a phone, 44px for a thumb.
+// Every row, pages and past chats alike, is 38px with 15px words and a 20px icon, as the chat
+// apps size theirs; collapsed, a 40px square; on a phone, 44px for a thumb.
 const ROW =
-  "h-9 [&_svg]:size-4.5 max-md:h-11 max-md:text-base max-md:[&_svg]:size-5 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-[11px]!";
+  "h-9.5 gap-2.5 text-[15px] [&_svg]:size-5 max-md:h-11 max-md:text-base group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-2.5!";
 
 /**
  * The owner app's sidebar: New chat and Search, the pages, past chats, and the account at its foot.
@@ -55,7 +55,8 @@ export function AppSidebar({
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
-  const { isMobile, setOpen, setOpenMobile } = useSidebar();
+  const { isMobile, setOpen, setOpenMobile, state, toggleSidebar } = useSidebar();
+  const rail = state === "collapsed" && !isMobile;
   const { openSearch } = useShellActions();
   const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
   const chatOpen = pathname === CHAT_PATH;
@@ -78,15 +79,32 @@ export function AppSidebar({
       {/* On a phone the header floats over the list, which fades out beneath it instead of being
           cut by a band; the foot does the same below. */}
       <SidebarHeader className="h-14 flex-row items-center justify-between px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 max-md:from-sidebar max-md:via-sidebar/85 max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-16 max-md:items-start max-md:bg-linear-to-b max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
+        {/* The logo, its word rolled into the seal when the sidebar folds to a rail. There, as in
+            the chat apps, the seal is also the way back: under the pointer it turns into the
+            sidebar's icon, and a tap opens it. */}
         <Link
           href={CHAT_PATH}
-          onClick={picked}
-          className="focus-visible:ring-ring/50 flex min-w-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-[3px] group-data-[collapsible=icon]:hidden"
+          aria-label={rail ? t.shell.toggleSidebar : t.meta.title}
+          onClick={(event) => {
+            if (!rail) return picked();
+            event.preventDefault();
+            toggleSidebar();
+          }}
+          className="group/brand focus-visible:ring-ring/50 relative flex min-w-0 items-center rounded-lg outline-none focus-visible:ring-[3px]"
         >
-          <BrandMark className="size-7" />
-          <span className="truncate text-base font-medium tracking-tight">{t.meta.title}</span>
+          <span className={cn("transition-opacity", rail && "group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0")}>
+            <Lockup open={!rail} height={28} label={t.meta.title} intro />
+          </span>
+          {rail ? (
+            <HugeiconsIcon
+              icon={SidebarLeftIcon}
+              strokeWidth={1.5}
+              className="text-muted-foreground absolute inset-0 m-auto size-5 opacity-0 transition-opacity group-hover/brand:opacity-100 group-focus-visible/brand:opacity-100"
+              aria-hidden
+            />
+          ) : null}
         </Link>
-        <SidebarTrigger className="text-muted-foreground max-md:hidden" />
+        <SidebarTrigger className="text-muted-foreground size-9 group-data-[collapsible=icon]:hidden max-md:hidden [&_svg]:size-5" />
         {isMobile ? (
           <button
             type="button"
