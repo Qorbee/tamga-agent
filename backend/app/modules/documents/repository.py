@@ -463,11 +463,13 @@ async def lock_document(
     return document
 
 
-async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+async def mark_signature(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, *, signed: bool
+) -> None:
     await db.execute(
         update(Document)
         .where(Document.company_id == company_id, Document.id == document_id)
-        .values(signature=True)
+        .values(signature=signed)
     )
 
 

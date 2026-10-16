@@ -19,6 +19,7 @@ from app.modules.conversations import service as conversations
 from app.modules.conversations.models import MessageAttachment, ThreadCategory
 from app.modules.documents import service as documents
 from app.modules.linking import service
+from app.modules.projects import repository as projects_repository
 from app.modules.projects.models import LinkMethod, LinkStatus, ProjectLink
 from app.platform import events, llm
 from app.platform.db import open_session
@@ -537,3 +538,23 @@ async def test_a_file_rejected_as_a_signature_is_no_jobs_file_again(
         carried = await conversations.carried_files(db, company_id, carriers[document_id])
     assert len(carriers[document_id]) == 2
     assert carried == {document_id: []}
+
+    # Undone, it is a job's file again, and back where code had linked it, for the owner to answer.
+    async with open_session() as db:
+        mark = await projects_repository.links_mark(db, company_id)
+    undone = await client.patch(f"/project-links/{cmr['id']}", json={"because": None})
+    assert (undone.status_code, undone.json()["status"]) == (200, "rejected"), undone.text
+    [other] = (await files_of(client, elsewhere)).values()
+    assert (other["status"], other["because"]) == ("suggested", None)
+    async with open_session() as db:
+        carried = await conversations.carried_files(db, company_id, carriers[document_id])
+    assert sorted(carried[document_id]) == sorted(carriers[document_id])
+    # What reads the links sees them changed.
+    async with open_session() as db:
+        assert await projects_repository.links_mark(db, company_id) != mark
+
+    # Said again, the suggestion it came back as leaves again.
+    again = await client.patch(f"/project-links/{cmr['id']}", json={"because": "signature"})
+    assert again.status_code == 200, again.text
+    [other] = (await files_of(client, elsewhere)).values()
+    assert (other["status"], other["because"]) == ("rejected", "signature")

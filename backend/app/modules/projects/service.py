@@ -1216,6 +1216,7 @@ async def update_link(
         link.status = LinkStatus(status)
         link.decided_by = actor.user_id
         link.decided_at = clock.now(company)
+    signed = link.because is RejectReason.SIGNATURE
     if "because" in changes or "note" in changes:
         if link.status is not LinkStatus.REJECTED:
             raise BadRequest("Only a rejected item is told why")
@@ -1229,26 +1230,43 @@ async def update_link(
         await repository.activate_if_draft(db, actor.company_id, link.project_id)
     if link.item_kind is ItemKind.MESSAGE:
         await carry_files(db, actor.company_id, [link.item_id])
-    if link.because is RejectReason.SIGNATURE and link.item_kind is ItemKind.DOCUMENT:
-        # Code's to act on: the picture signs its sender's mail, so it leaves every project.
-        await conversations.mark_signature(db, actor.company_id, link.item_id)
-        carriers = await conversations.messages_attaching(db, actor.company_id, [link.item_id])
-        await carry_files(db, actor.company_id, carriers.get(link.item_id, []))
-        now = clock.now(company)
-        for other in await repository.links_of_items(
-            db, actor.company_id, ItemKind.DOCUMENT, [link.item_id]
-        ):
-            # What code linked it to goes too; another answer of the owner's stays (ADR-0021).
-            if other.method is LinkMethod.OWNER or other.status is LinkStatus.REJECTED:
-                continue
-            other.status, other.method, other.because = (
-                LinkStatus.REJECTED,
-                LinkMethod.OWNER,
-                RejectReason.SIGNATURE,
-            )
-            other.decided_by, other.decided_at = actor.user_id, now
+    if link.item_kind is ItemKind.DOCUMENT and signed != (link.because is RejectReason.SIGNATURE):
+        await _sign(db, actor, clock.now(company), link, signed=not signed)
     await db.commit()
     return LinkOut.model_validate(link)
+
+
+async def _sign(
+    db: AsyncSession, actor: Actor, now: datetime, link: ProjectLink, *, signed: bool
+) -> None:
+    """Code's to act on (ADR-0032): a file the owner says signs its sender's mail leaves every
+    project code linked it to, and every mail that carries it carries it as a signature. Said
+    otherwise after (the reject's Undo), it comes back where it was. Does not commit."""
+    await conversations.mark_signature(db, actor.company_id, link.item_id, signed=signed)
+    for other in await repository.links_of_items(
+        db, actor.company_id, ItemKind.DOCUMENT, [link.item_id]
+    ):
+        if other.id == link.id:
+            continue
+        unanswered = other.method is not LinkMethod.OWNER or other.status is LinkStatus.SUGGESTED
+        if signed and unanswered:
+            # What code linked it to goes; another answer of the owner's stays (ADR-0021).
+            if other.status is not LinkStatus.REJECTED:
+                other.status, other.method, other.because = (
+                    LinkStatus.REJECTED,
+                    LinkMethod.OWNER,
+                    RejectReason.SIGNATURE,
+                )
+                other.decided_by, other.decided_at = actor.user_id, now
+        elif not signed and other.because is RejectReason.SIGNATURE:
+            # Back to the owner as a suggestion: they had not answered it themselves.
+            other.status, other.because = LinkStatus.SUGGESTED, None
+            other.decided_by, other.decided_at = None, None
+    if not signed:
+        # The owner's answer changed: what reads the links' mark sees it (`links_mark`).
+        link.decided_at = now
+    carriers = await conversations.messages_attaching(db, actor.company_id, [link.item_id])
+    await carry_files(db, actor.company_id, carriers.get(link.item_id, []))
 
 
 async def decide_links(

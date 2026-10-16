@@ -615,11 +615,31 @@ async def _furniture(
     }
 
 
-async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
+async def mark_signature(
+    db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID, *, signed: bool = True
+) -> None:
     """The owner's word that a file only signs its sender's mail (ADR-0032): in no mail of the
-    company is it read as a job's file again, nor in one that brings it later. Does not commit."""
-    await documents.mark_signature(db, company_id, document_id)
-    await repository.mark_signature(db, company_id, document_id)
+    company is it read as a job's file again, nor in one that brings it later. Taken back, each
+    mail that carries it is read again, so it is a signature where its own mail shows it below
+    its writer's contact lines, and a job's file elsewhere. Does not commit."""
+    await documents.mark_signature(db, company_id, document_id, signed=signed)
+    if signed:
+        await repository.mark_signature(db, company_id, document_id, signed=True)
+        return
+    carriers = (await messages_attaching(db, company_id, [document_id])).get(document_id, [])
+    for message, _ in await repository.messages_by_ids(db, company_id, carriers):
+        parsed = None
+        if message.raw_key is not None:
+            try:
+                parsed = await asyncio.to_thread(parse_mail, await storage.get(message.raw_key))
+            except Exception:  # an unreadable original: the file is a job's file in it
+                logger.warning("stored mail %s could not be parsed again", message.id)
+        if parsed is None:
+            await repository.mark_signature(
+                db, company_id, document_id, signed=False, message_id=message.id
+            )
+        else:
+            await _mark_inline(db, company_id, message.id, parsed)
 
 
 async def carried_files(

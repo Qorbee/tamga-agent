@@ -256,6 +256,9 @@ export const en = {
       placeholder: "In a line…",
       send: "Send",
       skip: "Skip",
+      signed: "Kept out of every project as a signature.",
+      undo: "Undo",
+      done: "Done",
     },
     askAgainstMail: (name: string, role: string, mail: string) =>
       `The mail names ${mail}. Is ${name} the ${role.toLowerCase()}?`,

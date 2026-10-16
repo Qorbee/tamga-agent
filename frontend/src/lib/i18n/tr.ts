@@ -248,6 +248,9 @@ export const tr: Dictionary = {
       placeholder: "Bir satırla…",
       send: "Gönder",
       skip: "Geç",
+      signed: "İmza olarak hiçbir projeye alınmayacak.",
+      undo: "Geri al",
+      done: "Tamam",
     },
     askAgainstMail: (name: string, role: string, mail: string) =>
       `Postada ${mail} geçiyor. ${name} ${role.toLocaleLowerCase("tr")} mi?`,

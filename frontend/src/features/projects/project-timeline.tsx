@@ -674,29 +674,36 @@ function GapRow({ item, trucks }: { item: ChecklistItem; trucks: Shipment[] }) {
 }
 
 /** Why something just left the project, in one optional tap: a file can be a signature or a
- * logo, which code then keeps out of every project; anything can be another job, not work, or
- * something else said in a line. */
+ * logo, which code then keeps out of every project until the owner undoes it here; anything can
+ * be another job, not work, or something else said in a line. */
 function WhyRejected({ rejected, onDone }: { rejected: Rejected; onDone: () => void }) {
   const { t } = useI18n();
   const words = t.project.why;
   const invalidate = useInvalidatePlacements();
   const [other, setOther] = useState(false);
   const [note, setNote] = useState("");
+  const [signed, setSigned] = useState(false);
   const tell = useMutation({
-    mutationFn: async ({ because, said }: { because: WhyReason; said?: string }) => {
+    mutationFn: async ({ because, said }: { because: WhyReason | null; said?: string }) => {
       for (const link of rejected.links) await updateLink(link.id, { because, note: said || null });
     },
-    onSuccess: () => {
+    onSuccess: (_, { because }) => {
       invalidate();
-      onDone();
+      // A signature reaches past this project: it stays undoable until the bar is closed.
+      if (because === "signature" || because === null) setSigned(because !== null);
+      else onDone();
     },
   });
   const reasons: WhyReason[] =
     rejected.kind === "file" ? ["signature", "another_job", "not_work", "other"] : ["another_job", "not_work", "other"];
   return (
     <div className="border-border bg-card flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2 text-sm" role="status">
-      <span className="text-muted-foreground">{words.ask}</span>
-      {other ? (
+      <span className="text-muted-foreground">{signed ? words.signed : words.ask}</span>
+      {signed ? (
+        <Button size="xs" variant="outline" className="rounded-full" disabled={tell.isPending} onClick={() => tell.mutate({ because: null })}>
+          {words.undo}
+        </Button>
+      ) : other ? (
         <form
           className="flex min-w-0 flex-1 items-center gap-2"
           onSubmit={(event) => {
@@ -731,7 +738,15 @@ function WhyRejected({ rejected, onDone }: { rejected: Rejected; onDone: () => v
           </Button>
         ))
       )}
-      <IconButton icon={Cancel01Icon} label={words.skip} size="icon-xs" className="text-muted-foreground ms-auto" onClick={onDone} />
+      <IconButton
+        icon={Cancel01Icon}
+        label={signed ? words.done : words.skip}
+        size="icon-xs"
+        className="text-muted-foreground ms-auto"
+        // Closed mid-answer, a signature would have no Undo left to show.
+        disabled={tell.isPending}
+        onClick={onDone}
+      />
       {tell.isError ? (
         <span className="text-danger-foreground w-full text-xs" role="alert">
           {t.errors.generic}

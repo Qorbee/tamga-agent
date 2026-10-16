@@ -127,15 +127,24 @@ async def add_attachment(
     )
 
 
-async def mark_signature(db: AsyncSession, company_id: uuid.UUID, document_id: uuid.UUID) -> None:
-    """Marks a file as its senders' signature in every mail of the company that carried it."""
+async def mark_signature(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    document_id: uuid.UUID,
+    *,
+    signed: bool,
+    message_id: uuid.UUID | None = None,
+) -> None:
+    """Marks a file as its senders' signature, or not, in every mail of the company that carried
+    it, or in one."""
     await db.execute(
         update(MessageAttachment)
         .where(
             MessageAttachment.company_id == company_id,
             MessageAttachment.document_id == document_id,
+            *([MessageAttachment.message_id == message_id] if message_id else []),
         )
-        .values(signature=True)
+        .values(signature=signed)
     )
 
 
