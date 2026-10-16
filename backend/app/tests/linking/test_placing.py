@@ -1087,7 +1087,7 @@ async def test_a_conversation_the_company_is_only_copied_on_starts_no_project(
 
 
 @pytest.mark.integration
-async def test_code_names_a_project_and_never_over_the_owners_name(
+async def test_the_titler_names_a_project_only_in_words_it_was_given_and_never_over_the_owners(
     client: httpx.AsyncClient, model: Callable[..., Script]
 ) -> None:
     company_id = await guest_client(client)
@@ -1105,19 +1105,34 @@ async def test_code_names_a_project_and_never_over_the_owners_name(
         left = await conversations.model_reads_left(db, company_id)
     assert queued == 1
 
-    # By its client and route, whatever a model would say, and from none of the day's budget.
-    script = model(text("Stone · Istanbul → Munich · coils"))
+    # A word the titler was not given is refused, and code's name stands: the client, the
+    # route. The request counts against the day's budget.
+    script = model(text("Stone · Istanbul → Munich · urgent"))
     [project] = await name_projects(company_id)
     assert project.name == "Stone GmbH · Istanbul → Munich"
-    assert script.requests == []
+    assert len(script.requests) == 1
     async with open_session() as db:
-        assert await conversations.model_reads_left(db, company_id) == left
+        assert await conversations.model_reads_left(db, company_id) == left - 1
+    assert project.name_made_by is None
+    # So is a subject's own word, a label it was shown beside the job's words, and an answer of
+    # too little.
+    for said in ("Invoice · Stone", "Client · Stone", "NONE", "Stone"):
+        model(text(said))
+        [project] = await name_projects(company_id)
+        assert project.name == "Stone GmbH · Istanbul → Munich", said
+    # Every word found in what it was shown, whatever its case and accents: kept, with the model
+    # that wrote it.
+    model(text("STONE · İstanbul → Munich · steel coils"))
+    [project] = await name_projects(company_id)
+    assert project.name == "STONE · İstanbul → Munich · steel coils"
+    assert project.name_made_by is not None and project.name_made_by["prompt"]
 
-    # A name the owner gave is never touched again.
+    # A name the owner gave is never touched again, and no model wrote it.
     renamed = await client.patch(f"/projects/{project.id}", json={"name": "Stone coils"})
     assert renamed.status_code == 200
     await service.name_project(company_id, project.id)
-    assert [p.name for p in await the_projects(company_id)] == ["Stone coils"]
+    [project] = await the_projects(company_id)
+    assert (project.name, project.name_made_by) == ("Stone coils", None)
 
 
 @pytest.mark.integration

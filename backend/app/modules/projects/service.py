@@ -769,6 +769,7 @@ async def _write_project_fields(
     values: Mapping[str, Any],
     source: FieldSource,
     evidence: Sequence[uuid.UUID],
+    name_made_by: Mapping[str, str] | None = None,
 ) -> list[FieldProposal]:
     writes, proposals = await apply_fields(
         db,
@@ -784,6 +785,7 @@ async def _write_project_fields(
         if not name:
             raise BadRequest("Name the project", field="name")
         project.name = name
+        project.name_made_by = dict(name_made_by) if name_made_by else None
     if "number" in writes:
         number = str(writes["number"]).strip()
         await _claim_number(db, project.company_id, project.id, number)
@@ -815,11 +817,13 @@ async def propose_project_fields(
     source: FieldSource,
     evidence: Sequence[uuid.UUID],
     leave_owner: Collection[str] = (),
+    name_made_by: Mapping[str, str] | None = None,
 ) -> list[FieldProposal]:
     """An extraction or a suggestion for a project's fields: written where nothing better holds
     the field, proposed where the owner (or a stronger source) already chose. A field named in
     ``leave_owner`` is not even proposed once the owner set it, which is checked under the
-    project's lock. Does not commit."""
+    project's lock. ``name_made_by`` is the model that wrote the name, when one did. Does not
+    commit."""
     if source is FieldSource.OWNER or not set(values) <= _PROJECT_FIELDS:
         raise ValueError(f"propose only {sorted(_PROJECT_FIELDS)}, never as the owner")
     project = await _project(db, company_id, project_id, for_update=True)
@@ -831,7 +835,7 @@ async def propose_project_fields(
             and fields.source_of(project.field_sources, field) is FieldSource.OWNER
         )
     }
-    return await _write_project_fields(db, project, kept, source, evidence)
+    return await _write_project_fields(db, project, kept, source, evidence, name_made_by)
 
 
 async def _accept_project_field(

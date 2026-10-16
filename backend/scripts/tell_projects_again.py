@@ -7,8 +7,10 @@ uv run python scripts/tell_projects_again.py --write
 uv run python scripts/tell_projects_again.py --company-id <id> --write
 
 A dry run prints which projects would be named and writes nothing. Only Tamga's own database is
-written; the worker then names each project by code, from its client, route and first day, and
-asks no model. Nothing reaches a mailbox or the books. Safe to run again.
+written; the worker then names each project: the titler writes a name, which code keeps only
+when every word of it is in what the titler was shown, else code's name from the client, route
+and first day. One request of a small model a project, from the day's budget of model reads.
+Nothing reaches a mailbox or the books. Safe to run again.
 """
 
 import argparse

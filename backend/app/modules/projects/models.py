@@ -144,6 +144,10 @@ class Project(CompanyScoped, Base):
     field_sources: Mapped[dict[str, str]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )
+    # When a model wrote the name it holds: its model, effort and prompt's fingerprint
+    # (llm.MadeBy.stored), so a name written under an older prompt can be found and written again.
+    # Null when code or a person wrote it.
+    name_made_by: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
