@@ -11,12 +11,12 @@ import { BrandMark } from "@/components/brand-mark";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry, Lessons } from "@/components/memory";
-import { MoneyTiles } from "@/components/money-tiles";
+import { MoneySummary } from "@/components/money-tiles";
 import { PolicyDraftCard } from "@/components/policy-draft";
 
 import { ShownView } from "./views";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApproveMany, CallCounts, fitsOf, usePaymentRun } from "@/components/payment-run";
+import { ApproveMany, fitsOf, RunGroups, usePaymentRun } from "@/components/payment-run";
 import { ProjectCard, Questions } from "@/components/waiting-cards";
 import {
   ApiError,
@@ -180,22 +180,21 @@ function BatchCard({ data }: DataMessagePartProps<CardContent>) {
               <span className="text-muted-foreground text-sm">{t.run.toPayNow}</span>
             </p>
           ) : null}
-          <CallCounts decisions={items.map((item) => item.decision)} fits={fits} />
         </header>
-        {open.length > 0 ? (
-          <ul className="divide-border border-border divide-y border-t">
-            {open.map((item) => (
-              <li key={item.decision.id} className="py-1 ps-2 pe-3">
-                {written.get(item.decision.id) !== undefined && written.get(item.decision.id) !== item.decision.evaluation ? (
-                  <p className="text-muted-foreground px-2 pt-1.5 text-[11px] font-medium tracking-[0.06em] uppercase">
-                    {t.assistant.cards.updated}
-                  </p>
-                ) : null}
-                <DecisionRow decision={item.decision} payment={undefined} fits={item.fits} inRun />
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <RunGroups
+          decisions={open.map((item) => item.decision)}
+          fits={fits}
+          row={(decision) => (
+            <>
+              {written.get(decision.id) !== undefined && written.get(decision.id) !== decision.evaluation ? (
+                <p className="text-muted-foreground px-2 pt-1.5 text-[11px] font-medium tracking-[0.06em] uppercase">
+                  {t.assistant.cards.updated}
+                </p>
+              ) : null}
+              <DecisionRow decision={decision} payment={undefined} fits={fits.get(decision.id) ?? null} inRun />
+            </>
+          )}
+        />
         {done.length > 0 ? (
           <div className="border-border border-t">
             <button
@@ -217,7 +216,7 @@ function BatchCard({ data }: DataMessagePartProps<CardContent>) {
             ) : null}
           </div>
         ) : null}
-        {chosen.length > 0 ? <ApproveMany items={chosen} className="border-border border-t px-4 py-3" /> : null}
+        {chosen.length > 0 ? <ApproveMany items={chosen} total={total} className="border-border border-t px-4 py-3" /> : null}
       </section>
     </Card>
   );
@@ -247,7 +246,7 @@ function BriefCard() {
   return (
     <div data-slot="chat-card" className="my-3 flex flex-col gap-2">
       <p className="text-muted-foreground text-xs">{t.assistant.cards.briefNow}</p>
-      <MoneyTiles />
+      <MoneySummary />
     </div>
   );
 }

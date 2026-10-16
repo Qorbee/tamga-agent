@@ -2,9 +2,8 @@
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { Hint } from "@/components/hint";
+import { MoneySummary } from "@/components/money-tiles";
 import { between, PeriodBars, SeriesLegend, type Series } from "@/components/period-bars";
-import { useRuleWords } from "@/components/policy-settings";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -52,8 +51,8 @@ const CATEGORIES: readonly MovementCategory[] = [
  */
 export function MoneyPage() {
   return (
-    // No tiles here: the home and Payments carry them, and this page's own accounts and outlook
-    // are those figures in full. It opens on what the accounts hold.
+    // It opens on the money at a glance, the home's rows; its accounts and outlook are those
+    // figures in full.
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       <Holdings />
       <Accounts />
@@ -63,9 +62,10 @@ export function MoneyPage() {
   );
 }
 
+/** The money at a glance, the same rows as the home's, and how what the accounts hold is
+ * counted, in a line rather than a tooltip a phone never shows. */
 function Holdings() {
-  const { t, locale } = useI18n();
-  const read = useRuleWords();
+  const { t } = useI18n();
   const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
   const currency = policy.data?.currency;
   const holdings = useQuery({
@@ -79,28 +79,16 @@ function Holdings() {
         {t.errors.load}
       </p>
     );
-  if (!policy.data || !holdings.data) return <Skeleton className="h-20 rounded-2xl" />;
-  const reserve = read(policy.data.reserve, policy.data.currency);
-  // The page's headline: what the accounts hold, then how it is counted and the reserve in force,
-  // each explained in a line rather than a tooltip a phone never shows.
   return (
-    <section className="grid gap-1.5">
-      <p className="text-muted-foreground text-[11px] font-medium tracking-[0.08em] uppercase">{t.tiles.available}</p>
-      <p className="text-3xl font-medium tracking-tight tabular-nums">
-        {holdings.data.items.length > 0 ? formatMoney(Number(holdings.data.total), holdings.data.currency, locale) : "—"}
-      </p>
-      <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span>
+    <section className="grid gap-2">
+      <MoneySummary />
+      {holdings.data ? (
+        <p className="text-muted-foreground px-1 text-xs text-pretty">
           {holdings.data.items.length > 0
             ? `${t.money.aboutHint}${holdings.data.complete ? "" : ` ${t.money.incomplete}`}`
             : t.money.noAccounts}
-        </span>
-        <Hint label={reserve.body}>
-          <span tabIndex={0} className="bg-secondary text-foreground rounded-full px-2.5 py-0.5">
-            {t.money.reserve(reserve.name)}
-          </span>
-        </Hint>
-      </p>
+        </p>
+      ) : null}
     </section>
   );
 }

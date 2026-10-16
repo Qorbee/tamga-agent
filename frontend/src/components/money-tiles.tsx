@@ -5,7 +5,8 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { usePaymentRun } from "@/components/payment-run";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getHoldings, getPolicy, listDecisions, listInvoiceTotals, type InvoiceTotal } from "@/lib/api";
-import { formatDays, formatMoneyCompact, formatMoneyShort, todayIso } from "@/lib/format";
+import { useRuleWords } from "@/components/policy-settings";
+import { formatDays, formatMoneyShort, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -16,12 +17,15 @@ function dayAfter(day: string): string {
 }
 
 /**
- * Where the money stands, in four figures (the owner's mockup, Oct 13): what the accounts hold,
- * what is due by the next pay day, what clients owe by then, and how many bills wait for the owner.
- * Each is the server's figure; a tile with nothing known says so with a dash.
+ * Where the money stands, as rows on one surface: what the accounts hold, what is due by the next
+ * pay day, what clients owe by then, what waits for you, and the reserve in force. A label wraps
+ * as long as its language needs; each currency's figure stands on a line of its own, right-aligned,
+ * never cut. Two columns where the page is wide. The home, Payments, Money and the chat's brief
+ * show the same rows. Each figure is the server's; one with nothing known shows a dash.
  */
-export function MoneyTiles({ className }: { className?: string }) {
+export function MoneySummary({ className }: { className?: string }) {
   const { t, locale } = useI18n();
+  const ruleWords = useRuleWords();
   const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
   const currency = policy.data?.currency;
   const run = usePaymentRun();
@@ -43,55 +47,50 @@ export function MoneyTiles({ className }: { className?: string }) {
     queryKey: ["decisions", { view: "count-waiting" }],
     queryFn: () => listDecisions({ state: ["awaiting_owner"], limit: 1 }),
   });
-  if (policy.isPending || run.isPending || holdings.isPending) return <Skeleton className={cn("h-20 rounded-2xl", className)} />;
-  if (!currency) return null;
+  if (policy.isPending || run.isPending || holdings.isPending) return <Skeleton className={cn("h-40 rounded-2xl", className)} />;
+  if (!policy.data || !currency) return null;
 
-  // Each figure in full and short ("₺4.7M"): a narrow tile shows the short one, never a cut one.
-  const money = (amount: number, unit = currency) => ({
-    full: formatMoneyShort(amount, unit, locale),
-    short: formatMoneyCompact(amount, unit, locale, "symbol"),
-  });
-  const none = { full: "—", short: "—" };
-  // What the books say is owed by then, held bills included: a hold is no less a debt.
-  const totalOf = (totals: InvoiceTotal[] | undefined) => {
+  // What the books say is owed by then, held bills included: a hold is no less a debt. One line
+  // a currency.
+  const owed = (totals: InvoiceTotal[] | undefined): string[] => {
     const amounts = (totals ?? []).filter((total) => total.currency && Number(owedOf(total) ?? 0) > 0);
-    if (amounts.length === 0) return none;
-    const each = amounts.map((total) => money(Number(owedOf(total)), total.currency ?? currency));
-    return { full: each.map((one) => one.full).join(" · "), short: each.map((one) => one.short).join(" · ") };
+    return amounts.map((total) => formatMoneyShort(Number(owedOf(total)), total.currency ?? currency, locale));
   };
-  const count = waiting.data ? String(waiting.data.total) : "—";
-  const tiles: { label: string; value: { full: string; short: string }; tone?: string }[] = [
+  const count = waiting.data?.total;
+  const rows: { label: string; figures: string[]; tone?: string }[] = [
     {
       label: t.tiles.available,
-      value: holdings.data && holdings.data.items.length > 0 ? money(Number(holdings.data.total)) : none,
+      figures:
+        holdings.data && holdings.data.items.length > 0 ? [formatMoneyShort(Number(holdings.data.total), currency, locale)] : [],
     },
     {
       label: run.data ? t.tiles.dueBy(formatDays(run.data.through, null, locale)) : t.tiles.due,
-      value: totalOf(outgoing?.data),
+      figures: owed(outgoing?.data),
     },
-    { label: t.tiles.expected, value: totalOf(incoming?.data) },
+    { label: t.tiles.expected, figures: owed(incoming?.data) },
     {
       label: t.tiles.toApprove,
       // Unknown until it loads: never a zero that says nothing waits.
-      value: { full: count, short: count },
-      tone: (waiting.data?.total ?? 0) > 0 ? "text-danger-foreground" : undefined,
+      figures: count === undefined ? [] : [String(count)],
+      tone: (count ?? 0) > 0 ? "text-danger-foreground" : undefined,
     },
+    { label: t.tiles.reserve, figures: [ruleWords(policy.data.reserve, currency).name] },
   ];
   return (
-    // Four in a row where the page is wide, two by two where it is not (a phone, or a page beside
-    // the World and the canvas): by the page's own width, so no figure is ever cut.
     <div className={cn("@container", className)}>
-    <dl className="grid grid-cols-2 gap-2 @2xl:grid-cols-4">
-      {tiles.map((tile) => (
-        <div key={tile.label} className="border-border bg-card @container min-w-0 rounded-2xl border px-3.5 py-3">
-          <dt className="text-muted-foreground truncate text-[11px] font-medium tracking-[0.08em] uppercase">{tile.label}</dt>
-          <dd className={cn("mt-1 truncate text-lg font-medium tabular-nums", tile.tone)} title={tile.value.full}>
-            <span className="hidden @[13rem]:inline">{tile.value.full}</span>
-            <span className="@[13rem]:hidden">{tile.value.short}</span>
-          </dd>
-        </div>
-      ))}
-    </dl>
+      <dl className="border-border bg-card grid grid-cols-1 overflow-hidden rounded-2xl border @2xl:grid-cols-2">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="border-border flex items-start justify-between gap-4 border-b px-4 py-3 last:border-b-0 @2xl:[&:nth-last-child(2):nth-child(odd)]:border-b-0 @2xl:odd:border-e"
+          >
+            <dt className="text-muted-foreground min-w-0 text-sm text-pretty">{row.label}</dt>
+            <dd className={cn("grid shrink-0 justify-items-end text-sm font-medium tabular-nums", row.tone)}>
+              {row.figures.length > 0 ? row.figures.map((figure) => <span key={figure}>{figure}</span>) : <span>—</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

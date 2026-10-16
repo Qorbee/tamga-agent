@@ -81,8 +81,8 @@ re-apply them:
 - `tool-group.aui.tsx`, `tool-fallback.aui.tsx`, `reasoning.aui.tsx`: a step that opens or closes
   holds the scroll with `keep-in-place.ts`, not assistant-ui's `useScrollLock`, which hid the
   scrollbar for the animation and made the page jump beside it.
-- `tool-fallback.aui.tsx`: a call reads as a sentence and opens to what it found in words
-  (`tool-steps.tsx`), its raw call and result under "Show details". `thread.aui.tsx`: an
+- `tool-fallback.aui.tsx`: a call reads as a sentence (`tool-steps.tsx`); a search is that line,
+  a project opened by its number a link to it in the canvas, another record opens to its lines. `thread.aui.tsx`: an
   `AfterMessages` slot under the last message (the line saying Tamga is at work in the chat).
 - `hooks/use-mobile.ts`: reads the media query through `useSyncExternalStore` instead of setting state
   in an effect, which the React Compiler lint rejects.

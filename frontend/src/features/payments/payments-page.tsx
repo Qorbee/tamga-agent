@@ -4,7 +4,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { DecisionRow } from "@/components/decision-card";
-import { MoneyTiles } from "@/components/money-tiles";
+import { MoneySummary } from "@/components/money-tiles";
 import { PaymentRunCard, usePaymentRun } from "@/components/payment-run";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ export function PaymentsPage() {
   const [view, setView] = useState<View>("later");
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-      <MoneyTiles />
+      <MoneySummary />
       <PaymentRunCard full />
       <Segmented
         fill

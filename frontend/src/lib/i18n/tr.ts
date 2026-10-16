@@ -1106,6 +1106,7 @@ export const tr: Dictionary = {
     nothing: "Bu planda ödenecek bir şey yok",
     onlyHeld: "Vadesi gelen her fatura bekletiliyor. Nedenini görmek için planı açın.",
     held: "Bekletilen",
+    groups: { payNow: "Şimdi öde", needsYou: "Sana kalan", onHold: "Bekletilen" },
     approveN: (count: number) => `${count} ödemeyi onayla`,
     open: "Aç",
     toPayNow: "şimdi ödenecek",
@@ -1167,6 +1168,7 @@ export const tr: Dictionary = {
     dueBy: (day: string) => `${day} gününe kadar`,
     expected: "Gelecek tahsilat",
     toApprove: "Onayınızda",
+    reserve: "Rezerv",
   },
   setup: {
     title: "Tamga'nın nasıl ödeyeceğini belirleyin",

@@ -6,13 +6,19 @@ import type { Locale } from "@/lib/i18n";
  * The only place money, numbers and dates are formatted.
  *
  * Currency rule (ADR-0027, point 8): every amount keeps its own currency, a bill's first; how it is
- * paid follows, in test USDC only for the vault. A figure converted into another currency says so.
+ * paid follows, in test USDC only for the vault. A currency is written by its narrow sign (₺, $,
+ * €, £) where no other currency shares it, the dollar being the US one; any other by the sign that
+ * tells it apart ("CA$", "A$"), never a bare "$". A figure converted into another currency says so.
  * Stablecoins are not ISO 4217 codes — `Intl` throws on "USDC" — so they are formatted as a figure
  * followed by the token.
  */
 const STABLECOINS = new Set(["USDC", "EURC"]);
 
 const intlLocale: Record<Locale, string> = { en: "en-GB", tr: "tr-TR" };
+
+// The currencies whose narrow sign is theirs alone.
+const NARROW = new Set(["TRY", "EUR", "USD", "GBP"]);
+const signOf = (currency: string): "narrowSymbol" | "symbol" => (NARROW.has(currency) ? "narrowSymbol" : "symbol");
 
 export function formatMoney(amount: number, currency: string, locale: Locale): string {
   if (STABLECOINS.has(currency)) {
@@ -22,7 +28,9 @@ export function formatMoney(amount: number, currency: string, locale: Locale): s
     }).format(amount);
     return `${figure} ${currency}`;
   }
-  return new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency }).format(amount);
+  return new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency, currencyDisplay: signOf(currency) }).format(
+    amount,
+  );
 }
 
 /** A figure for a tile or a bar's legend: whole units, the currency kept. */
@@ -30,7 +38,12 @@ export function formatMoneyShort(amount: number, currency: string, locale: Local
   if (STABLECOINS.has(currency)) {
     return `${new Intl.NumberFormat(intlLocale[locale], { maximumFractionDigits: 0 }).format(amount)} ${currency}`;
   }
-  return new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+  return new Intl.NumberFormat(intlLocale[locale], {
+    style: "currency",
+    currency,
+    currencyDisplay: signOf(currency),
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 /** A figure on a chart: "€6.5K", the currency as its sign, where the chart already says which. */
@@ -49,7 +62,7 @@ export function formatMoneyCompact(
   return new Intl.NumberFormat(intlLocale[locale], {
     style: "currency",
     currency,
-    currencyDisplay: display,
+    currencyDisplay: display === "narrowSymbol" ? signOf(currency) : display,
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(amount);
@@ -59,7 +72,11 @@ export function formatMoneyCompact(
  * tells it from others ("US$"). */
 export function currencySign(currency: string, locale: Locale, display: "narrowSymbol" | "symbol" = "narrowSymbol"): string {
   if (STABLECOINS.has(currency)) return currency;
-  const parts = new Intl.NumberFormat(intlLocale[locale], { style: "currency", currency, currencyDisplay: display }).formatToParts(0);
+  const parts = new Intl.NumberFormat(intlLocale[locale], {
+    style: "currency",
+    currency,
+    currencyDisplay: display === "narrowSymbol" ? signOf(currency) : display,
+  }).formatToParts(0);
   return parts.find((part) => part.type === "currency")?.value ?? currency;
 }
 

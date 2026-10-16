@@ -1,6 +1,6 @@
 "use client";
 
-import { MoneyTiles } from "@/components/money-tiles";
+import { MoneySummary } from "@/components/money-tiles";
 import { PaymentRunCard } from "@/components/payment-run";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -22,7 +22,7 @@ export function Welcome() {
       <div className="grid grid-rows-[1fr] transition-[grid-template-rows,opacity] duration-300 ease-out max-md:group-has-[.aui-composer-input:focus]/chat:grid-rows-[0fr] max-md:group-has-[.aui-composer-input:focus]/chat:opacity-0 motion-reduce:transition-none">
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <SetupCard />
-          <MoneyTiles />
+          <MoneySummary />
           <PaymentRunCard />
         </div>
       </div>

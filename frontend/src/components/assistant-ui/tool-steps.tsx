@@ -1,17 +1,10 @@
 "use client";
 
-import {
-  Brain02Icon,
-  BubbleChatIcon,
-  File01Icon,
-  Folder01Icon,
-  Invoice01Icon,
-  Mail01Icon,
-  UserGroupIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { CanvasLink } from "@/components/canvas-link";
+import { listProjects } from "@/lib/api";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 
@@ -20,21 +13,11 @@ import { useI18n } from "@/lib/i18n/client";
  * asked to describe what another model did. The results are the text the chat's tools give the
  * model (`assistant/looking.py`): fenced as outside data, a search's hits under each source's
  * heading, each line led by the handle the run named it by. The handles mean nothing to the owner
- * and are left out; the raw call and result stay one tap away, under "Show details".
+ * and are left out. A project opened by its number is a link that opens it in the canvas; a
+ * search is its one line.
  */
 
 type Source = keyof Dictionary["chat"]["steps"]["sources"];
-
-// The headings `looking.search` gives each source, in its own words, and how each is shown.
-const SOURCES: Record<string, { source: Source; icon: IconSvgElement }> = {
-  "Mail conversations": { source: "mail", icon: Mail01Icon },
-  Projects: { source: "projects", icon: Folder01Icon },
-  "Invoices in the accounting records": { source: "invoices", icon: Invoice01Icon },
-  Files: { source: "files", icon: File01Icon },
-  "Firms and people": { source: "firms", icon: UserGroupIcon },
-  "The company's memory": { source: "memory", icon: Brain02Icon },
-  "Past chats": { source: "chats", icon: BubbleChatIcon },
-};
 
 const FENCE = /^BEGIN OUTSIDE DATA (\w+)\n[^\n]*\n([\s\S]*)\nEND OUTSIDE DATA \1\s*$/;
 // A handle the run gave a record at a line's start: "i2: " for most, "[c3] " for a conversation,
@@ -89,79 +72,57 @@ export function useStepLabel(): (toolName: string, argsText: string | undefined)
   };
 }
 
-/** What the step found, readable; its raw call and result under "Show details". */
-export function StepResult({ toolName, argsText, result }: { toolName: string; argsText?: string; result?: unknown }) {
+/** The project number a step opened, where it opened one by its number (not by a handle). */
+export function openedNumber(toolName: string, argsText: string | undefined): string | null {
+  if (toolName !== "open") return null;
+  const handle = argsOf(argsText).handle;
+  if (typeof handle !== "string" || !handle.trim()) return null;
+  return HANDLE_KINDS[handle.trim().charAt(0).toLowerCase()] && /^[a-z]\d+$/i.test(handle.trim()) ? null : handle.trim();
+}
+
+/** Whether a step is said in its one line, with nothing under it. */
+export function oneLine(toolName: string, argsText: string | undefined): boolean {
+  return toolName === "search" || openedNumber(toolName, argsText) !== null;
+}
+
+/** Whether a step's lookup failed in part: a source that could not be searched, a record with no
+ * such number (the words `assistant/looking.py` answers with). Never shown as a lookup done. */
+export function fellShort(result: unknown): boolean {
+  const text = unfenced(result) ?? "";
+  return text.includes("could not be searched just now") || text.startsWith("No such record");
+}
+
+const bare = (number: string) => number.replace(/\s+/g, "").toUpperCase();
+
+/** "Opened project P26-008", a link that opens the project in the canvas once its number finds
+ * it; plain words where none does (merged away, or another company's sandbox). */
+export function OpenedProject({ number, className }: { number: string; className?: string }) {
   const { t } = useI18n();
-  const [details, setDetails] = useState(false);
-  const text = unfenced(result);
+  const found = useQuery({
+    queryKey: ["projects", { q: number, limit: 5 }],
+    queryFn: () => listProjects({ q: number, limit: 5 }),
+    staleTime: 60_000,
+  });
+  const project = found.data?.items.find((each) =>
+    [each.number, ...each.aliases].some((known) => bare(known) === bare(number)),
+  );
+  const label = t.chat.steps.openedProject(number);
+  if (!project) return <span className={className}>{label}</span>;
   return (
-    <div className="grid gap-2">
-      {text === null ? null : toolName === "search" ? (
-        <SearchHits text={text} />
-      ) : toolName === "open" || toolName === "waiting" ? (
-        <RecordLines text={text} />
-      ) : (
-        <p className="text-muted-foreground text-sm text-pretty whitespace-pre-line">{text}</p>
-      )}
-      <button
-        type="button"
-        onClick={() => setDetails((open) => !open)}
-        aria-expanded={details}
-        className="text-muted-foreground hover:text-foreground w-fit text-xs"
-      >
-        {details ? t.chat.steps.hideDetails : t.chat.steps.showDetails}
-      </button>
-      {details ? (
-        <div className="grid gap-2">
-          {argsText ? <Raw>{argsText}</Raw> : null}
-          {result !== undefined ? <Raw>{typeof result === "string" ? result : JSON.stringify(result, null, 2)}</Raw> : null}
-        </div>
-      ) : null}
-    </div>
+    <CanvasLink view={{ kind: "project", id: project.id }} className={className}>
+      <span className="underline decoration-dotted underline-offset-4">{label}</span>
+    </CanvasLink>
   );
 }
 
-function Raw({ children }: { children: string }) {
-  return <pre className="bg-muted/50 text-foreground/90 overflow-x-auto rounded-md p-2.5 text-xs whitespace-pre-wrap">{children}</pre>;
-}
-
-/** A search's hits, under each source it looked in, with the handles left out. */
-function SearchHits({ text }: { text: string }) {
-  const { t } = useI18n();
-  const sections = text
-    .split(/\n{2,}/)
-    .map((block) => {
-      const [heading = "", ...lines] = block.split("\n");
-      return { heading: heading.replace(/:$/, ""), lines: lines.filter((line) => line.trim() !== "") };
-    })
-    .filter((section) => section.heading);
-  return (
-    <ul className="grid gap-2.5">
-      {sections.map((section) => {
-        const known = SOURCES[section.heading];
-        // A source that failed is not one that found nothing: the owner is told which.
-        const failed = section.lines.length === 1 && section.lines[0] === "could not be searched just now";
-        const empty = section.lines.length === 0 || failed || (section.lines.length === 1 && section.lines[0] === "nothing matches");
-        return (
-          <li key={section.heading} className="grid gap-1">
-            <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
-              {known ? <HugeiconsIcon icon={known.icon} strokeWidth={1.75} className="size-3.5" aria-hidden /> : null}
-              <span className="inline-block first-letter:uppercase">{known ? t.chat.steps.sources[known.source] : section.heading}</span>
-              {empty ? <span className="font-normal">· {failed ? t.chat.steps.unavailable : t.chat.steps.nothing}</span> : null}
-            </span>
-            {empty ? null : (
-              <ul className="border-border grid gap-0.5 border-s ps-3">
-                {section.lines.map((line, index) => (
-                  <li key={index} className="truncate text-sm" title={line.replace(HANDLE, "")}>
-                    {line.replace(HANDLE, "")}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+/** What the step found, readable. */
+export function StepResult({ toolName, result }: { toolName: string; result?: unknown }) {
+  const text = unfenced(result);
+  if (text === null) return null;
+  return toolName === "open" || toolName === "waiting" ? (
+    <RecordLines text={text} />
+  ) : (
+    <p className="text-muted-foreground text-sm text-pretty whitespace-pre-line">{text}</p>
   );
 }
 

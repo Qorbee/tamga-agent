@@ -144,7 +144,7 @@ export function DecisionRow({
         ? usdc
         : decision.pay_currency && decision.pay_currency !== decision.currency
           ? (paidFrom ? `≈ ${paidFrom}` : null)
-          : null;
+          : t.payments.methods.bank_transfer;
   // How it is paid, in words, for "Why?".
   const how =
     decision.state === "paid_in_books"

@@ -1143,6 +1143,7 @@ export const en = {
     nothing: "Nothing to pay in this run",
     onlyHeld: "Every bill due is held. Open the run to see why.",
     held: "Held",
+    groups: { payNow: "Pay now", needsYou: "Needs you", onHold: "On hold" },
     approveN: (count: number) => (count === 1 ? "Approve 1 payment" : `Approve ${count} payments`),
     open: "Open",
     toPayNow: "to pay now",
@@ -1204,6 +1205,7 @@ export const en = {
     dueBy: (day: string) => `Due by ${day}`,
     expected: "Expected in",
     toApprove: "To approve",
+    reserve: "Reserve",
   },
   setup: {
     title: "Set how Tamga pays",

@@ -3,6 +3,7 @@
 import { Link01Icon, Search01Icon, TruckIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useDeferredValue, useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
@@ -25,13 +26,25 @@ type Shown = (typeof STATUSES)[number];
 
 /**
  * The projects, one status at a time: a full-width row each, so a long name reads in one piece on
- * a phone too. A row opens the project in the canvas.
+ * a phone too. A row opens the project in the canvas. The status chosen is kept in the address
+ * (`?status=`), so a reload or the way back finds it.
  */
 export function ProjectList() {
   const { t } = useI18n();
+  const params = useSearchParams();
+  const pathname = usePathname();
   const [search, setSearch] = useState("");
   const q = useDeferredValue(search.trim());
-  const [chosen, setChosen] = useState<Shown | null>(null);
+  const chosen = STATUSES.find((value) => value === params.get("status")) ?? null;
+  const choose = (next: Shown) => {
+    const changed = new URLSearchParams(params.toString());
+    changed.set("status", next);
+    // The browser's own history, which the router follows: no round trip to the server.
+    window.history.replaceState(null, "", `${pathname}?${changed.toString()}`);
+  };
+  // The status shown before any is chosen, settled once the first list is read: never one that
+  // jumps when the counts arrive or a search changes them.
+  const [opening, setOpening] = useState<Shown | null>(null);
   const projects = useQuery({
     queryKey: ["projects", { q }],
     queryFn: () => listProjects({ status: [...STATUSES], q }),
@@ -40,7 +53,9 @@ export function ProjectList() {
   const all = projects.data?.items ?? [];
   const count = (status: Shown) => all.filter((project) => project.status === status).length;
   // Until the owner picks one: the proposals when any wait, else the work that runs.
-  const status = chosen ?? (count("proposed") > 0 ? "proposed" : "active");
+  if (opening === null && projects.data && !projects.isPlaceholderData)
+    setOpening(count("proposed") > 0 ? "proposed" : "active");
+  const status = chosen ?? opening;
   const items = all.filter((project) => project.status === status);
   const ids = items.map((project) => project.id);
   const shipments = useQuery({
@@ -78,7 +93,7 @@ export function ProjectList() {
         fill
         label={t.board.status}
         value={status}
-        onChange={setChosen}
+        onChange={choose}
         options={STATUSES.map((value) => ({
           value,
           hint: t.board.columns[value],
@@ -98,7 +113,7 @@ export function ProjectList() {
         <p className="text-danger-foreground text-sm" role="alert">
           {t.errors.load}
         </p>
-      ) : projects.isPending ? (
+      ) : projects.isPending || status === null ? (
         <Skeleton className="h-40 rounded-2xl" />
       ) : items.length === 0 ? (
         <p className="text-muted-foreground py-10 text-center text-sm">{t.board.empty}</p>

@@ -27,7 +27,7 @@ import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import { useKeepInPlace } from "@/components/assistant-ui/keep-in-place";
-import { StepResult, useStepLabel } from "@/components/assistant-ui/tool-steps";
+import { OpenedProject, StepResult, fellShort, oneLine, openedNumber, useStepLabel } from "@/components/assistant-ui/tool-steps";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -751,13 +751,26 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
     if (isRequiresAction) setOpen(true);
   }
 
+  const number = openedNumber(toolName, argsText);
+  // A search, or a project opened by its number, is said in one line: the project's a link.
+  if (oneLine(toolName, argsText) && status?.type === "complete" && !fellShort(result))
+    return (
+      <p className="text-muted-foreground flex items-center gap-2 py-1.5 text-sm">
+        <CheckIcon className="size-4 shrink-0" aria-hidden />
+        {number ? (
+          <OpenedProject number={number} className="hover:text-foreground" />
+        ) : (
+          <span>{stepLabel(toolName, argsText) ?? toolName}</span>
+        )}
+      </p>
+    );
+
   return (
     <ToolFallbackRoot open={open} onOpenChange={setOpen}>
       <ToolFallbackTrigger toolName={toolName} status={status} label={stepLabel(toolName, argsText)} />
       <ToolFallbackContent>
         <ToolFallbackError status={status} />
-        {/* What it found in words; the raw call and result under its "Show details". */}
-        <StepResult toolName={toolName} argsText={argsText} result={result} />
+        <StepResult toolName={toolName} result={result} />
         {shouldRenderApproval && (
           <ToolFallbackApproval
             addResult={addResult}

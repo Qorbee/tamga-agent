@@ -3,7 +3,7 @@
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { callOf, type Call } from "@/components/bill-call";
 import { CallPill } from "@/components/call-pill";
@@ -22,6 +22,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { approveRun, getPaymentRun, type Decision, type PaymentRun, type RunApproved, type RunItem } from "@/lib/api";
 import { formatDays, formatMoney, formatMoneyShort } from "@/lib/format";
+import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { useIsOwner } from "@/lib/use-role";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,60 @@ export function toApprove(run: PaymentRun): RunItem[] {
       item.decision.state === "awaiting_owner" &&
       item.in_policy_currency !== null &&
       callOf(item.decision, item.fits).call === "pay",
+  );
+}
+
+/** The groups a run's bills are read in, as a to-do list: what Tamga would pay, what is the
+ * owner's to decide, and what waits. A bill already paid is in none. */
+const GROUPS: { key: "payNow" | "needsYou" | "onHold"; calls: Call[] }[] = [
+  { key: "payNow", calls: ["pay", "approved"] },
+  // Part of a bill is the owner's to set before it is approved, as the cash bar weighs it.
+  { key: "needsYou", calls: ["pay_part", "needs_you"] },
+  { key: "onHold", calls: ["hold", "held", "rejected", "failed"] },
+];
+
+/** Bills under "Pay now", "Needs you" and "On hold", each group with its count; the Payments page,
+ * the run's canvas and the chat's card read the same rows. */
+export function RunGroups({
+  decisions,
+  fits,
+  row,
+  className,
+}: {
+  decisions: Decision[];
+  fits: Map<string, boolean | null>;
+  /** A row of the caller's own; else the bill's row as a run shows it. */
+  row?: (decision: Decision) => ReactNode;
+  className?: string;
+}) {
+  const { t } = useI18n();
+  const groups = GROUPS.map((group) => ({
+    ...group,
+    rows: decisions.filter((decision) => group.calls.includes(callOf(decision, fits.get(decision.id) ?? null).call)),
+  })).filter((group) => group.rows.length > 0);
+  if (groups.length === 0) return null;
+  return (
+    <div className={cn("divide-border border-border divide-y border-t", className)}>
+      {groups.map((group) => (
+        <section key={group.key} aria-label={t.run.groups[group.key]}>
+          <h3 className="text-muted-foreground flex justify-between gap-3 px-4 pt-3 text-xs font-medium">
+            <span>{t.run.groups[group.key]}</span>
+            <span className="tabular-nums">{group.rows.length}</span>
+          </h3>
+          <ul className="divide-border divide-y">
+            {group.rows.map((decision) => (
+              <li key={decision.id} className="py-1 ps-2 pe-3">
+                {row ? (
+                  row(decision)
+                ) : (
+                  <DecisionRow decision={decision} payment={undefined} fits={fits.get(decision.id) ?? null} inRun />
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -144,25 +199,15 @@ export function PaymentRunCard({ full = false }: { full?: boolean }) {
           <span className="text-2xl font-medium tabular-nums">{formatMoneyShort(payNow, data.currency, locale)}</span>
           <span className="text-muted-foreground text-sm">{t.run.toPayNow}</span>
         </p>
-        <CallCounts decisions={[...data.items.map((item) => item.decision), ...data.held]} fits={fits} />
+        {full ? null : <CallCounts decisions={[...data.items.map((item) => item.decision), ...data.held]} fits={fits} />}
       </header>
       {full ? (
         <>
           <CashBar run={data} className="border-border border-t px-4 py-3" />
-          {data.items.length > 0 ? (
-            <ul className="divide-border border-border divide-y border-t">
-              {data.items.map((item) => (
-                <li key={item.decision.id} className="py-1 ps-2 pe-3">
-                  <DecisionRow decision={item.decision} payment={undefined} fits={fits.get(item.decision.id) ?? null} inRun />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground border-border border-t px-4 py-3 text-sm">{t.run.onlyHeld}</p>
-          )}
+          <RunGroups decisions={[...data.items.map((item) => item.decision), ...data.held]} fits={fits} />
         </>
       ) : null}
-      <RunActions run={data} />
+      <RunActions run={data} docked={full} />
     </section>
   );
 }
@@ -181,8 +226,8 @@ function RunLine({ item }: { item: RunItem }) {
   );
 }
 
-/** "Approve N payments", with the bills it answers listed in its confirmation. */
-export function ApproveMany({ items, className }: { items: RunItem[]; className?: string }) {
+/** "Approve N payments · amount", with the bills it answers listed in its confirmation. */
+export function ApproveMany({ items, total, className }: { items: RunItem[]; total?: string | null; className?: string }) {
   const { t } = useI18n();
   const isOwner = useIsOwner();
   const [confirming, setConfirming] = useState(false);
@@ -197,6 +242,7 @@ export function ApproveMany({ items, className }: { items: RunItem[]; className?
       {items.length > 0 ? (
         <Button disabled={approve.isPending} onClick={() => setConfirming(true)}>
           {t.run.approveN(items.length)}
+          {total ? <span className="tabular-nums opacity-80">· {total}</span> : null}
         </Button>
       ) : null}
       {result ? (
@@ -235,10 +281,32 @@ export function ApproveMany({ items, className }: { items: RunItem[]; className?
   );
 }
 
-function RunActions({ run }: { run: PaymentRun }) {
+/** What the run's approval pays, in the policy's currency. */
+function totalOf(run: PaymentRun, items: RunItem[], locale: Locale): string | null {
+  if (items.length === 0 || items.some((item) => item.in_policy_currency === null)) return null;
+  return formatMoneyShort(
+    items.reduce((sum, item) => sum + Number(item.in_policy_currency), 0),
+    run.currency,
+    locale,
+  );
+}
+
+/** The run's approval; `docked`, it stays at the foot of a phone's screen while the run is in
+ * view, where the thumb is. */
+function RunActions({ run, docked = false }: { run: PaymentRun; docked?: boolean }) {
+  const { locale } = useI18n();
   const chosen = toApprove(run);
   if (chosen.length === 0) return null;
-  return <ApproveMany items={chosen} className="border-border border-t px-4 py-3" />;
+  return (
+    <ApproveMany
+      items={chosen}
+      total={totalOf(run, chosen, locale)}
+      className={cn(
+        "border-border border-t px-4 py-3",
+        docked && "bg-card max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:rounded-b-2xl",
+      )}
+    />
+  );
 }
 
 export function PaymentRunTitle({ on }: { on: string }) {
@@ -251,7 +319,7 @@ export function PaymentRunTitle({ on }: { on: string }) {
 /** The whole run, in the canvas: the bar, each bill with its call, what is held, and the approval
  * at the foot, where the thumb is. */
 export function PaymentRunView({ on }: { on: string }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const run = usePaymentRun(on);
   if (run.isPending) return <Skeleton className="m-4 h-64 rounded-2xl" />;
   if (!run.data) return <p className="text-danger-foreground p-4 text-sm">{t.errors.load}</p>;
@@ -261,34 +329,12 @@ export function PaymentRunView({ on }: { on: string }) {
   return (
     <div className="flex min-h-full flex-col">
       <div className="grid gap-4 p-4">
-        <CallCounts decisions={[...data.items.map((item) => item.decision), ...data.held]} fits={fits} />
         <CashBar run={data} />
-        {data.items.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t.run.nothing}</p>
-        ) : (
-          <ol className="divide-border -mx-2 divide-y">
-            {data.items.map((item) => (
-              <li key={item.decision.id} className="py-1">
-                <DecisionRow decision={item.decision} payment={undefined} fits={fits.get(item.decision.id) ?? null} inRun />
-              </li>
-            ))}
-          </ol>
-        )}
-        {data.held.length > 0 ? (
-          <section className="grid gap-1">
-            <h3 className="text-muted-foreground text-xs font-medium tracking-[0.08em] uppercase">{t.run.held}</h3>
-            <ol className="divide-border -mx-2 divide-y">
-              {data.held.map((decision) => (
-                <li key={decision.id} className="py-1">
-                  <DecisionRow decision={decision} payment={undefined} />
-                </li>
-              ))}
-            </ol>
-          </section>
-        ) : null}
+        {data.items.length === 0 ? <p className="text-muted-foreground text-sm">{t.run.nothing}</p> : null}
       </div>
+      <RunGroups decisions={[...data.items.map((item) => item.decision), ...data.held]} fits={fits} />
       <footer className="border-border bg-card sticky bottom-0 mt-auto flex flex-wrap items-center gap-3 border-t px-4 py-3">
-        <ApproveMany items={chosen} />
+        <ApproveMany items={chosen} total={totalOf(data, chosen, locale)} />
         <Settles items={chosen} />
       </footer>
     </div>

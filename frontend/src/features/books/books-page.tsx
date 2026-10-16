@@ -3,19 +3,20 @@
 import {
   Alert02Icon,
   ArrowDownLeft01Icon,
+  ArrowLeft01Icon,
   ArrowUpRight01Icon,
-  Cancel01Icon,
   CheckmarkCircle02Icon,
   Invoice01Icon,
   FilterHorizontalIcon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useDeferredValue, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
-import { IconButton } from "@/components/icon-button";
+import { FROM_PARAM, VIEW_PARAM } from "@/lib/canvas-view";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import {
@@ -103,46 +104,91 @@ const TONES: Record<Tone, { card: string; chip: string; ink: string; pill: strin
 };
 const SIDE_TONE: Record<Exclude<Side, "both">, Tone> = { collect: "in", pay: "out" };
 
+// The tab and the firm open live in the address (`?tab=firms&firm=<id>`), so a reload keeps them and
+// the phone's back leaves a firm for the list it was opened from. Never `view`: that is the canvas's.
+const TAB = "tab";
+const FIRM = "firm";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * The books as Tamga read them, read only: what clients owe, what the company owes, and the
  * firms with the balance the books keep for each. Invoices come newest first unless the owner
- * sorts them otherwise; a row opens the invoice in the canvas, and a firm narrows the invoices to
- * its own.
+ * sorts them otherwise; a row opens the invoice in the canvas, and a firm opens its invoices on
+ * both sides, with "‹ Firms" back to the list as it was left: its search and where it was scrolled.
  */
 export function BooksPage() {
   const { t } = useI18n();
-  const [view, setView] = useState<View>("collect");
+  const params = useSearchParams();
+  const pathname = usePathname();
+  const tab = VIEWS.find((value) => value === params.get(TAB)) ?? "collect";
+  const firmId = UUID.test(params.get(FIRM) ?? "") ? params.get(FIRM) : null;
+  const view: View = firmId ? "both" : tab;
   const [shown, setShown] = useState<Shown>("open");
   const [sort, setSort] = useState<Sort>("-issue_date");
   const [balances, setBalances] = useState<Balances>("all");
-  const [search, setSearch] = useState("");
+  // The firms' search and the invoices' are kept apart: back from a firm, the list is as it was.
+  const [firmsSearch, setFirmsSearch] = useState("");
+  const [billsSearch, setBillsSearch] = useState("");
+  const listing = view === "firms";
+  const search = listing ? firmsSearch : billsSearch;
+  const setSearch = listing ? setFirmsSearch : setBillsSearch;
   const q = useDeferredValue(search.trim());
   // The firm as chosen from the list, and as the server has it now: its balance moves with
   // the books.
-  const [chosen, setChosen] = useState<Party | null>(null);
+  const [picked, setPicked] = useState<Party | null>(null);
   const current = useQuery({
-    queryKey: ["parties", "one", chosen?.id],
-    queryFn: () => getParty(chosen!.id),
-    enabled: chosen !== null,
-    initialData: chosen ?? undefined,
+    queryKey: ["parties", "one", firmId],
+    queryFn: () => getParty(firmId!),
+    enabled: firmId !== null,
+    initialData: picked && picked.id === firmId ? picked : undefined,
   });
-  const firm = chosen ? (current.data ?? chosen) : null;
+  const firm = firmId ? (current.data ?? null) : null;
+  const root = useRef<HTMLDivElement>(null);
+  const scrolled = useRef<number | null>(null);
 
-  const choose = (next: View) => {
-    setView(next);
-    setSearch("");
+  const go = (changes: Record<string, string | null>, push = false) => {
+    const next = new URLSearchParams(params.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    // The browser's own history, which the router follows: a tab changes at once, with no
+    // round trip to the server for a page that only reads its address.
+    const url = next.size > 0 ? `${pathname}?${next.toString()}` : pathname;
+    if (push) window.history.pushState(null, "", url);
+    else window.history.replaceState(null, "", url);
   };
+  const choose = (next: (typeof VIEWS)[number]) => {
+    go({ [TAB]: next === "collect" ? null : next, [FIRM]: null });
+    setBillsSearch("");
+  };
+  const scroller = () => root.current?.closest<HTMLElement>("[data-slot=sidebar-inset]") ?? null;
+  // To the list itself, the canvas closed: whatever was opened since (an invoice) is behind it.
+  const backToFirms = () => go({ [TAB]: "firms", [FIRM]: null, [VIEW_PARAM]: null, [FROM_PARAM]: null });
+  // Back on the list, by our button or the phone's: where it was scrolled, once it is drawn.
+  useEffect(() => {
+    if (firmId || tab !== "firms" || scrolled.current === null) return;
+    const top = scrolled.current;
+    scrolled.current = null;
+    requestAnimationFrame(() => scroller()?.scrollTo({ top }));
+  }, [firmId, tab]);
 
   return (
-    <div className="grid gap-4">
-      {/* Nothing chosen while one firm's both sides are shown. */}
-      <Segmented
-        fill
-        label={t.nav.books}
-        value={view === "both" ? null : view}
-        onChange={choose}
-        options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.books.views[value]}</span> }))}
-      />
+    <div ref={root} className="grid gap-4">
+      {firmId ? (
+        <Button variant="ghost" className="text-muted-foreground -ms-2 w-fit gap-1 px-2" onClick={backToFirms}>
+          <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.75} className="size-4" aria-hidden />
+          {t.books.views.firms}
+        </Button>
+      ) : (
+        <Segmented
+          fill
+          label={t.nav.books}
+          value={tab}
+          onChange={choose}
+          options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.books.views[value]}</span> }))}
+        />
+      )}
 
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
@@ -178,27 +224,30 @@ export function BooksPage() {
         )}
       </div>
 
-      {view !== "firms" && firm ? (
-        <FirmSummary
-          party={firm}
-          view={view}
-          onClose={() => {
-            setChosen(null);
-            if (view === "both") choose("collect");
-          }}
-        />
+      {firmId && !firm ? (
+        current.isError ? (
+          <p className="text-danger-foreground text-sm" role="alert">
+            {t.errors.load}
+          </p>
+        ) : (
+          <Skeleton className="h-40 rounded-2xl" />
+        )
       ) : null}
+      {view !== "firms" && firm ? <FirmSummary party={firm} view={view} /> : null}
 
       {view === "firms" ? (
         <Firms
           q={q}
           balances={balances}
           onChoose={(party) => {
-            setChosen(party);
-            choose("both");
+            scrolled.current = scroller()?.scrollTop ?? 0;
+            setPicked(party);
+            setBillsSearch("");
+            go({ [TAB]: "firms", [FIRM]: party.id }, true);
+            scroller()?.scrollTo({ top: 0 });
           }}
         />
-      ) : (
+      ) : firmId && !firm ? null : (
         <Invoices view={view} shown={shown} sort={sort} q={q} firm={firm} />
       )}
     </div>
@@ -281,7 +330,17 @@ function Invoices({
   const totals = useQuery({
     queryKey: ["invoice-totals", filters],
     queryFn: () => listInvoiceTotals(filters),
+    placeholderData: keepPreviousData,
   });
+  // A search keeps the rows it had while the next ones come; another tab, side or firm never
+  // shows the last one's rows under its name, nor its card in the wrong colour: both wait, and
+  // come in together.
+  const tab = `${view}|${shown}|${firm?.id ?? ""}`;
+  const [rowsOf, setRowsOf] = useState(tab);
+  const [totalsOf, setTotalsOf] = useState(tab);
+  if (invoices.items && !invoices.isPlaceholderData && rowsOf !== tab) setRowsOf(tab);
+  if (totals.data && !totals.isPlaceholderData && totalsOf !== tab) setTotalsOf(tab);
+  const waiting = view !== "both" && !totals.isError && (totals.data === undefined || totalsOf !== tab);
 
   if (invoices.isError)
     return (
@@ -289,7 +348,7 @@ function Invoices({
         {t.errors.load}
       </p>
     );
-  if (!invoices.items) return <Skeleton className="h-40 rounded-2xl" />;
+  if (!invoices.items || rowsOf !== tab || waiting) return <Skeleton className="h-40 rounded-2xl" />;
   if (invoices.items.length === 0)
     return <p className="text-muted-foreground py-10 text-center text-sm">{t.books.empty}</p>;
   return (
@@ -496,7 +555,7 @@ function BalancePill({ party, large = false }: { party: Party; large?: boolean }
 
 /** The firm a list is narrowed to: its balance in the books, and on each side of the books what
  * its invoices add up to, what was paid of them and what is left. */
-function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClose: () => void }) {
+function FirmSummary({ party, view }: { party: Party; view: Side }) {
   const { t, locale } = useI18n();
   const words = t.books.totals;
   const sides = view === "both" ? (["collect", "pay"] as const) : ([view] as const);
@@ -537,7 +596,6 @@ function FirmSummary({ party, view, onClose }: { party: Party; view: Side; onClo
             className="mt-1 w-fit"
           />
         </div>
-        <IconButton label={t.books.everyFirm} icon={Cancel01Icon} onClick={onClose} />
       </div>
       <FirmGroups partyId={party.id} />
       {totals.isError ? (
