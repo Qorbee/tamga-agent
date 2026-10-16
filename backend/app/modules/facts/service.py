@@ -7,7 +7,7 @@ caller's transaction and never commits.
 """
 
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,17 +64,23 @@ async def replace_facts(
     item_kind: ItemKind,
     item_id: uuid.UUID,
     facts: Sequence[NewFact],
+    kept_from: Collection[str] = (),
 ) -> bool:
     """An item's facts made what ``facts`` says now, for an item read again from a source that
     corrects it: a number gone from it is no longer its fact. A fact that stays keeps its id, so
-    a link citing it still does. Returns whether anything changed. Does not commit."""
+    a link citing it still does; one an extractor in ``kept_from`` made is not this source's to
+    correct, and stays. Returns whether anything changed. Does not commit."""
     held = await repository.for_item(db, company_id, item_kind, item_id)
     wanted = {(fact.kind, fact.normalised) for fact in facts}
-    gone = [fact.id for fact in held if (fact.kind, fact.normalised) not in wanted]
+    gone = [
+        fact.id
+        for fact in held
+        if (fact.kind, fact.normalised) not in wanted and fact.extractor not in kept_from
+    ]
     if gone:
         await repository.forget_ids(db, company_id, gone)
     await record_facts(db, company_id=company_id, item_kind=item_kind, item_id=item_id, facts=facts)
-    return bool(gone) or wanted != {(fact.kind, fact.normalised) for fact in held}
+    return bool(gone) or bool(wanted - {(fact.kind, fact.normalised) for fact in held})
 
 
 async def facts_of(

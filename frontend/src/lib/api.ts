@@ -303,6 +303,10 @@ type InvoiceTotalQuery = NonNullable<operations["invoices.invoice_totals"]["para
 export const listInvoiceTotals = (params: InvoiceTotalQuery) =>
   request<InvoiceTotal[]>(`/invoice-totals${query(params)}`);
 export const getInvoice = (id: string) => request<Invoice>(`/invoices/${id}`);
+export type InvoiceLine = Schemas["InvoiceLineOut"];
+/** What these bills charge for, line by line, as the bill reader read their files. */
+export const listInvoiceLines = (invoiceIds: readonly string[]) =>
+  request<InvoiceLine[]>(`/invoice-lines${query({ invoice_id: invoiceIds.slice(0, PAGE) })}`);
 export type InvoiceFile = Schemas["InvoiceFile"];
 /** The invoice's own file: one its mail carried, or the one the books render (read once, kept). */
 export const getInvoiceFile = (id: string) => request<InvoiceFile>(`/invoices/${id}/file`, { method: "POST" });

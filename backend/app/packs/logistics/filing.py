@@ -65,6 +65,8 @@ PAPER_AFTER: Final = timedelta(days=21)
 BILLED_BEFORE: Final = timedelta(days=10)
 BILLED_AFTER: Final = timedelta(days=60)
 _PLATE_CONFIDENCE: Final = 0.7
+# The most jobs one bill is placed on by its trucks' plates: past that it says little of any.
+PLATE_JOBS: Final = 3
 # What a label beside a plate makes it, as a plate seen is shown.
 _ROLES: Final[dict[str, Literal["truck", "trailer"]]] = {
     TRUCK_ROLE: "truck",
@@ -505,10 +507,12 @@ async def _place_on_trucks(
 async def _bills_by_plate(
     db: AsyncSession, company_id: uuid.UUID, open_projects: Sequence[Project]
 ) -> int:
-    """Suggests a bill no project holds to the one project with a truck, not rejected, whose
-    plate the bill names, when the bill was issued within that job's days and its firm is the
+    """Suggests a bill no project holds to the project with a truck, not rejected, whose plate
+    the bill names, when the bill was issued within that job's days and its firm is the
     project's in the bill's role. A plate alone is no key: one truck carries many clients'
-    loads, most of them no project in Tamga, so the one project with the plate is no proof."""
+    loads, most of them no project in Tamga, so the one project with the plate is no proof. A
+    bill for several trucks goes to each one's job, up to PLATE_JOBS, when each plate fits one
+    job alone; a plate that fits two places the bill nowhere."""
     bills = {bill.id: bill for bill in await books.placeable_invoices(db, company_id)}
     # Placed once, as the record a project holds (an e-invoice as its booked purchase).
     targets = {bill.id: bill.same_as_id or bill.id for bill in bills.values()}
@@ -541,25 +545,30 @@ async def _bills_by_plate(
         if issued is None or len(found) > MAX_PLATES:
             continue
         fits = {
-            project_id
+            plate: {
+                project_id
+                for project_id in by_plate.get(plate, set())
+                if _within(issued, days.get(project_id))
+                and _firm_agrees(firms[project_id], bills[target])
+            }
             for plate in found
-            for project_id in by_plate.get(plate, set())
-            if _within(issued, days.get(project_id))
-            and _firm_agrees(firms[project_id], bills[target])
         }
-        if len(fits) != 1:
+        jobs = {project_id for each in fits.values() for project_id in each}
+        if any(len(each) > 1 for each in fits.values()) or not 0 < len(jobs) <= PLATE_JOBS:
             continue
-        [project_id] = fits
-        await projects.link_item(
-            db,
-            company_id=company_id,
-            item_kind=ItemKind.INVOICE,
-            item_id=target,
-            project_id=project_id,
-            method=LinkMethod.SCORED,
-            confidence=_PLATE_CONFIDENCE,
-            evidence=sorted(fact.id for fact in found.values()),
-        )
+        for project_id in sorted(jobs):
+            await projects.link_item(
+                db,
+                company_id=company_id,
+                item_kind=ItemKind.INVOICE,
+                item_id=target,
+                project_id=project_id,
+                method=LinkMethod.SCORED,
+                confidence=_PLATE_CONFIDENCE,
+                evidence=sorted(
+                    fact.id for plate, fact in found.items() if project_id in fits[plate]
+                ),
+            )
         placed += 1
     return placed
 

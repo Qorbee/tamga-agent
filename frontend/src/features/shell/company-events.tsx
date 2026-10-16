@@ -36,7 +36,7 @@ const READ_AGAIN: Record<CompanyEvent["kind"], QueryKey[]> = {
   // A source's sync, the owner's own account or category, or a movement matched to a bill.
   money: [["money-accounts"], ["money-holdings"], ["money-movements"], ["payment-run"]],
   // A bill synced again may name other plates, or another day.
-  invoices: [["invoice"], ["invoices"], ["invoice-totals"], ["parties"], ["plates"]],
+  invoices: [["invoice"], ["invoices"], ["invoice-totals"], ["invoice-lines"], ["parties"], ["plates"]],
   // A policy version (a sandbox's scenario seeds one) is evaluated again into the decisions.
   decisions: [
     ["decisions"],

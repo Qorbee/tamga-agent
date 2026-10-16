@@ -7,6 +7,7 @@ from typing import Final
 
 from pydantic import BaseModel, Field
 
+from app.modules.books.charges import Charge
 from app.modules.documents.registry import DocumentType, Seen
 from app.platform.search import fold
 
@@ -254,3 +255,15 @@ def classify(seen: Seen) -> str | None:
 def classify_by_name(seen: Seen) -> str | None:
     """A CMR by its name, when what it says named nothing surer."""
     return "cmr" if _CMR_NAME.search(seen.filename) else None
+
+
+# What a freight bill charges for, as the bill reader tells the lines apart.
+CHARGES: Final = (
+    Charge("freight", "carrying a load from one place to another (navlun)"),
+    Charge("waiting", "a truck kept waiting at a border, a site or a customs office (bekleme)"),
+    Charge("late_delivery", "a penalty or deduction for delivering late"),
+    Charge("return_trip", "a truck's empty or loaded trip back"),
+    Charge("customs", "customs clearance, declarations, duties, a broker's fee"),
+    Charge("handling", "loading, unloading, cranes, warehouse handling"),
+    Charge("insurance", "cargo or transport insurance"),
+)

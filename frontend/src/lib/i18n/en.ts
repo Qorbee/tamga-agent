@@ -398,6 +398,25 @@ export const en = {
     /** An invoice shown as its own file or as the books' figures. */
     shows: { file: "PDF", details: "Details" },
     showsLabel: "Show the invoice as",
+    /** What the bill reader read of the bill's file: what it is for, and what it charges for. */
+    about: "What it is for",
+    lines: "What it charges for",
+    linesRead: "Read from its file",
+    unbalanced: "These lines do not add up to the bill: a line may be missing or misread.",
+    returned: "Return",
+    readAs: { invoice: null, return: "Its file reads as a return", credit: "Its file reads as a credit note" },
+    days: (count: number) => (count === 1 ? "1 day" : `${count} days`),
+    /** A kind of charge the sector registers; another key shows as it is. */
+    charges: {
+      freight: "Freight",
+      waiting: "Waiting",
+      late_delivery: "Late delivery",
+      return_trip: "Return trip",
+      customs: "Customs",
+      handling: "Handling",
+      insurance: "Insurance",
+      other: "Other",
+    } as Record<string, string>,
     noFile: "Your books hold no PDF for this invoice.",
     booksUnreachable: "Your books could not be asked just now. Try again later.",
     firmKindLabel: "This firm is a",
@@ -551,6 +570,8 @@ export const en = {
     rules: {
       currency: "No rate for its currency",
       amount: "Nothing left to pay on it, or more than is left",
+      returned: "A return, not a bill to pay",
+      read_as_return: "Its file reads as a return or a credit note: look before paying",
       duplicate: "Paid already, or approved as another booking of the same bill",
       project: "Not in a confirmed job",
       proof_of_delivery: "No proof of delivery for every truck",

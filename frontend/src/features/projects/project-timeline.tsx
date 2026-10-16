@@ -17,6 +17,7 @@ import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
+import { chargesWord, useInvoiceLines } from "@/components/invoice-lines";
 import { MoveConversationDialog } from "@/components/move-conversation-dialog";
 import { PersonAvatar } from "@/components/person-avatar";
 import { RowAnswer } from "@/components/placement-rows";
@@ -46,6 +47,7 @@ import {
   updateLink,
   uploadDocument,
   type ChecklistItem,
+  type InvoiceLine,
   type LinkItem,
   type MessageSummary,
   type Placement,
@@ -170,6 +172,8 @@ export function ProjectTimeline({
     !chosen ||
     (row.kind === "mail" ? row.links.some((link) => link.shipment_id === chosen.id) : row.link.shipment_id === chosen.id);
   const rows = rowsOf(links.data ?? [], placements.data ?? []).filter(onChosen);
+  const lines = useInvoiceLines(rows.flatMap((row) => (row.kind === "invoice" ? [row.item.invoice.id] : [])));
+  const linesOf = (billId: string) => (lines.data ?? []).filter((line) => line.invoice_id === billId);
   const counts = { all: rows.length, mail: 0, files: 0, invoices: 0 } satisfies Record<Show, number>;
   for (const row of rows) counts[row.kind === "mail" ? "mail" : row.kind === "file" ? "files" : "invoices"] += 1;
   const shown = rows.filter((row) => SHOWN[show] === null || row.kind === SHOWN[show]);
@@ -267,7 +271,7 @@ export function ProjectTimeline({
                   ) : row.kind === "file" ? (
                     <FileRow key={row.key} link={row.link} item={row.item} trucks={trucks} />
                   ) : (
-                    <InvoiceRow key={row.key} link={row.link} item={row.item} trucks={trucks} />
+                    <InvoiceRow key={row.key} link={row.link} item={row.item} trucks={trucks} charged={linesOf(row.item.invoice.id)} />
                   ),
                 )}
               </ul>
@@ -452,9 +456,20 @@ function FileRow({ link, item, trucks }: { link: ProjectLink; item: FileItem; tr
   );
 }
 
-function InvoiceRow({ link, item, trucks }: { link: ProjectLink; item: BillItem; trucks: Shipment[] }) {
+function InvoiceRow({
+  link,
+  item,
+  trucks,
+  charged,
+}: {
+  link: ProjectLink;
+  item: BillItem;
+  trucks: Shipment[];
+  charged: InvoiceLine[];
+}) {
   const { t, locale } = useI18n();
   const bill = item.invoice;
+  const charges = chargesWord(charged, t);
   const total =
     bill.total_amount !== null && bill.currency ? formatMoney(Number(bill.total_amount), bill.currency, locale) : null;
   return (
@@ -471,6 +486,8 @@ function InvoiceRow({ link, item, trucks }: { link: ProjectLink; item: BillItem;
       detail={
         <>
           <span className="text-foreground/80">{t.books.kinds[bill.kind]}</span>
+          {bill.returns ? <span className="text-warning-foreground">{t.books.returned}</span> : null}
+          {charges ? <span>{charges}</span> : null}
           {total ? <span className={cn("tabular-nums", bill.cancelled && "line-through")}>{total}</span> : null}
           {bill.cancelled ? <span className="text-danger-foreground">{t.books.cancelled}</span> : null}
         </>

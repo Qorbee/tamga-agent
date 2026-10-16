@@ -198,6 +198,22 @@ async def test_a_plate_two_jobs_share_places_no_bill(client: httpx.AsyncClient) 
     assert (await filed(company_id)).bills == 0
 
 
+async def test_a_bill_for_two_trucks_goes_to_each_ones_job(client: httpx.AsyncClient) -> None:
+    company_id = await guest_client(client)
+    one = await a_job(client, company_id, "<one@x>", "AB 123 CD")
+    two = await a_job(client, company_id, "<two@x>", "EF 456 GH")
+    await books.store_records(
+        company_id,
+        "books",
+        [],
+        [bill("p-2", date(2026, 9, 12), "Freight, truck: AB 123 CD, truck: EF 456 GH")],
+    )
+
+    assert (await filed(company_id)).bills == 1
+    links = (await client.get("/project-links", params={"item_kind": "invoice"})).json()["items"]
+    assert sorted(link["project_id"] for link in links) == sorted([one, two])
+
+
 async def test_only_the_owners_proof_counts_and_a_bill_pays_its_plates_truck(
     client: httpx.AsyncClient,
 ) -> None:

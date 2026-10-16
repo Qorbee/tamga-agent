@@ -187,3 +187,8 @@ class Picture:
     # paid. None where it is not known: no account with a balance, or an amount with no rate.
     balance: Decimal | None = None
     committed: Decimal | None = None
+    # A return of goods, not a bill to pay, as its source says.
+    returns: bool = False
+    # The bill reader read its file as a return or a credit note: a model's word, which asks
+    # the owner, never holds.
+    read_as_return: bool = False

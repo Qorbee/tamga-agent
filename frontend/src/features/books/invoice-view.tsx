@@ -4,12 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 
 import { useOpenFromCanvas } from "@/components/canvas-link";
+import { InvoiceLines } from "@/components/invoice-lines";
 import { Segmented } from "@/components/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getInvoice, getInvoiceFile, type Invoice } from "@/lib/api";
 import { formatDate, formatDays, formatMoney } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
+
 
 const invoiceKey = (id: string) => ["invoice", id] as const;
 
@@ -99,6 +101,11 @@ export function InvoiceView({ id }: { id: string }) {
       <header className="grid gap-1">
         <span className="text-muted-foreground text-sm">
           {t.books.kinds[bill.kind]}
+          {bill.returns ? (
+            <span className="text-warning-foreground"> · {bill.type_name ?? t.books.returned}</span>
+          ) : bill.read_kind && t.books.readAs[bill.read_kind] ? (
+            <span className="text-warning-foreground"> · {t.books.readAs[bill.read_kind]}</span>
+          ) : null}
           {bill.cancelled ? <span className="text-danger-foreground"> · {t.books.cancelled}</span> : null}
         </span>
         <p className={cn("text-2xl font-medium tabular-nums", bill.cancelled && "line-through")}>
@@ -117,6 +124,8 @@ export function InvoiceView({ id }: { id: string }) {
             </div>
           ))}
       </dl>
+
+      <InvoiceLines bill={bill} />
 
       {bill.description ? (
         <section className="grid gap-1.5">

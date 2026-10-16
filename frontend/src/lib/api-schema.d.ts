@@ -719,6 +719,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invoice-lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Invoice Lines
+         * @description What these bills charge for, line by line, as the bill reader read their files: each
+         *     bill's lines in order.
+         */
+        get: operations["invoices.list_invoice_lines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/invoice-totals": {
         parameters: {
             query?: never;
@@ -2984,8 +3005,44 @@ export interface components {
          * @enum {string}
          */
         InvoiceKind: "sales" | "purchase" | "incoming_e_invoice" | "expense";
+        /**
+         * InvoiceLineOut
+         * @description One line of what a bill charges for, as the bill reader read it and code checked it.
+         */
+        InvoiceLineOut: {
+            /** Amount */
+            amount: string | null;
+            /** Charge */
+            charge: string;
+            /** Currency */
+            currency: string | null;
+            /** Days */
+            days: number | null;
+            /** Destination */
+            destination: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Invoice Id
+             * Format: uuid
+             */
+            invoice_id: string;
+            /** Origin */
+            origin: string | null;
+            /** Plates */
+            plates: string[];
+            /** Position */
+            position: number;
+            /** Quote */
+            quote: string;
+        };
         /** InvoiceOut */
         InvoiceOut: {
+            /** About */
+            about?: string | null;
             /** Account On */
             account_on?: string | null;
             /** Account Owed */
@@ -3011,6 +3068,10 @@ export interface components {
             /** Issue Date */
             issue_date: string | null;
             kind: components["schemas"]["InvoiceKind"];
+            /** Lines Balance */
+            lines_balance?: boolean | null;
+            /** Lines Read At */
+            lines_read_at?: string | null;
             /** Net Amount */
             net_amount: string | null;
             /** Number */
@@ -3023,8 +3084,14 @@ export interface components {
             party_name: string | null;
             /** Payment Date */
             payment_date: string | null;
+            read_kind?: components["schemas"]["ReadKind"] | null;
             /** Remaining Amount */
             remaining_amount: string | null;
+            /**
+             * Returns
+             * @default false
+             */
+            returns: boolean;
             /** Same As Id */
             same_as_id: string | null;
             settled?: components["schemas"]["Settled"] | null;
@@ -3041,6 +3108,8 @@ export interface components {
             tax_amount: string | null;
             /** Total Amount */
             total_amount: string | null;
+            /** Type Name */
+            type_name?: string | null;
         };
         /** InvoicePage */
         InvoicePage: {
@@ -4491,6 +4560,12 @@ export interface components {
          * @enum {string}
          */
         ProposalTarget: "project" | "shipment";
+        /**
+         * ReadKind
+         * @description What the bill reader says a bill is: one to pay, a return of goods or a credit.
+         * @enum {string}
+         */
+        ReadKind: "invoice" | "return" | "credit";
         /**
          * ReadState
          * @description Whether Tamga has read what a file says (ADR-0012). A document nobody asked to read (an
@@ -6419,6 +6494,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvitePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "invoices.list_invoice_lines": {
+        parameters: {
+            query: {
+                invoice_id: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceLineOut"][];
                 };
             };
             /** @description Validation Error */

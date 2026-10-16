@@ -8,6 +8,7 @@ from app.modules.books import service
 from app.modules.books.models import InvoiceDirection, InvoiceKind
 from app.modules.books.schemas import (
     InvoiceFile,
+    InvoiceLineOut,
     InvoiceOut,
     InvoicePage,
     InvoiceSort,
@@ -72,6 +73,17 @@ async def invoice_totals(
 @invoices.get("/invoices/{invoice_id}")
 async def get_invoice(invoice_id: uuid.UUID, actor: ActorDep, db: SessionDep) -> InvoiceOut:
     return await service.get_invoice(db, actor, invoice_id)
+
+
+@invoices.get("/invoice-lines")
+async def list_invoice_lines(
+    actor: ActorDep,
+    db: SessionDep,
+    invoice_id: Annotated[list[uuid.UUID], Query(max_length=200)],
+) -> list[InvoiceLineOut]:
+    """What these bills charge for, line by line, as the bill reader read their files: each
+    bill's lines in order."""
+    return await service.invoice_lines(db, actor, invoice_id)
 
 
 @invoices.post("/invoices/{invoice_id}/file")

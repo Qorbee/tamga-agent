@@ -150,6 +150,9 @@ class Settings(BaseSettings):
     # could not tell it. Zero: a file code cannot type stays untyped, and no file's text goes to
     # the model's provider for it.
     typed_files_per_day: int = Field(default=0, ge=0)
+    # Bills the bill reader may read for one company in 24 hours, for what each charges for,
+    # line by line (books/agents.py). Zero: no bill's file goes to the model's provider for it.
+    bills_read_per_day: int = Field(default=0, ge=0)
     # Bills the controller may weigh for one company in 24 hours, each once an evaluation waits
     # for the owner: an opinion beside the approval, never the decision. Zero: no bill's details
     # go to the model's provider, and a bill waits for the owner with the rules' results alone.

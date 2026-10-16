@@ -72,6 +72,13 @@ def test_pay_when_paid_holds_until_the_client_paid_the_job() -> None:
     assert {r.rule: r.outcome for r in results}["client_paid"] is Outcome.OK
 
 
+def test_a_return_is_never_paid() -> None:
+    assert failed(dataclasses.replace(CLEAR, returns=True))["returned"] == Outcome.HOLD
+    # Read as one by a model only, it asks the owner.
+    read = failed(dataclasses.replace(CLEAR, read_as_return=True))
+    assert read["read_as_return"] == Outcome.PROPOSE and "returned" not in read
+
+
 def test_a_bill_paid_before_is_rejected_whatever_else_holds() -> None:
     picture = dataclasses.replace(CLEAR, paid_on_chain=True, trucks=(False,))
     outcome, _ = policies.evaluate(picture, POLICY)

@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.modules.books.models import InvoiceDirection, InvoiceKind
+from app.modules.books.models import InvoiceDirection, InvoiceKind, ReadKind
 
 InvoiceSort = Literal[
     "-issue_date", "issue_date", "due_date", "-due_date", "-total_amount", "-remaining_amount"
@@ -53,6 +53,17 @@ class InvoiceOut(BaseModel):
     # Its own file, once one was asked for and found (``POST /invoices/{id}/file``).
     document_id: uuid.UUID | None = None
     synced_at: datetime
+    # What its source calls its kind, and whether it gives goods back rather than asks to be
+    # paid, as the source says.
+    type_name: str | None = None
+    returns: bool = False
+    # What the bill reader made of its file (``GET /invoice-lines``): what it is for, what kind
+    # of bill it is, whether its lines add up to its figures, and when it was read. A model's
+    # reading, checked by code; null until read.
+    about: str | None = None
+    read_kind: ReadKind | None = None
+    lines_balance: bool | None = None
+    lines_read_at: datetime | None = None
     # Read, never written to the books (ADR-0022): what an open invoice reads as under how the
     # company records payments, and what the firm's account says is owed on it as of a day. Null
     # where a list does not read them, and for an invoice the books show paid or cancelled.
@@ -63,6 +74,27 @@ class InvoiceOut(BaseModel):
     owed: Decimal | None = None
     account_owed: Decimal | None = None
     account_on: date | None = None
+
+
+class InvoiceLineOut(BaseModel):
+    """One line of what a bill charges for, as the bill reader read it and code checked it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    position: int
+    # Its words as the file has them: data, never instructions.
+    quote: str
+    # A kind of charge a pack registers (freight, waiting), or "other".
+    charge: str
+    amount: Decimal | None
+    currency: str | None
+    # Letters and digits, upper case.
+    plates: list[str]
+    days: int | None
+    origin: str | None
+    destination: str | None
 
 
 class InvoicePage(BaseModel):

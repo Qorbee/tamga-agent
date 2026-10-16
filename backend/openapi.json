@@ -3295,8 +3295,124 @@
         "title": "InvoiceKind",
         "type": "string"
       },
+      "InvoiceLineOut": {
+        "description": "One line of what a bill charges for, as the bill reader read it and code checked it.",
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "charge": {
+            "title": "Charge",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invoice_id": {
+            "format": "uuid",
+            "title": "Invoice Id",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "plates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Plates",
+            "type": "array"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "invoice_id",
+          "position",
+          "quote",
+          "charge",
+          "amount",
+          "currency",
+          "plates",
+          "days",
+          "origin",
+          "destination"
+        ],
+        "title": "InvoiceLineOut",
+        "type": "object"
+      },
       "InvoiceOut": {
         "properties": {
+          "about": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "About"
+          },
           "account_on": {
             "anyOf": [
               {
@@ -3405,6 +3521,29 @@
           "kind": {
             "$ref": "#/components/schemas/InvoiceKind"
           },
+          "lines_balance": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines Balance"
+          },
+          "lines_read_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines Read At"
+          },
           "net_amount": {
             "anyOf": [
               {
@@ -3475,6 +3614,16 @@
             ],
             "title": "Payment Date"
           },
+          "read_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "remaining_amount": {
             "anyOf": [
               {
@@ -3486,6 +3635,11 @@
               }
             ],
             "title": "Remaining Amount"
+          },
+          "returns": {
+            "default": false,
+            "title": "Returns",
+            "type": "boolean"
           },
           "same_as_id": {
             "anyOf": [
@@ -3552,6 +3706,17 @@
               }
             ],
             "title": "Total Amount"
+          },
+          "type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Name"
           }
         },
         "required": [
@@ -7974,6 +8139,16 @@
         "title": "ProposalTarget",
         "type": "string"
       },
+      "ReadKind": {
+        "description": "What the bill reader says a bill is: one to pay, a return of goods or a credit.",
+        "enum": [
+          "invoice",
+          "return",
+          "credit"
+        ],
+        "title": "ReadKind",
+        "type": "string"
+      },
       "ReadState": {
         "description": "Whether Tamga has read what a file says (ADR-0012). A document nobody asked to read (an\ninline logo) has none.",
         "enum": [
@@ -12042,6 +12217,63 @@
         "summary": "Preview Invite",
         "tags": [
           "invites"
+        ]
+      }
+    },
+    "/invoice-lines": {
+      "get": {
+        "description": "What these bills charge for, line by line, as the bill reader read their files: each\nbill's lines in order.",
+        "operationId": "invoices.list_invoice_lines",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "invoice_id",
+            "required": true,
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "maxItems": 200,
+              "title": "Invoice Id",
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvoiceLineOut"
+                  },
+                  "title": "Response Invoices.List Invoice Lines",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Invoice Lines",
+        "tags": [
+          "invoices"
         ]
       }
     },

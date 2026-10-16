@@ -25,3 +25,11 @@ async def sync_books(timestamp: int) -> None:
             result.invoices,
             result.dispatches,
         )
+
+
+@jobs.periodic("books.read_bills", cron="* * * * *")
+async def read_bills(timestamp: int) -> None:
+    """Every minute: a few bills a company whose file is kept are read for what they charge for."""
+    done = await service.read_pending_bills()
+    if done.read:
+        logger.info("the bill reader read %d bills, %d lines left out", done.read, done.dropped)

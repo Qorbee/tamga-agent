@@ -4,7 +4,17 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import ForeignKeyConstraint, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    ARRAY,
+    ForeignKeyConstraint,
+    Index,
+    Numeric,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +35,14 @@ class InvoiceKind(StrEnum):
     # An e-fatura that arrived for the company, before or apart from its booking as a purchase.
     INCOMING_E_INVOICE = "incoming_e_invoice"
     EXPENSE = "expense"
+
+
+class ReadKind(StrEnum):
+    """What the bill reader says a bill is: one to pay, a return of goods or a credit."""
+
+    INVOICE = "invoice"
+    RETURN = "return"
+    CREDIT = "credit"
 
 
 class Invoice(CompanyScoped, Base):
@@ -84,6 +102,66 @@ class Invoice(CompanyScoped, Base):
     document_id: Mapped[uuid.UUID | None]
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB)
     synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    # What the bill reader made of its file (books/reading.py): what it is for, in a line; what
+    # kind of bill it is; whether its lines add up to its figures; and when it was read. Null
+    # until read. A model's reading, every quote and plate of it checked by code: it proposes,
+    # never decides.
+    about: Mapped[str | None] = mapped_column(String(300))
+    read_kind: Mapped[ReadKind | None] = mapped_column(
+        text_enum(ReadKind, "invoices_read_kind_check")
+    )
+    lines_balance: Mapped[bool | None]
+    lines_read_at: Mapped[datetime | None]
+    # The model that read it: its model, effort and prompt's fingerprint (llm.MadeBy.stored), so
+    # a bill read under an older prompt can be found and read again.
+    lines_made_by: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
+
+    @property
+    def type_name(self) -> str | None:
+        """What its source calls its kind ("Purchase return invoice"), when it says."""
+        from app.modules.books import sources  # the registry imports these models
+
+        kind = sources.type_of(self.source, self.raw)
+        return kind.name if kind else None
+
+    @property
+    def returns(self) -> bool:
+        """A return of goods, not a bill to pay, as its source says. What the bill reader read
+        (``read_kind``) is a model's word, which no quote checks: never this."""
+        from app.modules.books import sources  # the registry imports these models
+
+        kind = sources.type_of(self.source, self.raw)
+        return bool(kind and kind.returns)
+
+
+class InvoiceLine(CompanyScoped, Base):
+    """One line of what a bill charges for, as the bill reader read it from the bill's file and
+    code checked it: its words are in the file, as are its plates."""
+
+    __tablename__ = "invoice_lines"
+    __table_args__ = (
+        UniqueConstraint("company_id", "invoice_id", "position"),
+        ForeignKeyConstraint(
+            ["company_id", "invoice_id"], ["invoices.company_id", "invoices.id"], ondelete="CASCADE"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    invoice_id: Mapped[uuid.UUID]
+    position: Mapped[int] = mapped_column(SmallInteger)
+    # The line's words as the file has them. Data, never instructions.
+    quote: Mapped[str] = mapped_column(Text)
+    # What it charges for: a kind a pack registers (freight, waiting), or "other".
+    charge: Mapped[str] = mapped_column(String(40))
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    # The plates it names, compared as facts are (letters and digits, upper case).
+    plates: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, server_default="{}")
+    # Days of waiting it charges for.
+    days: Mapped[int | None] = mapped_column(SmallInteger)
+    origin: Mapped[str | None] = mapped_column(String(200))
+    destination: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class Dispatch(CompanyScoped, Base):

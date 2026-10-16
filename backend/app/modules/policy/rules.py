@@ -52,6 +52,22 @@ def _usdc_minimum(picture: Picture, policy: PolicyOut) -> Result:
     return Result("usdc_minimum", Outcome.OK)
 
 
+def _returned(picture: Picture, policy: PolicyOut) -> Result:
+    if picture.returns:
+        return Result("returned", Outcome.HOLD, "This is a return, not a bill to pay")
+    return Result("returned", Outcome.OK)
+
+
+def _read_as_return(picture: Picture, policy: PolicyOut) -> Result:
+    if picture.read_as_return:
+        return Result(
+            "read_as_return",
+            Outcome.PROPOSE,
+            "Its file reads as a return or a credit note: look before paying",
+        )
+    return Result("read_as_return", Outcome.OK)
+
+
 def _party(picture: Picture, policy: PolicyOut) -> Result:
     if not picture.party:
         return Result("party", Outcome.HOLD, "The books name nobody to pay for it")
@@ -259,6 +275,8 @@ def _approval_limit(picture: Picture, policy: PolicyOut) -> Result:
 # Every way of paying.
 RULES: Final[tuple[Rule, ...]] = (
     _amount,
+    _returned,
+    _read_as_return,
     _on_account,
     _duplicate,
     _party,

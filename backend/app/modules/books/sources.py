@@ -161,6 +161,15 @@ class RegisteredSource:
     monthly_reads: Callable[[], int]
     # Maps a stored record again, so a field added to the mapping fills without a read.
     remap: InvoiceRemap | None = None
+    # What the source calls a stored invoice's kind ("Purchase return invoice"), and whether that
+    # kind gives goods back rather than asks to be paid.
+    type_of: Callable[[dict[str, Any]], InvoiceType | None] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InvoiceType:
+    name: str
+    returns: bool
 
 
 _sources: dict[str, RegisteredSource] = {}
@@ -172,9 +181,18 @@ def register(
     *,
     monthly_reads: Callable[[], int],
     remap: InvoiceRemap | None = None,
+    type_of: Callable[[dict[str, Any]], InvoiceType | None] | None = None,
 ) -> None:
-    _sources[name] = RegisteredSource(factory=factory, monthly_reads=monthly_reads, remap=remap)
+    _sources[name] = RegisteredSource(
+        factory=factory, monthly_reads=monthly_reads, remap=remap, type_of=type_of
+    )
 
 
 def registered() -> dict[str, RegisteredSource]:
     return dict(_sources)
+
+
+def type_of(source: str, raw: dict[str, Any]) -> InvoiceType | None:
+    """What the source calls an invoice's kind, when it says."""
+    registered = _sources.get(source)
+    return registered.type_of(raw) if registered and registered.type_of else None

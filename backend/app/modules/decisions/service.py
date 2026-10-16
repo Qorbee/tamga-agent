@@ -31,7 +31,7 @@ from app.config import get_settings
 from app.modules.books import accounts
 from app.modules.books import service as books
 from app.modules.books.accounts import Account
-from app.modules.books.models import InvoiceDirection
+from app.modules.books.models import InvoiceDirection, ReadKind
 from app.modules.books.schemas import InvoiceOut, Settled
 from app.modules.companies import service as companies
 from app.modules.companies.models import CompanyMode
@@ -591,6 +591,8 @@ async def _picture(
         iban=iban,
         balance=standing.balance,
         committed=standing.committed(bill.id),
+        returns=bill.returns,
+        read_as_return=bill.read_kind in (ReadKind.RETURN, ReadKind.CREDIT),
     )
 
 

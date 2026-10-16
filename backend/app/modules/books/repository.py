@@ -1,11 +1,11 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ColumnElement, Row, and_, case, func, or_, select
+from sqlalchemy import ColumnElement, Row, and_, case, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -17,6 +17,7 @@ from app.modules.books.models import (
     Invoice,
     InvoiceDirection,
     InvoiceKind,
+    InvoiceLine,
 )
 from app.platform.pagination import PageParams, escape_like
 
@@ -537,3 +538,77 @@ async def invoices_named(
         )
     )
     return rows.all()
+
+
+async def companies_with_bills_to_read(db: AsyncSession) -> list[uuid.UUID]:
+    """The one read across companies, of their ids alone: those holding a bill whose file is
+    kept and was not read for its lines."""
+    rows = await db.scalars(select(Invoice.company_id).where(_to_read()).distinct())
+    return list(rows)
+
+
+async def bills_to_read(
+    db: AsyncSession, company_id: uuid.UUID, *, limit: int
+) -> Sequence[Invoice]:
+    """Bills whose file is kept and not read for its lines yet: what the company owes first,
+    the newest first."""
+    rows = await db.scalars(
+        select(Invoice)
+        .where(Invoice.company_id == company_id, _to_read())
+        .order_by(
+            (Invoice.direction == InvoiceDirection.PAYABLE).desc(),
+            Invoice.issue_date.desc().nulls_last(),
+            Invoice.id,
+        )
+        .limit(limit)
+    )
+    return rows.all()
+
+
+def _to_read() -> ColumnElement[bool]:
+    return and_(
+        Invoice.document_id.is_not(None),
+        Invoice.lines_read_at.is_(None),
+        Invoice.same_as_id.is_(None),
+        Invoice.cancelled.is_(False),
+    )
+
+
+async def invoice_lines(
+    db: AsyncSession, company_id: uuid.UUID, invoice_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[InvoiceLine]]:
+    """Each invoice's lines as the bill reader read them, in order."""
+    if not invoice_ids:
+        return {}
+    rows = await db.scalars(
+        select(InvoiceLine)
+        .where(InvoiceLine.company_id == company_id, InvoiceLine.invoice_id.in_(invoice_ids))
+        .order_by(InvoiceLine.invoice_id, InvoiceLine.position)
+    )
+    lines: dict[uuid.UUID, list[InvoiceLine]] = {}
+    for row in rows:
+        lines.setdefault(row.invoice_id, []).append(row)
+    return lines
+
+
+async def replace_lines(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID, lines: Sequence[InvoiceLine]
+) -> None:
+    await db.execute(
+        delete(InvoiceLine).where(
+            InvoiceLine.company_id == company_id, InvoiceLine.invoice_id == invoice_id
+        )
+    )
+    db.add_all(lines)
+
+
+async def bills_read_since(db: AsyncSession, company_id: uuid.UUID, since: datetime) -> int:
+    """How many bills were read for their lines since then: the bill reader's budget."""
+    return int(
+        await db.scalar(
+            select(func.count()).where(
+                Invoice.company_id == company_id, Invoice.lines_read_at >= since
+            )
+        )
+        or 0
+    )

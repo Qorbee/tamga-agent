@@ -17,14 +17,16 @@ from decimal import Decimal
 from http import HTTPStatus
 from typing import Final
 
+from pydantic_ai import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.books import accounts, repository, sources
-from app.modules.books.models import Invoice, InvoiceKind
+from app.modules.books import accounts, agents, charges, reading, repository, sources
+from app.modules.books.models import Invoice, InvoiceKind, InvoiceLine, ReadKind
 from app.modules.books.repository import InvoiceFilter as InvoiceFilter
 from app.modules.books.schemas import (
     InvoiceFile,
+    InvoiceLineOut,
     InvoiceOut,
     InvoicePage,
     InvoiceSort,
@@ -43,8 +45,9 @@ from app.modules.books.sources import (
 )
 from app.modules.books.sources import Taxpayer as Taxpayer
 from app.modules.companies import service as companies
-from app.modules.companies.models import CompanyMode
+from app.modules.companies.models import Company, CompanyMode
 from app.modules.documents import service as documents
+from app.modules.documents.models import ReadState
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
 from app.modules.facts.service import NewFact
@@ -53,7 +56,7 @@ from app.modules.parties.models import IdentifierKind
 from app.modules.parties.service import Identifier
 from app.modules.policy import service as policies
 from app.modules.policy.models import PaymentsRecorded
-from app.platform import clock, events
+from app.platform import clock, events, llm
 from app.platform.auth import Actor
 from app.platform.db import open_session
 from app.platform.errors import DomainError, NotFound
@@ -61,6 +64,13 @@ from app.platform.items import ItemKind
 from app.platform.pagination import PageParams
 
 logger = logging.getLogger(__name__)
+
+# How many bills of a company the reader reads in one pass of its job, and the window its daily
+# budget (BILLS_READ_PER_DAY) counts the bills it read in.
+BILLS_A_PASS: Final = 5
+# The extractor of the facts the bill reader reads in a bill's file.
+READ_BY: Final = f"model:{agents.BILL_READER}"
+BILLS_READ_WINDOW: Final = timedelta(hours=24)
 
 # Records are read in windows this long, and the cursor moves after each.
 WINDOW: Final = timedelta(days=31)
@@ -380,7 +390,13 @@ async def _record_facts(
             )
         )
     return await facts.replace_facts(
-        db, company_id=company_id, item_kind=ItemKind.INVOICE, item_id=invoice_id, facts=found
+        db,
+        company_id=company_id,
+        item_kind=ItemKind.INVOICE,
+        item_id=invoice_id,
+        facts=found,
+        # What the bill reader read in its file is no part of the books' record.
+        kept_from={READ_BY},
     )
 
 
@@ -862,3 +878,205 @@ async def invoices_named(
         db, company_id, numbers=numbers, e_document_ids=e_document_ids
     )
     return [InvoiceOut.model_validate(row) for row in rows]
+
+
+# Reading what a bill charges for
+
+
+async def invoice_lines(
+    db: AsyncSession, actor: Actor, invoice_ids: Sequence[uuid.UUID]
+) -> list[InvoiceLineOut]:
+    by_invoice = await repository.invoice_lines(db, actor.company_id, invoice_ids)
+    return [
+        InvoiceLineOut.model_validate(line)
+        for invoice_id in dict.fromkeys(invoice_ids)
+        for line in by_invoice.get(invoice_id, [])
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class BillsRead:
+    read: int
+    # Lines the reader gave whose words are not in the file: left out.
+    dropped: int
+
+
+@dataclass(frozen=True, slots=True)
+class BillsWaiting:
+    # Bills whose file is kept and not read for their lines.
+    to_read: int
+    # Of those, the ones whose file is itself still waiting to be read.
+    file_waiting: int
+    # Reads left in the day's budget (BILLS_READ_PER_DAY).
+    left: int
+
+
+async def bills_waiting(company_id: uuid.UUID, *, at_most: int) -> BillsWaiting:
+    """How many of the company's bills wait for the bill reader, of at most ``at_most``."""
+    async with open_session() as db:
+        bills = await repository.bills_to_read(db, company_id, limit=at_most)
+        files = await documents.get_documents(
+            db, company_id, [bill.document_id for bill in bills if bill.document_id]
+        )
+        spent = await repository.bills_read_since(
+            db, company_id, clock.utcnow() - BILLS_READ_WINDOW
+        )
+    return BillsWaiting(
+        to_read=len(bills),
+        file_waiting=sum(file.read_state is ReadState.PENDING for file in files.values()),
+        left=max(get_settings().bills_read_per_day - spent, 0),
+    )
+
+
+async def read_pending_bills() -> BillsRead:
+    """Has the bill reader read the bills whose file is kept and that were not read for their
+    lines, a few a company each pass, what it owes first, within each company's budget of model
+    reads for a day. A file still waiting to be read waits; one that could not be read, or holds
+    no text, is marked read with nothing found."""
+    if get_settings().bills_read_per_day == 0:
+        return BillsRead(read=0, dropped=0)
+    async with open_session() as db:
+        company_ids = await repository.companies_with_bills_to_read(db)
+    total = BillsRead(read=0, dropped=0)
+    for company_id in company_ids:
+        done = await read_bills(company_id, limit=BILLS_A_PASS)
+        total = BillsRead(read=total.read + done.read, dropped=total.dropped + done.dropped)
+    return total
+
+
+async def read_bills(company_id: uuid.UUID, *, limit: int) -> BillsRead:
+    """Reads up to ``limit`` of the company's bills for their lines, one model request each."""
+    async with open_session() as db:
+        company = (await companies.get_companies(db, [company_id])).get(company_id)
+        bills = await repository.bills_to_read(db, company_id, limit=limit * 4)
+        files = await documents.get_documents(
+            db, company_id, [bill.document_id for bill in bills if bill.document_id]
+        )
+    if company is None:
+        return BillsRead(read=0, dropped=0)
+    read = dropped = 0
+    for bill in bills:
+        if read >= limit:
+            break
+        file = files.get(bill.document_id) if bill.document_id else None
+        if file is not None and file.read_state is ReadState.PENDING:
+            continue
+        async with open_session() as db:
+            spent = await repository.bills_read_since(
+                db, company_id, clock.utcnow() - BILLS_READ_WINDOW
+            )
+        if spent >= get_settings().bills_read_per_day:
+            break
+        text = file.text if file is not None and file.read_state is ReadState.READ else ""
+        try:
+            checked = await _read_bill(company, bill, text) if text.strip() else None
+        except Exception as error:
+            # Worth another try (the network, a rate limit, a key): the bill stays unread and
+            # the next pass asks again. The error's type only: it can quote what it was sent.
+            logger.warning("reading bill %s failed: %s", bill.id, type(error).__name__)
+            break
+        async with open_session() as db:
+            await _keep_reading(db, company_id, bill.id, checked)
+            await db.commit()
+        read += 1
+        dropped += checked.dropped if checked else 0
+    if read:
+        await events.publish_now(company_id, [events.EventKind.INVOICES])
+    return BillsRead(read=read, dropped=dropped)
+
+
+async def _read_bill(company: Company, bill: Invoice, text: str) -> reading.Checked | None:
+    """One request of the bill reader, and its answer as code keeps it. None when the model gave
+    nothing to use, which asking again would not change; any other error is raised."""
+    offered = charges.charges()
+    try:
+        run = await llm.run(
+            agents.bill_reader,
+            agents.bill(offered, _header(bill), text),
+            deps=frozenset(charge.key for charge in offered),
+            limits=UsageLimits(request_limit=2),
+            language=company.language,
+            trace_content=companies.traces_content(company.kind),
+            settings_name=agents.READER_SETTINGS,
+        )
+    except llm.NoAnswer as error:
+        logger.warning("the bill reader gave no reading of %s: %s", bill.id, error)
+        return None
+    return reading.checked(
+        run.output,
+        text,
+        currency=bill.currency,
+        net=bill.net_amount,
+        total=bill.total_amount,
+    )
+
+
+def _header(bill: Invoice) -> list[str]:
+    """The bill as the books hold it, for the reader."""
+    parts = [
+        ("firm", bill.party_name),
+        ("number", bill.number),
+        ("issued", bill.issue_date.isoformat() if bill.issue_date else None),
+        ("currency", bill.currency),
+        ("net", str(bill.net_amount) if bill.net_amount is not None else None),
+        ("total", str(bill.total_amount) if bill.total_amount is not None else None),
+        (
+            "type in the books",
+            kind.name if (kind := sources.type_of(bill.source, bill.raw)) else None,
+        ),
+        ("description in the books", bill.description),
+    ]
+    return [f"{label}: {value}" for label, value in parts if value]
+
+
+async def _keep_reading(
+    db: AsyncSession, company_id: uuid.UUID, invoice_id: uuid.UUID, checked: reading.Checked | None
+) -> None:
+    """Keeps what was read of a bill, in place of what was read before, and its plates as the
+    bill's facts. Read with nothing found, it is marked read all the same. Does not commit."""
+    found = await repository.get_invoices(db, company_id, [invoice_id])
+    if not found:
+        return
+    bill = found[0]
+    bill.lines_read_at = clock.utcnow()
+    if checked is None:
+        return
+    bill.about = checked.about or None
+    bill.read_kind = ReadKind(checked.kind)
+    bill.lines_balance = checked.balance
+    bill.lines_made_by = llm.made_by(
+        agents.bill_reader, settings_name=agents.READER_SETTINGS
+    ).stored()
+    await repository.replace_lines(
+        db,
+        company_id,
+        invoice_id,
+        [
+            InvoiceLine(
+                company_id=company_id,
+                invoice_id=invoice_id,
+                position=position,
+                quote=line.quote,
+                charge=line.charge,
+                amount=line.amount,
+                currency=line.currency.upper() if line.currency else None,
+                plates=line.plates,
+                days=line.days,
+                origin=line.origin,
+                destination=line.destination,
+            )
+            for position, line in enumerate(checked.lines, start=1)
+        ],
+    )
+    plates = {plate for line in checked.lines for plate in line.plates}
+    if plates:
+        await facts.record_facts(
+            db,
+            company_id=company_id,
+            item_kind=ItemKind.INVOICE,
+            item_id=invoice_id,
+            facts=[
+                NewFact(IdentifierKind.PLATE.value, plate, plate, 0.7, READ_BY)
+                for plate in sorted(plates)
+            ],
+        )

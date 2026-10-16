@@ -23,6 +23,8 @@ from app.modules.assistant import repository
 from app.modules.assistant.seat import Seat
 from app.modules.assistant.tools import bill_line, how, ids_of, truck_names
 from app.modules.books import service as books
+from app.modules.books.models import ReadKind
+from app.modules.books.schemas import InvoiceLineOut
 from app.modules.conversations import service as conversations
 from app.modules.documents import service as documents
 from app.modules.facts import service as facts
@@ -384,7 +386,18 @@ async def _invoice(seat: Seat, invoice_id: uuid.UUID, handle: str) -> str:
         except DomainError:
             return "That invoice is gone."
         held = await _projects_holding(db, seat, ItemKind.INVOICE, [bill.id])
+        charged = await books.invoice_lines(db, seat.actor, [bill.id])
     lines = [bill_line(bill)]
+    if bill.returns:
+        lines.append(
+            "A return, not a bill to pay"
+            + (f" (the books call it {bill.type_name})" if bill.type_name else "")
+        )
+    elif bill.type_name:
+        lines.append(f"The books call it: {bill.type_name}")
+    if not bill.returns and bill.read_kind in (ReadKind.RETURN, ReadKind.CREDIT):
+        kind = "return" if bill.read_kind is ReadKind.RETURN else "credit note"
+        lines.append(f"Its file reads as a {kind} (the bill reader's word; the books do not say)")
     if bill.e_document_id:
         lines.append(f"E-document: {bill.e_document_id}")
     if bill.due_date:
@@ -400,8 +413,30 @@ async def _invoice(seat: Seat, invoice_id: uuid.UUID, handle: str) -> str:
         )
     if bill.description:
         lines.append(f"Written in the books as: {bill.description}")
+    if bill.about:
+        lines.append(f"What its file says it is for: {bill.about}")
+    if charged:
+        lines.append(
+            "What it charges for, line by line, as read from its file"
+            + (" (the lines do not add up to the bill)" if bill.lines_balance is False else "")
+            + ":"
+        )
+        lines.extend(_charged(line) for line in charged)
     lines.append("Projects: " + (", ".join(held.get(bill.id, [])) or "none"))
     return "\n".join(lines)
+
+
+def _charged(line: InvoiceLineOut) -> str:
+    parts = [line.charge]
+    if line.amount is not None:
+        parts.append(f"{line.amount} {line.currency or ''}".strip())
+    if line.days is not None:
+        parts.append(f"{line.days} days")
+    if line.origin or line.destination:
+        parts.append(f"{line.origin or '?'} → {line.destination or '?'}")
+    if line.plates:
+        parts.append("plates " + ", ".join(line.plates))
+    return f'- {", ".join(parts)}: "{line.quote}"'
 
 
 async def _file(seat: Seat, document_id: uuid.UUID, handle: str) -> str:
