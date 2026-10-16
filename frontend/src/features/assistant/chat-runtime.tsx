@@ -393,12 +393,17 @@ function ServerCopy({ chatId, session }: { chatId: string; session: Session }) {
 /**
  * A chat's stored messages as the thread shows them. A card is drawn on the assistant message
  * before it; one with none (what Tamga wrote could not be used) gets an empty one to stand on.
+ * The line that opens a turn of Tamga's always gets one of its own: on the last turn's message
+ * it would be drawn above that turn's card, which goes last.
  */
-function shown(messages: readonly { id?: unknown; role?: unknown }[]): ThreadMessageLike[] {
+function shown(
+  messages: readonly { id?: unknown; role?: unknown; activityType?: unknown }[],
+): ThreadMessageLike[] {
   const owned: unknown[] = [];
   let before: unknown;
   for (const message of messages) {
-    if (message.role === "activity" && before !== "assistant" && before !== "activity")
+    const opens = message.activityType === "tamga_turn";
+    if (message.role === "activity" && (opens || (before !== "assistant" && before !== "activity")))
       owned.push({ id: `${String(message.id)}-owner`, role: "assistant", content: "" });
     owned.push(message);
     before = message.role;

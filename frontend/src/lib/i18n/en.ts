@@ -685,8 +685,7 @@ export const en = {
     },
     /** What Tamga looked at for an answer, by the name of its tool. */
     /** Above a turn Tamga took on its own: why, in code's words. */
-    turnBegan: (reason: string) => `Tamga wrote on its own: ${reason}`,
-    turnBeganBare: "Tamga wrote on its own",
+    turnBegan: "Tamga",
     /** In the open chat while Tamga writes in it for someone else, or on its own. */
     working: "Tamga is looking into this…",
     tools: {

@@ -659,8 +659,7 @@ export const tr: Dictionary = {
       busy: "Tamga bu sohbette hâlâ yanıt yazıyor.",
       role: "Rolünüz sohbetleri okuyabilir, soru soramaz.",
     },
-    turnBegan: (reason: string) => `Tamga kendiliğinden yazdı: ${reason}`,
-    turnBeganBare: "Tamga kendiliğinden yazdı",
+    turnBegan: "Tamga",
     working: "Tamga bunun üzerinde çalışıyor…",
     tools: {
       waiting: "Sizi bekleyenlere baktı",

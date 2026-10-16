@@ -25,9 +25,9 @@ const STATES: Record<View, Decision["state"][]> = {
 };
 
 /**
- * The bills Tamga decided about (docs/architecture/05), at a glance: the
- * next payment run with each bill's call and "Approve N", then what is due later, what is held and
- * what was paid. The owner answers here; nothing is paid without that answer, and an approval is
+ * The bills Tamga decided about (docs/architecture/05), at a glance, under one choice of what is
+ * due later, what is held and what was paid: "Later" opens on the next payment run with each
+ * bill's call and "Approve N", then the rest still to pay. The owner answers here; nothing is paid without that answer, and an approval is
  * confirmed first, since a payment cannot be taken back.
  */
 export function PaymentsPage() {
@@ -35,7 +35,6 @@ export function PaymentsPage() {
   const [view, setView] = useState<View>("later");
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-      <PaymentRunCard full />
       <Segmented
         fill
         label={t.nav.payments}
@@ -43,6 +42,8 @@ export function PaymentsPage() {
         onChange={setView}
         options={VIEWS.map((value) => ({ value, label: <span className="truncate">{t.payments.views[value]}</span> }))}
       />
+      {/* The run is what is to pay next: it heads "Later", and the other tabs list what is past it. */}
+      {view === "later" ? <PaymentRunCard full /> : null}
       <Decisions view={view} />
       <p className="text-muted-foreground text-xs">{t.payments.mirror}</p>
     </div>

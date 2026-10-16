@@ -279,8 +279,8 @@ function CompactedHere() {
 
 const Compacted = makeAssistantDataUI({ name: "agui-activity/compaction", render: CompactedHere });
 
-/** Where Tamga began a turn on its own: why, in code's words, and when, so what follows reads
- * as Tamga's own and the owner sees what set it off. */
+/** Where Tamga began a turn on its own, and when, so what follows reads as Tamga's own. Why it
+ * began stays in the turn's record (`chat_runs.reason`): the message under it says that. */
 function TurnBegan({ data }: DataMessagePartProps<TurnContent>) {
   const { t, locale } = useI18n();
   return (
@@ -289,7 +289,7 @@ function TurnBegan({ data }: DataMessagePartProps<TurnContent>) {
       <span className="flex max-w-[80%] items-center gap-1.5 text-center text-pretty">
         <BrandMark className="size-3.5 shrink-0" />
         <span>
-          {data.reason ? t.assistant.turnBegan(data.reason) : t.assistant.turnBeganBare}
+          {t.assistant.turnBegan}
           {" · "}
           {formatDate(new Date(data.at), locale, "dateTime")}
         </span>

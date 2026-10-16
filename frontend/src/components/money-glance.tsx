@@ -79,7 +79,7 @@ export function MoneyGlance({ className }: { className?: string }) {
           ) : null}
           {going ? (
             <span className="inline-flex items-center gap-1">
-              <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} className="size-3.5" aria-hidden />
+              <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={2} className="text-warning size-3.5" aria-hidden />
               {day ? t.glance.dueBy(going, day) : t.glance.dueToday(going)}
             </span>
           ) : null}

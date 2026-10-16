@@ -1,12 +1,12 @@
 "use client";
 
-import { ArrowDown01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
+import { Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Hint } from "@/components/hint";
-import { Segmented } from "@/components/segmented";
+import { StepSlider } from "@/components/step-slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetGrip, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -23,7 +23,7 @@ const OFFER_FRESH = 5 * 60_000;
 /**
  * Which model answers the next question, and how long it reasons first: a chip beside Send, for
  * the roles that may ask, with the model's short name and the effort as rising bars. Its panel
- * lists the models offered and sets the effort in one row of steps. The choice is the viewer's,
+ * lists the models offered and sets the effort on a slider of steps. The choice is the viewer's,
  * kept in their browser, and holds until they change it.
  */
 export function RunChoiceChip() {
@@ -63,22 +63,16 @@ export function RunChoiceChip() {
           ))}
         </div>
       ) : null}
-      <p className="text-muted-foreground px-2 pb-1.5 text-xs">{words.effort}</p>
-      <Segmented
-        fill
+      <p className="flex items-baseline justify-between gap-3 px-2 pb-1">
+        <span className="text-muted-foreground text-xs">{words.effort}</span>
+        <span className="text-sm font-medium">{words.efforts[effort]}</span>
+      </p>
+      <StepSlider
         label={words.effort}
+        steps={offered.efforts}
         value={effort}
-        onChange={(value) => saveChoice({ ...choice, effort: value })}
-        options={offered.efforts.map((step, index) => ({
-          value: step,
-          className: "flex-col gap-1 py-2 text-xs",
-          label: (
-            <>
-              <Bars of={offered.efforts.length} lit={index + 1} />
-              {words.efforts[step]}
-            </>
-          ),
-        }))}
+        name={(step) => words.efforts[step]}
+        onChange={(step) => saveChoice({ ...choice, effort: step })}
       />
       <p className="text-muted-foreground px-2 pt-2 pb-1 text-xs text-pretty">{words.what}</p>
     </>
@@ -88,11 +82,10 @@ export function RunChoiceChip() {
       type="button"
       data-slot="run-choice"
       aria-label={`${words.label}: ${modelName(model)}, ${words.efforts[effort]}`}
-      className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-foreground flex h-7 min-w-0 items-center gap-1.5 rounded-full ps-2.5 pe-1.5 text-xs outline-none focus-visible:ring-2"
+      className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-foreground flex h-7 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-xs outline-none focus-visible:ring-2"
     >
       <span className="max-w-20 truncate font-medium sm:max-w-32">{shortName(model)}</span>
       <Bars of={offered.efforts.length} lit={level} />
-      <HugeiconsIcon icon={ArrowDown01Icon} strokeWidth={1.75} className="size-3.5 shrink-0" aria-hidden />
     </button>
   );
 
