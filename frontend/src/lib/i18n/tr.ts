@@ -940,7 +940,13 @@ export const tr: Dictionary = {
     reject: "Reddet",
     accept: "Kabul et",
     dismiss: "Yoksay",
-    confidence: (percent: number) => `%${percent} emin`,
+    evidence: {
+      band: { strong: "Kanıtı güçlü", partial: "Kanıtı kısmi", thin: "Kanıtı zayıf" },
+      missing: (fields: string) => `Henüz bilinmiyor: ${fields}`,
+      gaps: { client: "müşteri", route: "güzergâh", first_day: "ilk gün" },
+      measured: (kept: number, answered: number) => `Buna benzer ${answered} öneriden ${kept} tanesini onayladınız`,
+      unmeasured: "Ölçmek için henüz yeterli yanıt yok",
+    },
     field: (target: string, field: string) => `${target} · ${field}`,
     /** An editable field by its name in the API; one not listed shows as the API names it. */
     fields: { name: "Ad", number: "Numara", starts_on: "İlk yükleme günü", ends_on: "Son teslim günü" } as Record<string, string>,

@@ -36,9 +36,16 @@ from app.modules.documents import service as documents
 from app.modules.documents.models import ReadState
 from app.modules.facts import extractors
 from app.modules.facts import service as facts
-from app.modules.linking import agents, firms, repository
+from app.modules.linking import agents, evidence, firms, repository
 from app.modules.linking.models import Outcome, Placement
-from app.modules.linking.schemas import JobReading, PlacementOut, PlacementPage
+from app.modules.linking.schemas import (
+    Band,
+    Evidence,
+    JobReading,
+    Kept,
+    PlacementOut,
+    PlacementPage,
+)
 from app.modules.memory import service as memory
 from app.modules.parties import service as parties
 from app.modules.projects import service as projects
@@ -117,6 +124,11 @@ BY_KEYS: Final = "keys"
 BY_THREAD: Final = "thread"
 BY_OWNER: Final = "owner"
 UNANSWERED: Final = "unanswered"
+# How many of Tamga's latest proposals, as they were backed when made, the owner's answers are
+# counted over.
+_MEASURED_OVER: Final = 300
+# A proposed project the owner answered: confirmed (and maybe closed since), or rejected.
+_ANSWERED: Final = frozenset({ProjectStatus.ACTIVE, ProjectStatus.CLOSED, ProjectStatus.REJECTED})
 _KEY_CONFIDENCE: Final = 0.9
 _THREAD_CONFIDENCE: Final = 0.6
 _READ: Final = (ThreadCategory.WORK, ThreadCategory.AUTOMATED)
@@ -1154,8 +1166,9 @@ def _from_model(
 def _only_copied(thread: ThreadRead) -> bool:
     """Whether the company is only copied on a conversation: no mail of it is written to the
     company or by it. Other firms arranging their own work start no project of the company's."""
-    reached = {"by" if mail.outbound else mail.addressed for mail in thread.mails}
-    return "cc" in reached and not reached & {"to", "by"}
+    return conversations.only_copied(
+        "by" if mail.outbound else mail.addressed for mail in thread.mails
+    )
 
 
 def _town(place: str | None) -> str:
@@ -1447,6 +1460,10 @@ async def _apply(
     placement.failed_at = None
     # Mail that came while it was read is a newer change than the one read: it waits again.
     placement.waiting = placement.thread_changed_at > thread.changed_at
+    if decision.new_name and project_id is not None:
+        # How well it was backed as proposed, kept for measuring the owner's answer to it.
+        band = (await _bands(db, company_id, [placement]))[placement.id]
+        await repository.weigh_proposal(db, company_id, project_id, band)
     if placement.placed_by == agents.MODEL_PLACED and project_id is not None and reading:
         await db.flush()
         await _tell_project(db, company_id, project_id, said=said, evidence=decision.cited)
@@ -1772,6 +1789,7 @@ async def _describe(
     suggested = {
         (link.item_id, link.project_id) for link in links if link.status is LinkStatus.SUGGESTED
     }
+    backed = await _evidence(db, company_id, placements)
     described = []
     for placement in placements:
         brief = briefs.get(placement.thread_id)
@@ -1786,6 +1804,7 @@ async def _describe(
                 alternatives=list(placement.alternatives),
                 reason=placement.reason,
                 confidence=placement.confidence,
+                evidence=backed.get(placement.id),
                 cited=list(placement.cited),
                 reading=JobReading.model_validate(placement.reading) if placement.reading else None,
                 placed_at=placement.placed_at,
@@ -1797,3 +1816,80 @@ async def _describe(
             )
         )
     return described
+
+
+async def _evidence(
+    db: AsyncSession, company_id: uuid.UUID, placements: Sequence[Placement]
+) -> dict[uuid.UUID, Evidence]:
+    """What backs each project proposed among these placements, with how the owner answered
+    Tamga's past proposals that were weighed the same."""
+    proposed = [
+        placement
+        for placement in placements
+        if placement.outcome is Outcome.PROPOSED and placement.project_id is not None
+    ]
+    if not proposed:
+        return {}
+    # The owner's answers, by how each proposal was backed when it was made.
+    past = await repository.proposal_bands(db, company_id, limit=_MEASURED_OVER)
+    held = await projects.get_projects(db, company_id, [weighed.project_id for weighed in past])
+    tally: dict[str, Kept] = {}
+    for weighed in past:
+        project = held.get(weighed.project_id)
+        if project is None or project.status not in _ANSWERED:
+            continue
+        was = tally.get(weighed.band, Kept(answered=0, kept=0))
+        tally[weighed.band] = Kept(
+            answered=was.answered + 1,
+            kept=was.kept + (project.status is not ProjectStatus.REJECTED),
+        )
+    bands = await _bands(db, company_id, proposed)
+    return {
+        placement.id: Evidence(
+            band=bands[placement.id],
+            missing=evidence.gaps(placement.reading),
+            measured=(
+                measured
+                if (measured := tally.get(bands[placement.id])) is not None
+                and measured.answered >= evidence.MEASURED_FROM
+                else None
+            ),
+        )
+        for placement in proposed
+    }
+
+
+async def _bands(
+    db: AsyncSession, company_id: uuid.UUID, placements: Sequence[Placement]
+) -> dict[uuid.UUID, Band]:
+    """Each placement's band, from what its conversation shows. One whose mail is gone shows
+    nothing but what was read of it."""
+    reach = await conversations.reach_of(
+        db, company_id, list({placement.thread_id for placement in placements})
+    )
+    kinds = extractors.key_kinds()
+    numbers: dict[uuid.UUID, set[tuple[str, str]]] = {}
+    for item_kind, ids in (
+        (ItemKind.MESSAGE, [mail_id for seen in reach.values() for mail_id in seen.mail_ids]),
+        (ItemKind.DOCUMENT, [file_id for seen in reach.values() for file_id in seen.file_ids]),
+    ):
+        for fact in await facts.facts_of_items(
+            db, company_id=company_id, item_kind=item_kind, item_ids=ids
+        ):
+            if fact.kind in kinds:
+                numbers.setdefault(fact.item_id, set()).add((fact.kind, fact.normalised))
+    bands = {}
+    for placement in placements:
+        seen = reach.get(placement.thread_id)
+        carried: set[tuple[str, str]] = set()
+        for item_id in (*seen.mail_ids, *seen.file_ids) if seen is not None else ():
+            carried |= numbers.get(item_id, set())
+        bands[placement.id] = evidence.band(
+            evidence.Signals(
+                reading=placement.reading,
+                mails=seen.mails if seen is not None else 0,
+                numbers=len(carried),
+                only_copied=seen is not None and seen.only_copied,
+            )
+        )
+    return bands

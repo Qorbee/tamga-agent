@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { InlineText } from "@/components/inline-text";
+import { ProposalEvidence } from "@/components/proposal-evidence";
 import { T } from "@/components/translated";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getProject, listProjectParties } from "@/lib/api";
@@ -88,6 +89,7 @@ export function ProjectView({ id }: { id: string }) {
     <div className="grid grid-cols-1 gap-6 p-4 sm:p-5">
       <header className="grid grid-cols-1 gap-4">
         <ProjectName project={project.data} />
+        <ProposalEvidence project={project.data} />
         <ProjectProperties project={project.data} />
         <ProjectBrief id={id} />
       </header>

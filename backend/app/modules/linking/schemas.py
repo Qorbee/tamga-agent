@@ -27,6 +27,28 @@ class JobReading(BaseModel):
     ends_on: date | None = None
 
 
+# How well a proposal is backed, weighed by code (linking/evidence.py).
+Band = Literal["strong", "partial", "thin"]
+# What a conversation does not tell of its job.
+Gap = Literal["client", "route", "first_day"]
+
+
+class Kept(BaseModel):
+    """Of Tamga's past proposals weighed the same, those the owner answered and those kept."""
+
+    answered: int
+    kept: int
+
+
+class Evidence(BaseModel):
+    """What backs a proposed project, by code: never the model's own word."""
+
+    band: Band
+    missing: list[Gap]
+    # Null until enough proposals of its band were answered to say anything.
+    measured: Kept | None
+
+
 class PlacementOut(BaseModel):
     """Where the linker placed a conversation, and why."""
 
@@ -43,6 +65,8 @@ class PlacementOut(BaseModel):
     alternatives: list[uuid.UUID]
     reason: str
     confidence: float | None
+    # A proposal's: what backs it.
+    evidence: Evidence | None
     # The mails the reason rests on.
     cited: list[uuid.UUID]
     reading: JobReading | None

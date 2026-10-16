@@ -2772,6 +2772,20 @@ export interface components {
          */
         EventKind: "chat" | "projects" | "documents" | "threads" | "invoices" | "decisions" | "money" | "clock";
         /**
+         * Evidence
+         * @description What backs a proposed project, by code: never the model's own word.
+         */
+        Evidence: {
+            /**
+             * Band
+             * @enum {string}
+             */
+            band: "strong" | "partial" | "thin";
+            measured: components["schemas"]["Kept"] | null;
+            /** Missing */
+            missing: ("client" | "route" | "first_day")[];
+        };
+        /**
          * FieldSource
          * @description Where an editable field's value came from; the owner's always wins (ADR-0010).
          * @enum {string}
@@ -3111,6 +3125,16 @@ export interface components {
             subcontractor?: string | null;
             /** Trucks */
             trucks?: number | null;
+        };
+        /**
+         * Kept
+         * @description Of Tamga's past proposals weighed the same, those the owner answered and those kept.
+         */
+        Kept: {
+            /** Answered */
+            answered: number;
+            /** Kept */
+            kept: number;
         };
         /**
          * Language
@@ -3955,6 +3979,7 @@ export interface components {
             /** Confidence */
             confidence: number | null;
             conversation: components["schemas"]["ThreadSummary"] | null;
+            evidence: components["schemas"]["Evidence"] | null;
             /**
              * Id
              * Format: uuid

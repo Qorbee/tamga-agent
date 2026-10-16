@@ -133,3 +133,24 @@ class KeptReading(CompanyScoped, Base):
     project_id: Mapped[uuid.UUID]
     reading: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ProposalBand(CompanyScoped, Base):
+    """How well a project the linker proposed was backed when it proposed it (linking/evidence.py),
+    kept as it was: the conversation changes afterwards, and the owner's answer is measured
+    against what was proposed, never against what the records say later."""
+
+    __tablename__ = "proposal_bands"
+    __table_args__ = (
+        UniqueConstraint("company_id", "project_id"),
+        # The projects module's table, named in the database only.
+        ForeignKeyConstraint(
+            ["company_id", "project_id"], ["projects.company_id", "projects.id"], ondelete="CASCADE"
+        ),
+        CheckConstraint("band IN ('strong', 'partial', 'thin')", name="proposal_bands_band_check"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    project_id: Mapped[uuid.UUID]
+    band: Mapped[str] = mapped_column(String(10))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

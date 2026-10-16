@@ -78,9 +78,21 @@ _WRITE_FIRST: Final = (
 )
 _PROPOSAL: Final = (
     "\nOpen the project and read its conversations. Then write the owner a short message: "
-    "what the job is, why it looks like a job of its own, and what you need from them. The "
-    "card with your message lets them confirm or reject the project, so do not say how."
+    "what the job is, why it looks like a job of its own, and what you need from them. When the "
+    "evidence is thin or something is not known yet, say that first: ask whether this is a job "
+    "of the company's, and if it is, ask for what is missing. Give no percentage or confidence of "
+    "your own; the evidence above is code's. The card with your message lets them confirm or "
+    "reject the project, so do not say how."
 )
+# What code weighed a proposal's evidence as, in the words the run is given.
+_BANDS: Final = {
+    "strong": (
+        "strong (the client and the route are known, and a number or a second mail back them)"
+    ),
+    "partial": "partial",
+    "thin": "thin (the company is only copied, or neither the client nor the route is known)",
+}
+_GAPS: Final = {"client": "the client", "route": "the route", "first_day": "the first day"}
 _OPENING: Final = (
     "\nSomeone just opened this company to try Tamga. Open the project and look at its trucks, "
     "papers and bills. Then write a short welcome, under five sentences: what the company faces "
@@ -231,6 +243,7 @@ async def _findings(db: AsyncSession, company_id: uuid.UUID) -> list[Finding]:
                             f"Project {project.number}: {project.name}",
                             f"Proposed from the conversation: {subject}",
                             *_reason(item),
+                            *_backed(item),
                         ],
                         _PROPOSAL,
                     ),
@@ -513,6 +526,23 @@ async def _stands(db: AsyncSession, company_id: uuid.UUID, finding: Finding) -> 
 
 def _reason(item: PlacementOut) -> list[str]:
     return [f"The linker's reason: {item.reason}"] if item.reason else []
+
+
+def _backed(item: PlacementOut) -> list[str]:
+    """A proposal's evidence as code weighed it, and how the owner answered such before."""
+    if item.evidence is None:
+        return []
+    weighed = item.evidence
+    measured = weighed.measured
+    return [
+        f"Evidence, weighed by code: {_BANDS[weighed.band]}",
+        "Not known yet: " + ", ".join(_GAPS[gap] for gap in weighed.missing)
+        if weighed.missing
+        else "Known: the client, the route and the first day",
+        f"Of {measured.answered} such proposals the owner answered, they kept {measured.kept}"
+        if measured is not None
+        else "Too few such proposals were answered yet to measure how often they are kept",
+    ]
 
 
 def told(label: str, lines: list[str], ask: str) -> str:

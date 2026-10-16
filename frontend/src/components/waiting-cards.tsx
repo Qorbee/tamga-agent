@@ -17,6 +17,7 @@ import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { MergeProjectDialog } from "@/components/merge-project-dialog";
 import { JobFacts, PlacementRows } from "@/components/placement-rows";
+import { ProposalEvidence } from "@/components/proposal-evidence";
 import { T } from "@/components/translated";
 import { Button } from "@/components/ui/button";
 import {
@@ -140,6 +141,7 @@ export function ProjectCard({ project, waiting }: { project: Project; waiting: P
             <T>{project.name}</T>
           </CanvasLink>
           <JobFacts project={project} className="mt-1.5" />
+          <ProposalEvidence project={project} className="mt-2" />
         </div>
       </header>
       {answer.isError ? (

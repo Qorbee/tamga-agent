@@ -393,7 +393,6 @@ function MailRow({ row }: { row: Extract<Row, { kind: "mail" }> }) {
       answer={
         <Answer
           waiting={waiting.length > 0}
-          confidence={row.placement?.confidence ?? Math.max(...row.links.map((link) => link.confidence))}
           pending={decide.isPending}
           onAnswer={isOwner ? (answer) => decide.mutate(answer) : undefined}
         />
@@ -586,7 +585,6 @@ function ItemRow({
       answer={
         <Answer
           waiting={link.status === "suggested"}
-          confidence={link.confidence}
           pending={decide.isPending}
           onAnswer={isOwner ? (answer) => decide.mutate(answer) : undefined}
         />
@@ -760,18 +758,16 @@ type WhyReason = NonNullable<Parameters<typeof updateLink>[1]["because"]>;
 
 function Answer({
   waiting,
-  confidence,
   pending,
   onAnswer,
 }: {
   waiting: boolean;
-  confidence: number | null;
   pending: boolean;
   onAnswer?: (answer: "confirmed" | "rejected") => void;
 }) {
   const { t } = useI18n();
   return (
-    <RowAnswer waiting={waiting} confidence={confidence}>
+    <RowAnswer waiting={waiting}>
       {onAnswer ? (
         <>
           <IconButton icon={Tick02Icon} label={t.inbox.confirm} disabled={pending} onClick={() => onAnswer("confirmed")} />

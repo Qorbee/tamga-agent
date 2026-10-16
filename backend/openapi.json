@@ -2766,6 +2766,49 @@
         "title": "EventKind",
         "type": "string"
       },
+      "Evidence": {
+        "description": "What backs a proposed project, by code: never the model's own word.",
+        "properties": {
+          "band": {
+            "enum": [
+              "strong",
+              "partial",
+              "thin"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
+          "measured": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Kept"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missing": {
+            "items": {
+              "enum": [
+                "client",
+                "route",
+                "first_day"
+              ],
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          }
+        },
+        "required": [
+          "band",
+          "missing",
+          "measured"
+        ],
+        "title": "Evidence",
+        "type": "object"
+      },
       "FieldSource": {
         "description": "Where an editable field's value came from; the owner's always wins (ADR-0010).",
         "enum": [
@@ -3851,6 +3894,25 @@
           }
         },
         "title": "JobReading",
+        "type": "object"
+      },
+      "Kept": {
+        "description": "Of Tamga's past proposals weighed the same, those the owner answered and those kept.",
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "integer"
+          },
+          "kept": {
+            "title": "Kept",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "answered",
+          "kept"
+        ],
+        "title": "Kept",
         "type": "object"
       },
       "Language": {
@@ -6342,6 +6404,16 @@
               }
             ]
           },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Evidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -6430,6 +6502,7 @@
           "alternatives",
           "reason",
           "confidence",
+          "evidence",
           "cited",
           "reading",
           "placed_at",

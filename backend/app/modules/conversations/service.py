@@ -1091,17 +1091,88 @@ async def messages_attaching(
     return carried
 
 
-async def _as_read_threads(
-    db: AsyncSession, company_id: uuid.UUID, threads: Sequence[Thread]
-) -> list[ThreadRead]:
-    mails = await repository.mail_as_read(db, company_id, [thread.thread_key for thread in threads])
+def only_copied(reached: Iterable[str]) -> bool:
+    """Whether a conversation whose mails reached the company in these ways (``MailRead``'s
+    ``addressed``, or "by" for one it wrote) only copies it: other firms arranging their own
+    work."""
+    ways = set(reached)
+    return "cc" in ways and not ways & {"to", "by"}
+
+
+@dataclass(frozen=True, slots=True)
+class Reach:
+    """A conversation as it reached the company, and what it holds."""
+
+    only_copied: bool
+    mails: int
+    mail_ids: list[uuid.UUID]
+    # Its files, but those that only sign a mail, and what its archives held.
+    file_ids: list[uuid.UUID]
+
+
+async def reach_of(
+    db: AsyncSession, company_id: uuid.UUID, thread_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, Reach]:
+    """These conversations by id, as they reached the company; one whose mail is gone is left
+    out."""
+    threads = await repository.threads_by_ids(db, company_id, thread_ids)
+    by_key: dict[str, list[Message]] = {}
+    for message in await repository.thread_addresses(
+        db, company_id, [thread.thread_key for thread in threads]
+    ):
+        by_key.setdefault(message.thread_key, []).append(message)
+    boxes, domains = await _own_addresses(db, company_id)
+    attached = await repository.attachments_of_each(
+        db, company_id, [message.id for mails in by_key.values() for message in mails]
+    )
+    # A paper inside an attached archive is stored as a file of its own, which holds its facts.
+    members = await documents.members_of(
+        db,
+        company_id,
+        [file.document_id for files in attached.values() for file in files if not file.signature],
+    )
+    reach = {}
+    for thread in threads:
+        # Every copy: one kept from the Sent folder says the company wrote it.
+        mails = by_key.get(thread.thread_key, [])
+        if not mails:
+            continue
+        reach[thread.id] = Reach(
+            only_copied=only_copied(
+                "by" if _outbound(mail) else _addressed(mail, boxes, domains) for mail in mails
+            ),
+            mails=len(_once([(mail, 0) for mail in mails])),
+            mail_ids=[mail.id for mail in mails],
+            file_ids=list(
+                dict.fromkeys(
+                    held
+                    for mail in mails
+                    for file in attached.get(mail.id, [])
+                    if not file.signature
+                    for held in (file.document_id, *members.get(file.document_id, []))
+                )
+            ),
+        )
+    return reach
+
+
+async def _own_addresses(db: AsyncSession, company_id: uuid.UUID) -> tuple[set[str], set[str]]:
+    """The company's mailboxes, and their own domains: a shared provider's domain (gmail.com) is
+    no one's, so there only the mailbox itself is."""
     boxes = {box.lower() for box in await repository.mailboxes(db, company_id)}
-    # A shared provider's domain (gmail.com) is no one's: there, only the mailbox itself is.
     domains = {
         domain
         for box in boxes
         if (domain := maildomains.address_domain(box)) and not maildomains.is_shared(domain)
     }
+    return boxes, domains
+
+
+async def _as_read_threads(
+    db: AsyncSession, company_id: uuid.UUID, threads: Sequence[Thread]
+) -> list[ThreadRead]:
+    mails = await repository.mail_as_read(db, company_id, [thread.thread_key for thread in threads])
+    boxes, domains = await _own_addresses(db, company_id)
     attached = await repository.attachments_of_each(db, company_id, [mail.id for mail in mails])
     shown = [
         file.document_id

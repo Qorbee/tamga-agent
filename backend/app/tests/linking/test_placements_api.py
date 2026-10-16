@@ -4,12 +4,13 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from app.modules.conversations import repository as mail_repository
 from app.modules.conversations import service as conversations
 from app.modules.conversations.models import ThreadCategory
-from app.modules.linking import repository, service
-from app.modules.linking.models import Outcome
+from app.modules.linking import evidence, repository, service
+from app.modules.linking.models import Outcome, ProposalBand
 from app.modules.projects.models import LinkStatus, ProjectStatus
 from app.platform.db import open_session
 from app.tests.conftest import guest_client
@@ -61,6 +62,13 @@ async def test_a_placement_says_what_the_conversation_is_where_it_went_and_why(
     assert placement["reason"] == "why" and placement["confidence"] == 0.8
     read = {key: value for key, value in placement["reading"].items() if value is not None}
     assert read == {"origin": "Istanbul", "cargo": "steel coils"}
+    # What backs it, weighed by code: the route is read, the client and the first day are not;
+    # nothing was answered yet to measure it by.
+    assert placement["evidence"] == {
+        "band": "partial",
+        "missing": ["client", "first_day"],
+        "measured": None,
+    }
     assert placement["suggested_links"] == 2
     conversation = placement["conversation"]
     assert conversation["subject"] == "Munich load" and conversation["message_count"] == 2
@@ -77,6 +85,43 @@ async def test_a_placement_says_what_the_conversation_is_where_it_went_and_why(
     assert one.status_code == 200 and one.json()["reason"] == "why"
     await guest_client(client)
     assert (await client.get(f"/placements/{placement['id']}")).status_code == 404
+
+
+async def test_a_proposal_says_how_often_the_owner_kept_those_weighed_the_same(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(evidence, "MEASURED_FROM", 2)
+    first = await proposed(client, model)
+    await client.patch(f"/projects/{first['project_id']}", json={"status": "rejected"})
+    company_id = uuid.UUID(first["company_id"])
+
+    async def propose(uid: int, subject: str) -> dict[str, Any]:
+        await arrive(
+            company_id,
+            uid,
+            mail(f"<{uid}@x>", subject=subject, date=f"Tue, 0{uid} Sep 2026 09:00:00 +0300"),
+            category=ThreadCategory.WORK,
+        )
+        model(tool("search_projects", words="Stone"), NEW_PROJECT)
+        assert await service.place_pending() == 1
+        page = (await client.get("/placements", params={"outcome": "proposed"})).json()
+        return next(item for item in page["items"] if item["conversation"]["subject"] == subject)
+
+    # One answered is too few to say anything.
+    assert (await propose(3, "Lyon load"))["evidence"]["measured"] is None
+    lyon = (await client.get("/placements", params={"outcome": "proposed"})).json()["items"]
+    [kept] = [item for item in lyon if item["conversation"]["subject"] == "Lyon load"]
+    await client.patch(f"/projects/{kept['project_id']}", json={"status": "active"})
+    # Two of its band answered: one kept, one refused. Another band's answers would not count.
+    assert (await propose(4, "Turin load"))["evidence"]["measured"] == {"answered": 2, "kept": 1}
+    # Each is measured by the band it had when proposed, kept as it was.
+    async with open_session() as db:
+        kept_bands = await db.scalars(
+            select(ProposalBand.band).where(ProposalBand.company_id == company_id)
+        )
+        assert sorted(kept_bands.all()) == ["partial"] * 3
 
 
 async def test_confirming_a_placement_confirms_every_link_that_waits(

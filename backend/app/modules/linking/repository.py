@@ -8,7 +8,7 @@ from sqlalchemy import any_, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.linking.models import KeptReading, Outcome, Placement
+from app.modules.linking.models import KeptReading, Outcome, Placement, ProposalBand
 from app.platform.pagination import PageParams
 
 
@@ -277,6 +277,30 @@ async def placed_in_projects(db: AsyncSession, company_id: uuid.UUID) -> Sequenc
         select(Placement)
         .where(Placement.company_id == company_id, Placement.project_id.is_not(None))
         .order_by(Placement.id)
+    )
+    return rows.all()
+
+
+async def weigh_proposal(
+    db: AsyncSession, company_id: uuid.UUID, project_id: uuid.UUID, band: str
+) -> None:
+    """Keeps how well a new proposal was backed; one weighed already keeps its first band."""
+    await db.execute(
+        insert(ProposalBand)
+        .values(company_id=company_id, project_id=project_id, band=band)
+        .on_conflict_do_nothing(index_elements=["company_id", "project_id"])
+    )
+
+
+async def proposal_bands(
+    db: AsyncSession, company_id: uuid.UUID, *, limit: int
+) -> Sequence[ProposalBand]:
+    """How the latest proposals were backed when made, newest first."""
+    rows = await db.scalars(
+        select(ProposalBand)
+        .where(ProposalBand.company_id == company_id)
+        .order_by(ProposalBand.created_at.desc(), ProposalBand.id.desc())
+        .limit(limit)
     )
     return rows.all()
 

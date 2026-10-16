@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, load_only
 
 from app.modules.conversations.models import (
     Channel,
@@ -479,6 +479,29 @@ async def thread_messages(
         .order_by(Message.sent_at, Message.id)
     )
     return rows.tuples().all()
+
+
+async def thread_addresses(
+    db: AsyncSession, company_id: uuid.UUID, thread_keys: Sequence[str]
+) -> Sequence[Message]:
+    """Every mail of these threads, oldest first, with only what says who it was between: no
+    text is loaded."""
+    rows = await db.scalars(
+        select(Message)
+        .options(
+            load_only(
+                Message.thread_key,
+                Message.direction,
+                Message.recipients,
+                Message.copied,
+                Message.rfc_message_id,
+                Message.sent_at,
+            )
+        )
+        .where(Message.company_id == company_id, Message.thread_key.in_(thread_keys))
+        .order_by(Message.sent_at, Message.id)
+    )
+    return rows.all()
 
 
 async def carriers_of(

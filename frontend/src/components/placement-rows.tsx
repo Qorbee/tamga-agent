@@ -227,7 +227,7 @@ function PlacementRow({ placement }: { placement: Placement }) {
           ) : null}
         </span>
       </CanvasLink>
-      <RowAnswer waiting={placement.suggested_links > 0} confidence={placement.confidence}>
+      <RowAnswer waiting={placement.suggested_links > 0}>
         <IconButton
           icon={Tick02Icon}
           label={t.inbox.confirm}
@@ -268,16 +268,11 @@ function PlacementRow({ placement }: { placement: Placement }) {
   );
 }
 
-/** The owner's answer while a conversation waits, with how sure the placement is; a tick once given. */
-export function RowAnswer({
-  waiting,
-  confidence,
-  children,
-}: {
-  waiting: boolean;
-  confidence: number | null;
-  children: ReactNode;
-}) {
+/**
+ * The owner's answer while a conversation waits; a tick once given. A model's own confidence is
+ * not shown: nothing checks it. What backs a proposal is weighed by code (`ProposalEvidence`).
+ */
+export function RowAnswer({ waiting, children }: { waiting: boolean; children: ReactNode }) {
   const { t } = useI18n();
   if (!waiting)
     return (
@@ -287,17 +282,5 @@ export function RowAnswer({
         </span>
       </Hint>
     );
-  const percent = confidence === null ? null : Math.round(confidence * 100);
-  return (
-    <span className="mt-1 flex shrink-0 items-center gap-0.5">
-      {percent !== null ? (
-        <Hint label={t.inbox.confidence(percent)}>
-          <span className="text-muted-foreground me-1 text-xs tabular-nums max-sm:hidden" aria-label={t.inbox.confidence(percent)}>
-            {percent}%
-          </span>
-        </Hint>
-      ) : null}
-      {children}
-    </span>
-  );
+  return <span className="mt-1 flex shrink-0 items-center gap-0.5">{children}</span>;
 }

@@ -163,6 +163,10 @@ async def test_tamga_writes_first_about_a_project_it_proposes(
     fence = told.index("BEGIN OUTSIDE DATA")
     assert fence < told.index(project["name"]) < told.index("END OUTSIDE DATA")
     assert proposal.reason in told
+    # How sure it is comes from code, with what the conversation does not tell.
+    assert "Evidence, weighed by code: partial" in told
+    assert "Not known yet: the client, the first day" in told
+    assert "Too few such proposals were answered yet" in told
     assert await spent(company_id, Origin.TAMGA) == 2
     assert await spent(company_id, Origin.OWNER) == 0
 

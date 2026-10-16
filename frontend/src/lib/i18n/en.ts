@@ -973,7 +973,14 @@ export const en = {
     reject: "Reject",
     accept: "Accept",
     dismiss: "Dismiss",
-    confidence: (percent: number) => `${percent}% sure`,
+    /** What backs a proposed project, weighed by code from the records and the owner's answers. */
+    evidence: {
+      band: { strong: "Strong evidence", partial: "Partial evidence", thin: "Thin evidence" },
+      missing: (fields: string) => `Not known yet: ${fields}`,
+      gaps: { client: "client", route: "route", first_day: "first day" },
+      measured: (kept: number, answered: number) => `Of ${answered} like this, you kept ${kept}`,
+      unmeasured: "Not enough answers yet to measure",
+    },
     field: (target: string, field: string) => `${target} · ${field}`,
     /** An editable field by its name in the API; one not listed shows as the API names it. */
     fields: { name: "Name", number: "Number", starts_on: "First loading day", ends_on: "Last delivery day" } as Record<string, string>,
