@@ -1162,13 +1162,15 @@ export const tr: Dictionary = {
       failed: "Başarısız",
     } as Record<string, string>,
   },
-  tiles: {
+  calendar: {
+    previous: "Önceki ay",
+    next: "Sonraki ay",
+  },
+  glance: {
     available: "Kullanılabilir",
-    due: "Bugün ödenecek",
-    dueBy: (day: string) => `${day} gününe kadar`,
-    expected: "Gelecek tahsilat",
-    toApprove: "Onayınızda",
-    reserve: "Rezerv",
+    comingIn: (amount: string) => `${amount} gelecek`,
+    dueBy: (amount: string, day: string) => `${day} gününe kadar ${amount} ödenecek`,
+    dueToday: (amount: string) => `Bugün ${amount} ödenecek`,
   },
   setup: {
     title: "Tamga'nın nasıl ödeyeceğini belirleyin",

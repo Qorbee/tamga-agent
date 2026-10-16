@@ -42,7 +42,8 @@ export function Segmented<T extends string>(
 ) {
   const { options, label, fill = false, size = "sm", disabled, className } = props;
   const single = !props.multiple;
-  const { track: trackRef, place } = useSlide(single ? (props.value ?? null) : null);
+  const chosen = useTapped(single ? (props.value ?? null) : null, disabled);
+  const { track: trackRef, place } = useSlide(chosen.value);
   const items = options.map((option) => {
     const item = (
       <ToggleGroupItem
@@ -103,11 +104,13 @@ export function Segmented<T extends string>(
       ref={trackRef}
       type="single"
       spacing={0.5}
-      value={props.value ?? ""}
+      value={chosen.value ?? ""}
       aria-label={label}
       className={track}
       onValueChange={(next) => {
-        if (next) props.onChange(next as T);
+        if (!next) return;
+        chosen.tap(next);
+        props.onChange(next as T);
       }}
     >
       {place ? (
@@ -124,6 +127,22 @@ export function Segmented<T extends string>(
       {items}
     </ToggleGroup>
   );
+}
+
+/**
+ * The option shown chosen: the one tapped, at once, while the choice it makes is saved (a setting
+ * the server answers a moment later), so the selector moves under the finger and never waits or
+ * jumps. The owner's value wins as soon as it changes, and again once a save ends (the selector is
+ * enabled again): a save that failed leaves the value it had.
+ */
+function useTapped(value: string | null, disabled: boolean | undefined) {
+  const [tapped, setTapped] = useState<string | null>(null);
+  const [seen, setSeen] = useState({ value, disabled });
+  if (seen.value !== value || (seen.disabled && !disabled)) {
+    setSeen({ value, disabled });
+    setTapped(null);
+  } else if (seen.disabled !== disabled) setSeen({ value, disabled });
+  return { value: tapped ?? value, tap: setTapped };
 }
 
 type Place = { x: number; y: number; width: number; height: number; slide: boolean };

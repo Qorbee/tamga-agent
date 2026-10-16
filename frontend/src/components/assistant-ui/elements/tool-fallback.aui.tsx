@@ -27,7 +27,8 @@ import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import { useKeepInPlace } from "@/components/assistant-ui/keep-in-place";
-import { OpenedProject, StepResult, fellShort, oneLine, openedNumber, useStepLabel } from "@/components/assistant-ui/tool-steps";
+import { OpenedProject, StepResult, fellShort, oneLine, openedNumber, openedView, useStepLabel } from "@/components/assistant-ui/tool-steps";
+import { CanvasLink } from "@/components/canvas-link";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -742,6 +743,7 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   const shouldRenderApproval =
     isRequiresAction && offersInterruptAction(status, approval, interrupt);
 
+  const { t } = useI18n();
   const [open, setOpen] = useState(isRequiresAction);
   const stepLabel = useStepLabel();
   const [prevRequiresAction, setPrevRequiresAction] =
@@ -752,15 +754,21 @@ const ToolFallbackImpl: ToolCallMessagePartComponent = ({
   }
 
   const number = openedNumber(toolName, argsText);
-  // A search, or a project opened by its number, is said in one line: the project's a link.
-  if (oneLine(toolName, argsText) && status?.type === "complete" && !fellShort(result))
+  const view = openedView(result);
+  const said = stepLabel(toolName, argsText) ?? t.assistant.tools[toolName] ?? toolName;
+  // A search or a record opened is said in one line; what opened is a link that shows it.
+  if (oneLine(toolName) && status?.type === "complete" && !fellShort(result))
     return (
       <p className="text-muted-foreground flex items-center gap-2 py-1.5 text-sm">
         <CheckIcon className="size-4 shrink-0" aria-hidden />
         {number ? (
           <OpenedProject number={number} className="hover:text-foreground" />
+        ) : view ? (
+          <CanvasLink view={view} className="hover:text-foreground">
+            <span className="underline decoration-dotted underline-offset-4">{said}</span>
+          </CanvasLink>
         ) : (
-          <span>{stepLabel(toolName, argsText) ?? toolName}</span>
+          <span>{said}</span>
         )}
       </p>
     );

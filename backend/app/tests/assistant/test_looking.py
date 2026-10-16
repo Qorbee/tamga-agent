@@ -160,6 +160,8 @@ async def test_open_stays_within_its_cap(client: httpx.AsyncClient) -> None:
 
     assert "(cut here, at 40 characters" in opened
     assert len(seat.read["c1"].split("\n(cut here")[0]) == 40
+    # The fence's label names where the app shows it, its last mail, for the step's link.
+    assert re.search(r"^record c1 · view mail:[0-9a-f-]{36}$", opened, re.MULTILINE)
 
 
 async def test_investigate_reads_in_a_run_of_its_own_and_keeps_only_what_it_cites(

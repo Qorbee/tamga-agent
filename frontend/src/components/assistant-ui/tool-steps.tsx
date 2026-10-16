@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
+import { parseView, type CanvasView } from "@/lib/canvas-view";
 import { listProjects } from "@/lib/api";
 import type { Dictionary } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -80,16 +81,31 @@ export function openedNumber(toolName: string, argsText: string | undefined): st
   return HANDLE_KINDS[handle.trim().charAt(0).toLowerCase()] && /^[a-z]\d+$/i.test(handle.trim()) ? null : handle.trim();
 }
 
-/** Whether a step is said in its one line, with nothing under it. */
-export function oneLine(toolName: string, argsText: string | undefined): boolean {
-  return toolName === "search" || openedNumber(toolName, argsText) !== null;
+// Where the app shows a record `open` opened, on its fence's label: "record c3 · view mail:<id>".
+const VIEW_LABEL = /^BEGIN OUTSIDE DATA \w+\nrecord [^\n]* · view (\w+):([\w-]+)\n/;
+
+/** Where the app shows what a step opened, when it told. */
+export function openedView(result: unknown): CanvasView | null {
+  if (typeof result !== "string") return null;
+  const found = VIEW_LABEL.exec(result);
+  return found ? parseView(`${found[1]}:${found[2]}`) : null;
+}
+
+/** Whether a step is said in its one line, with nothing under it: what was found or opened is
+ * Tamga's to say in its answer, and a record opened is a link, never its text. */
+export function oneLine(toolName: string): boolean {
+  return toolName === "search" || toolName === "open" || toolName === "waiting";
 }
 
 /** Whether a step's lookup failed in part: a source that could not be searched, a record with no
  * such number (the words `assistant/looking.py` answers with). Never shown as a lookup done. */
 export function fellShort(result: unknown): boolean {
   const text = unfenced(result) ?? "";
-  return text.includes("could not be searched just now") || text.startsWith("No such record");
+  return (
+    text.includes("could not be searched just now") ||
+    text.startsWith("No such record") ||
+    /^That [\w ]+ is gone\.$/.test(text.trim())
+  );
 }
 
 const bare = (number: string) => number.replace(/\s+/g, "").toUpperCase();

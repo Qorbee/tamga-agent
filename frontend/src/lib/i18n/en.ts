@@ -1199,13 +1199,15 @@ export const en = {
       failed: "Failed",
     } as Record<string, string>,
   },
-  tiles: {
+  calendar: {
+    previous: "Previous month",
+    next: "Next month",
+  },
+  glance: {
     available: "Available",
-    due: "Due today",
-    dueBy: (day: string) => `Due by ${day}`,
-    expected: "Expected in",
-    toApprove: "To approve",
-    reserve: "Reserve",
+    comingIn: (amount: string) => `${amount} coming in`,
+    dueBy: (amount: string, day: string) => `${amount} due by ${day}`,
+    dueToday: (amount: string) => `${amount} due today`,
   },
   setup: {
     title: "Set how Tamga pays",

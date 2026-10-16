@@ -120,6 +120,25 @@ export function todayIso(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** A calendar's month heading, "October 2026". */
+export function formatMonth(year: number, month: number, locale: Locale): string {
+  return new Intl.DateTimeFormat(intlLocale[locale], { month: "long", year: "numeric" }).format(new Date(year, month, 1));
+}
+
+/** The week's days as a calendar heads its columns, Monday first: "Mo", "Tu", … */
+export function weekdayNames(locale: Locale): string[] {
+  const format = new Intl.DateTimeFormat(intlLocale[locale], { weekday: "short" });
+  // 5 January 2026 was a Monday.
+  return Array.from({ length: 7 }, (_, at) => format.format(new Date(2026, 0, 5 + at)).slice(0, 2));
+}
+
+/** A whole day as a calendar names it to a screen reader, "Friday 16 October 2026". */
+export function formatDayLong(day: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(intlLocale[locale], { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(
+    localDay(day),
+  );
+}
+
 /** A job's days: one day, or the span from the first to the last ("10 – 14 Aug 2026"). */
 /** A day as a chart's axis names it, "13 Oct": the year and the weekday left to the readout. */
 export function formatDayShort(day: string, locale: Locale): string {

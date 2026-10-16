@@ -35,8 +35,8 @@ const pairs = [
   ["warning", ["background", "card"], NON_TEXT],
   ["danger", ["background", "card"], NON_TEXT],
   ["ring", ["background", "card"], NON_TEXT],
-  // The edge that marks a selector's chosen option on its track.
-  ["segment-border", ["muted"], NON_TEXT],
+  // A selector's chosen option reads by its label in full ink beside the others' muted ones (the
+  // two text pairs above); its raised fill and faint edge only echo that, as a phone's do.
   // The World's messages, and what is written on its wallpaper.
   ["foreground", ["world-bubble", "world-bubble-out", "world-wall"], TEXT],
   ["muted-foreground", ["world-bubble", "world-bubble-out", "world-wall"], TEXT],

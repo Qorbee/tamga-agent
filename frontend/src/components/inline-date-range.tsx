@@ -1,10 +1,9 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
-import { Field } from "@/components/field";
+import { DayCalendar } from "@/components/day-calendar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDays } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
@@ -13,8 +12,8 @@ import { cn } from "@/lib/utils";
 export type DayRange = { start: string | null; end: string | null };
 
 /**
- * A span of days edited where it is shown: a tap opens the phone's own date pickers for the first
- * and the last day. Only a day that changed from what it was as the picker opened is sent, so a
+ * A span of days edited where it is shown: a tap opens a calendar, a tap on the first day and one
+ * on the last. Only a day that changed from what it was as the picker opened is sent, so a
  * day another session saved meanwhile is not written over, and an emptied one is cleared. Without
  * `onSave` it is only shown.
  */
@@ -40,7 +39,6 @@ export function InlineDateRange({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState({ start: value.start ?? "", end: value.end ?? "" });
   const [opened, setOpened] = useState(draft);
-  const id = useId();
   const shown = formatDays(value.start, value.end, locale);
   const text = <span className={cn("tabular-nums", !shown && "text-muted-foreground")}>{shown || empty}</span>;
 
@@ -81,25 +79,19 @@ export function InlineDateRange({
             {text}
           </button>
         </PopoverTrigger>
-        <PopoverContent>
+        <PopoverContent className="w-auto">
           <form onSubmit={onSubmit} className="grid gap-3">
-            <Field label={labels.start} htmlFor={`${id}-start`}>
-              <Input
-                id={`${id}-start`}
-                type="date"
-                value={draft.start}
-                onChange={(event) => setDraft((current) => ({ ...current, start: event.target.value }))}
-              />
-            </Field>
-            <Field label={labels.end} htmlFor={`${id}-end`}>
-              <Input
-                id={`${id}-end`}
-                type="date"
-                min={draft.start || undefined}
-                value={draft.end}
-                onChange={(event) => setDraft((current) => ({ ...current, end: event.target.value }))}
-              />
-            </Field>
+            <DayCalendar span value={draft} onChange={setDraft} />
+            <p className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
+              <span>
+                {labels.start}
+                <span className="text-foreground block text-sm tabular-nums">{formatDays(draft.start || null, null, locale) || "—"}</span>
+              </span>
+              <span>
+                {labels.end}
+                <span className="text-foreground block text-sm tabular-nums">{formatDays(draft.end || null, null, locale) || "—"}</span>
+              </span>
+            </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" size="sm" onClick={() => setDraft({ start: "", end: "" })}>
                 {t.project.clear}

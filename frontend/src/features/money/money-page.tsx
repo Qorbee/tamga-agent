@@ -2,7 +2,7 @@
 
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { MoneySummary } from "@/components/money-tiles";
+import { MoneyGlance } from "@/components/money-glance";
 import { between, PeriodBars, SeriesLegend, type Series } from "@/components/period-bars";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,8 +62,8 @@ export function MoneyPage() {
   );
 }
 
-/** The money at a glance, the same rows as the home's, and how what the accounts hold is
- * counted, in a line rather than a tooltip a phone never shows. */
+/** The money at a glance, and how what the accounts hold is counted, in a line rather than a
+ * tooltip a phone never shows. */
 function Holdings() {
   const { t } = useI18n();
   const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
@@ -81,7 +81,7 @@ function Holdings() {
     );
   return (
     <section className="grid gap-2">
-      <MoneySummary />
+      <MoneyGlance />
       {holdings.data ? (
         <p className="text-muted-foreground px-1 text-xs text-pretty">
           {holdings.data.items.length > 0

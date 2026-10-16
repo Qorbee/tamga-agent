@@ -38,9 +38,10 @@
   --input: #e8e6dc;
   --ring: #8f3a2e;
 
-  /* A selector's chosen option: raised off its track, with an edge, so it reads at a glance. */
+  /* A selector's chosen option: raised off its track by its fill and a soft shadow, as a phone's
+     is; the edge is a hairline, never a ring. */
   --segment: #ffffff;
-  --segment-border: #8a8476;
+  --segment-border: #e2dfd5;
 
   /* The playground's World: a chat app's wallpaper and its message bubbles. */
   --world-wall: #efe7db;
@@ -88,37 +89,38 @@
   --radius: 0.75rem;
 }
 
-/* Black: Qorbee's charcoal, warm rather than pure black. Terracotta stays the light theme's, as a
-   fill only (buttons, the mark): as text or a focus ring it is 2.6:1 on charcoal, so links, focus
-   and active items are neutral here, and danger text takes the design system's dark status red. */
+/* Black: near-black and neutral, warm only by a hair, as the chat apps the owner knows are; surfaces
+   step up in grey, never in brown. Terracotta stays the light theme's, as a fill only (buttons,
+   the mark): as text or a focus ring it is 2.6:1 here, so links, focus and active items are
+   neutral, and danger text takes the design system's dark status red. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #121110;
-  --foreground: #f7f3ea;
-  --card: #1a1814;
-  --card-foreground: #f7f3ea;
-  --popover: #1a1814;
-  --popover-foreground: #f7f3ea;
+  --background: #121212;
+  --foreground: #f2f0eb;
+  --card: #1c1c1b;
+  --card-foreground: #f2f0eb;
+  --popover: #1f1f1e;
+  --popover-foreground: #f2f0eb;
 
   --primary: #8f3a2e;
   --primary-foreground: #faf9f5;
 
-  --secondary: #211f1a;
-  --secondary-foreground: #f7f3ea;
-  --muted: #211f1a;
-  --muted-foreground: #9d978b;
-  --accent: #2a2721;
-  --accent-foreground: #f7f3ea;
+  --secondary: #252524;
+  --secondary-foreground: #f2f0eb;
+  --muted: #252524;
+  --muted-foreground: #a09e98;
+  --accent: #2c2c2a;
+  --accent-foreground: #f2f0eb;
 
-  --border: #302d26;
-  --input: #302d26;
-  --ring: #9d978b;
+  --border: #2e2e2c;
+  --input: #3a3a37;
+  --ring: #a09e98;
 
-  --segment: #3a362e;
-  --segment-border: #77705f;
+  --segment: #383836;
+  --segment-border: #454542;
 
   --world-wall: #0f0e0c;
-  --world-bubble: #24211c;
+  --world-bubble: #232322;
   --world-bubble-out: #1e3022;
   --world-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='rgba%28240%2C230%2C210%2C0.06%29' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg transform='translate%2814 20%29'%3E%3Cpath d='M0 14h22V2H0z M22 6h7l5 5v3h-12'/%3E%3Ccircle cx='6' cy='16' r='2.5'/%3E%3Ccircle cx='27' cy='16' r='2.5'/%3E%3C/g%3E%3Cg transform='translate%2896 14%29'%3E%3Cpath d='M0 4l12-4 12 4v14l-12 4-12-4z M0 4l12 4 12-4 M12 8v14'/%3E%3C/g%3E%3Cg transform='translate%2826 92%29'%3E%3Cpath d='M8 22s8-8 8-14A8 8 0 0 0 0 8c0 6 8 14 8 14z'/%3E%3Ccircle cx='8' cy='8' r='2.5'/%3E%3C/g%3E%3Cg transform='translate%28100 88%29'%3E%3Cpath d='M0 0h16l6 6v22H0z M16 0v6h6 M4 12h12 M4 17h12 M4 22h8'/%3E%3C/g%3E%3Cg transform='translate%2864 60%29'%3E%3Cpath d='M0 6h20 M14 0l6 6-6 6'/%3E%3C/g%3E%3C/svg%3E");
 
@@ -133,18 +135,18 @@
   --danger-soft: #2c1a17;
   --destructive: #e08b7f;
 
-  --chart-4: #9d978b;
-  --chart-5: #302d26;
+  --chart-4: #a09e98;
+  --chart-5: #2e2e2c;
 
   /* The sidebar sits one step below the page, as in the light theme. */
-  --sidebar: #0e0d0b;
-  --sidebar-foreground: #f7f3ea;
+  --sidebar: #0e0e0e;
+  --sidebar-foreground: #f2f0eb;
   --sidebar-primary: #8f3a2e;
   --sidebar-primary-foreground: #faf9f5;
-  --sidebar-accent: #221f1b;
-  --sidebar-accent-foreground: #f7f3ea;
-  --sidebar-border: #2a2721;
-  --sidebar-ring: #9d978b;
+  --sidebar-accent: #222221;
+  --sidebar-accent-foreground: #f2f0eb;
+  --sidebar-border: #262625;
+  --sidebar-ring: #a09e98;
 }
 
 @theme inline {

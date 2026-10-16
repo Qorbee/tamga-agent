@@ -6,6 +6,7 @@ import {
   Cancel01Icon,
   Flag03Icon,
   HashtagIcon,
+  Link01Icon,
   PackageIcon,
   PackageReceiveIcon,
   Route01Icon,
@@ -17,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useState, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
+import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { InlineDateRange } from "@/components/inline-date-range";
 import { InlineText } from "@/components/inline-text";
@@ -198,6 +200,51 @@ function agreed(party: ProjectParty): boolean {
   return new Set(party.signals).size >= 2;
 }
 
+/** Firms one to a line, so a job's several subcontractors read as so many; a note after the last. */
+function Names({ names, note }: { names: (string | null | undefined)[]; note?: string }) {
+  const shown = names.filter((name): name is string => Boolean(name));
+  return (
+    <span className="grid gap-0.5 [overflow-wrap:anywhere]">
+      {shown.map((name, at) => (
+        <span key={`${name}-${at}`}>
+          {name}
+          {note && at === shown.length - 1 ? <span className="text-muted-foreground text-xs"> · {note}</span> : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Why Tamga names a firm, as a link's icon: its hint says what named it, a tap opens the first
+ * paper that did, and a count tells how many more. */
+function FirmProof({ why, sources }: { why: string; sources: ProjectParty["evidence"] }) {
+  const { t } = useI18n();
+  const opened = sources.filter((item) => SOURCES[item.item_kind]);
+  const [first, ...rest] = opened;
+  const label = first ? `${why} · ${t.project.openSource[first.item_kind]}` : why;
+  const mark = (
+    <>
+      <HugeiconsIcon icon={Link01Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+      {rest.length > 0 ? <span className="text-[0.7rem] tabular-nums">+{rest.length}</span> : null}
+    </>
+  );
+  const look = "text-muted-foreground inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-0.5 rounded-full px-1";
+  const view = first ? SOURCES[first.item_kind] : undefined;
+  return (
+    <Hint label={label}>
+      {first && view ? (
+        <CanvasLink view={{ kind: view, id: first.item_id }} aria-label={label} className={cn(look, "hover:text-foreground hover:bg-accent/60")}>
+          {mark}
+        </CanvasLink>
+      ) : (
+        <span role="img" aria-label={label} className={look}>
+          {mark}
+        </span>
+      )}
+    </Hint>
+  );
+}
+
 function PartyField({
   project,
   role,
@@ -250,19 +297,14 @@ function PartyField({
   const standing = chosen.length === 0 ? unanswered.filter(agreed) : [];
   const shown =
     chosen.length > 0 ? (
-      <span className="[overflow-wrap:anywhere]">{chosen.map((each) => each.party_name).join(", ")}</span>
+      <Names names={chosen.map((each) => each.party_name)} />
     ) : standing.length > 0 ? (
-      <span className="[overflow-wrap:anywhere]">
-        {standing.map((each) => each.party_name).join(", ")}{" "}
-        <span className="text-muted-foreground text-xs">· {t.project.suggestedFirm}</span>
-      </span>
+      <Names names={standing.map((each) => each.party_name)} note={t.project.suggestedFirm} />
     ) : read.length > 0 ? (
-      <span className="[overflow-wrap:anywhere]">
-        {read.join(", ")}{" "}
-        <span className="text-muted-foreground text-xs">
-          · {read.every((name) => notInBooks.includes(name)) ? t.project.notInBooks : t.project.readFromMail}
-        </span>
-      </span>
+      <Names
+        names={read}
+        note={read.every((name) => notInBooks.includes(name)) ? t.project.notInBooks : t.project.readFromMail}
+      />
     ) : (
       <span className="text-muted-foreground">{t.project.empty}</span>
     );
@@ -410,6 +452,10 @@ function SuggestedFirms({
                     ? t.project.askAgainstMail(firm.party_name, label, mailNames.join(", "))
                     : t.project.askFirm(firm.party_name, label)}
               </span>
+              <FirmProof
+                why={firm.signals.map((signal) => t.project.firmSignals[signal] ?? signal).join(" · ")}
+                sources={sources}
+              />
               {isOwner ? (
                 <span className="flex shrink-0 items-center gap-0.5">
                   <IconButton
@@ -429,21 +475,6 @@ function SuggestedFirms({
                   />
                 </span>
               ) : null}
-            </span>
-            <span className="text-muted-foreground flex flex-wrap gap-x-2">
-              <span>{firm.signals.map((signal) => t.project.firmSignals[signal] ?? signal).join(" · ")}</span>
-              {sources.map((item) => {
-                const view = SOURCES[item.item_kind];
-                return view ? (
-                  <CanvasLink
-                    key={item.item_id}
-                    view={{ kind: view, id: item.item_id }}
-                    className="hover:text-foreground underline decoration-dotted underline-offset-2"
-                  >
-                    {t.project.openSource[item.item_kind]}
-                  </CanvasLink>
-                ) : null;
-              })}
             </span>
             {answer.isError ? (
               <span className="text-danger-foreground" role="alert">

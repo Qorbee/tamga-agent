@@ -4,7 +4,6 @@ import { useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { DecisionRow } from "@/components/decision-card";
-import { MoneySummary } from "@/components/money-tiles";
 import { PaymentRunCard, usePaymentRun } from "@/components/payment-run";
 import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
@@ -26,7 +25,7 @@ const STATES: Record<View, Decision["state"][]> = {
 };
 
 /**
- * The bills Tamga decided about (docs/architecture/05), at a glance: where the money stands, the
+ * The bills Tamga decided about (docs/architecture/05), at a glance: the
  * next payment run with each bill's call and "Approve N", then what is due later, what is held and
  * what was paid. The owner answers here; nothing is paid without that answer, and an approval is
  * confirmed first, since a payment cannot be taken back.
@@ -36,7 +35,6 @@ export function PaymentsPage() {
   const [view, setView] = useState<View>("later");
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
-      <MoneySummary />
       <PaymentRunCard full />
       <Segmented
         fill

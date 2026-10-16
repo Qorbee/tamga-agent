@@ -11,7 +11,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { CanvasLink } from "@/components/canvas-link";
 import { DecisionRow } from "@/components/decision-card";
 import { DraftedEntry, Lessons } from "@/components/memory";
-import { MoneySummary } from "@/components/money-tiles";
+import { MoneyGlance } from "@/components/money-glance";
 import { PolicyDraftCard } from "@/components/policy-draft";
 
 import { ShownView } from "./views";
@@ -240,13 +240,13 @@ function Card({ pending, error, children }: { pending: boolean; error: unknown; 
   );
 }
 
-/** The morning brief's card: where the money stands as it is read, the home's own tiles. */
+/** The morning brief's card: where the money stands as it is read, as Money shows it. */
 function BriefCard() {
   const { t } = useI18n();
   return (
     <div data-slot="chat-card" className="my-3 flex flex-col gap-2">
       <p className="text-muted-foreground text-xs">{t.assistant.cards.briefNow}</p>
-      <MoneySummary />
+      <MoneyGlance className="border-border bg-card rounded-2xl border px-4 py-3" />
     </div>
   );
 }

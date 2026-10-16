@@ -134,7 +134,11 @@ async def open_record(context: RunContext[Seat], handle: str) -> str:
             f"\n(cut here, at {seat.open_cap} characters: investigate reads all of it)"
         )
     seat.read[key(handle)] = text
-    return llm.fenced_text(f"record {handle}", text)
+    # The app's view of it rides on the fence's label, which the app reads to make the step a
+    # link: an id the owner never sees, and nothing the model is asked to use.
+    view = _VIEWS.get(given[0]) if given is not None else None
+    shown = f"{view}:{given[1]}" if view and given else seat.views.get(key(handle))
+    return llm.fenced_text(f"record {handle}" + (f" · view {shown}" if shown else ""), text)
 
 
 def key(handle: str) -> str:
@@ -286,6 +290,8 @@ async def _conversation(seat: Seat, thread_id: uuid.UUID, handle: str) -> str:
             return "That conversation is gone."
         text = await linking.conversation_text(db, seat.company_id, thread)
     seat.opened.append((linking.CONVERSATION, thread_id))
+    if thread.mails:
+        seat.views[key(handle)] = f"mail:{thread.mails[-1].id}"
     # Its files by handle, for open and read_file: the text above names them only.
     files = list(dict.fromkeys(file.document_id for mail in thread.mails for file in mail.files))
     if files:
@@ -502,6 +508,9 @@ async def _past_chat(seat: Seat, chat_id: uuid.UUID, handle: str) -> str:
 
 
 type _Opener = Callable[[Seat, uuid.UUID, str], Awaitable[str]]
+# The app's canvas kind of each record a handle opens; a conversation's is its last mail's.
+_VIEWS: Final[dict[str, str]] = {"i": "invoice", "f": "document"}
+
 _OPENERS: Final[dict[str, _Opener]] = {
     "c": _conversation,
     "i": _invoice,

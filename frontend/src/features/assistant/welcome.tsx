@@ -1,14 +1,13 @@
 "use client";
 
-import { MoneySummary } from "@/components/money-tiles";
 import { PaymentRunCard } from "@/components/payment-run";
 import { useI18n } from "@/lib/i18n/client";
 
 import { SetupCard } from "./setup-card";
 
 /**
- * The chat's empty state: a greeting, the owner's first answers on how Tamga pays until they are
- * given, where the money stands and the next payment run, which replace a separate dashboard.
+ * The chat's empty state, as plain as a chat app's: a greeting, the owner's first answers on how
+ * Tamga pays until they are given, and the next payment run. Where the money stands is on Money.
  * Every figure comes from the backend; a card with nothing real to show is left out.
  */
 export function Welcome() {
@@ -22,7 +21,6 @@ export function Welcome() {
       <div className="grid grid-rows-[1fr] transition-[grid-template-rows,opacity] duration-300 ease-out max-md:group-has-[.aui-composer-input:focus]/chat:grid-rows-[0fr] max-md:group-has-[.aui-composer-input:focus]/chat:opacity-0 motion-reduce:transition-none">
         <div className="flex min-h-0 flex-col gap-4 overflow-hidden">
           <SetupCard />
-          <MoneySummary />
           <PaymentRunCard />
         </div>
       </div>

@@ -29,6 +29,8 @@ class Seat(linking.Desk):
     # What `open` returned, by the handle or the project's number it was opened by: what a
     # helper's quotes are checked against (ADR-0023).
     read: dict[str, str] = field(default_factory=dict)
+    # Where the app shows what `open` opened, by the same key: its canvas view ("mail:<id>").
+    views: dict[str, str] = field(default_factory=dict)
     # Helper runs this answer started (``helpers.HELPS_AN_ANSWER``).
     helped: int = 0
 

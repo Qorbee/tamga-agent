@@ -210,10 +210,10 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
       className="aui-root aui-thread-root group/chat bg-background @container flex h-full flex-col"
       style={{
         ["--thread-max-width" as string]: "48rem",
-        // Opaque: the composer floats over the messages, which must not show through it.
-        ["--composer-bg" as string]:
-          "color-mix(in oklab, var(--color-muted) 30%, var(--color-background))",
-        ["--composer-radius" as string]: "1rem",
+        // Opaque: the composer floats over the messages, which must not show through it. Raised
+        // off the page as a card is, as the chat apps the owner knows do.
+        ["--composer-bg" as string]: "var(--color-card)",
+        ["--composer-radius" as string]: "1.25rem",
         ["--composer-padding" as string]: "8px",
       }}
     >
@@ -257,7 +257,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; placeholder: string
           >
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
-            <Composer autoFocus={autoFocus} placeholder={placeholder} />
+            <Composer autoFocus={autoFocus} placeholder={placeholder} roomy={isEmpty} />
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />
             </AuiIf>
@@ -444,9 +444,15 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-const Composer: FC<{ autoFocus: boolean; placeholder: string }> = ({
+/**
+ * The box a message is written in, as the chat apps the owner knows have it: on a new chat a roomy
+ * box with its tools inside; in a conversation one line that grows as the text does, Send inside
+ * it and the tools under it. Its edge darkens a step under the pointer and another while writing.
+ */
+const Composer: FC<{ autoFocus: boolean; placeholder: string; roomy: boolean }> = ({
   autoFocus,
   placeholder,
+  roomy,
 }) => {
   const { t } = useI18n();
   // On a touch screen the composer waits for a tap: focus would bring the keyboard up over the
@@ -458,108 +464,140 @@ const Composer: FC<{ autoFocus: boolean; placeholder: string }> = ({
   useEffect(() => {
     if (autoFocus && window.matchMedia("(pointer: fine)").matches) input.current?.focus();
   }, [autoFocus]);
+  const field = (
+    <ComposerPrimitive.Input
+      placeholder={placeholder}
+      className={cn(
+        "aui-composer-input caret-primary placeholder:text-muted-foreground/70 max-h-48 w-full resize-none bg-transparent px-2.5 text-base leading-6 outline-none",
+        roomy ? "min-h-12 py-1.5" : "min-h-9 flex-1 py-1.5",
+      )}
+      rows={1}
+      ref={input}
+      unstable_focusOnRunStart={fine}
+      unstable_focusOnScrollToBottom={fine}
+      unstable_focusOnThreadSwitched={fine}
+      enterKeyHint="send"
+      aria-label={t.chat.messageInput}
+    />
+  );
   return (
-    <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
+    <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col gap-1.5">
       <ComposerPrimitive.AttachmentDropzone asChild>
         <div
           data-slot="aui_composer-shell"
-          className="border-foreground/10 focus-within:border-foreground/25 data-[dragging=true]:border-ring flex w-full cursor-text flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) transition-[border-color] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))]"
+          className={cn(
+            "border-foreground/15 hover:border-foreground/25 focus-within:border-foreground/30 data-[dragging=true]:border-ring flex w-full cursor-text flex-col rounded-(--composer-radius) border bg-(--composer-bg) shadow-xs transition-[border-color] data-[dragging=true]:border-dashed data-[dragging=true]:bg-[color-mix(in_oklab,var(--color-accent)_50%,var(--color-background))]",
+            roomy ? "gap-2 p-2.5" : "gap-1 p-1.5",
+          )}
         >
           <ComposerAttachments />
-          <ComposerPrimitive.Input
-            placeholder={placeholder}
-            className="aui-composer-input caret-primary placeholder:text-muted-foreground/60 max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-sm leading-6 outline-none"
-            rows={1}
-            ref={input}
-            unstable_focusOnRunStart={fine}
-            unstable_focusOnScrollToBottom={fine}
-            unstable_focusOnThreadSwitched={fine}
-            enterKeyHint="send"
-            aria-label={t.chat.messageInput}
-          />
-          <ComposerAction />
+          {roomy ? (
+            <>
+              {field}
+              <div className="aui-composer-action-wrapper flex items-center justify-between">
+                <ComposerAddAttachment />
+                <div className="flex items-center gap-1.5">
+                  <ComposerExtras />
+                  <ComposerSend />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-end gap-1.5">
+              {field}
+              <ComposerSend />
+            </div>
+          )}
         </div>
       </ComposerPrimitive.AttachmentDropzone>
+      {roomy ? null : (
+        <div className="aui-composer-action-wrapper flex items-center gap-1.5 px-1">
+          <ComposerAddAttachment />
+          <ComposerExtras />
+        </div>
+      )}
     </ComposerPrimitive.Root>
   );
 };
 
-const ComposerAction: FC = () => {
-  // 0.15.21 has no composer.submission (added in 0.15.22) — restore the registry version on upgrade.
+/** What the app puts beside the box's tools, and dictation where the browser has it. */
+const ComposerExtras: FC = () => {
   const { t } = useI18n();
   const { ComposerTools } = useContext(ThreadComponentsContext);
-
   return (
-    <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <ComposerAddAttachment />
-      <div className="flex items-center gap-1.5">
-        {ComposerTools ? <ComposerTools /> : null}
-        <AuiIf condition={(s) => s.thread.capabilities.dictation}>
-          <AuiIf condition={(s) => s.composer.dictation == null}>
-            <ComposerPrimitive.Dictate asChild>
-              <TooltipIconButton
-                tooltip={t.chat.voiceInput}
-                side="bottom"
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="aui-composer-dictate text-muted-foreground hover:text-foreground size-7 rounded-full"
-                aria-label={t.chat.startVoiceInput}
-              >
-                <MicIcon className="aui-composer-dictate-icon size-4" />
-              </TooltipIconButton>
-            </ComposerPrimitive.Dictate>
-          </AuiIf>
-          <AuiIf condition={(s) => s.composer.dictation != null}>
-            <ComposerPrimitive.StopDictation asChild>
-              <TooltipIconButton
-                tooltip={t.chat.stopDictation}
-                side="bottom"
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="aui-composer-stop-dictation text-destructive size-7 rounded-full"
-                aria-label={t.chat.stopVoiceInput}
-              >
-                <SquareIcon className="aui-composer-stop-dictation-icon size-3.5 animate-pulse fill-current" />
-              </TooltipIconButton>
-            </ComposerPrimitive.StopDictation>
-          </AuiIf>
-        </AuiIf>
-        <AuiIf
-          condition={(s) => !s.composer.canCancel || s.thread.voice !== undefined}
-        >
-          <ComposerPrimitive.Send asChild>
+    <>
+      {ComposerTools ? <ComposerTools /> : null}
+      <AuiIf condition={(s) => s.thread.capabilities.dictation}>
+        <AuiIf condition={(s) => s.composer.dictation == null}>
+          <ComposerPrimitive.Dictate asChild>
             <TooltipIconButton
-              tooltip={t.chat.send}
+              tooltip={t.chat.voiceInput}
               side="bottom"
               type="button"
-              variant="default"
+              variant="ghost"
               size="icon"
-              className="aui-composer-send size-7 rounded-full"
-              aria-label={t.chat.send}
+              className="aui-composer-dictate text-muted-foreground hover:text-foreground size-8 rounded-full hover:bg-transparent"
+              aria-label={t.chat.startVoiceInput}
             >
-              <ArrowUpIcon className="aui-composer-send-icon size-4" />
+              <MicIcon className="aui-composer-dictate-icon size-4" />
             </TooltipIconButton>
-          </ComposerPrimitive.Send>
+          </ComposerPrimitive.Dictate>
         </AuiIf>
-        <AuiIf
-          condition={(s) => s.composer.canCancel && s.thread.voice === undefined}
-        >
-          <ComposerPrimitive.Cancel asChild>
-            <Button
+        <AuiIf condition={(s) => s.composer.dictation != null}>
+          <ComposerPrimitive.StopDictation asChild>
+            <TooltipIconButton
+              tooltip={t.chat.stopDictation}
+              side="bottom"
               type="button"
-              variant="default"
+              variant="ghost"
               size="icon"
-              className="aui-composer-cancel size-7 rounded-full"
-              aria-label={t.chat.stop}
+              className="aui-composer-stop-dictation text-destructive size-8 rounded-full"
+              aria-label={t.chat.stopVoiceInput}
             >
-              <SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" />
-            </Button>
-          </ComposerPrimitive.Cancel>
+              <SquareIcon className="aui-composer-stop-dictation-icon size-3.5 animate-pulse fill-current" />
+            </TooltipIconButton>
+          </ComposerPrimitive.StopDictation>
         </AuiIf>
-      </div>
-    </div>
+      </AuiIf>
+    </>
+  );
+};
+
+/** Send, or Stop while Tamga answers. */
+const ComposerSend: FC = () => {
+  // 0.15.21 has no composer.submission (added in 0.15.22) — restore the registry version on upgrade.
+  const { t } = useI18n();
+  return (
+    <>
+      <AuiIf condition={(s) => !s.composer.canCancel || s.thread.voice !== undefined}>
+        <ComposerPrimitive.Send asChild>
+          <TooltipIconButton
+            tooltip={t.chat.send}
+            side="bottom"
+            type="button"
+            variant="default"
+            size="icon"
+            className="aui-composer-send size-8 shrink-0 rounded-full"
+            aria-label={t.chat.send}
+          >
+            <ArrowUpIcon className="aui-composer-send-icon size-4" />
+          </TooltipIconButton>
+        </ComposerPrimitive.Send>
+      </AuiIf>
+      <AuiIf condition={(s) => s.composer.canCancel && s.thread.voice === undefined}>
+        <ComposerPrimitive.Cancel asChild>
+          <Button
+            type="button"
+            variant="default"
+            size="icon"
+            className="aui-composer-cancel size-8 shrink-0 rounded-full"
+            aria-label={t.chat.stop}
+          >
+            <SquareIcon className="aui-composer-cancel-icon size-3.5 fill-current" />
+          </Button>
+        </ComposerPrimitive.Cancel>
+      </AuiIf>
+    </>
   );
 };
 

@@ -8,6 +8,7 @@ import {
   FileVerifiedIcon,
   Invoice01Icon,
   Invoice02Icon,
+  Link01Icon,
   MoneyReceive01Icon,
   MoneySend01Icon,
   MoreHorizontalIcon,
@@ -217,6 +218,7 @@ function TruckRow({
           </span>
         </button>
         <span className="ms-auto flex shrink-0 items-center gap-0.5">
+          <TruckSources truck={truck} />
           <ChecklistIcons items={items} plate={plate} />
           {proposed && isOwner ? (
             <>
@@ -292,7 +294,6 @@ function TruckRow({
           ) : null}
         </span>
       </div>
-      <TruckSources truck={truck} />
       {editing ? (
         <PlatesForm
           truckPlate={pulls ?? ""}
@@ -328,32 +329,19 @@ function Slot({ label, plate, empty }: { label: string; plate: string | null; em
   );
 }
 
-/** Where Tamga read each of a truck's plates, a tap away: once where one paper names both. */
+/** Where Tamga read each of a truck's plates, a link's icon each: once where one paper names both. */
 function TruckSources({ truck }: { truck: Shipment }) {
   const { t } = useI18n();
   const lines = (["truck_plate", "trailer_plate"] as const)
     .map((field) => ({ field, items: (truck.sources ?? []).filter((source) => source.field === field) }))
     .filter((line) => line.items.length > 0);
-  if (lines.length === 0) return null;
   const [pulls, pulled] = lines.map((line) => new Set(line.items.map((item) => item.item_id)));
+  if (lines.length === 0) return null;
   if (pulls && pulled && pulls.size === pulled.size && [...pulls].every((id) => pulled.has(id)))
-    return (
-      <span className="flex px-4">
-        <ReadFrom items={lines[0]?.items ?? []} />
-      </span>
-    );
-  return (
-    <span className="flex flex-wrap gap-x-4 gap-y-0.5 px-4">
-      {lines.map(({ field, items }) => (
-        <span key={field} className="flex min-w-0 items-baseline gap-1.5 text-xs">
-          <span className="text-muted-foreground shrink-0">
-            {field === "truck_plate" ? t.project.truckSlot : t.project.trailerSlot}
-          </span>
-          <ReadFrom items={items} />
-        </span>
-      ))}
-    </span>
-  );
+    return <ReadFrom items={lines[0]?.items ?? []} />;
+  return lines.map(({ field, items }) => (
+    <ReadFrom key={field} items={items} slot={field === "truck_plate" ? t.project.truckSlot : t.project.trailerSlot} />
+  ));
 }
 
 // The record each kind of item opens as; a truck's position opens none.
@@ -363,8 +351,12 @@ const VIEWS: Partial<Record<ItemNamed["item_kind"], CanvasView["kind"]>> = {
   invoice: "invoice",
 };
 
-/** Where something was read: the first item that said it, opened in a tap, and how many more did. */
-function ReadFrom({ items }: { items: ItemNamed[] }) {
+/**
+ * Where something was read, as a link's icon: a tap opens the first item that said it, its name
+ * is the icon's hint, and a count tells how many more did. The proof stays a tap away without a
+ * line of text on every row.
+ */
+function ReadFrom({ items, slot }: { items: ItemNamed[]; slot?: string }) {
   const { t, locale } = useI18n();
   const unique = items.filter(
     (item, at) => items.findIndex((other) => other.item_id === item.item_id) === at,
@@ -378,21 +370,27 @@ function ReadFrom({ items }: { items: ItemNamed[] }) {
       : first.item_kind === "invoice"
         ? t.project.billNumbered(first.label ?? "")
         : (first.label ?? "");
+  const label = (slot ? `${slot}: ` : "") + t.project.readFrom(name) + (rest.length > 0 ? ` +${rest.length}` : "");
   const view = VIEWS[first.item_kind];
+  const mark = (
+    <>
+      <HugeiconsIcon icon={Link01Icon} strokeWidth={1.75} className="size-4" aria-hidden />
+      {rest.length > 0 ? <span className="text-[0.7rem] tabular-nums">+{rest.length}</span> : null}
+    </>
+  );
+  const look = "text-muted-foreground inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-0.5 rounded-full px-1.5";
   return (
-    <span className="text-muted-foreground flex min-w-0 items-baseline gap-1 text-xs">
+    <Hint label={label}>
       {view ? (
-        <CanvasLink
-          view={{ kind: view, id: first.item_id }}
-          className="hover:text-foreground min-w-0 truncate underline decoration-dotted underline-offset-2"
-        >
-          {t.project.readFrom(name)}
+        <CanvasLink view={{ kind: view, id: first.item_id }} aria-label={label} className={cn(look, "hover:text-foreground hover:bg-accent/60")}>
+          {mark}
         </CanvasLink>
       ) : (
-        <span className="min-w-0 truncate">{t.project.readFrom(name)}</span>
+        <span role="img" aria-label={label} className={look}>
+          {mark}
+        </span>
       )}
-      {rest.length > 0 ? <span className="shrink-0 tabular-nums">+{rest.length}</span> : null}
-    </span>
+    </Hint>
   );
 }
 

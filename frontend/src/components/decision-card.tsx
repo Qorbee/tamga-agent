@@ -8,6 +8,7 @@ import { useState } from "react";
 import { callOf, waits } from "@/components/bill-call";
 import { CallPill, useCallReason } from "@/components/call-pill";
 import { CanvasLink } from "@/components/canvas-link";
+import { DayInput } from "@/components/day-calendar";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import {
@@ -560,13 +561,7 @@ function MarkPaidForm({
           aria-label={t.payments.paidCurrency}
           className="w-20 uppercase"
         />
-        <Input
-          type="date"
-          value={day}
-          onChange={(event) => setDay(event.target.value)}
-          aria-label={t.payments.paidDay}
-          className="w-40"
-        />
+        <DayInput value={day} onChange={setDay} label={t.payments.paidDay} className="w-40" />
       </div>
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={!valid || pending}>
