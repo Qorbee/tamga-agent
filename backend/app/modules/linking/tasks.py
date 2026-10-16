@@ -18,5 +18,5 @@ async def place_conversations(timestamp: int) -> None:
 
 @jobs.task("linking.name_project", retry=1)
 async def name_project(company_id: str, project_id: str) -> None:
-    """A project named by the titler once a conversation says who or what its job is."""
+    """A project named again by code once a conversation says who or what its job is."""
     await service.name_project(uuid.UUID(company_id), uuid.UUID(project_id))

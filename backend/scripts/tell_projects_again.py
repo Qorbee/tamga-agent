@@ -1,14 +1,14 @@
 """Works out again the days Tamga gave each project from what its conversations say, and queues
-the titler to name again each project only Tamga named, after the way they are worked out
-changed. The owner's own names and days are left as they are.
+each project only Tamga named to be named again, after the way they are worked out changed.
+The owner's own names and days are left as they are.
 
 uv run python scripts/tell_projects_again.py                  (the pilot company, a dry run)
 uv run python scripts/tell_projects_again.py --write
 uv run python scripts/tell_projects_again.py --company-id <id> --write
 
 A dry run prints which projects would be named and writes nothing. Only Tamga's own database is
-written; the worker then asks the small model once a project (the titler), within the day's budget
-of model reads. Nothing reaches a mailbox or the books. Safe to run again.
+written; the worker then names each project by code, from its client, route and first day, and
+asks no model. Nothing reaches a mailbox or the books. Safe to run again.
 """
 
 import argparse

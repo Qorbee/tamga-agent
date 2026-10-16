@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, Row, and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.modules.books.models import (
     BooksCursor,
@@ -417,6 +418,45 @@ async def e_document_of(db: AsyncSession, company_id: uuid.UUID, invoice: Invoic
         .limit(1)
     )
     return twin
+
+
+async def bills_without_file(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Invoice]:
+    """The bills, as a project holds them (an incoming e-invoice booked as a purchase is the
+    purchase), that hold no file yet but name an e-document, themselves or by their other
+    record: the newest first."""
+    twin = aliased(Invoice)
+    rows = await db.scalars(
+        select(Invoice)
+        .where(
+            Invoice.company_id == company_id,
+            Invoice.kind.in_([InvoiceKind.PURCHASE, InvoiceKind.INCOMING_E_INVOICE]),
+            Invoice.same_as_id.is_(None),
+            Invoice.cancelled.is_(False),
+            Invoice.document_id.is_(None),
+            or_(
+                Invoice.e_document_id.is_not(None),
+                select(twin.id)
+                .where(
+                    twin.company_id == company_id,
+                    twin.same_as_id == Invoice.id,
+                    twin.e_document_id.is_not(None),
+                )
+                .exists(),
+            ),
+        )
+        .order_by(Invoice.issue_date.desc().nulls_last(), Invoice.id)
+    )
+    return rows.all()
+
+
+async def invoice_files(db: AsyncSession, company_id: uuid.UUID) -> list[uuid.UUID]:
+    """The documents holding the company's invoices' own files."""
+    rows = await db.scalars(
+        select(Invoice.document_id).where(
+            Invoice.company_id == company_id, Invoice.document_id.is_not(None)
+        )
+    )
+    return [each for each in rows.all() if each is not None]
 
 
 async def open_months(db: AsyncSession, company_id: uuid.UUID, source: str) -> list[date]:

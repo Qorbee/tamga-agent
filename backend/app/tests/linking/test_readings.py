@@ -68,6 +68,12 @@ def test_a_reading_that_contradicts_itself_does_not_put_one_firm_in_two_roles() 
     assert service._title(known) == "Stone GmbH · Erbil → Hamburg"
 
 
+def test_a_domain_read_as_the_client_names_no_project() -> None:
+    # Where a mail came from is no client: the firm that wrote names it instead.
+    assert service._title({"client": "stone.example", "trucks": "5"}) is None
+    assert service._title({"client": "stone.example", "destination": "Iraq"}) is None
+
+
 def test_a_reading_counts_once_for_a_firm_in_a_role() -> None:
     # The client field and the firm the mail deals with name the same client: one voice.
     known = service._known(

@@ -229,13 +229,9 @@ async def links(company_id: uuid.UUID, thread_key: str) -> list[ProjectLink]:
         return list(rows.all())
 
 
-async def name_projects(
-    company_id: uuid.UUID, model: Callable[..., Script], *said: str
-) -> list[Project]:
-    """The titler's job on each project in the order they were made, the model saying each of
-    ``said`` in turn; with nothing said it fails, and code names each by its job."""
+async def name_projects(company_id: uuid.UUID) -> list[Project]:
+    """The naming job on each project, in the order they were made."""
     made = await the_projects(company_id)
-    model(*([text(each) for each in said] or [RuntimeError("no model")] * len(made)))
     for project in made:
         await service.name_project(company_id, project.id)
     return await the_projects(company_id)
@@ -958,7 +954,7 @@ async def test_a_project_is_named_by_its_job_and_follows_what_later_mail_says(
     assert await service.place_pending() == 1
 
     # A first day moved renames it, by the titler or, without one, by code.
-    [project] = await name_projects(company_id, model)
+    [project] = await name_projects(company_id)
     assert project.name == "Stone GmbH · Istanbul → Munich · 08.08.2026"
     assert (project.starts_on, project.ends_on) == (date(2026, 8, 8), date(2026, 8, 14))
 
@@ -995,7 +991,9 @@ async def test_a_job_with_neither_client_nor_route_is_named_by_who_wrote_and_the
     model(answer("new_project", new_project={"destination": "Iraq"}))
     assert await service.place_pending() == 1
     [project] = await the_projects(company_id)
-    # Never the model's words: the sender's name and the day of the first mail.
+    # Never the model's words: the sender's name and the day of the first mail, named again too.
+    assert project.name == "Ada Stone · 03.08.2026"
+    [project] = await name_projects(company_id)
     assert project.name == "Ada Stone · 03.08.2026"
 
     # Once a conversation names the client, the project is named by it and where it goes.
@@ -1010,7 +1008,7 @@ async def test_a_job_with_neither_client_nor_route_is_named_by_who_wrote_and_the
         answer("link", project=project.number, job={"client": "Stone GmbH"}),
     )
     assert await service.place_pending() == 1
-    [project] = await name_projects(company_id, model)
+    [project] = await name_projects(company_id)
     assert project.name == "Stone GmbH · → Iraq"
 
 
@@ -1089,7 +1087,7 @@ async def test_a_conversation_the_company_is_only_copied_on_starts_no_project(
 
 
 @pytest.mark.integration
-async def test_the_titler_names_a_project_and_never_over_the_owners_name(
+async def test_code_names_a_project_and_never_over_the_owners_name(
     client: httpx.AsyncClient, model: Callable[..., Script]
 ) -> None:
     company_id = await guest_client(client)
@@ -1107,18 +1105,18 @@ async def test_the_titler_names_a_project_and_never_over_the_owners_name(
         left = await conversations.model_reads_left(db, company_id)
     assert queued == 1
 
-    # Its words, cleaned of what a model wraps them in, from the day's budget.
-    [project] = await name_projects(company_id, model, '"Stone · Istanbul → Munich · coils."')
-    assert project.name == "Stone · Istanbul → Munich · coils"
+    # By its client and route, whatever a model would say, and from none of the day's budget.
+    script = model(text("Stone · Istanbul → Munich · coils"))
+    [project] = await name_projects(company_id)
+    assert project.name == "Stone GmbH · Istanbul → Munich"
+    assert script.requests == []
     async with open_session() as db:
-        assert await conversations.model_reads_left(db, company_id) == left - 1
+        assert await conversations.model_reads_left(db, company_id) == left
 
-    # A name the owner gave is never asked for again.
+    # A name the owner gave is never touched again.
     renamed = await client.patch(f"/projects/{project.id}", json={"name": "Stone coils"})
     assert renamed.status_code == 200
-    script = model(text("Something else"))
     await service.name_project(company_id, project.id)
-    assert script.requests == []
     assert [p.name for p in await the_projects(company_id)] == ["Stone coils"]
 
 
@@ -1164,14 +1162,14 @@ async def test_a_conversation_the_owner_rejects_no_longer_names_or_dates_the_pro
         ),
     )
     assert await service.place_pending() == 1
-    [project] = await name_projects(company_id, model)
+    [project] = await name_projects(company_id)
     assert project.name == "Stone GmbH · Istanbul → Munich · 08.08.2026"
 
     # The owner says that conversation is not of this job: what it said leaves the project.
     wrong = await placement(company_id, "<truck@x>")
     answered = await client.patch(f"/placements/{wrong.id}", json={"links": "rejected"})
     assert answered.status_code == 200
-    [project] = await name_projects(company_id, model)
+    [project] = await name_projects(company_id)
     assert project.name == "Stone GmbH · Istanbul → Munich · 10.08.2026"
     assert (project.starts_on, project.ends_on) == (date(2026, 8, 10), None)
 

@@ -640,19 +640,70 @@ async def invoice_file(db: AsyncSession, actor: Actor, invoice_id: uuid.UUID) ->
     rows = await repository.get_invoices(db, actor.company_id, [invoice_id])
     if not rows:
         raise NotFound("No such invoice")
-    invoice = rows[0]
-    if invoice.document_id is not None and (
-        await documents.get_documents(db, actor.company_id, [invoice.document_id])
-    ):
-        return InvoiceFile(document_id=invoice.document_id)
-    found = await _mailed_file(db, actor.company_id, invoice)
-    if found is None:
-        found = await _rendered_file(db, actor.company_id, invoice)
+    found = await _file_of(db, actor.company_id, rows[0])
     if found is None:
         raise NoInvoiceFile("The books hold no file for this invoice")
-    invoice.document_id = found
     await db.commit()
     return InvoiceFile(document_id=found)
+
+
+async def _file_of(db: AsyncSession, company_id: uuid.UUID, invoice: Invoice) -> uuid.UUID | None:
+    """An invoice's own file, found or asked for as ``invoice_file`` says, kept on the invoice
+    and asked to be read: its plates and numbers then tell which job it bills. Does not
+    commit."""
+    if invoice.document_id is not None and (
+        await documents.get_documents(db, company_id, [invoice.document_id])
+    ):
+        # One kept before files were read once kept is asked now; one asked or read stays so.
+        await documents.request_reading(db, company_id, [invoice.document_id])
+        return invoice.document_id
+    found = await _mailed_file(db, company_id, invoice)
+    if found is None:
+        found = await _rendered_file(db, company_id, invoice)
+    if found is None:
+        return None
+    invoice.document_id = found
+    await documents.request_reading(db, company_id, [found])
+    return found
+
+
+@dataclass(slots=True)
+class FilesKept:
+    # Bills that hold no file yet but name an e-document.
+    without: int = 0
+    kept: int = 0
+    # The books had none for it.
+    none: int = 0
+    # Files kept before and never read, now asked to be read.
+    to_read: int = 0
+
+
+async def keep_bill_files(company_id: uuid.UUID, *, write: bool, limit: int) -> FilesKept:
+    """Asks the books ahead for the files of up to ``limit`` bills that hold none, the newest
+    first, so each opens at once and is read; and asks for every invoice file kept before and
+    never read to be read. A dry run counts and reads nothing. Each file commits on its own:
+    a failure stops the run with what was kept."""
+    kept = FilesKept()
+    async with open_session() as db:
+        bills = await repository.bills_without_file(db, company_id)
+        kept.without = len(bills)
+        files = await repository.invoice_files(db, company_id)
+        held = await documents.get_documents(db, company_id, files)
+        kept.to_read = sum(1 for each in held.values() if each.read_state is None)
+        if write:
+            await documents.request_reading(db, company_id, files)
+            await db.commit()
+    if not write:
+        return kept
+    for bill in bills[:limit]:
+        async with open_session() as db:
+            [invoice] = await repository.get_invoices(db, company_id, [bill.id])
+            if await _file_of(db, company_id, invoice) is None:
+                kept.none += 1
+            else:
+                kept.kept += 1
+            await db.commit()
+    return kept
 
 
 async def _mailed_file(

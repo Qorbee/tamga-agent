@@ -301,7 +301,7 @@ async def test_two_projects_that_are_one_job_are_merged_and_everything_follows(
     assert (await client.get(f"/projects/{gone['id']}")).status_code == 404
     assert kept["id"] == str(stays.id) and kept["aliases"] == [gone["number"]]
     assert (kept["status"], kept["confirmed_links"], kept["suggested_links"]) == ("active", 2, 2)
-    [named] = await name_projects(company_id, model)
+    [named] = await name_projects(company_id)
     assert named.name == "Stone GmbH · Istanbul → Munich"
     found = (await client.get("/projects", params={"q": gone["number"]})).json()
     assert [item["id"] for item in found["items"]] == [kept["id"]]
