@@ -4650,7 +4650,8 @@
           "settled",
           "failed",
           "would_release",
-          "unpaid"
+          "unpaid",
+          "mirrored"
         ],
         "title": "LogEvent",
         "type": "string"

@@ -16,7 +16,11 @@ async def open_account(company_id: str) -> None:
 
 @jobs.periodic("settlement.pay", cron="* * * * *")
 async def pay(timestamp: int) -> None:
-    """Each decision the owner approved is paid within a minute or two (ADR-0002)."""
+    """Each decision the owner approved is paid within a minute or two (ADR-0002); in shadow,
+    each bill paid by bank is mirrored in test USDC (ADR-0027)."""
     paid = await executor.pay_approved()
     if paid:
         logger.info("paid %d approved decisions", paid)
+    mirrored = await executor.mirror_paid()
+    if mirrored:
+        logger.info("mirrored %d bills paid by bank", mirrored)

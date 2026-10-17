@@ -58,12 +58,15 @@ import { cn } from "@/lib/utils";
 export function DecisionRow({
   decision,
   payment: given,
+  mirror,
   fits = null,
   actions = true,
   inRun = false,
 }: {
   decision: Decision;
   payment: Payment | undefined;
+  /** In shadow, the test USDC released on Arc beside the bank's payment: a record, never the bill's payment. */
+  mirror?: Payment;
   fits?: boolean | null;
   /** False: the row only shows (a chat's view), and the owner answers where it links to. */
   actions?: boolean;
@@ -315,6 +318,24 @@ export function DecisionRow({
           {payment.finished_at ? <span>{t.payments.paidOn(formatDate(new Date(payment.finished_at), locale))}</span> : null}
           <a
             href={payment.explorer_url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-foreground inline-flex items-center gap-1 underline-offset-4 hover:underline"
+          >
+            {t.payments.viewTx}
+            <HugeiconsIcon icon={LinkSquare02Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+          </a>
+        </p>
+      ) : null}
+
+      {mirror?.explorer_url ? (
+        <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 px-2 pb-2 text-xs">
+          <span>
+            {t.payments.mirrored}
+            {mirror.pay_amount ? ` · ${formatMoney(Number(mirror.pay_amount), "USDC", locale)}` : null}
+          </span>
+          <a
+            href={mirror.explorer_url}
             target="_blank"
             rel="noreferrer"
             className="text-foreground inline-flex items-center gap-1 underline-offset-4 hover:underline"

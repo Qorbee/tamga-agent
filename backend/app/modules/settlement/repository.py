@@ -122,6 +122,43 @@ async def list_payments(
     return rows.all(), total or 0
 
 
+async def mirrors_of(
+    db: AsyncSession, company_id: uuid.UUID, decision_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, Payment]:
+    """Each decision's mirror among those named, of whichever evaluation, in one read."""
+    if not decision_ids:
+        return {}
+    rows = await db.scalars(
+        select(Payment)
+        .where(
+            Payment.company_id == company_id,
+            Payment.decision_id.in_(decision_ids),
+            Payment.kind == PaymentKind.MIRROR,
+            Payment.voided_at.is_(None),
+        )
+        .order_by(Payment.created_at.desc())
+    )
+    return {row.decision_id: row for row in rows}
+
+
+async def mirror_of(
+    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID
+) -> Payment | None:
+    """A decision's mirror, of whichever evaluation: one a bill, however often it is evaluated."""
+    payment: Payment | None = await db.scalar(
+        select(Payment)
+        .where(
+            Payment.company_id == company_id,
+            Payment.decision_id == decision_id,
+            Payment.kind == PaymentKind.MIRROR,
+            Payment.voided_at.is_(None),
+        )
+        .order_by(Payment.created_at)
+        .limit(1)
+    )
+    return payment
+
+
 async def settled_payments(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Payment]:
     rows = await db.scalars(
         select(Payment)

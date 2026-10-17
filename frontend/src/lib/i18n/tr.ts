@@ -514,6 +514,7 @@ export const tr: Dictionary = {
     refused: "Kasa ödemeyi kabul etmedi",
     paidOn: (day: string) => `${day} ödendi`,
     viewTx: "Arcscan'de gör",
+    mirrored: "Arc üzerinde test USDC ile yansıtıldı",
     changed: "Siz bakarken değişti: güncelini gösteriyoruz. Yeniden yanıtlayın.",
     failed: "Olmadı. Yeniden deneyin.",
     methods: { vault_usdc: "Arc'ta test USDC", bank_transfer: "Banka havalesi" } as Record<string, string>,
@@ -584,6 +585,7 @@ export const tr: Dictionary = {
       failed: "Kasa ödemeyi kabul etmedi",
       sentBack: "Kasa kabul etmedi: size döndü",
       wouldRelease: "Ödenecekti (yeniden oynatma)",
+      mirrored: "Arc üzerinde test USDC ile yansıtıldı",
       advised: {
         pay: "Tamga'nın görüşü: şimdi öde",
         pay_part: "Tamga'nın görüşü: bir kısmını şimdi öde",

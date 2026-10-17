@@ -3418,7 +3418,7 @@ export interface components {
          * LogEvent
          * @enum {string}
          */
-        LogEvent: "proposed" | "advised" | "edited" | "pay_by" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release" | "unpaid";
+        LogEvent: "proposed" | "advised" | "edited" | "pay_by" | "approved" | "held" | "rejected" | "settled" | "failed" | "would_release" | "unpaid" | "mirrored";
         /**
          * Me
          * @description Who is signed in, the company this session acts for, and every company they belong to.

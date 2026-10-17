@@ -15,6 +15,7 @@ from app.modules.decisions.models import (
     DecisionState,
     LogEvent,
 )
+from app.modules.policy.models import PaymentMethod
 from app.platform.pagination import PageParams
 
 
@@ -132,6 +133,23 @@ async def approved(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Decision
         select(Decision)
         .where(Decision.company_id == company_id, Decision.state == DecisionState.APPROVED)
         .order_by(Decision.decided_at, Decision.id)
+    )
+    return rows.all()
+
+
+async def to_mirror(db: AsyncSession, company_id: uuid.UUID) -> Sequence[Decision]:
+    rows = await db.scalars(
+        select(Decision)
+        .where(
+            Decision.company_id == company_id,
+            (Decision.state == DecisionState.PAID_IN_BOOKS)
+            | (
+                Decision.state.in_([DecisionState.APPROVED, DecisionState.SETTLED])
+                & (Decision.method == PaymentMethod.BANK_TRANSFER)
+                & Decision.usdc_units.is_not(None)
+            ),
+        )
+        .order_by(Decision.created_at, Decision.id)
     )
     return rows.all()
 

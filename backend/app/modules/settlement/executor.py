@@ -2,7 +2,9 @@
 from the company's vault to the subcontractor's wallet, for the test USDC its evaluation names.
 
 This is the only path by which Tamga pays a bill; a bill paid by bank transfer is the owner's to
-pay, and the executor never touches it (ADR-0027). It reads what to pay from an approved decision
+pay, and the executor never pays it (ADR-0027). In shadow it mirrors it: the bill's test USDC is
+released beside the bank's payment, under a key of its own, as a record on Arc of money that
+really moved. A mirror never pays, holds or changes the bill. It reads what to pay from a decision
 and nothing else: no message, prompt or model output reaches it. The payment's idempotency key
 is written before the call is sent, so a call sent again (a timeout, a crash, the executor
 signed out) is the same Circle transaction, and the vault pays a bill's key once. A decision is
@@ -22,7 +24,7 @@ from app.modules.decisions import service as decisions
 from app.modules.decisions.schemas import DecisionOut
 from app.modules.policy import service as policies
 from app.modules.settlement import repository
-from app.modules.settlement.models import Payment, PaymentState
+from app.modules.settlement.models import Payment, PaymentKind, PaymentState
 from app.modules.settlement.service import payee_addresses
 from app.platform import agent_wallet, chain
 from app.platform.clock import utcnow
@@ -156,6 +158,146 @@ async def _pay(company_id: uuid.UUID, mode: CompanyMode, decision: DecisionOut) 
         )
         await db.commit()
     return 1
+
+
+async def mirror_paid() -> int:
+    """Mirrors, for each shadow company on the vault, every bill paid by bank and not mirrored
+    yet, the earliest first, within what its caps and balance leave today; one beyond them waits
+    for a later day. A mirror whose call did not finish is sent again first, and its test USDC
+    is counted as spent until the chain answers. Returns how many were mirrored."""
+    settings = get_settings()
+    vault = settings.policy_vault_address
+    if vault is None or settings.agent_wallet_address is None:
+        return 0
+    async with open_session() as db:
+        company_ids = await repository.companies_with_open_accounts(db)
+    mirrored = 0
+    for company_id in company_ids:
+        async with open_session() as db:
+            company = (await companies.get_companies(db, [company_id])).get(company_id)
+            if company is None or company.mode is not CompanyMode.SHADOW:
+                continue
+            due = await decisions.to_mirror(db, company_id)
+            made = await repository.mirrors_of(db, company_id, [decision.id for decision in due])
+        pending = [
+            decision
+            for decision in due
+            if decision.id in made and made[decision.id].state is PaymentState.SUBMITTING
+        ]
+        fresh = [decision for decision in due if decision.id not in made]
+        if not pending and not fresh:
+            continue
+        state = await chain.company_state(company_id)
+        if state is None:
+            continue
+        room = min(state.balance, state.left_today) - sum(
+            made[decision.id].usdc_units or 0 for decision in pending
+        )
+        for decision in [*pending, *fresh]:
+            try:
+                spent, settled = await _mirror(
+                    company_id, decision, vault, room, state.per_payment_cap
+                )
+            except Exception as error:  # one mirror that fails never stops the others
+                logger.warning(
+                    "mirroring decision %s failed: %s", decision.id, type(error).__name__
+                )
+                continue
+            if decision not in pending:
+                room -= spent
+            mirrored += settled
+    return mirrored
+
+
+async def _mirror(
+    company_id: uuid.UUID, decision: DecisionOut, vault: str, room: int, cap: int
+) -> tuple[int, bool]:
+    """Releases one bill's mirror, or sends again one whose call did not finish: the test USDC it
+    holds of the day's room (sent, or sent and not answered yet), and whether it settled."""
+    async with open_session() as db:
+        payment = await repository.mirror_of(db, company_id, decision.id)
+        if payment is not None and payment.state is not PaymentState.SUBMITTING:
+            return 0, False
+        if payment is None:
+            units = decision.usdc_units
+            if units is None or units > cap or units > room:
+                return 0, False
+            payee = (await payee_addresses(db, company_id, [decision.party_id])).get(
+                decision.party_id
+            )
+            if payee is None:
+                return 0, False
+            active_from = await chain.payee_active_from(company_id, payee)
+            if not active_from or active_from > int(utcnow().timestamp()):
+                return 0, False
+            # Pinned to the evaluation read: the lock holds until this row is written.
+            if not await decisions.mirror_still_due(
+                db, company_id, decision.id, decision.evaluation
+            ):
+                return 0, False
+            payment = Payment(
+                company_id=company_id,
+                decision_id=decision.id,
+                evaluation=decision.evaluation,
+                invoice_id=decision.invoice_id,
+                kind=PaymentKind.MIRROR,
+                method=decision.method,
+                pay_currency="USDC",
+                pay_amount=chain.usdc(units),
+                payee=payee,
+                usdc_units=units,
+                payment_key="0x" + decisions.mirror_key(decision.invoice_id).hex(),
+                idempotency_key=uuid.uuid4(),
+                state=PaymentState.SUBMITTING,
+            )
+            await repository.add(db, payment)
+        payment_id, key = payment.id, payment.payment_key
+        payee, units, idempotency_key = payment.payee, payment.usdc_units, payment.idempotency_key
+        evaluation = payment.evaluation
+        await db.commit()
+    if key is None or payee is None or units is None or idempotency_key is None:
+        return 0, False
+
+    try:
+        done = await agent_wallet.execute(
+            _RELEASE,
+            ["0x" + chain.company_key(company_id).hex(), key, payee, units],
+            contract=vault,
+            idempotency_key=idempotency_key,
+        )
+    except agent_wallet.WalletError as error:
+        if not error.ended:
+            logger.warning("mirroring decision %s waits: %s", decision.id, error.code)
+            return units, False
+        # Refused by the vault: recorded as not mirrored, and never tried again; the bill is
+        # untouched, as it was paid by bank.
+        async with open_session() as db:
+            failed = await repository.mirror_of(db, company_id, decision.id)
+            if failed is not None and failed.id == payment_id:
+                failed.state, failed.failure = PaymentState.FAILED, str(error)[:300]
+                failed.finished_at = utcnow()
+            await db.commit()
+        return 0, False
+
+    async with open_session() as db:
+        settled = await repository.mirror_of(db, company_id, decision.id)
+        if settled is not None and settled.id == payment_id:
+            settled.state = PaymentState.SETTLED
+            settled.tx_hash, settled.circle_transaction_id = done.tx_hash, done.transaction_id
+            settled.finished_at = utcnow()
+            settled.paid_on = settled.finished_at.date()
+        await decisions.record_mirrored(
+            db,
+            company_id,
+            decision.id,
+            evaluation=evaluation,
+            usdc_units=units,
+            payee=payee,
+            tx_hash=done.tx_hash,
+            transaction_id=done.transaction_id,
+        )
+        await db.commit()
+    return units, True
 
 
 async def _changed_since(

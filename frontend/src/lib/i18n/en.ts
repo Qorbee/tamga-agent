@@ -538,6 +538,7 @@ export const en = {
     refused: "The vault refused it",
     paidOn: (day: string) => `Paid ${day}`,
     viewTx: "View on Arcscan",
+    mirrored: "Mirrored in test USDC on Arc",
     changed: "This changed since you looked: here is the latest. Answer again.",
     failed: "That did not go through. Try again.",
     methods: { vault_usdc: "Test USDC on Arc", bank_transfer: "Bank transfer" } as Record<string, string>,
@@ -610,6 +611,7 @@ export const en = {
       failed: "The vault refused it",
       sentBack: "The vault refused it: back to you",
       wouldRelease: "Would have been paid (replay)",
+      mirrored: "Mirrored in test USDC on Arc",
       advised: {
         pay: "Tamga's opinion: pay it now",
         pay_part: "Tamga's opinion: pay part of it now",

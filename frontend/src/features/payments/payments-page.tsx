@@ -83,7 +83,13 @@ function Decisions({ view }: { view: View }) {
   // Each bill's payment in force; one the owner undid only while none replaced it, and a failed
   // attempt only while nothing settled.
   const shown = new Map<string, Payment>();
+  // A shadow mirror of a bank payment is a record beside the bill's payment, never it.
+  const mirrors = new Map<string, Payment>();
   for (const payment of payments.flatMap((query) => query.data?.items ?? [])) {
+    if (payment.kind === "mirror") {
+      if (payment.state === "settled") mirrors.set(payment.decision_id, payment);
+      continue;
+    }
     const kept = shown.get(payment.decision_id);
     if (kept && inForce(kept)) continue;
     const settled = payment.state === "settled";
@@ -108,7 +114,7 @@ function Decisions({ view }: { view: View }) {
       <ul className="divide-border border-border bg-card divide-y overflow-hidden rounded-2xl border">
         {rows.map((decision) => (
           <li key={decision.id} className="py-1 ps-2 pe-3">
-            <DecisionRow decision={decision} payment={shown.get(decision.id)} />
+            <DecisionRow decision={decision} payment={shown.get(decision.id)} mirror={mirrors.get(decision.id)} />
           </li>
         ))}
       </ul>

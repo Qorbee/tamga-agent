@@ -273,3 +273,115 @@ async def test_a_transaction_circle_ended_is_not_sent_again_under_its_key(
     assert payment["state"] == "failed"
     assert (await client.get(f"/decisions/{decision['id']}")).json()["state"] == "failed"
     assert await executor.pay_approved() == 0 and len(wallet.calls) == 1
+
+
+async def paid_by_bank(
+    client: httpx.AsyncClient, company_id: uuid.UUID, mode: str
+) -> dict[str, Any]:
+    """A company in ``mode`` whose delivered truck's bill its books show paid."""
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE companies SET mode = :mode WHERE id = :id"),
+            {"mode": mode, "id": company_id},
+        )
+        await db.commit()
+    await decisions.evaluate_pending()
+    delivered = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    async with open_session() as db:
+        await db.execute(
+            text("UPDATE invoices SET remaining_amount = 0 WHERE id = :id"),
+            {"id": delivered["invoice_id"]},
+        )
+        await db.commit()
+    await decisions.evaluate_pending()
+    paid = (await by_bill(client))[sandbox.DELIVERED_BILL]
+    assert paid["state"] == "paid_in_books"
+    return paid
+
+
+async def test_a_bill_paid_by_bank_in_shadow_is_mirrored_once_and_left_as_it_was(
+    client: httpx.AsyncClient, vault: Vault, wallet: Executor
+) -> None:
+    company_id = await a_sandbox(client)
+    paid = await paid_by_bank(client, company_id, "shadow")
+
+    assert await executor.mirror_paid() == 1
+
+    [call] = wallet.calls
+    _, key, payee, units = call["parameters"]
+    # Its own key: the bill's payment key stays unspent on the vault.
+    assert key == "0x" + decisions.mirror_key(uuid.UUID(paid["invoice_id"])).hex()
+    assert key != "0x" + decisions.payment_key(uuid.UUID(paid["invoice_id"])).hex()
+    # The bill's whole amount, as the bank paid it: its evaluation names only what was left.
+    assert paid["usdc_units"] == 0 and units == 220_400 and payee.startswith("0x")
+    [mirror] = (await client.get("/payments", params={"decision_id": paid["id"]})).json()["items"]
+    assert mirror["kind"] == "mirror" and mirror["state"] == "settled"
+    assert mirror["explorer_url"].endswith("/tx/0x" + "b" * 64)
+    # The bill is as the books left it, and the log holds the mirror with its transaction.
+    assert (await client.get(f"/decisions/{paid['id']}")).json()["state"] == "paid_in_books"
+    events = (await client.get("/decision-events", params={"decision_id": paid["id"]})).json()
+    assert events["items"][-1]["event"] == "mirrored"
+    assert events["items"][-1]["explorer_url"] == mirror["explorer_url"]
+
+    # Mirrored once, however often it is evaluated again.
+    await decisions.evaluate_pending()
+    assert await executor.mirror_paid() == 0 and len(wallet.calls) == 1
+    async with open_session() as db:
+        assert await decisions.broken_link(db, company_id) is None
+
+
+async def test_only_a_shadow_company_mirrors(
+    client: httpx.AsyncClient, vault: Vault, wallet: Executor
+) -> None:
+    company_id = await a_sandbox(client)
+    await paid_by_bank(client, company_id, "live")
+
+    assert await executor.mirror_paid() == 0
+    assert wallet.calls == []
+
+
+async def test_a_mirror_beyond_what_today_leaves_waits_for_a_later_day(
+    client: httpx.AsyncClient, vault: Vault, wallet: Executor
+) -> None:
+    company_id = await a_sandbox(client)
+    await paid_by_bank(client, company_id, "shadow")
+    vault.state = dataclasses.replace(vault.state, left_today=220_400 - 1)
+
+    assert await executor.mirror_paid() == 0
+    assert wallet.calls == [] and (await client.get("/payments")).json()["items"] == []
+
+    vault.state = dataclasses.replace(vault.state, left_today=500_000)
+    assert await executor.mirror_paid() == 1
+
+
+async def test_a_mirror_the_vault_refuses_is_not_tried_again(
+    client: httpx.AsyncClient, vault: Vault, wallet: Executor
+) -> None:
+    company_id = await a_sandbox(client)
+    paid = await paid_by_bank(client, company_id, "shadow")
+    wallet.answer = agent_wallet.WalletError("REVERTED", code="REVERTED", ended=True)
+
+    assert await executor.mirror_paid() == 0
+
+    [mirror] = (await client.get("/payments")).json()["items"]
+    assert mirror["state"] == "failed"
+    assert (await client.get(f"/decisions/{paid['id']}")).json()["state"] == "paid_in_books"
+    assert await executor.mirror_paid() == 0 and len(wallet.calls) == 1
+
+
+async def test_a_mirror_whose_call_did_not_finish_is_sent_again_as_the_same_transaction(
+    client: httpx.AsyncClient, vault: Vault, wallet: Executor
+) -> None:
+    company_id = await a_sandbox(client)
+    await paid_by_bank(client, company_id, "shadow")
+    wallet.answer = agent_wallet.SignedOut("the session has ended", code="UNAUTHORIZED")
+
+    assert await executor.mirror_paid() == 0
+    [mirror] = (await client.get("/payments")).json()["items"]
+    assert mirror["state"] == "submitting"
+
+    wallet.answer = agent_wallet.Executed(transaction_id="circle-tx-2", tx_hash="0x" + "d" * 64)
+    assert await executor.mirror_paid() == 1
+    first, second = wallet.calls
+    assert first["key"] == second["key"]
+    assert await executor.mirror_paid() == 0 and len(wallet.calls) == 2

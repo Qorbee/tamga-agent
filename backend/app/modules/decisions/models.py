@@ -129,6 +129,9 @@ class LogEvent(StrEnum):
     # The owner said a bank transfer settled by mistake was not paid: back to approved, with
     # their reason, the way they correct Tamga's match or their own word.
     UNPAID = "unpaid"
+    # In shadow, the test USDC released beside a payment made by bank, with its transaction: a
+    # record of the bank's payment on Arc, never the bill's payment (ADR-0027).
+    MIRRORED = "mirrored"
 
 
 class DecisionEvent(CompanyScoped, Base):

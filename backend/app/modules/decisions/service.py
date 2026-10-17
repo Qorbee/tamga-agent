@@ -106,6 +106,11 @@ def payment_key(invoice_id: uuid.UUID) -> bytes:
     return chain.payment_key(str(invoice_id), "final")
 
 
+def mirror_key(invoice_id: uuid.UUID) -> bytes:
+    """A shadow mirror's key on the vault: its own, so the bill's payment key stays unspent."""
+    return chain.payment_key(str(invoice_id), "mirror")
+
+
 # Evaluating
 
 
@@ -1162,6 +1167,90 @@ async def approved(db: AsyncSession, company_id: uuid.UUID) -> list[DecisionOut]
 async def companies_with_approved(db: AsyncSession) -> list[uuid.UUID]:
     """The one read across companies, of their ids alone."""
     return await repository.companies_with_approved(db)
+
+
+async def to_mirror(db: AsyncSession, company_id: uuid.UUID) -> list[DecisionOut]:
+    """The bills paid by bank, a shadow company's to mirror in test USDC (ADR-0027): those the
+    owner approved or settled as bank transfers, for their evaluation's figure, and those the
+    books show paid, for the bill's whole amount, which is what the bank paid (their evaluation
+    names only what was left, often nothing). One with no figure is left out. Whether one was
+    mirrored already is the executor's to know."""
+    rows = [DecisionOut.model_validate(row) for row in await repository.to_mirror(db, company_id)]
+    bills = {
+        bill.id: bill
+        for bill in await books.get_invoices(
+            db,
+            company_id,
+            [row.invoice_id for row in rows if row.state is DecisionState.PAID_IN_BOOKS],
+        )
+    }
+    due: list[DecisionOut] = []
+    for row in rows:
+        if row.state is DecisionState.PAID_IN_BOOKS:
+            bill = bills.get(row.invoice_id)
+            whole = (
+                policies.mirror(bill.total_amount, bill.currency)
+                if bill is not None and bill.total_amount is not None
+                else None
+            )
+            row = row.model_copy(update={"usdc_units": whole.units if whole is not None else None})
+        if row.usdc_units:
+            due.append(row)
+    return due
+
+
+async def mirror_still_due(
+    db: AsyncSession, company_id: uuid.UUID, decision_id: uuid.UUID, evaluation: int
+) -> bool:
+    """Whether the decision is still a bill paid by bank at the evaluation read, under the
+    decisions' lock, held by the caller's transaction: a books correction evaluated meanwhile
+    is never mirrored on the evaluation before it."""
+    await repository.lock_decisions(db, company_id)
+    decision = await repository.get(db, company_id, decision_id)
+    if decision is None:
+        return False
+    await db.refresh(decision)
+    if decision.evaluation != evaluation:
+        return False
+    if decision.state is DecisionState.PAID_IN_BOOKS:
+        return True
+    return (
+        decision.state in (DecisionState.APPROVED, DecisionState.SETTLED)
+        and decision.method is PaymentMethod.BANK_TRANSFER
+    )
+
+
+async def record_mirrored(
+    db: AsyncSession,
+    company_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    *,
+    evaluation: int,
+    usdc_units: int,
+    payee: str,
+    tx_hash: str,
+    transaction_id: str,
+) -> None:
+    """The vault released a bill's mirror: logged, the decision's state untouched, as the mirror
+    neither pays the bill nor holds it. Under the decisions' lock; no commit."""
+    await repository.lock_decisions(db, company_id)
+    decision = await repository.get(db, company_id, decision_id)
+    if decision is None:
+        return
+    await _log(
+        db,
+        decision,
+        LogEvent.MIRRORED,
+        {
+            "evaluation": evaluation,
+            "usdc_units": usdc_units,
+            "payee": payee,
+            "tx_hash": tx_hash,
+            "transaction_id": transaction_id,
+        },
+        user_id=None,
+        at=utcnow(),
+    )
 
 
 async def record_paid(

@@ -38,7 +38,11 @@ COUNTS: dict[str, str] = {
     "owner's answers on bills": "SELECT count(*) FROM decision_log "
     "WHERE company_id = ANY(:companies) AND user_id IS NOT NULL AND at >= :since",
     "test-USDC payments settled": "SELECT count(*) FROM payments "
-    "WHERE company_id = ANY(:companies) AND state = 'settled' AND created_at >= :since",
+    "WHERE company_id = ANY(:companies) AND state = 'settled' AND kind = 'payment' "
+    "AND usdc_units IS NOT NULL AND created_at >= :since",
+    "bank payments mirrored in test USDC on Arc": "SELECT count(*) FROM payments "
+    "WHERE company_id = ANY(:companies) AND state = 'settled' AND kind = 'mirror' "
+    "AND created_at >= :since",
     # One anchor holds every company's log head, sandboxes' too: it is not a pilot count.
     "log anchors on Arc (one root over every company, sandboxes included)": "SELECT count(*) "
     "FROM decision_anchors "
