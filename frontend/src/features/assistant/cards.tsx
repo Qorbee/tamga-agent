@@ -407,7 +407,7 @@ function TurnBegan({ data }: DataMessagePartProps<TurnContent>) {
     <div data-slot="chat-turn-began" role="separator" className="text-muted-foreground my-3 flex items-center gap-3 text-xs">
       <span className="bg-border h-px flex-1" />
       <span className="flex max-w-[80%] items-center gap-1.5 text-center text-pretty">
-        <Seal small className="size-3.5 shrink-0" />
+        <Seal className="size-5 shrink-0" />
         <span>
           {t.assistant.turnBegan}
           {" · "}
