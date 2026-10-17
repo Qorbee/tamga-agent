@@ -74,7 +74,7 @@ export function AccountMenu({ floating = false }: { floating?: boolean }) {
               <SidebarMenuButton
                 tooltip={label || t.account.menu}
                 aria-label={t.account.menu}
-                className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2"
+                className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-1!"
               >
                 <Avatar className="size-8">
                   <AvatarFallback className="bg-secondary text-xs font-medium">

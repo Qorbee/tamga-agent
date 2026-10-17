@@ -308,6 +308,8 @@ export const tr: Dictionary = {
     trailerSlot: "Dorse",
     noTrailer: "Dorse yok",
     readFrom: (label: string) => `Kaynak: ${label}`,
+    sources: (count: number) => `${count} kaynak`,
+    noSubject: "(konu yok)",
     mailOf: (writer: string, day: string) => `${writer} (e-posta, ${day})`,
     billNumbered: (number: string) => `fatura ${number}`,
     platesSeen: (count: number) => `Bu işte adı geçen, araçta olmayan ${count} plaka`,
@@ -1200,6 +1202,13 @@ export const tr: Dictionary = {
   calendar: {
     previous: "Önceki ay",
     next: "Sonraki ay",
+    previousYear: "Önceki yıl",
+    nextYear: "Sonraki yıl",
+    previousYears: "Önceki yıllar",
+    nextYears: "Sonraki yıllar",
+    pickMonth: "Ay ve yılı seç",
+    pickYear: "Yılı seç",
+    today: "Bugün",
   },
   glance: {
     available: "Kullanılabilir",

@@ -8,7 +8,6 @@ import {
   FileVerifiedIcon,
   Invoice01Icon,
   Invoice02Icon,
-  Link01Icon,
   MoneyReceive01Icon,
   MoneySend01Icon,
   MoreHorizontalIcon,
@@ -19,7 +18,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { CanvasLink } from "@/components/canvas-link";
+import { EvidenceLink } from "@/components/evidence-link";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { Button } from "@/components/ui/button";
@@ -52,7 +51,6 @@ import {
   type PlateSeen,
   type Shipment,
 } from "@/lib/api";
-import type { CanvasView } from "@/lib/canvas-view";
 import { formatDate } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { useCanEditProjects, useIsOwner } from "@/lib/use-role";
@@ -344,24 +342,14 @@ function TruckSources({ truck }: { truck: Shipment }) {
   ));
 }
 
-// The record each kind of item opens as; a truck's position opens none.
-const VIEWS: Partial<Record<ItemNamed["item_kind"], CanvasView["kind"]>> = {
-  message: "mail",
-  document: "document",
-  invoice: "invoice",
-};
-
 /**
- * Where something was read, as a link's icon: a tap opens the first item that said it, its name
- * is the icon's hint, and a count tells how many more did. The proof stays a tap away without a
- * line of text on every row.
+ * Where something was read, as a link's icon: its card lists every item that said it, each a tap
+ * away, and one alone opens at a tap. The proof stays a tap away without a line of text on every
+ * row.
  */
 function ReadFrom({ items, slot }: { items: ItemNamed[]; slot?: string }) {
   const { t, locale } = useI18n();
-  const unique = items.filter(
-    (item, at) => items.findIndex((other) => other.item_id === item.item_id) === at,
-  );
-  const [first, ...rest] = unique;
+  const [first] = items;
   if (!first) return null;
   const day = first.at ? formatDate(new Date(first.at), locale) : "";
   const name =
@@ -370,28 +358,7 @@ function ReadFrom({ items, slot }: { items: ItemNamed[]; slot?: string }) {
       : first.item_kind === "invoice"
         ? t.project.billNumbered(first.label ?? "")
         : (first.label ?? "");
-  const label = (slot ? `${slot}: ` : "") + t.project.readFrom(name) + (rest.length > 0 ? ` +${rest.length}` : "");
-  const view = VIEWS[first.item_kind];
-  const mark = (
-    <>
-      <HugeiconsIcon icon={Link01Icon} strokeWidth={1.75} className="size-4" aria-hidden />
-      {rest.length > 0 ? <span className="text-[0.7rem] tabular-nums">+{rest.length}</span> : null}
-    </>
-  );
-  const look = "text-muted-foreground inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-0.5 rounded-full px-1.5";
-  return (
-    <Hint label={label}>
-      {view ? (
-        <CanvasLink view={{ kind: view, id: first.item_id }} aria-label={label} className={cn(look, "hover:text-foreground hover:bg-accent/60")}>
-          {mark}
-        </CanvasLink>
-      ) : (
-        <span role="img" aria-label={label} className={look}>
-          {mark}
-        </span>
-      )}
-    </Hint>
-  );
+  return <EvidenceLink items={items} label={(slot ? `${slot}: ` : "") + t.project.readFrom(name)} />;
 }
 
 /**

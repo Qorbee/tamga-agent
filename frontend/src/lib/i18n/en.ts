@@ -317,6 +317,9 @@ export const en = {
     trailerSlot: "Trailer",
     noTrailer: "No trailer",
     readFrom: (label: string) => `from ${label}`,
+    /** What a link's icon opens: every paper or mail that said it. */
+    sources: (count: number) => (count === 1 ? "1 source" : `${count} sources`),
+    noSubject: "(no subject)",
     mailOf: (writer: string, day: string) => `${writer} (mail, ${day})`,
     billNumbered: (number: string) => `bill ${number}`,
     platesSeen: (count: number) =>
@@ -1241,6 +1244,13 @@ export const en = {
   calendar: {
     previous: "Previous month",
     next: "Next month",
+    previousYear: "Previous year",
+    nextYear: "Next year",
+    previousYears: "Earlier years",
+    nextYears: "Later years",
+    pickMonth: "Choose the month and year",
+    pickYear: "Choose the year",
+    today: "Today",
   },
   glance: {
     available: "Available",

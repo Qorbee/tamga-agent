@@ -125,6 +125,12 @@ export function formatMonth(year: number, month: number, locale: Locale): string
   return new Intl.DateTimeFormat(intlLocale[locale], { month: "long", year: "numeric" }).format(new Date(year, month, 1));
 }
 
+/** The year's months by their short names, January first: "Jan", "Feb", … */
+export function monthNames(locale: Locale): string[] {
+  const format = new Intl.DateTimeFormat(intlLocale[locale], { month: "short" });
+  return Array.from({ length: 12 }, (_, month) => format.format(new Date(2026, month, 1)));
+}
+
 /** The week's days as a calendar heads its columns, Monday first: "Mo", "Tu", … */
 export function weekdayNames(locale: Locale): string[] {
   const format = new Intl.DateTimeFormat(intlLocale[locale], { weekday: "short" });

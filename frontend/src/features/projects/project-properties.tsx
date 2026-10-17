@@ -17,7 +17,7 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDeferredValue, useState, type ReactNode } from "react";
 
-import { CanvasLink } from "@/components/canvas-link";
+import { EvidenceLink } from "@/components/evidence-link";
 import { Hint } from "@/components/hint";
 import { IconButton } from "@/components/icon-button";
 import { InlineDateRange } from "@/components/inline-date-range";
@@ -215,32 +215,16 @@ function Names({ names, note }: { names: (string | null | undefined)[]; note?: s
   );
 }
 
-/** Why Tamga names a firm, as a link's icon: its hint says what named it, a tap opens the first
- * paper that did, and a count tells how many more. */
+/** Why Tamga names a firm, as a link's icon: its card lists the papers and mails that named it,
+ * each a tap away; with none to open, its hint says what named it. */
 function FirmProof({ why, sources }: { why: string; sources: ProjectParty["evidence"] }) {
-  const { t } = useI18n();
   const opened = sources.filter((item) => SOURCES[item.item_kind]);
-  const [first, ...rest] = opened;
-  const label = first ? `${why} · ${t.project.openSource[first.item_kind]}` : why;
-  const mark = (
-    <>
-      <HugeiconsIcon icon={Link01Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
-      {rest.length > 0 ? <span className="text-[0.7rem] tabular-nums">+{rest.length}</span> : null}
-    </>
-  );
-  const look = "text-muted-foreground inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-0.5 rounded-full px-1";
-  const view = first ? SOURCES[first.item_kind] : undefined;
+  if (opened.length > 0) return <EvidenceLink items={opened} label={why} small />;
   return (
-    <Hint label={label}>
-      {first && view ? (
-        <CanvasLink view={{ kind: view, id: first.item_id }} aria-label={label} className={cn(look, "hover:text-foreground hover:bg-accent/60")}>
-          {mark}
-        </CanvasLink>
-      ) : (
-        <span role="img" aria-label={label} className={look}>
-          {mark}
-        </span>
-      )}
+    <Hint label={why}>
+      <span role="img" aria-label={why} className="text-muted-foreground inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full px-1">
+        <HugeiconsIcon icon={Link01Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
+      </span>
     </Hint>
   );
 }
