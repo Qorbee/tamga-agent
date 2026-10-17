@@ -410,6 +410,18 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot"
           }
         },
         "required": [
@@ -9256,6 +9268,113 @@
         "title": "Skip",
         "type": "object"
       },
+      "SnapshotData": {
+        "description": "What a view's component draws, as the pages' own services answered then (ADR-0035):\neach field the response of the endpoint the live view reads, so the same component draws\neither.",
+        "properties": {
+          "accounts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "decisions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisionPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "holdings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Holdings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "movements": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovementPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "party": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartyOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projects": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          },
+          "totals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/InvoiceTotal"
+              },
+              "type": "array"
+            },
+            "default": {},
+            "title": "Totals",
+            "type": "object"
+          }
+        },
+        "required": [
+          "today"
+        ],
+        "title": "SnapshotData",
+        "type": "object"
+      },
       "Stance": {
         "description": "How the controller leans when it weighs a bill the rules allow.",
         "enum": [
@@ -9680,6 +9799,42 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ViewSnapshotOut": {
+        "description": "A view as it was shown: what it shows, by which filters, when, and its figures.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SnapshotData"
+          },
+          "filters": {
+            "additionalProperties": true,
+            "title": "Filters",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "taken_at": {
+            "format": "date-time",
+            "title": "Taken At",
+            "type": "string"
+          },
+          "view": {
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "view",
+          "filters",
+          "taken_at",
+          "data"
+        ],
+        "title": "ViewSnapshotOut",
         "type": "object"
       },
       "WorkbookOut": {
@@ -17011,6 +17166,55 @@
         "summary": "Translate",
         "tags": [
           "translations"
+        ]
+      }
+    },
+    "/view-snapshots/{snapshot_id}": {
+      "get": {
+        "description": "A view as the chat showed it, with the figures it was answered with (ADR-0035).",
+        "operationId": "chats.get_view_snapshot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "snapshot_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Snapshot Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewSnapshotOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get View Snapshot",
+        "tags": [
+          "chats"
         ]
       }
     }

@@ -1,5 +1,6 @@
 """The views the chat shows (ADR-0029): the model chooses one from a closed catalog and the
-records it shows, by the filters its resource takes; the client reads every figure from the API.
+records it shows, by the filters its resource takes; code reads every figure and keeps them with
+the answer (ADR-0035), which the client draws.
 Nothing here carries an amount, and nothing in a view moves money or changes a record.
 
 A firm is named by the handle a search gave the run (3 for p3), resolved here to the id the
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from app.modules.assistant import snapshots
 from app.modules.assistant.seat import Seat
 from app.modules.decisions.models import DecisionState
 from app.modules.money import service as money
@@ -115,7 +117,23 @@ async def show(context: RunContext[Seat], what: View, title: str = "") -> dict[s
                 "name one by its bank and currency, or show every account."
             )
         filters["account_id"] = str(fitting[0].id)
-    return {"view": what.view, "title": title[:TITLE], "filters": filters}
+    # Its figures as they are now, kept, so the chat draws this answer as it was given.
+    async with open_session() as db:
+        snapshot = await snapshots.take(
+            db,
+            seat.actor,
+            view=what.view,
+            filters=filters,
+            chat_id=seat.chat_id,
+            tool_call_id=context.tool_call_id,
+        )
+        await db.commit()
+    return {
+        "view": what.view,
+        "title": title[:TITLE],
+        "filters": filters,
+        "snapshot": str(snapshot),
+    }
 
 
 def _fits(account: AccountOut, words: str) -> bool:

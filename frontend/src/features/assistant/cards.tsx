@@ -24,6 +24,7 @@ import {
   getDecision,
   getPlacement,
   getProject,
+  getViewSnapshot,
   listAllLinks,
   listAllPlacements,
   listDecisions,
@@ -246,12 +247,24 @@ function Card({ pending, error, children }: { pending: boolean; error: unknown; 
 }
 
 /** The morning brief's card: where the money stands as it is read, as Money shows it. */
-function BriefCard() {
-  const { t } = useI18n();
+/** The money a brief was written over, as it stood then (ADR-0035); a brief written before the
+ * figures were kept shows where the money stands now, and says so. */
+function BriefCard({ data }: DataMessagePartProps<CardContent>) {
+  const { t, locale } = useI18n();
+  const kept = useQuery({
+    queryKey: ["view-snapshot", data.snapshot],
+    queryFn: () => getViewSnapshot(data.snapshot!),
+    enabled: Boolean(data.snapshot),
+    staleTime: Infinity,
+    retry: false,
+  });
+  if (data.snapshot && kept.isPending) return <Skeleton className="my-3 h-24 w-64 rounded-2xl" />;
   return (
     <div data-slot="chat-card" className="my-3 flex flex-col gap-2">
-      <p className="text-muted-foreground text-xs">{t.assistant.cards.briefNow}</p>
-      <MoneyGlance className="border-border bg-card rounded-2xl border px-4 py-3" />
+      <p className="text-muted-foreground text-xs">
+        {kept.data ? t.assistant.cards.briefThen(formatDate(new Date(kept.data.taken_at), locale, "dateTime")) : t.assistant.cards.briefNow}
+      </p>
+      <MoneyGlance kept={kept.data?.data} className="border-border bg-card rounded-2xl border px-4 py-3" />
     </div>
   );
 }

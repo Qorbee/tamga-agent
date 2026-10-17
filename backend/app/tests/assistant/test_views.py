@@ -1,6 +1,8 @@
-"""The chat's views (ADR-0029): the model names a view from the catalog and its filters, and the
-client reads every figure from the API. Nothing the model passes is an amount."""
+"""The chat's views (ADR-0029): the model names a view from the catalog and its filters, and code
+reads every figure and keeps it with the answer (ADR-0035). Nothing the model passes is an
+amount."""
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -101,3 +103,39 @@ def test_invoice_totals_show_both_sides_unless_one_is_named() -> None:
     payable = adapter.validate_python({"view": "invoice_totals", "direction": "payable"})
     assert isinstance(both, views.Totals) and both.direction == "both"
     assert isinstance(payable, views.Totals) and payable.direction == "payable"
+
+
+def snapshot_of(returned: str) -> str:
+    found = re.search(r"'snapshot': '([0-9a-f-]{36})'", returned)
+    assert found, returned
+    return found.group(1)
+
+
+async def test_a_view_keeps_the_figures_it_was_answered_with(
+    client: httpx.AsyncClient,
+    model: Callable[..., Script],  # noqa: F811
+) -> None:
+    await guest_client(client)
+    assert (await client.post("/projects", json={"name": "Munich"})).status_code == 201
+    chat_id = await new_chat(client)
+    script = model(
+        ("show", {"what": {"view": "projects"}}),
+        ("show", {"what": {"view": "money_outlook", "weeks": 2}}),
+        "Your jobs, and the weeks ahead.",
+    )
+    await ask(client, chat_id, user("Which jobs do we have?"))
+    jobs = snapshot_of(script.returned(1))
+    weeks = snapshot_of(script.returned(2))
+
+    # A job added since shows on the page, never in the answer given before it.
+    assert (await client.post("/projects", json={"name": "Lyon"})).status_code == 201
+    kept = (await client.get(f"/view-snapshots/{jobs}")).json()
+    assert kept["view"] == "projects" and kept["data"]["projects"]["total"] == 1
+    assert (await client.get("/projects")).json()["total"] == 2
+    # Each week's totals, both sides, from the company's day then.
+    outlook = (await client.get(f"/view-snapshots/{weeks}")).json()["data"]
+    assert len(outlook["totals"]) == 2 * 3 and outlook["today"]
+
+    # Another company never reads it.
+    await guest_client(client)
+    assert (await client.get(f"/view-snapshots/{jobs}")).status_code == 404

@@ -233,6 +233,7 @@ async def get_messages(db: AsyncSession, actor: Actor, chat_id: uuid.UUID) -> Ch
                         ids=row.message.get("ids", []),
                         evaluations=row.message.get("evaluations", []),
                         items=row.message.get("items", []),
+                        snapshot=row.message.get("snapshot"),
                     ),
                 )
             )

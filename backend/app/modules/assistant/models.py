@@ -202,3 +202,28 @@ class ChatRun(CompanyScoped, Base):
     # Why Tamga took a turn on its own, in code's words ("3 bills wait for you"): shown above
     # what it wrote. None for a run someone asked for.
     reason: Mapped[str | None] = mapped_column(String(200))
+
+
+class ViewSnapshot(CompanyScoped, Base):
+    """The figures a view in the chat was answered with (ADR-0035), read by code through the
+    services the pages use when the view was shown, so the chat draws them as they were. A
+    morning brief's card keeps one too, before it has a chat."""
+
+    __tablename__ = "view_snapshots"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["company_id", "chat_id"], ["chats.company_id", "chats.id"], ondelete="CASCADE"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
+    # The chat it was shown in; null for a brief's, kept before the brief chose its chat.
+    chat_id: Mapped[uuid.UUID | None]
+    # The tool call that showed it, when a run's `show` did.
+    tool_call_id: Mapped[str | None] = mapped_column(String(100))
+    # A catalog kind (`views.View`), or "glance" for a brief's money.
+    view: Mapped[str] = mapped_column(String(30))
+    filters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # `schemas.SnapshotData`, as JSON.
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    taken_at: Mapped[datetime] = mapped_column(server_default=func.now())

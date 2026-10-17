@@ -750,6 +750,7 @@ export const en = {
       updated: "Updated since Tamga wrote",
       done: (count: number) => (count === 1 ? "1 answered · show" : `${count} answered · show`),
       briefNow: "Where the money stands now",
+      briefThen: (when: string) => `Where the money stood, ${when}`,
       truck: "A truck",
       bill: "A bill",
       newsKinds: { message: "Mail", document: "File", invoice: "Bill", truck: "Truck" },
@@ -1203,6 +1204,9 @@ export const en = {
   views: {
     view: "View",
     asked: "What was asked",
+    /** A view kept as it was answered (ADR-0035), and the way to the records as they are now. */
+    asOf: (when: string) => `As of ${when}`,
+    seeNow: "See now",
     none: "Nothing to show",
     more: (count: number) => `and ${count} more`,
     newest: (shown: number, total: number) => `Sums of the newest ${shown} of ${total} movements`,

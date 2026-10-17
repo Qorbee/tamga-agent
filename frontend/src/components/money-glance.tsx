@@ -6,7 +6,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 
 import { usePaymentRun } from "@/components/payment-run";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getHoldings, getPolicy, listInvoiceTotals, type InvoiceTotal } from "@/lib/api";
+import { getHoldings, getPolicy, listInvoiceTotals, type InvoiceTotal, type SnapshotData } from "@/lib/api";
 import { formatDays, formatMoney, formatMoneyShort, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -21,29 +21,39 @@ function dayAfter(day: string): string {
  * Where the money stands, as a bank's app shows it: what the accounts hold, large, and under it
  * one quiet line of what comes in and what goes out by the next pay day. Nothing else: what waits
  * for you is on Payments, and the reserve in Settings. Money and the chat's brief show it; each
- * figure is the server's, and one with nothing known is left out (the balance shows a dash).
+ * figure is the server's, and one with nothing known is left out (the balance shows a dash). A
+ * brief draws the figures `kept` when it was written (ADR-0035), not today's.
  */
-export function MoneyGlance({ className }: { className?: string }) {
+export function MoneyGlance({ className, kept }: { className?: string; kept?: SnapshotData }) {
   const { t, locale } = useI18n();
-  const policy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false });
-  const currency = policy.data?.currency;
-  const run = usePaymentRun();
-  const holdings = useQuery({
+  const livePolicy = useQuery({ queryKey: ["policy"], queryFn: getPolicy, retry: false, enabled: !kept });
+  const currency = kept ? (kept.currency ?? undefined) : livePolicy.data?.currency;
+  const liveRun = usePaymentRun(undefined, !kept);
+  const run = kept ? { data: kept.run ?? undefined, isPending: false } : liveRun;
+  const liveHoldings = useQuery({
     queryKey: ["money-holdings", currency],
     queryFn: () => getHoldings(currency ?? ""),
-    enabled: Boolean(currency),
+    enabled: Boolean(currency) && !kept,
   });
+  const holdings = kept ? { data: kept.holdings ?? undefined, isPending: false, isError: false } : liveHoldings;
   // The run's last day counts: the books' cutoff is strict, so it is the day after.
   const cutoff = run.data ? dayAfter(run.data.through) : undefined;
-  const [incoming, outgoing] = useQueries({
+  const live = useQueries({
     queries: (["receivable", "payable"] as const).map((direction) => ({
       queryKey: ["invoice-totals", { direction, outstanding: true, due_before: cutoff }],
       queryFn: () => listInvoiceTotals({ direction, outstanding: true, due_before: cutoff }),
-      enabled: Boolean(cutoff),
+      enabled: Boolean(cutoff) && !kept,
     })),
   });
-  if (policy.isPending || run.isPending || holdings.isPending) return <Skeleton className={cn("h-20 w-56 rounded-xl", className)} />;
-  if (!policy.data || !currency) return null;
+  const [incoming, outgoing] = kept
+    ? (["receivable", "payable"] as const).map((direction) => ({
+        data: kept.totals?.[`${direction}|${cutoff}`] ?? [],
+        isError: false,
+      }))
+    : live;
+  if (!kept && (livePolicy.isPending || run.isPending || holdings.isPending))
+    return <Skeleton className={cn("h-20 w-56 rounded-xl", className)} />;
+  if (!currency) return null;
 
   // What the books say is owed by then, held bills included: a hold is no less a debt. Each
   // currency apart, joined: "₺340K + €12K".

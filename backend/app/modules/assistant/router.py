@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Request, status
 from fastapi.responses import Response
 
-from app.modules.assistant import service
+from app.modules.assistant import service, snapshots
 from app.modules.assistant.schemas import (
     AssistantOut,
     ChatCreate,
@@ -14,6 +14,7 @@ from app.modules.assistant.schemas import (
     ChatUpdate,
     MemoryChanges,
     MemoryText,
+    ViewSnapshotOut,
 )
 from app.modules.identity.deps import ActorDep
 from app.platform.db import SessionDep
@@ -125,3 +126,11 @@ async def change_memory(body: MemoryText, actor: ActorDep, db: SessionDep) -> Me
     once; ops' only add, as drafts the owner confirms. With `entry_id`, an edit of that entry.
     429 when the chat's requests for today are spent; 409 when nothing usable came back."""
     return await service.change_memory(db, actor, body.text, body.entry_id)
+
+
+@chats.get("/view-snapshots/{snapshot_id}")
+async def get_view_snapshot(
+    snapshot_id: uuid.UUID, actor: ActorDep, db: SessionDep
+) -> ViewSnapshotOut:
+    """A view as the chat showed it, with the figures it was answered with (ADR-0035)."""
+    return await snapshots.get(db, actor, snapshot_id)

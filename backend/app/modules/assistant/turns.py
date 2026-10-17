@@ -35,7 +35,7 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.modules.assistant import agents, context, news, repository, service
+from app.modules.assistant import agents, context, news, repository, service, snapshots
 from app.modules.assistant.models import CardKind, Chat, MessageKind, Origin
 from app.modules.assistant.seat import Seat
 from app.modules.books import service as books
@@ -837,7 +837,7 @@ async def speak(company: Company, finding: Finding) -> int:
             await repository.add_messages(
                 db,
                 kept,
-                [finding.card],
+                [await _with_figures(db, company.id, kept.id, finding.card)],
                 run_id=run_id,
                 began_by=Origin.TAMGA,
                 user_id=None,
@@ -856,6 +856,19 @@ async def speak(company: Company, finding: Finding) -> int:
     if not stored and opened:
         await _discard(company.id, chat_id)
     return int(stored)
+
+
+async def _with_figures(
+    db: AsyncSession, company_id: uuid.UUID, chat_id: uuid.UUID, card: dict[str, Any]
+) -> dict[str, Any]:
+    """A brief's card with the money it was written over, kept as it is now (ADR-0035), so the
+    card reads tomorrow as it read today. Any other card as it is. Does not commit."""
+    if card.get("kind") != CardKind.MORNING_BRIEF.value:
+        return card
+    snapshot = await snapshots.take(
+        db, Actor.of_tamga(company_id), view=snapshots.GLANCE, filters={}, chat_id=chat_id
+    )
+    return {**card, "snapshot": str(snapshot)}
 
 
 async def _into_digest(db: AsyncSession, company: Company, finding: Finding) -> int:
@@ -880,7 +893,7 @@ async def _into_digest(db: AsyncSession, company: Company, finding: Finding) -> 
     await repository.add_messages(
         db,
         chat,
-        [finding.card],
+        [await _with_figures(db, company.id, chat.id, finding.card)],
         run_id=uuid.uuid7(),
         began_by=Origin.TAMGA,
         user_id=None,

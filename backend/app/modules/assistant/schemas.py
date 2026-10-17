@@ -2,11 +2,16 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import Effort
 from app.modules.assistant.models import CardKind, Origin
+from app.modules.books.schemas import InvoiceTotal
+from app.modules.decisions.schemas import DecisionPage, PaymentRunOut
 from app.modules.memory.schemas import MemoryChangeDone
+from app.modules.money.schemas import AccountPage, Holdings, MovementPage
+from app.modules.parties.schemas import PartyOut
+from app.modules.projects.schemas import ProjectPage
 
 
 class ChatOut(BaseModel):
@@ -66,6 +71,8 @@ class CardContent(BaseModel):
     evaluations: list[int] = []
     # A project's news (``project_news``): each item, as the card shows it.
     items: list[NewsItem] = []
+    # The figures the card was written with (``morning_brief``), when they were kept (ADR-0035).
+    snapshot: uuid.UUID | None = None
 
 
 class CardMessage(BaseModel):
@@ -149,3 +156,35 @@ class MemoryChanges(BaseModel):
     changes: list[MemoryChangeDone]
     # The memorist's one sentence: what it did, or why it changed nothing.
     reason: str
+
+
+class SnapshotData(BaseModel):
+    """What a view's component draws, as the pages' own services answered then (ADR-0035):
+    each field the response of the endpoint the live view reads, so the same component draws
+    either."""
+
+    # The company's day the view counted from.
+    today: date
+    decisions: DecisionPage | None = None
+    # Invoice totals, keyed "<direction>|<due before>".
+    totals: dict[str, list[InvoiceTotal]] = {}
+    movements: MovementPage | None = None
+    accounts: AccountPage | None = None
+    projects: ProjectPage | None = None
+    run: PaymentRunOut | None = None
+    party: PartyOut | None = None
+    holdings: Holdings | None = None
+    # The policy's currency, which a brief's money is counted in.
+    currency: str | None = None
+
+
+class ViewSnapshotOut(BaseModel):
+    """A view as it was shown: what it shows, by which filters, when, and its figures."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    view: str
+    filters: dict[str, Any]
+    taken_at: datetime
+    data: SnapshotData

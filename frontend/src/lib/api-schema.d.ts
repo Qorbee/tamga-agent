@@ -1859,6 +1859,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/view-snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get View Snapshot
+         * @description A view as the chat showed it, with the figures it was answered with (ADR-0035).
+         */
+        get: operations["chats.get_view_snapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2014,6 +2034,8 @@ export interface components {
              * @default []
              */
             items: components["schemas"]["NewsItem"][];
+            /** Snapshot */
+            snapshot?: string | null;
         };
         /**
          * CardKind
@@ -4917,6 +4939,35 @@ export interface components {
             days: number;
         };
         /**
+         * SnapshotData
+         * @description What a view's component draws, as the pages' own services answered then (ADR-0035):
+         *     each field the response of the endpoint the live view reads, so the same component draws
+         *     either.
+         */
+        SnapshotData: {
+            accounts?: components["schemas"]["AccountPage"] | null;
+            /** Currency */
+            currency?: string | null;
+            decisions?: components["schemas"]["DecisionPage"] | null;
+            holdings?: components["schemas"]["Holdings"] | null;
+            movements?: components["schemas"]["MovementPage"] | null;
+            party?: components["schemas"]["PartyOut"] | null;
+            projects?: components["schemas"]["ProjectPage"] | null;
+            run?: components["schemas"]["PaymentRunOut"] | null;
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
+            /**
+             * Totals
+             * @default {}
+             */
+            totals: {
+                [key: string]: components["schemas"]["InvoiceTotal"][];
+            };
+        };
+        /**
          * Stance
          * @description How the controller leans when it weighs a bill the rules allow.
          * @enum {string}
@@ -5097,6 +5148,29 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * ViewSnapshotOut
+         * @description A view as it was shown: what it shows, by which filters, when, and its figures.
+         */
+        ViewSnapshotOut: {
+            data: components["schemas"]["SnapshotData"];
+            /** Filters */
+            filters: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Taken At
+             * Format: date-time
+             */
+            taken_at: string;
+            /** View */
+            view: string;
         };
         /** WorkbookOut */
         WorkbookOut: {
@@ -9040,6 +9114,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranslationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "chats.get_view_snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewSnapshotOut"];
                 };
             };
             /** @description Validation Error */

@@ -363,6 +363,10 @@ export const listDecisionEvents = (params: DecisionEventQuery) =>
 export type PaymentRun = Schemas["PaymentRunOut"];
 export type RunItem = Schemas["RunItem"];
 export const getPaymentRun = (on?: string) => request<PaymentRun>(`/payment-runs/current${query({ on })}`);
+/** A view as the chat showed it, with the figures it was answered with (ADR-0035). */
+export type ViewSnapshot = Schemas["ViewSnapshotOut"];
+export type SnapshotData = Schemas["SnapshotData"];
+export const getViewSnapshot = (id: string) => request<ViewSnapshot>(`/view-snapshots/${id}`);
 export type RunApproved = Schemas["RunApproved"];
 /** Approves each bill, the evaluation it names; one evaluated again since is refused with why. */
 export const approveRun = (items: Schemas["RunApproval"][]) =>

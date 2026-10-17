@@ -5,7 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { CashBar } from "@/components/cash-bar";
@@ -16,28 +16,40 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   getMe,
   getParty,
+  getViewSnapshot,
   listDecisions,
   listInvoiceTotals,
   listMoneyAccounts,
   listMovements,
   listProjects,
   type Decision,
+  type InvoiceTotal,
   type MovementCategory,
   type ProjectStatus,
+  type ViewSnapshot,
 } from "@/lib/api";
-import { formatDayShort, formatDays, formatMoney, formatMoneyShort, todayIso } from "@/lib/format";
+import { formatDate, formatDayShort, formatDays, formatMoney, formatMoneyShort, todayIso } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 /**
  * The views the chat shows under an answer (ADR-0029): the model named one from the catalog and
- * its filters through the `show` tool, and each is drawn here from the API, like any page, so
- * every figure is the server's and the view stays current. Nothing is answered in a view: a row
- * opens its record, and Open goes to the page or the canvas where the owner acts.
+ * its filters through the `show` tool. The server kept the figures it was answered with
+ * (ADR-0035), and the view draws those, "as of" then, so a past answer never redraws with
+ * today's; "See now" opens the records as they are. A view shown before figures were kept reads
+ * the API like any page. Nothing is answered in a view: a row opens its record.
  */
 
-type Shown = { view: string; title: string; filters: Record<string, unknown> };
+type Shown = { view: string; title: string; filters: Record<string, unknown>; snapshot?: string };
+
+// The figures the view was answered with, when they were kept.
+const Kept = createContext<ViewSnapshot | null>(null);
+
+/** A view's read: the figure kept with the answer in its place, else the API's, live. */
+function useRead<T>(kept: { value: T } | null, live: { data?: T; error: unknown }): { data?: T; error: unknown } {
+  return kept ? { data: kept.value, error: null } : live;
+}
 const LISTED = 8;
 // The most movements a view adds up, in pages of the API's largest: a note says when more matched.
 const PAGE = 200;
@@ -56,7 +68,8 @@ function shownOf(result: unknown): Shown | null {
   if (!value || typeof value !== "object" || !("view" in value) || typeof value.view !== "string") return null;
   const filters = "filters" in value && value.filters && typeof value.filters === "object" ? value.filters : {};
   const title = "title" in value && typeof value.title === "string" ? value.title : "";
-  return { view: value.view, title, filters: filters as Record<string, unknown> };
+  const snapshot = "snapshot" in value && typeof value.snapshot === "string" ? value.snapshot : undefined;
+  return { view: value.view, title, filters: filters as Record<string, unknown>, snapshot };
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
@@ -85,7 +98,8 @@ function Frame({
   open: ReactNode;
   children: ReactNode;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const kept = useContext(Kept);
   return (
     <section data-slot="chat-view" className="border-border bg-card my-3 rounded-2xl border">
       <header className="flex items-start gap-3 px-4 pt-3.5 pb-2">
@@ -93,6 +107,11 @@ function Frame({
           <span className="text-muted-foreground block text-xs font-medium tracking-[0.08em] uppercase">
             {shown.title || t.views.kinds[shown.view as keyof typeof t.views.kinds] || t.views.view}
           </span>
+          {kept ? (
+            <span className="text-muted-foreground mt-0.5 block text-xs">
+              {t.views.asOf(formatDate(new Date(kept.taken_at), locale, "dateTime"))}
+            </span>
+          ) : null}
           {chips.length > 0 ? (
             <span className="mt-1.5 flex flex-wrap gap-1" aria-label={t.views.asked}>
               {chips.map((chip) => (
@@ -112,9 +131,10 @@ function Frame({
 
 function OpenLink({ href }: { href: string }) {
   const { t } = useI18n();
+  const kept = useContext(Kept);
   return (
     <Link href={href} className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-0.5 text-xs">
-      {t.run.open}
+      {kept ? t.views.seeNow : t.run.open}
       <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
     </Link>
   );
@@ -177,15 +197,30 @@ function billStats(bills: Decision[], total: number, words: { count: string; sum
   return stats;
 }
 
+/** The totals kept with the answer, in the order the view reads them: each side, each cutoff. */
+function keptTotals(
+  kept: ViewSnapshot["data"] | undefined,
+  sides: readonly string[],
+  cutoffs: string[],
+): { data: InvoiceTotal[]; error: null }[] | null {
+  if (!kept) return null;
+  return sides.flatMap((side) => cutoffs.map((cutoff) => ({ data: kept.totals?.[`${side}|${cutoff}`] ?? [], error: null })));
+}
+
 function BillsView({ shown }: { shown: Shown }) {
   const { t, locale } = useI18n();
   const states = texts(shown.filters.states) as Decision["state"][];
   const party = text(shown.filters.party_id);
-  const read = useQuery({
-    queryKey: ["decisions", { view: "chat", states, party }],
-    queryFn: () =>
-      listDecisions({ state: states.length ? states : undefined, party_id: party, expand: ["invoice"], sort: "-issued_on", limit: LISTED }),
-  });
+  const kept = useContext(Kept)?.data;
+  const read = useRead(
+    kept && kept.decisions ? { value: kept.decisions } : null,
+    useQuery({
+      queryKey: ["decisions", { view: "chat", states, party }],
+      queryFn: () =>
+        listDecisions({ state: states.length ? states : undefined, party_id: party, expand: ["invoice"], sort: "-issued_on", limit: LISTED }),
+      enabled: !kept,
+    }),
+  );
   const firm = party ? read.data?.items[0]?.invoice?.party_name : null;
   const chips = [...states.map((state) => t.views.states[state] ?? state), ...(firm ? [firm] : [])];
   return (
@@ -216,25 +251,31 @@ function BillsView({ shown }: { shown: Shown }) {
 
 function TotalsView({ shown }: { shown: Shown }) {
   const { t, locale } = useI18n();
-  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const kept = useContext(Kept)?.data;
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false, enabled: !kept });
   const direction = shown.filters.direction === "payable" || shown.filters.direction === "receivable" ? shown.filters.direction : "both";
   const sides = direction === "both" ? (["receivable", "payable"] as const) : ([direction] as const);
   const outstanding = shown.filters.outstanding !== false;
   const party = text(shown.filters.party_id);
   const months = Math.min(12, Math.max(1, count(shown.filters.months, 3)));
-  const today = me.data?.today ?? todayIso();
+  const today = kept?.today ?? me.data?.today ?? todayIso();
   // The month's first day after each month shown: the books' cutoff is strict.
   const cutoffs = [firstOfMonth(today, 0), ...Array.from({ length: months }, (_, index) => firstOfMonth(today, index + 1))];
-  const totals = useQueries({
+  const live = useQueries({
     queries: sides.flatMap((side) =>
       cutoffs.map((due_before) => ({
         queryKey: ["invoice-totals", { direction: side, outstanding, party_id: party, due_before }],
         queryFn: () => listInvoiceTotals({ direction: side, outstanding, party_id: party, due_before }),
+        enabled: !kept,
       })),
     ),
   });
+  const totals = keptTotals(kept, sides, cutoffs) ?? live;
   // The firm by its name, so a view scoped to one never reads as the company's whole.
-  const firm = useQuery({ queryKey: ["party", party], queryFn: () => getParty(party!), enabled: Boolean(party) });
+  const firm = useRead(
+    kept ? { value: kept.party ?? undefined } : null,
+    useQuery({ queryKey: ["party", party], queryFn: () => getParty(party!), enabled: Boolean(party) && !kept }),
+  );
   const label = { receivable: t.money.toCollect, payable: t.money.toPay } as const;
   const tone = { receivable: "success", payable: "warning" } as const;
   const series: Series[] = sides.map((side) => ({ label: label[side], tone: tone[side] }));
@@ -296,19 +337,22 @@ function TotalsView({ shown }: { shown: Shown }) {
 
 function OutlookView({ shown }: { shown: Shown }) {
   const { t, locale } = useI18n();
-  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const kept = useContext(Kept)?.data;
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false, enabled: !kept });
   const weeks = Math.min(8, Math.max(1, count(shown.filters.weeks, 4)));
-  const today = me.data?.today ?? todayIso();
+  const today = kept?.today ?? me.data?.today ?? todayIso();
   const cutoffs = Array.from({ length: weeks + 1 }, (_, index) => addDays(today, index * 7));
   const sides = ["receivable", "payable"] as const;
-  const totals = useQueries({
+  const live = useQueries({
     queries: sides.flatMap((direction) =>
       cutoffs.map((due_before) => ({
         queryKey: ["invoice-totals", { direction, outstanding: true, due_before }],
         queryFn: () => listInvoiceTotals({ direction, outstanding: true, due_before }),
+        enabled: !kept,
       })),
     ),
   });
+  const totals = keptTotals(kept, sides, cutoffs) ?? live;
   const series: Series[] = [
     { label: t.money.toCollect, tone: "success" },
     { label: t.money.toPay, tone: "warning" },
@@ -370,7 +414,9 @@ function MovementsView({ shown }: { shown: Shown }) {
   const since = text(shown.filters.since);
   const until = text(shown.filters.until);
   const account = text(shown.filters.account_id);
-  const read = useQuery({
+  const kept = useContext(Kept)?.data;
+  const liveRead = useQuery({
+    enabled: !kept,
     queryKey: ["money-movements", { view: "chat", category, since, until, account }],
     // Every page up to SUMMED, so each category's sum holds all it matched, not the newest page.
     queryFn: async () => {
@@ -385,7 +431,11 @@ function MovementsView({ shown }: { shown: Shown }) {
       return { items, total: first.total };
     },
   });
-  const accounts = useQuery({ queryKey: ["money-accounts"], queryFn: listMoneyAccounts, enabled: Boolean(account) });
+  const read = useRead(kept && kept.movements ? { value: kept.movements } : null, liveRead);
+  const accounts = useRead(
+    kept ? { value: kept.accounts ?? undefined } : null,
+    useQuery({ queryKey: ["money-accounts"], queryFn: listMoneyAccounts, enabled: Boolean(account) && !kept }),
+  );
   const named = accounts.data?.items.find((item) => item.id === account);
   const chips = [
     ...(named ? [`${named.name} · ${named.currency}`] : []),
@@ -451,10 +501,15 @@ function ProjectsView({ shown }: { shown: Shown }) {
   const { t } = useI18n();
   const statuses = texts(shown.filters.statuses) as ProjectStatus[];
   const words = text(shown.filters.words);
-  const read = useQuery({
-    queryKey: ["projects", { view: "chat", statuses, words }],
-    queryFn: () => listProjects({ status: statuses.length ? statuses : undefined, q: words, limit: LISTED }),
-  });
+  const kept = useContext(Kept)?.data;
+  const read = useRead(
+    kept && kept.projects ? { value: kept.projects } : null,
+    useQuery({
+      queryKey: ["projects", { view: "chat", statuses, words }],
+      queryFn: () => listProjects({ status: statuses.length ? statuses : undefined, q: words, limit: LISTED }),
+      enabled: !kept,
+    }),
+  );
   const label = (status: ProjectStatus) => (t.board.columns as Record<string, string>)[status] ?? status;
   const chips = [...statuses.map(label), ...(words ? [`“${words}”`] : [])];
   return (
@@ -492,7 +547,8 @@ function ProjectsView({ shown }: { shown: Shown }) {
 function RunView({ shown }: { shown: Shown }) {
   const { t, locale } = useI18n();
   const on = text(shown.filters.on);
-  const run = usePaymentRun(on);
+  const kept = useContext(Kept)?.data;
+  const run = useRead(kept && kept.run ? { value: kept.run } : null, usePaymentRun(on, !kept));
   return (
     <Frame
       shown={shown}
@@ -503,7 +559,7 @@ function RunView({ shown }: { shown: Shown }) {
             view={{ kind: "run", id: run.data.on }}
             className="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-0.5 text-xs"
           >
-            {t.run.open}
+            {kept ? t.views.seeNow : t.run.open}
             <HugeiconsIcon icon={ArrowUpRight01Icon} strokeWidth={1.75} className="size-3.5" aria-hidden />
           </CanvasLink>
         ) : null
@@ -563,6 +619,25 @@ export const ShownView = makeAssistantToolUI<Record<string, unknown>, unknown>({
     if (result === undefined) return null;
     const shown = shownOf(result);
     const View = shown ? KINDS[shown.view] : undefined;
-    return shown && View ? <View shown={shown} /> : null;
+    return shown && View ? <AsAnswered shown={shown} View={View} /> : null;
   },
 });
+
+/** A view with the figures it was answered with, once they are read; one whose figures are gone,
+ * or that never had them kept, reads the records as they are. */
+function AsAnswered({ shown, View }: { shown: Shown; View: (props: { shown: Shown }) => ReactNode }) {
+  const kept = useQuery({
+    queryKey: ["view-snapshot", shown.snapshot],
+    queryFn: () => getViewSnapshot(shown.snapshot!),
+    enabled: Boolean(shown.snapshot),
+    // Kept figures never change.
+    staleTime: Infinity,
+    retry: false,
+  });
+  if (shown.snapshot && kept.isPending) return <Skeleton className="my-3 h-32 rounded-2xl" />;
+  return (
+    <Kept.Provider value={kept.data ?? null}>
+      <View shown={shown} />
+    </Kept.Provider>
+  );
+}

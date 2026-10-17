@@ -35,8 +35,8 @@ import { cn } from "@/lib/utils";
  * the chat home and the Payments page; the run opens in the canvas (`?view=run:<day>`).
  */
 
-export function usePaymentRun(on?: string) {
-  return useQuery({ queryKey: ["payment-run", on ?? "next"], queryFn: () => getPaymentRun(on) });
+export function usePaymentRun(on?: string, enabled = true) {
+  return useQuery({ queryKey: ["payment-run", on ?? "next"], queryFn: () => getPaymentRun(on), enabled });
 }
 
 /** Whether each bill fits, Tamga's own weighing where the balance is known (`weigh`). */

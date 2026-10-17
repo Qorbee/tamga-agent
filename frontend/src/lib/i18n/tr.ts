@@ -723,6 +723,7 @@ export const tr: Dictionary = {
       bill: "Bir fatura",
       newsKinds: { message: "Posta", document: "Dosya", invoice: "Fatura", truck: "Araç" },
       briefNow: "Paranın şu anki durumu",
+      briefThen: (when: string) => `Paranın durumu, ${when}`,
     },
     policyDraft: {
       title: "Ödeme kurallarınızda bir değişiklik",
@@ -1163,6 +1164,8 @@ export const tr: Dictionary = {
   views: {
     view: "Görünüm",
     asked: "İstenen",
+    asOf: (when: string) => `${when} itibarıyla`,
+    seeNow: "Şimdiye bak",
     none: "Gösterilecek bir şey yok",
     more: (count: number) => `ve ${count} tane daha`,
     newest: (shown: number, total: number) => `${total} hareketin en yeni ${shown} tanesinin toplamı`,

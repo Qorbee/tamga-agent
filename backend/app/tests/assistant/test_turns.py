@@ -717,6 +717,9 @@ async def test_each_morning_tamga_writes_a_brief_of_codes_numbers_in_one_chat(
     assert chat["title"] in turns.BRIEF_TITLES.values()
     [card] = await cards_in(client, chat["id"])
     assert card["activityType"] == CardKind.MORNING_BRIEF
+    # Its money as it was when written (ADR-0035): not what the page shows tomorrow.
+    kept = (await client.get(f"/view-snapshots/{card['content']['snapshot']}")).json()
+    assert kept["view"] == "glance" and kept["data"]["currency"] and kept["data"]["run"]
     # The numbers the model is given are code's.
     [told] = script.said(0)
     assert "Bills to pay due by" in told and "Clients' invoices overdue:" in told
