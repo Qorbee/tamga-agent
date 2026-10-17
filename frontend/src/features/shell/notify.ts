@@ -19,7 +19,7 @@ export async function notifyAbout(chat: string, title: string, body: string): Pr
   if (!canNotify() || Notification.permission !== "granted") return;
   await navigator.serviceWorker.register(WORKER);
   const worker = await navigator.serviceWorker.ready;
-  await worker.showNotification(title, { body, tag: chat, data: { chat } });
+  await worker.showNotification(title, { body, tag: chat, data: { chat }, icon: "/icons/icon-192.png" });
 }
 
 /** Calls `open` with the chat a clicked notification names, as the worker passes it on. */

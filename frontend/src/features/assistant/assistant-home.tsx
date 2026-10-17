@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { LoaderIcon } from "@/components/icons";
 import { PageHeader } from "@/components/page-header";
+import { useTabTitle } from "@/components/tab-title";
 import { markChatRead } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 import { useChats, useInvalidateChats } from "@/lib/use-chats";
@@ -24,6 +25,8 @@ import { Welcome } from "./welcome";
 export function AssistantHome() {
   const { t } = useI18n();
   const started = useAuiState((s) => s.thread.messages.length > 0);
+  const title = useAuiState((s) => s.threadListItem.title);
+  useTabTitle((started && title) || t.chat.newChat);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">

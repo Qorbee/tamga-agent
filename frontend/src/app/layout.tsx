@@ -31,6 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { default: t.meta.title, template: `%s · ${t.meta.title}` },
     description: t.meta.description,
+    appleWebApp: { title: t.meta.title, statusBarStyle: "default" },
   };
 }
 

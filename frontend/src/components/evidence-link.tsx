@@ -7,7 +7,7 @@ import { useRef, useState, type ReactNode } from "react";
 
 import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PopSheet } from "@/components/pop-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useObjectUrl } from "@/hooks/use-object-url";
 import { getDocument, getDocumentFile, getInvoice, getMessage } from "@/lib/api";
@@ -41,7 +41,8 @@ const CLOSE_AFTER = 220;
  * Where something was read, as a link's icon with a count of how many said it. Under the pointer,
  * or tapped where there are several, a card lists each source as it is: a mail with its writer
  * and first words, a file by its name and what it is (a photo as a picture), a bill with its firm
- * and amount. A tap on one opens it beside the page. With one source, a tap opens it at once.
+ * and amount. A tap on one opens it beside the page. With one source, a tap opens it at once. On
+ * a phone the card is a sheet from the screen's foot.
  */
 export function EvidenceLink({ items, label, small = false }: { items: Evidence[]; label: string; small?: boolean }) {
   const { t } = useI18n();
@@ -69,46 +70,45 @@ export function EvidenceLink({ items, label, small = false }: { items: Evidence[
       {unique.length > 1 ? <span className="text-[0.7rem] tabular-nums">+{unique.length - 1}</span> : null}
     </>
   );
+  const single = unique.length === 1 && Boolean(firstView);
   const trigger =
-    unique.length === 1 && firstView ? (
+    single && firstView ? (
       <CanvasLink view={{ kind: firstView, id: first.item_id }} aria-label={label} className={cn(look, "hover:text-foreground hover:bg-accent/60")} {...hover}>
         {mark}
       </CanvasLink>
     ) : (
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          onClick={() => timer.current && clearTimeout(timer.current)}
-          className={cn(look, "hover:text-foreground hover:bg-accent/60 aria-expanded:bg-accent/60 aria-expanded:text-foreground")}
-          {...hover}
-        >
-          {mark}
-        </button>
-      </PopoverTrigger>
-    );
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      {unique.length === 1 && firstView ? <PopoverAnchor asChild>{trigger}</PopoverAnchor> : trigger}
-      <PopoverContent
-        align="end"
-        className="w-80 p-1.5 sm:w-96"
-        onOpenAutoFocus={(event) => event.preventDefault()}
+      <button
+        type="button"
+        aria-label={label}
+        onClick={() => timer.current && clearTimeout(timer.current)}
+        className={cn(look, "hover:text-foreground hover:bg-accent/60 aria-expanded:bg-accent/60 aria-expanded:text-foreground")}
         {...hover}
       >
-        <p className="text-muted-foreground px-2.5 pt-1.5 pb-1 text-xs text-pretty">
-          {label}
-          <span className="tabular-nums"> · {t.project.sources(unique.length)}</span>
-        </p>
-        <ul className="grid max-h-[min(60vh,28rem)] gap-0.5 overflow-y-auto">
-          {unique.map((item) => (
-            <li key={item.item_id}>
-              <Source item={item} onOpen={() => setOpen(false)} />
-            </li>
-          ))}
-        </ul>
-      </PopoverContent>
-    </Popover>
+        {mark}
+      </button>
+    );
+  const heading = `${label} · ${t.project.sources(unique.length)}`;
+  return (
+    <PopSheet
+      open={open}
+      onOpenChange={setOpen}
+      trigger={trigger}
+      anchor={single}
+      title={heading}
+      align="end"
+      className="w-96 p-1.5"
+      contentProps={{ onOpenAutoFocus: (event) => event.preventDefault(), ...hover }}
+    >
+      {/* The sheet on a phone heads the list itself. */}
+      <p className="text-muted-foreground px-2.5 pt-1.5 pb-1 text-xs text-pretty first-letter:uppercase max-md:hidden">{heading}</p>
+      <ul className="grid gap-0.5 md:max-h-[min(60vh,28rem)] md:overflow-y-auto">
+        {unique.map((item) => (
+          <li key={item.item_id}>
+            <Source item={item} onOpen={() => setOpen(false)} />
+          </li>
+        ))}
+      </ul>
+    </PopSheet>
   );
 }
 
@@ -126,7 +126,7 @@ function Source({ item, onOpen }: { item: Evidence; onOpen: () => void }) {
       <Row title={item.label ?? "—"} meta={null} />
     );
   return view ? (
-    <CanvasLink view={{ kind: view, id: item.item_id }} onClick={onOpen} className="hover:bg-accent/60 block rounded-xl px-2.5 py-2">
+    <CanvasLink view={{ kind: view, id: item.item_id }} onClick={onOpen} className="hover:bg-accent/60 active:bg-accent/60 block rounded-xl px-2.5 py-2 max-md:py-3">
       {body}
     </CanvasLink>
   ) : (

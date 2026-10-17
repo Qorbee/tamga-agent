@@ -7,6 +7,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { fileIcon } from "@/components/file-icon";
 import { HtmlFrame } from "@/components/html-frame";
+import { useTabTitle } from "@/components/tab-title";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDownload } from "@/hooks/use-download";
@@ -44,6 +45,7 @@ function useDocument(id: string) {
 /** The canvas's title for a file: its name and kind, opening its menu. */
 export function DocumentTitle({ id }: { id: string }) {
   const document = useDocument(id);
+  useTabTitle(document.data?.filename, "record");
   if (!document.data) return <Skeleton className="h-4 w-40" />;
   return <DocumentMenu document={document.data} />;
 }

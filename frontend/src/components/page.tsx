@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { TabTitle } from "@/components/tab-title";
 import { TopBar } from "@/components/top-bar";
 
 /**
@@ -13,6 +14,7 @@ export function Page({
   actions,
   children,
 }: {
+  // A string also names the browser tab.
   title: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
@@ -20,6 +22,7 @@ export function Page({
   return (
     // Not shrunk to the scrolling area's height: the bar sticks only for as long as this is tall.
     <div className="flex min-h-full shrink-0 flex-col">
+      {typeof title === "string" ? <TabTitle subject={title} /> : null}
       <TopBar title={<h1 className="truncate">{title}</h1>} className="sticky top-0 z-20 md:hidden">
         {actions}
       </TopBar>

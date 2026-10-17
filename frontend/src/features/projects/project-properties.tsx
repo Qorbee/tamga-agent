@@ -422,10 +422,6 @@ function SuggestedFirms({
   return (
     <ul className="grid gap-1">
       {firms.map((firm) => {
-        // A tap to each kind of item that named it: its first mail, its first invoice.
-        const sources = firm.evidence.filter(
-          (item, at) => firm.evidence.findIndex((other) => other.item_kind === item.item_kind) === at,
-        );
         return (
           <li key={firm.id} className="bg-secondary/60 grid gap-0.5 rounded-lg px-2 py-1.5 text-xs">
             <span className="flex items-start gap-1.5">
@@ -438,7 +434,7 @@ function SuggestedFirms({
               </span>
               <FirmProof
                 why={firm.signals.map((signal) => t.project.firmSignals[signal] ?? signal).join(" · ")}
-                sources={sources}
+                sources={firm.evidence}
               />
               {isOwner ? (
                 <span className="flex shrink-0 items-center gap-0.5">

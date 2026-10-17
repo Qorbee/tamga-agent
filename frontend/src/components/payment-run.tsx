@@ -10,6 +10,7 @@ import { CallPill } from "@/components/call-pill";
 import { CanvasLink } from "@/components/canvas-link";
 import { CashBar, weigh } from "@/components/cash-bar";
 import { DecisionRow } from "@/components/decision-card";
+import { useTabTitle } from "@/components/tab-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -313,7 +314,9 @@ export function PaymentRunTitle({ on }: { on: string }) {
   const { t, locale } = useI18n();
   // The server's day: a day already past is asked as today.
   const day = usePaymentRun(on).data?.on ?? on;
-  return <>{t.run.on(formatDays(day, null, locale))}</>;
+  const title = t.run.on(formatDays(day, null, locale));
+  useTabTitle(title, "record");
+  return <>{title}</>;
 }
 
 /** The whole run, in the canvas: the bar, each bill with its call, what is held, and the approval

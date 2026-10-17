@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { InlineText } from "@/components/inline-text";
 import { ProposalEvidence } from "@/components/proposal-evidence";
+import { useTabTitle } from "@/components/tab-title";
 import { T } from "@/components/translated";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getProject, listProjectParties } from "@/lib/api";
@@ -56,6 +57,7 @@ export function useReadProjectAhead() {
 /** The project's number, for the canvas's title bar: its name heads the panel itself. */
 export function ProjectTitle({ id }: { id: string }) {
   const project = useProject(id);
+  useTabTitle(project.data ? `${project.data.number} · ${project.data.name}` : null, "record");
   if (!project.data) return <Skeleton className="h-4 w-20" />;
   return <span className="truncate font-mono">{project.data.number}</span>;
 }

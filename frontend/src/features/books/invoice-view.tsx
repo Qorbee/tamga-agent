@@ -6,6 +6,7 @@ import { type ReactNode, useState } from "react";
 import { useOpenFromCanvas } from "@/components/canvas-link";
 import { InvoiceLines } from "@/components/invoice-lines";
 import { Segmented } from "@/components/segmented";
+import { useTabTitle } from "@/components/tab-title";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, getInvoice, getInvoiceFile, type Invoice } from "@/lib/api";
 import { formatDate, formatDays, formatMoney } from "@/lib/format";
@@ -23,6 +24,10 @@ function useInvoice(id: string) {
 export function InvoiceTitle({ id }: { id: string }) {
   const { t } = useI18n();
   const invoice = useInvoice(id);
+  useTabTitle(
+    invoice.data ? [invoice.data.number ?? t.books.noNumber, invoice.data.party_name].filter(Boolean).join(" · ") : null,
+    "record",
+  );
   if (!invoice.data) return <Skeleton className="h-4 w-24" />;
   return <span className="truncate font-mono">{invoice.data.number ?? t.books.noNumber}</span>;
 }

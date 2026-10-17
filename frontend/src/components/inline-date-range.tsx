@@ -3,8 +3,8 @@
 import { useState, type FormEvent } from "react";
 
 import { DayCalendar } from "@/components/day-calendar";
+import { PopSheet } from "@/components/pop-sheet";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatDays } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -55,7 +55,7 @@ export function InlineDateRange({
 
   return (
     <span className="grid gap-1">
-      <Popover
+      <PopSheet
         open={open}
         onOpenChange={(next) => {
           if (next) {
@@ -65,8 +65,9 @@ export function InlineDateRange({
           }
           setOpen(next);
         }}
-      >
-        <PopoverTrigger asChild>
+        title={labels.edit}
+        className="w-auto"
+        trigger={
           <button
             type="button"
             aria-label={labels.edit}
@@ -78,8 +79,8 @@ export function InlineDateRange({
           >
             {text}
           </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto">
+        }
+      >
           <form onSubmit={onSubmit} className="grid gap-3">
             <DayCalendar span value={draft} onChange={setDraft} />
             <p className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
@@ -92,17 +93,17 @@ export function InlineDateRange({
                 <span className="text-foreground block text-sm tabular-nums">{formatDays(draft.end || null, null, locale) || "—"}</span>
               </span>
             </p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setDraft({ start: "", end: "" })}>
+            {/* A thumb's width on a phone, where the sheet runs edge to edge. */}
+            <div className="flex justify-end gap-2 max-md:grid max-md:grid-cols-2">
+              <Button type="button" variant="ghost" size="sm" className="max-md:h-11" onClick={() => setDraft({ start: "", end: "" })}>
                 {t.project.clear}
               </Button>
-              <Button type="submit" size="sm">
+              <Button type="submit" size="sm" className="max-md:h-11">
                 {t.project.save}
               </Button>
             </div>
           </form>
-        </PopoverContent>
-      </Popover>
+      </PopSheet>
       {error ? (
         <span className="text-danger-foreground text-sm" role="alert">
           {error}

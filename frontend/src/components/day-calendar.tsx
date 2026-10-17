@@ -5,7 +5,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
 
 import { IconButton } from "@/components/icon-button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PopSheet } from "@/components/pop-sheet";
 import { formatDayLong, formatDays, formatMonth, monthNames, todayIso, weekdayNames } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
@@ -36,7 +36,8 @@ export function DayCalendar(
   const { t, locale } = useI18n();
   const first = props.span ? props.value.start || props.value.end : props.value;
   const [shown, setShown] = useState(() => monthOf(first));
-  // What the calendar shows: a month's days, the year's months, or a dozen years to jump to.
+  // What the calendar shows: a month's days, the year's months, or a dozen years to jump to. Each
+  // is about as tall as a month of days, so the panel keeps its height.
   const [level, setLevel] = useState<"days" | "months" | "years">("days");
   const today = todayIso();
   const lead = (new Date(shown.year, shown.month, 1).getDay() + 6) % 7;
@@ -68,11 +69,11 @@ export function DayCalendar(
         ? { label: String(shown.year), up: t.calendar.pickYear, back: t.calendar.previousYear, forward: t.calendar.nextYear, by: 12 }
         : { label: `${decade} – ${decade + 11}`, up: "", back: t.calendar.previousYears, forward: t.calendar.nextYears, by: 144 };
   const choice =
-    "hover:bg-accent flex h-11 items-center justify-center rounded-xl text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+    "hover:bg-accent flex h-14 items-center justify-center rounded-xl text-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
   const chosen = "bg-foreground text-background hover:bg-foreground font-medium";
 
   return (
-    <div className="grid w-full max-w-80 gap-2 select-none">
+    <div className="mx-auto grid w-full max-w-80 gap-2 select-none">
       <div className="flex items-center justify-between gap-1">
         {/* Buttons, never the form's submit: a calendar sits in the form that saves the day. */}
         <IconButton type="button" icon={ArrowLeft01Icon} label={head.back} onClick={() => step(-head.by)} />
@@ -210,8 +211,12 @@ export function DayInput({
   const { locale } = useI18n();
   const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <PopSheet
+      open={open}
+      onOpenChange={setOpen}
+      title={label}
+      className="w-auto"
+      trigger={
         <button
           type="button"
           aria-label={label}
@@ -223,16 +228,15 @@ export function DayInput({
         >
           {value ? formatDays(value, null, locale) : label}
         </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto">
-        <DayCalendar
-          value={value}
-          onChange={(day) => {
-            onChange(day);
-            setOpen(false);
-          }}
-        />
-      </PopoverContent>
-    </Popover>
+      }
+    >
+      <DayCalendar
+        value={value}
+        onChange={(day) => {
+          onChange(day);
+          setOpen(false);
+        }}
+      />
+    </PopSheet>
   );
 }

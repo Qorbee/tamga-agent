@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CanvasLink } from "@/components/canvas-link";
 import { fileIcon } from "@/components/file-icon";
 import { PersonAvatar } from "@/components/person-avatar";
+import { useTabTitle } from "@/components/tab-title";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -45,8 +46,9 @@ function useMessage(id: string) {
 export function MailSubject({ id }: { id: string }) {
   const { t } = useI18n();
   const message = useMessage(id);
+  const subject = message.data?.subject;
+  useTabTitle(message.data ? (subject ? conversationName(subject) : t.inbox.noSubject) : null, "record");
   if (!message.data) return <Skeleton className="h-4 w-48" />;
-  const subject = message.data.subject;
   return <span className="truncate">{subject ? conversationName(subject) : t.inbox.noSubject}</span>;
 }
 

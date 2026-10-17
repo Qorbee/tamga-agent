@@ -1,78 +1,28 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
 import { FLAT, HEIGHT, WAX, WORD } from "./geometry";
 
-/**
- * The four candidates for Tamga's logo: a seal, flat or of wax, with a T or the steppe glyph cut
- * in it. Which one shows is a device setting while the owner compares them (Settings, General);
- * once one is chosen, the others and the setting go.
- */
-export const LOGOS = ["flatT", "flatG", "waxT", "waxG"] as const;
-export type Logo = (typeof LOGOS)[number];
-
-const LOGO_COOKIE = "tamga_logo";
-const FIRST: Logo = "waxT";
-
-type Shape = {
-  finish: "flat" | "wax";
-  letter: "T" | "G";
-  // The seal alone, as a square; and how wide the lockup is with the word rolled in.
-  square: string;
-  mark: number;
-};
-
-const SHAPES: Record<Logo, Shape> = {
-  flatT: { finish: "flat", letter: "T", square: "14 6 180 180", mark: 200 },
-  flatG: { finish: "flat", letter: "G", square: "14 6 180 180", mark: 200 },
-  waxT: { finish: "wax", letter: "T", square: "6 4 196 196", mark: 204 },
-  waxG: { finish: "wax", letter: "G", square: "6 4 196 196", mark: 204 },
-};
-
-// The lockup with its word out.
+// The lockup with its word out, and with it rolled in to the seal.
 const FULL = 660;
+const MARK = 204;
 // The word, from the seal's middle to its end and a little past, rolls in this far.
 const ROLL = WORD.right - FLAT.cx + 12;
 
-const listeners = new Set<() => void>();
-
-function readLogo(): Logo {
-  const value = document.cookie.match(/(?:^|; )tamga_logo=([^;]+)/)?.[1];
-  return (LOGOS as readonly string[]).includes(value ?? "") ? (value as Logo) : FIRST;
-}
-
-/** The candidate this device shows. The server draws the first, and the browser its own after. */
-export function useLogo(): Logo {
-  return useSyncExternalStore(
-    (changed) => {
-      listeners.add(changed);
-      return () => listeners.delete(changed);
-    },
-    readLogo,
-    () => FIRST,
-  );
-}
-
-export function saveLogo(logo: Logo): void {
-  document.cookie = `${LOGO_COOKIE}=${logo}; path=/; max-age=31536000; samesite=lax`;
-  for (const changed of listeners) changed();
-}
-
-/** The seal, in the logo's units. Wax is an image; below icon sizes it hands over to its flat
- * twin, whose letter is cut through so the page shows in it. */
-function SealBody({ shape, small }: { shape: Shape; small: boolean }) {
+/** The wax seal, in the logo's units: a lit image. Below icon sizes it hands over to its flat
+ * twin, whose T is cut through so the page shows in it. */
+function SealBody({ small }: { small: boolean }) {
   const cut = useId();
-  if (shape.finish === "wax" && !small)
-    return <image href={`/brand/wax-${shape.letter.toLowerCase()}.webp`} {...WAX.image} />;
+  if (!small) return <image href="/brand/wax-t.webp" {...WAX.image} />;
   return (
     <>
       <defs>
         <mask id={cut} maskUnits="userSpaceOnUse" x="0" y="0" width={FULL} height={HEIGHT}>
           <rect width={FULL} height={HEIGHT} fill="#fff" />
-          <path d={FLAT.letters[shape.letter]} fill="#000" />
+          <path d={FLAT.letter} fill="#000" />
         </mask>
       </defs>
       <path d={FLAT.outline} className="fill-primary" mask={`url(#${cut})`} />
@@ -81,29 +31,13 @@ function SealBody({ shape, small }: { shape: Shape; small: boolean }) {
 }
 
 /**
- * Tamga's mark: the seal alone, for an icon, an avatar or a line. `small` draws a wax seal flat,
- * as it is at icon sizes. Decorative: what it stands beside names it.
+ * Tamga's mark: the seal alone, for an icon, an avatar or a line. `small` draws it flat, as it is
+ * at icon sizes. Decorative: what it stands beside names it.
  */
-export function Seal({
-  logo,
-  className,
-  small = false,
-}: {
-  // One candidate in particular, for choosing between them; else the one this device shows.
-  logo?: Logo;
-  className?: string;
-  small?: boolean;
-}) {
-  const shown = useLogo();
-  const shape = SHAPES[logo ?? shown];
-  const square = small && shape.finish === "wax" ? SHAPES.flatT.square : shape.square;
+export function Seal({ className, small = false }: { className?: string; small?: boolean }) {
   return (
-    <svg
-      viewBox={square}
-      className={cn("size-8", className)}
-      aria-hidden
-    >
-      <SealBody shape={shape} small={small} />
+    <svg viewBox={small ? "14 6 180 180" : "6 4 196 196"} className={cn("size-8", className)} aria-hidden>
+      <SealBody small={small} />
     </svg>
   );
 }
@@ -135,8 +69,6 @@ export function Lockup({
   intro?: boolean;
   className?: string;
 }) {
-  const logo = useLogo();
-  const shape = SHAPES[logo];
   const behind = useId();
   const seal = useRef<SVGGElement>(null);
   const [landing, setLanding] = useState(() => intro && !introduced);
@@ -196,7 +128,7 @@ export function Lockup({
   return (
     <span
       className={cn("block shrink-0 overflow-hidden transition-[width]", motion, className)}
-      style={{ width: (out ? FULL : shape.mark) * scale, height }}
+      style={{ width: (out ? FULL : MARK) * scale, height }}
     >
       <svg viewBox={`0 0 ${FULL} ${HEIGHT}`} width={FULL * scale} height={height} role="img" aria-label={label}>
         <defs>
@@ -204,7 +136,7 @@ export function Lockup({
           <mask id={behind} maskUnits="userSpaceOnUse" x="0" y="0" width={FULL} height={HEIGHT}>
             <rect width={FULL} height={HEIGHT} fill="#fff" />
             <rect width={FLAT.cx} height={HEIGHT} fill="#000" />
-            <path d={shape.finish === "wax" ? WAX.outline : FLAT.outline} fill="#000" />
+            <path d={WAX.outline} fill="#000" />
           </mask>
         </defs>
         <g mask={`url(#${behind})`}>
@@ -218,11 +150,11 @@ export function Lockup({
           ref={seal}
           style={{
             transformBox: "view-box",
-            transformOrigin: `${FLAT.cx}px ${shape.finish === "wax" ? WAX.cy : FLAT.cy}px`,
+            transformOrigin: `${FLAT.cx}px ${WAX.cy}px`,
             opacity: landing ? 0 : undefined,
           }}
         >
-          <SealBody shape={shape} small={false} />
+          <SealBody small={false} />
         </g>
       </svg>
     </span>
