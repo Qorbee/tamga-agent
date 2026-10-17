@@ -1,16 +1,64 @@
-# Tamga
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/logo-dark.svg">
+    <img src=".github/readme/logo-light.svg" alt="Tamga" width="260">
+  </picture>
+</p>
 
-**An AI finance operator for freight brokers, by Qorbee.** Tamga follows every shipment from the
-conversations it already lives in — WhatsApp, email, invoices, CMRs and delivery photos — proposes who
-gets paid and when under the owner's own written rules, and explains every payment. Money settles in
-USDC on [Arc](https://www.arc.network/) through a contract that caps what the agent can move, so a
-persuasive message can never talk it past its limits.
+<h3 align="center">The AI finance operator for freight brokers</h3>
+
+<p align="center">
+  Reads every mail, paper and bill · puts each on its job · proposes who to pay, and says why ·<br>
+  pays in USDC on <a href="https://www.arc.network/">Arc</a> once the owner approves, inside caps a contract enforces
+</p>
+
+<p align="center">
+  <a href="https://tamga.qorbee.com/sign-in"><img alt="Try the playground" src="https://img.shields.io/badge/Try%20the%20playground-8f3a2e?style=for-the-badge"></a>
+  <a href="https://testnet.arcscan.app/address/0x6354dbccc4f5063fd10b9b1e4ff66d65d4224d0a"><img alt="PolicyVault on Arc testnet" src="https://img.shields.io/badge/PolicyVault-Arc%20testnet-141413?style=for-the-badge"></a>
+  <a href="https://tameion.thecanteenapp.com/"><img alt="Built for Tameion" src="https://img.shields.io/badge/Built%20for-Tameion-6b6860?style=for-the-badge"></a>
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/project-dark.webp">
+  <img src=".github/readme/project-light.webp" alt="A job in Tamga: its client and subcontractors suggested with the evidence behind each, what was invoiced and what is still owed, and its trucks with their papers">
+</picture>
 
 > In the steppe, a *tamga* proved what was yours. Tamga proves the job was done before anyone gets paid.
 
-Built for the [Tameion agents hackathon](https://tameion.thecanteenapp.com/), beside a real freight
-broker that runs it in shadow mode. **Status: in active development.** All payments are test USDC on
-Arc testnet; nothing touches a company's bank or real money.
+## Used for real
+
+From Sep 27 to Oct 17, a freight broker in Turkey ran Tamga in **shadow mode** on its real
+mailboxes and accounting books. Shadow mode means
+Tamga reads everything and proposes, while the company's systems are never changed.
+
+| | |
+|---|---|
+| Messages read | **3,120** |
+| Files read | **1,511** |
+| Invoices synced from the books | **798** |
+| Mails, files and bills placed on jobs | **1,114** |
+| Jobs proposed from the evidence | **34** |
+| Subcontractor bills evaluated against the owner's rules | **48**: 24 recognised as paid by bank, 24 held with a written reason (the client had not paid yet) |
+| Decision-log roots anchored on Arc | **64** |
+
+## Try it
+
+Open **[tamga.qorbee.com](https://tamga.qorbee.com/sign-in)** and choose **Try it as a guest**: pick a
+scenario, and a private sandbox opens with its jobs, bills and people already under way, funded with
+test USDC on the vault. A short tour shows where everything is. Write as the scenario's people in the
+World panel, skip a day, approve a bill, and follow the payment on Arcscan.
+
+<table>
+  <tr>
+    <td width="66%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/tour-dark.webp">
+        <img src=".github/readme/tour-light.webp" alt="The guided tour lighting the Payments page">
+      </picture>
+    </td>
+    <td width="34%"><img src=".github/readme/phone-proof.webp" alt="On a phone, a proof's sources in a sheet from the foot of the screen"></td>
+  </tr>
+</table>
 
 ## How it works
 
@@ -43,6 +91,10 @@ Arc testnet; nothing touches a company's bank or real money.
   mainnet needs an explicit opt-in.
 
 ## Where it stands
+
+<details>
+<summary>Everything built and running today</summary>
+
 
 "How it works" is the whole design. Built and running today:
 - **Sign-in and tenancy:** companies, owners by invite, and guest sandboxes, seeded with a freight
@@ -174,10 +226,13 @@ Arc testnet; nothing touches a company's bank or real money.
   company, each with its own balance, caps, payees and paid keys. A change needs the company's
   owner key to sign it, and one that loosens a limit waits out a timelock.
 
-Next, by Oct 17: the live demo; a policy written from the owner's own words, confirmed on a
-card; Tamga speaking first on an overdue invoice, a new bill or a missing paper, and a morning
-brief; bank movements through an aggregator; models that quote what they relied on, checked by
-code and scored on the owner's own answers; and the why behind every link, truck and firm.
+Built since: a policy written from the owner's own words, confirmed on a card; Tamga speaking
+first (a morning brief, news on a live job, a bill to approve); models that quote what they relied
+on, checked by code and scored on the owner's own answers; how sure Tamga is, as a band worked out
+by code; the bill reader, which reads what each bill charges for; and past answers in the chat kept
+with the figures they were given with.
+
+</details>
 
 ## This repository
 
