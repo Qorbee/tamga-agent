@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.modules.decisions import service as decisions
+from app.modules.money import service as money
 from app.modules.settlement import executor
 from app.packs.logistics import sandbox
 from app.platform import agent_wallet
@@ -107,6 +108,16 @@ async def test_an_approved_bill_is_paid_once_and_settled_with_its_hash(
     assert log[0]["event"] == "settled" and log[0]["explorer_url"] == payment["explorer_url"]
     assert {event["invoice"]["number"] for event in log} >= {sandbox.DELIVERED_BILL}
     assert all(event["explorer_url"] is None for event in log[1:])
+
+    # On the vault's account the release is named by its bill: the firm and the bill's number.
+    await money.sync_company(company_id)
+    vault_rows = [
+        row
+        for row in (await client.get("/money/movements", params={"limit": 200})).json()["items"]
+        if row["reference"] == payment["tx_hash"]
+    ]
+    [row] = vault_rows
+    assert row["description"] == sandbox.DELIVERED_BILL and row["counterparty"]
 
     # Paid, it is never sent again, nor evaluated again.
     assert await executor.pay_approved() == 0

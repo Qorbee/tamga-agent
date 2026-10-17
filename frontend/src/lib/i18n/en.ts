@@ -1323,6 +1323,10 @@ export const en = {
         title: "Who to pay, and why",
         body: "Every bill is checked against your rules: has the client paid, is delivery proved, is it a duplicate, is it within the caps. A held bill says why. Approve, and test USDC settles on Arc.",
       },
+      log: {
+        title: "Every decision, on the record",
+        body: "Each proposal, rule check, answer and payment is written down in order, each line sealed to the one before. The chain's head is anchored on Arc, and this page checks its own against it.",
+      },
       clock: {
         title: "Move the clock",
         body: "Skip a day and watch bills fall due, papers arrive and the morning brief come in.",

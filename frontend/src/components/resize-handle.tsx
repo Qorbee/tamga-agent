@@ -111,9 +111,10 @@ export function ResizeHandle({
       className={cn(
         "absolute inset-y-0 z-20 w-3 cursor-col-resize touch-none outline-none select-none",
         edge === "right" ? "-right-1.5" : "-left-1.5",
-        // The visible line: nothing at rest, a hairline on hover, stronger while dragged or focused.
+        // The visible line, in the brand's terracotta: nothing at rest, soft on hover, full while
+        // dragged or focused.
         "after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:rounded-full after:transition-colors after:delay-75",
-        "hover:after:bg-foreground/15 focus-visible:after:bg-ring data-dragging:after:bg-foreground/25",
+        "hover:after:bg-primary/50 focus-visible:after:bg-primary data-dragging:after:bg-primary",
         className,
       )}
     />

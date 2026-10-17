@@ -21,7 +21,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { approveRun, getPaymentRun, type Decision, type PaymentRun, type RunApproved, type RunItem } from "@/lib/api";
+import {
+  approveRun,
+  getPaymentRun,
+  listPayments,
+  type Decision,
+  type PaymentRun,
+  type RunApproved,
+  type RunItem,
+} from "@/lib/api";
 import { formatDays, formatMoney, formatMoneyShort } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n/client";
@@ -95,6 +103,19 @@ export function RunGroups({
   className?: string;
 }) {
   const { t } = useI18n();
+  // In shadow, a bill approved for the bank is mirrored on Arc while it waits for the bank: its
+  // row shows that record.
+  const approved = decisions.filter((decision) => decision.state === "approved").map((decision) => decision.id);
+  const payments = useQuery({
+    queryKey: ["payments", { decisions: approved }],
+    queryFn: () => listPayments({ decision_id: approved, limit: 200 }),
+    enabled: approved.length > 0,
+  });
+  const mirrors = new Map(
+    (payments.data?.items ?? [])
+      .filter((payment) => payment.kind === "mirror" && payment.state === "settled")
+      .map((payment) => [payment.decision_id, payment]),
+  );
   const groups = GROUPS.map((group) => ({
     ...group,
     rows: decisions.filter((decision) => group.calls.includes(callOf(decision, fits.get(decision.id) ?? null).call)),
@@ -114,7 +135,13 @@ export function RunGroups({
                 {row ? (
                   row(decision)
                 ) : (
-                  <DecisionRow decision={decision} payment={undefined} fits={fits.get(decision.id) ?? null} inRun />
+                  <DecisionRow
+                    decision={decision}
+                    payment={undefined}
+                    mirror={mirrors.get(decision.id)}
+                    fits={fits.get(decision.id) ?? null}
+                    inRun
+                  />
                 )}
               </li>
             ))}

@@ -6,7 +6,7 @@ import { getLocale } from "@/lib/i18n/server";
 export default async function Payments() {
   const t = getDictionary(await getLocale());
   return (
-    <Page title={t.nav.payments}>
+    <Page title={t.nav.payments} tour="payments-page">
       <PaymentsPage />
     </Page>
   );

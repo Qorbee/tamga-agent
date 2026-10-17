@@ -415,6 +415,13 @@ async def _sync_vault(company_id: uuid.UUID) -> None:
         if not await settlement.account_open(db, company_id):
             return
         payments = await settlement.settled_payments(db, company_id)
+        # Each release is named by its bill: the firm it went to and the bill's number.
+        bills = {
+            bill.id: (bill.number, bill.party_name)
+            for bill in await books.get_invoices(
+                db, company_id, [payment.invoice_id for payment in payments]
+            )
+        }
     ref = str(company_id)
     try:
         state = await chain.company_state(company_id)
@@ -446,6 +453,8 @@ async def _sync_vault(company_id: uuid.UUID) -> None:
                 amount=-chain.usdc(payment.usdc_units),
                 currency="USDC",
                 reference=payment.tx_hash,
+                description=bills.get(payment.invoice_id, (None, None))[0],
+                counterparty=bills.get(payment.invoice_id, (None, None))[1],
                 category=MovementCategory.SUBCONTRACTOR_PAYMENT,
                 invoice_id=payment.invoice_id,
             )

@@ -1281,6 +1281,10 @@ export const tr: Dictionary = {
         title: "Kime ödenecek ve neden",
         body: "Her fatura kurallarınıza göre kontrol edilir: müşteri ödedi mi, teslim kanıtlandı mı, mükerrer mi, sınırlar içinde mi. Bekletilen fatura nedenini söyler. Onaylayın, test USDC Arc üzerinde ödenir.",
       },
+      log: {
+        title: "Her karar kayıt altında",
+        body: "Her öneri, kural kontrolü, cevap ve ödeme sırayla yazılır; her satır bir öncekine mühürlenir. Zincirin başı Arc'a sabitlenir ve bu sayfa kendi kaydını onunla karşılaştırır.",
+      },
       clock: {
         title: "Saati ilerletin",
         body: "Bir gün atlayın; faturaların vadesinin geldiğini, evrakların ulaştığını ve sabah özetinin geldiğini görün.",

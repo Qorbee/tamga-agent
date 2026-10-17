@@ -67,9 +67,9 @@ function Decisions({ view }: { view: View }) {
     (decision) => decision.id,
   );
   // The payments of what was paid or refused, a page of decisions at a time: a paid row shows its
-  // transaction, a refused one the vault's reason.
+  // transaction, a refused one the vault's reason, and one paid by bank its shadow mirror.
   const finished = (decisions.items ?? [])
-    .filter((decision) => decision.state === "settled" || decision.state === "failed")
+    .filter((decision) => ["settled", "failed", "paid_in_books", "approved"].includes(decision.state))
     .map((decision) => decision.id);
   const pages = Array.from({ length: Math.ceil(finished.length / PAGE) }, (_, index) =>
     finished.slice(index * PAGE, (index + 1) * PAGE),

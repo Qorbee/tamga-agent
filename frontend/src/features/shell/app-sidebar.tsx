@@ -150,7 +150,7 @@ export function AppSidebar({
       <SidebarContent className="max-md:pt-16 max-md:pb-28">
         <SidebarGroup className="pt-0">
           <SidebarMenu className="gap-0.5">
-            <SidebarMenuItem className="max-md:hidden">
+            <SidebarMenuItem className="max-md:hidden" data-tour="new-chat">
               <ThreadListPrimitive.New asChild>
                 {/* The primitive marks itself active on an empty chat; a button to start one is not
                     a place to be, so it is never highlighted. */}

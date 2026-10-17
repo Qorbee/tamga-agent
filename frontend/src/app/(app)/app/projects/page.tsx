@@ -7,7 +7,7 @@ import { getLocale } from "@/lib/i18n/server";
 export default async function ProjectsPage() {
   const t = getDictionary(await getLocale());
   return (
-    <Page title={t.nav.projects} actions={<TranslateToggle />}>
+    <Page title={t.nav.projects} tour="projects-page" actions={<TranslateToggle />}>
       <ProjectList />
     </Page>
   );

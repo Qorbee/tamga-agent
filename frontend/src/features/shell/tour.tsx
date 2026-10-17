@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -11,17 +12,32 @@ import { useI18n } from "@/lib/i18n/client";
 import { TOUR_EVENT } from "@/lib/tour";
 import { cn } from "@/lib/utils";
 
+import { CHAT_PATH } from "./pages";
+
 type StepKey = keyof Dictionary["tour"]["steps"];
 
-// Each step names the elements it points at by their `data-tour`, the first on screen lit: a
-// place in the sidebar, else the button that opens it on a phone. A step with none on screen is
-// told in a card at the foot.
-const STEPS: { key: StepKey; targets?: string[]; sandbox?: boolean }[] = [
+type Step = {
+  key: StepKey;
+  // The elements it points at by their `data-tour`, the first on screen lit: a place in the
+  // sidebar, else the button that opens it on a phone. A step with none on screen is told in a
+  // card alone.
+  targets?: string[];
+  // The page it is told on: the tour goes there itself, a pointer first tapping `via` (the
+  // sidebar's row) where it is on screen, so the viewer sees how to get there again.
+  route?: string;
+  via?: string;
+  // Its place is a whole page, lit from the top as far as the card leaves room.
+  page?: boolean;
+  sandbox?: boolean;
+};
+
+const STEPS: Step[] = [
   { key: "welcome" },
-  { key: "composer", targets: ["composer"] },
+  { key: "composer", targets: ["composer"], route: CHAT_PATH, via: "new-chat" },
   { key: "chats", targets: ["chats", "menu"] },
-  { key: "projects", targets: ["nav-projects", "menu"] },
-  { key: "payments", targets: ["nav-payments", "menu"] },
+  { key: "projects", targets: ["projects-page"], route: "/app/projects", via: "nav-projects", page: true },
+  { key: "payments", targets: ["payments-page"], route: "/app/payments", via: "nav-payments", page: true },
+  { key: "log", targets: ["log-page"], route: "/app/log", via: "nav-log", page: true },
   { key: "clock", targets: ["skip-day"], sandbox: true },
   { key: "world", targets: ["world"], sandbox: true },
   { key: "account", targets: ["account", "menu"] },
@@ -31,6 +47,9 @@ const STEPS: { key: StepKey; targets?: string[]; sandbox?: boolean }[] = [
 const SEEN_KEY = "tamga_tour_seen";
 const PAD = 8;
 const GAP = 12;
+// The pointer's glide to the row it taps, the tap, and the page's change after it.
+const GLIDE = 750;
+const TAP = 220;
 
 function seen(): boolean {
   try {
@@ -71,8 +90,12 @@ export function Tour() {
   const { t } = useI18n();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   const sandbox = me.data?.company.kind === "sandbox";
+  const router = useRouter();
+  const pathname = usePathname();
+  const path = useRef(pathname);
   const [at, setAt] = useState<number | null>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [pointer, setPointer] = useState<{ x: number; y: number; tap: boolean } | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const titleId = useId();
@@ -93,14 +116,51 @@ export function Tour() {
     return () => window.removeEventListener(TOUR_EVENT, open);
   }, []);
 
+  useEffect(() => {
+    path.current = pathname;
+  }, [pathname]);
+
+  // A step told on another page goes there: the pointer glides from the card to the sidebar's
+  // row and taps it, then the page changes. Without the row on screen (a phone's folded menu) or
+  // with motion turned off, the page simply changes.
+  useEffect(() => {
+    const route = step?.route;
+    if (!route || path.current === route) return;
+    const via = step.via ? place([step.via]) : null;
+    const timers: number[] = [];
+    const later = (ms: number, run: () => void) => timers.push(window.setTimeout(run, ms));
+    if (!via || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      later(0, () => router.push(route));
+    } else {
+      const from = card.current?.getBoundingClientRect();
+      later(0, () =>
+        setPointer({
+          x: from ? from.left + from.width / 2 : innerWidth / 2,
+          y: from ? from.top + 32 : innerHeight / 2,
+          tap: false,
+        }),
+      );
+      later(40, () => setPointer({ x: via.left + Math.min(28, via.width / 2), y: via.top + via.height / 2, tap: false }));
+      later(40 + GLIDE, () => setPointer((was) => was && { ...was, tap: true }));
+      later(40 + GLIDE + TAP, () => router.push(route));
+      later(40 + GLIDE + TAP + 500, () => setPointer(null));
+    }
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      setPointer(null);
+    };
+  }, [step, router]);
+
   // The lit place follows the page while the tour is open: a sidebar sliding, a list loading.
   useLayoutEffect(() => {
     if (!step) return;
     let frame = 0;
     // Nothing yet, so the first read is always taken, even "nothing lit".
     let last: string | null = null;
+    // Until the step's page has come, the row that leads there is lit.
+    const targets = [...(step.targets ?? []), ...(step.via ? [step.via] : [])];
     const follow = () => {
-      const next = place(step.targets);
+      const next = place(targets);
       // The screen's size too: a card with nothing lit is placed by it, and a phone turns.
       const key = `${innerWidth}x${innerHeight}:` + (next ? `${next.x},${next.y},${next.width},${next.height}` : "");
       if (key !== last) {
@@ -158,7 +218,8 @@ export function Tour() {
   if (!step || at === null) return null;
   const words = t.tour.steps[step.key];
   const last = at === steps.length - 1;
-  const position = cardPosition(rect, size);
+  const lit = rect && step.page ? fitAbove(rect, size) : rect;
+  const position = cardPosition(lit, size);
 
   // On the body itself, outside the app's subtree, which a phone's open menu makes inert.
   return createPortal(
@@ -168,18 +229,48 @@ export function Tour() {
         aria-hidden
         className={cn(
           "absolute rounded-2xl transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
-          !rect && "opacity-0",
+          // On the black theme a dim alone barely shows: the place is also ringed in the brand's
+          // colour, and the dim is deeper.
+          "[--tour-dim:55%] dark:[--tour-dim:75%]",
+          !lit && "opacity-0",
         )}
         style={{
-          top: rect ? rect.top - PAD : innerHeight / 2,
-          left: rect ? rect.left - PAD : innerWidth / 2,
-          width: rect ? rect.width + PAD * 2 : 0,
-          height: rect ? rect.height + PAD * 2 : 0,
-          boxShadow: "0 0 0 9999px color-mix(in oklab, var(--scrim) 55%, transparent)",
+          top: lit ? lit.top - PAD : innerHeight / 2,
+          left: lit ? lit.left - PAD : innerWidth / 2,
+          width: lit ? lit.width + PAD * 2 : 0,
+          height: lit ? lit.height + PAD * 2 : 0,
+          boxShadow: [
+            "0 0 0 2px var(--primary)",
+            "0 0 24px 2px color-mix(in oklab, var(--primary) 45%, transparent)",
+            "0 0 0 9999px color-mix(in oklab, var(--scrim) var(--tour-dim), transparent)",
+          ].join(", "),
         }}
       />
       {/* Without a lit place the dim is a plain layer. */}
-      {!rect ? <div aria-hidden className="bg-scrim/55 animate-in fade-in-0 absolute inset-0 duration-200" /> : null}
+      {!lit ? (
+        <div aria-hidden className="bg-scrim/55 dark:bg-scrim/75 animate-in fade-in-0 absolute inset-0 duration-200" />
+      ) : null}
+      {pointer ? (
+        // The hand that shows where to tap: an arrow in the page's own ink, a ripple as it taps.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0 z-10 transition-transform ease-[cubic-bezier(0.32,0.72,0,1)]"
+          style={{ transform: `translate(${pointer.x}px, ${pointer.y}px)`, transitionDuration: `${GLIDE}ms` }}
+        >
+          {pointer.tap ? <span className="bg-primary/50 absolute -top-4 -left-4 size-8 animate-ping rounded-full" /> : null}
+          <svg
+            viewBox="0 0 24 24"
+            className={cn("size-6 drop-shadow-md transition-transform duration-150", pointer.tap && "scale-90")}
+          >
+            <path
+              d="M4 2.5 19.5 13l-6.7 1.3 3.9 7.2-2.8 1.5-3.9-7.3L4 20.5Z"
+              className="fill-foreground stroke-background"
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      ) : null}
       <div
         ref={card}
         role="dialog"
@@ -227,6 +318,16 @@ export function Tour() {
     </div>,
     document.body,
   );
+}
+
+/** A page lit whole is taller than the screen: lit from its top down to where the card fits
+ * under it, as long as a fair part of it stays lit. */
+function fitAbove(rect: DOMRect, size: { width: number; height: number }): DOMRect {
+  const height = size.height || 200;
+  const top = Math.max(rect.top, 16 + PAD);
+  const bottom = Math.min(rect.bottom, innerHeight - 16 - height - GAP - PAD);
+  if (bottom - top < 120) return rect;
+  return new DOMRect(rect.left, top, rect.width, bottom - top);
 }
 
 /** Where the card goes: under the lit place when it fits, else over it, else beside it; centred
