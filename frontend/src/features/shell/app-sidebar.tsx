@@ -1,7 +1,7 @@
 "use client";
 
 import { ThreadListPrimitive, useAuiState } from "@assistant-ui/react";
-import { Cancel01Icon, PlusSignIcon, Search01Icon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
+import { Cancel01Icon, PlusSignIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -55,7 +55,7 @@ export function AppSidebar({
   const { t } = useI18n();
   const pathname = usePathname();
   const router = useRouter();
-  const { isMobile, setOpen, setOpenMobile, state, toggleSidebar } = useSidebar();
+  const { isMobile, setOpen, setOpenMobile, state } = useSidebar();
   const rail = state === "collapsed" && !isMobile;
   const { openSearch } = useShellActions();
   const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
@@ -78,33 +78,21 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       {/* On a phone the header floats over the list, which fades out beneath it instead of being
           cut by a band; the foot does the same below. */}
-      <SidebarHeader className="h-14 flex-row items-center justify-between px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-2 max-md:from-sidebar max-md:via-sidebar/85 max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-16 max-md:items-start max-md:bg-linear-to-b max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
-        {/* The logo, its word rolled into the seal when the sidebar folds to a rail. There, as in
-            the chat apps, the seal is also the way back: under the pointer it turns into the
-            sidebar's icon, and a tap opens it. */}
+      <SidebarHeader className="h-14 flex-row items-center gap-1 px-3 group-data-[collapsible=icon]:px-1.5 max-md:from-sidebar max-md:via-sidebar/85 max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-16 max-md:items-start max-md:bg-linear-to-b max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
+        {/* As in the chat apps: the sidebar's button first, its icon saying what a tap does, then
+            the logo. Folded to a rail, the button alone; the word rolls into the seal as the rail
+            closes over it, and out again when it opens. */}
+        <SidebarTrigger className="text-muted-foreground size-9 shrink-0 max-md:hidden [&_svg]:size-5" />
         <Link
           href={CHAT_PATH}
-          aria-label={rail ? t.shell.toggleSidebar : t.meta.title}
-          onClick={(event) => {
-            if (!rail) return picked();
-            event.preventDefault();
-            toggleSidebar();
-          }}
-          className="group/brand focus-visible:ring-ring/50 relative flex min-w-0 items-center rounded-lg outline-none focus-visible:ring-[3px]"
+          aria-label={t.meta.title}
+          tabIndex={rail ? -1 : undefined}
+          aria-hidden={rail || undefined}
+          onClick={picked}
+          className="focus-visible:ring-ring/50 flex min-w-0 items-center overflow-hidden rounded-lg outline-none focus-visible:ring-[3px] group-data-[collapsible=icon]:w-0 max-md:ms-1"
         >
-          <span className={cn("transition-opacity", rail && "group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0")}>
-            <Lockup open={!rail} height={28} label={t.meta.title} intro />
-          </span>
-          {rail ? (
-            <HugeiconsIcon
-              icon={SidebarLeftIcon}
-              strokeWidth={1.5}
-              className="text-muted-foreground absolute inset-0 m-auto size-5 opacity-0 transition-opacity group-hover/brand:opacity-100 group-focus-visible/brand:opacity-100"
-              aria-hidden
-            />
-          ) : null}
+          <Lockup open={!rail} height={32} label={t.meta.title} intro />
         </Link>
-        <SidebarTrigger className="text-muted-foreground size-9 group-data-[collapsible=icon]:hidden max-md:hidden [&_svg]:size-5" />
         {isMobile ? (
           <button
             type="button"

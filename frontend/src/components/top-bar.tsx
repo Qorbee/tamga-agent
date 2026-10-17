@@ -1,9 +1,8 @@
 "use client";
 
-import { SidebarLeftIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type { ReactNode } from "react";
 
+import { SidebarIcon } from "@/components/sidebar-icon";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useI18n } from "@/lib/i18n/client";
@@ -53,8 +52,8 @@ export function BackToMenu({ onLeave }: { onLeave: () => void }) {
         setOpenMobile(true);
       }}
     >
-      <HugeiconsIcon icon={SidebarLeftIcon} strokeWidth={1.75} />
-      <span className="sr-only">{t.shell.toggleSidebar}</span>
+      <SidebarIcon open={false} />
+      <span className="sr-only">{t.shell.openSidebar}</span>
     </Button>
   );
 }

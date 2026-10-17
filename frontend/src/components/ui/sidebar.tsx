@@ -7,6 +7,7 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 
 import { useIsMobile } from "@/hooks/use-mobile"
+import { SidebarIcon } from "@/components/sidebar-icon"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -16,8 +17,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { SidebarLeftIcon } from "@hugeicons/core-free-icons"
 import { useI18n } from "@/lib/i18n/client"
 import { useMenuDrag } from "@/lib/use-drag"
 
@@ -300,8 +299,10 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state, isMobile } = useSidebar()
   const { t } = useI18n()
+  // What a tap does: close the sidebar that is open, or open the one that is not.
+  const closes = state === "expanded" && !isMobile
 
   return (
     <Button
@@ -316,8 +317,8 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <HugeiconsIcon icon={SidebarLeftIcon} strokeWidth={1.5} />
-      <span className="sr-only">{t.shell.toggleSidebar}</span>
+      <SidebarIcon open={closes} />
+      <span className="sr-only">{closes ? t.shell.foldSidebar : t.shell.openSidebar}</span>
     </Button>
   )
 }

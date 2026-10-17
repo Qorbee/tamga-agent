@@ -21,6 +21,8 @@ export const en = {
     sidebar: "Sidebar",
     closeSidebar: "Close the menu",
     toggleSidebar: "Toggle sidebar",
+    openSidebar: "Open sidebar",
+    foldSidebar: "Close sidebar",
     resizeSidebar: "Resize sidebar",
     recents: "Recents",
     recentsEmpty: "No chats yet",

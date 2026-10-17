@@ -23,6 +23,8 @@ export const tr: Dictionary = {
     sidebar: "Kenar çubuğu",
     closeSidebar: "Menüyü kapat",
     toggleSidebar: "Kenar çubuğunu aç veya kapat",
+    openSidebar: "Kenar çubuğunu aç",
+    foldSidebar: "Kenar çubuğunu kapat",
     resizeSidebar: "Kenar çubuğunu boyutlandır",
     recents: "Son sohbetler",
     recentsEmpty: "Henüz sohbet yok",

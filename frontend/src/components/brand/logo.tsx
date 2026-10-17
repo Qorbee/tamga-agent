@@ -180,14 +180,19 @@ export function Lockup({
         { transform: "scale(1.01, 0.99)", offset: 0.75 },
         { transform: "none" },
       ],
-      { duration: 640, delay: 710 },
+      { duration: 640, delay: 330 },
     );
     return () => press.cancel();
   }, [open]);
 
   const out = open && !landing;
   const scale = height / HEIGHT;
-  const motion = "duration-[850ms] ease-[cubic-bezier(0.45,0,0.55,1)] motion-reduce:transition-none";
+  // Out slowly, as the sidebar has already opened; in quickly, as the sidebar folds to a rail
+  // in a fifth of a second and the word must not stay out past its edge.
+  const motion = cn(
+    out ? "duration-[850ms]" : "duration-[400ms]",
+    "ease-[cubic-bezier(0.45,0,0.55,1)] motion-reduce:transition-none",
+  );
   return (
     <span
       className={cn("block shrink-0 overflow-hidden transition-[width]", motion, className)}
