@@ -924,6 +924,22 @@ export const en = {
     name: "Your name",
     accept: "Join",
     inviteMissing: "This link has no invite in it. Open the link from your email again.",
+    showPassword: "Show the password",
+    hidePassword: "Hide the password",
+    check: {
+      emailMissing: "Enter your email.",
+      emailInvalid: "That is not an email address: it needs a name, an @ and a domain.",
+      passwordMissing: "Enter your password.",
+      passwordShort: (least: number) => `At least ${least} characters: this one is shorter.`,
+    },
+    panel: {
+      title: "Your company's money, run by the rules you set.",
+      points: [
+        "Reads every mail, file and bill, and puts each on its job.",
+        "Proposes who to pay and when, and says why.",
+        "You approve; USDC settles on Arc, within the caps you set.",
+      ],
+    },
     errors: {
       invalid_credentials: "Wrong email or password.",
       rate_limited: "Too many attempts. Try again later.",

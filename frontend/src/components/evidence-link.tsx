@@ -148,7 +148,8 @@ function Row({
   picture?: ReactNode;
 }) {
   return (
-    <span className="flex items-start gap-2.5">
+    // As tall as a row once read, so the card keeps its height while its rows load.
+    <span className="flex min-h-12 items-start gap-2.5">
       {icon ? <HugeiconsIcon icon={icon} strokeWidth={1.75} className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden /> : null}
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="truncate text-sm font-medium">{title}</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import { useCallback, type ComponentProps, type ReactNode } from "react";
 
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetContent, SheetGrip, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -39,6 +39,8 @@ export function PopSheet({
   contentProps?: Omit<ComponentProps<typeof PopoverContent>, "className" | "align" | "children">;
 }) {
   const mobile = useIsMobile();
+  // One function for the sheet's whole life: the grip's drag listeners are bound to it.
+  const dismiss = useCallback(() => onOpenChange(false), [onOpenChange]);
   if (mobile) {
     if (anchor) return <>{trigger}</>;
     return (
@@ -49,7 +51,7 @@ export function PopSheet({
           showCloseButton={false}
           className="max-h-[85dvh] gap-0 overflow-y-auto rounded-t-3xl px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]"
         >
-          <SheetGrip onDismiss={() => onOpenChange(false)}>
+          <SheetGrip onDismiss={dismiss}>
             <SheetHeader className="px-1 pt-1 pb-3">
               <SheetTitle className="text-base text-pretty first-letter:uppercase">{title}</SheetTitle>
             </SheetHeader>

@@ -2,16 +2,27 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
-import { Field } from "@/components/field";
+import { Field, fieldErrorId } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signIn } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 
+import { checkEmail, checkPassword } from "./checks";
 import { authError } from "./errors";
+import { FormAlert } from "./form-alert";
+import { PasswordInput } from "./password-input";
 
+// Taller than the app's fields: the one form a phone fills in with a thumb, often first.
+export const AUTH_INPUT = "h-11 rounded-xl px-4 md:text-base";
+
+/**
+ * Email and password. The browser's own bubbles are off: a field is checked here when the form is
+ * sent, its words said under it and its border marked, the first one wrong taking focus; once
+ * sent, each is checked again as it is typed in, so a fixed field clears at once.
+ */
 export function SignInForm() {
   const { t } = useI18n();
   const router = useRouter();
@@ -19,6 +30,9 @@ export function SignInForm() {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [tried, setTried] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const submit = useMutation({
     mutationFn: signIn,
     onSuccess: (me) => {
@@ -27,40 +41,51 @@ export function SignInForm() {
       router.push(next);
     },
   });
+  const emailError = tried ? checkEmail(email, t) : null;
+  const passwordError = tried ? checkPassword(password, t) : null;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    submit.mutate({ email, password });
+    setTried(true);
+    if (checkEmail(email, t)) return emailRef.current?.focus();
+    if (checkPassword(password, t)) return passwordRef.current?.focus();
+    submit.mutate({ email: email.trim(), password });
   };
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4">
-      <Field label={t.auth.email} htmlFor="email">
+    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+      <Field label={t.auth.email} htmlFor="email" error={emailError ?? undefined}>
         <Input
+          ref={emailRef}
           id="email"
           type="email"
-          autoComplete="email"
-          required
+          inputMode="email"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          maxLength={320}
+          aria-invalid={emailError ? true : undefined}
+          aria-describedby={emailError ? fieldErrorId("email") : undefined}
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          className={AUTH_INPUT}
         />
       </Field>
-      <Field label={t.auth.password} htmlFor="password">
-        <Input
+      <Field label={t.auth.password} htmlFor="password" error={passwordError ?? undefined}>
+        <PasswordInput
+          ref={passwordRef}
           id="password"
-          type="password"
           autoComplete="current-password"
-          required
+          maxLength={256}
+          aria-invalid={passwordError ? true : undefined}
+          aria-describedby={passwordError ? fieldErrorId("password") : undefined}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          className={AUTH_INPUT}
         />
       </Field>
-      {submit.isError ? (
-        <p className="text-danger-foreground text-sm" role="alert">
-          {authError(submit.error, t)}
-        </p>
-      ) : null}
-      <Button type="submit" size="lg" disabled={submit.isPending}>
+      {submit.isError ? <FormAlert>{authError(submit.error, t)}</FormAlert> : null}
+      <Button type="submit" size="lg" disabled={submit.isPending} className="mt-1 h-11 rounded-xl text-base">
         {submit.isPending ? t.auth.signingIn : t.auth.signIn}
       </Button>
     </form>

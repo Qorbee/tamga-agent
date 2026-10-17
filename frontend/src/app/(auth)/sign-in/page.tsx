@@ -14,20 +14,22 @@ export default async function SignInPage() {
   const t = getDictionary(await getLocale());
   return (
     <div className="grid gap-8">
-      <div>
-        <h1 className="text-xl font-medium">{t.auth.signInTitle}</h1>
-        <p className="text-muted-foreground mt-1 text-sm">{t.auth.signInBody}</p>
+      <div className="grid gap-2">
+        <h1 className="text-3xl font-medium tracking-tight">{t.auth.signInTitle}</h1>
+        <p className="text-muted-foreground text-pretty">{t.auth.signInBody}</p>
       </div>
       {/* useSearchParams (the page to return to) needs a boundary to prerender. */}
       <Suspense>
         <SignInForm />
       </Suspense>
-      <div className="border-border grid gap-3 border-t pt-6">
-        <p className="text-sm">
-          <span className="font-medium">{t.auth.orTry}</span>{" "}
-          <span className="text-muted-foreground">{t.auth.guestBody}</span>
-        </p>
-        <GuestButton label={t.auth.tryGuest} variant="outline" />
+      <div className="grid gap-3">
+        <div className="text-muted-foreground flex items-center gap-3 text-xs" aria-hidden>
+          <span className="bg-border h-px flex-1" />
+          {t.auth.orTry}
+          <span className="bg-border h-px flex-1" />
+        </div>
+        <GuestButton label={t.auth.tryGuest} variant="outline" size="lg" className="h-11 rounded-xl text-base" />
+        <p className="text-muted-foreground text-center text-sm text-pretty">{t.auth.guestBody}</p>
       </div>
     </div>
   );

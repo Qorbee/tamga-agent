@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-/** A labelled form control, with an optional hint or error under it. */
+/** A labelled form control, with an optional hint or error under it. The control names the
+ * error with `aria-describedby={fieldErrorId(htmlFor)}`, so a screen reader reads it. */
 export function Field({
   label,
   htmlFor,
@@ -21,7 +22,7 @@ export function Field({
       </label>
       {children}
       {error ? (
-        <p className="text-danger-foreground text-xs" role="alert">
+        <p id={fieldErrorId(htmlFor)} className="text-danger-foreground text-xs" role="alert">
           {error}
         </p>
       ) : hint ? (
@@ -30,3 +31,5 @@ export function Field({
     </div>
   );
 }
+
+export const fieldErrorId = (htmlFor: string) => `${htmlFor}-error`;

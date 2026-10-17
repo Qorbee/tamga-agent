@@ -889,6 +889,22 @@ export const tr: Dictionary = {
     name: "Adınız",
     accept: "Katıl",
     inviteMissing: "Bu bağlantıda davet yok. E-postanızdaki bağlantıyı yeniden açın.",
+    showPassword: "Şifreyi göster",
+    hidePassword: "Şifreyi gizle",
+    check: {
+      emailMissing: "E-postanızı girin.",
+      emailInvalid: "Bu bir e-posta adresi değil: bir ad, @ ve alan adı gerekir.",
+      passwordMissing: "Şifrenizi girin.",
+      passwordShort: (least: number) => `En az ${least} karakter olmalı; bu daha kısa.`,
+    },
+    panel: {
+      title: "Şirketinizin parası, sizin koyduğunuz kurallarla.",
+      points: [
+        "Her e-postayı, dosyayı ve faturayı okur, her birini işine koyar.",
+        "Kime ne zaman ödeneceğini önerir ve nedenini söyler.",
+        "Siz onaylarsınız; USDC, koyduğunuz sınırlar içinde Arc üzerinde ödenir.",
+      ],
+    },
     errors: {
       invalid_credentials: "E-posta veya şifre hatalı.",
       rate_limited: "Çok fazla deneme. Daha sonra tekrar deneyin.",
