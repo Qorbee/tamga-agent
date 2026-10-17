@@ -15,7 +15,7 @@ export const LOGOS = ["flatT", "flatG", "waxT", "waxG"] as const;
 export type Logo = (typeof LOGOS)[number];
 
 const LOGO_COOKIE = "tamga_logo";
-const FIRST: Logo = "flatT";
+const FIRST: Logo = "waxT";
 
 type Shape = {
   finish: "flat" | "wax";

@@ -13,6 +13,7 @@ import {
   ThreadListRoot,
 } from "@/components/assistant-ui/elements/thread-list.aui";
 import { Lockup } from "@/components/brand/logo";
+import { SidebarIcon } from "@/components/sidebar-icon";
 import { ResizeHandle } from "@/components/resize-handle";
 import {
   Sidebar,
@@ -78,20 +79,33 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       {/* On a phone the header floats over the list, which fades out beneath it instead of being
           cut by a band; the foot does the same below. */}
-      <SidebarHeader className="h-14 flex-row items-center gap-1 px-3 group-data-[collapsible=icon]:px-1.5 max-md:from-sidebar max-md:via-sidebar/85 max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-16 max-md:items-start max-md:bg-linear-to-b max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
-        {/* As in the chat apps: the sidebar's button first, its icon saying what a tap does, then
-            the logo. Folded to a rail, the button alone; the word rolls into the seal as the rail
-            closes over it, and out again when it opens. */}
-        <SidebarTrigger className="text-muted-foreground size-9 shrink-0 max-md:hidden [&_svg]:size-5" />
+      <SidebarHeader className="h-14 flex-row items-center gap-0 px-3 max-md:from-sidebar max-md:via-sidebar/85 max-md:pointer-events-none max-md:absolute max-md:inset-x-0 max-md:top-0 max-md:z-10 max-md:h-16 max-md:items-start max-md:bg-linear-to-b max-md:to-transparent max-md:pt-3 max-md:*:pointer-events-auto">
+        {/* Open, the sidebar's button first and the logo beside it. As the sidebar folds the
+            button slides away with it and the word rolls into the seal, which stays in the
+            rail, in line with the icons below, as the way back: under the pointer it turns into
+            the sidebar's button, and a tap opens it. */}
+        <span className="flex w-10 shrink-0 overflow-hidden transition-[width,opacity] duration-200 ease-linear group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0 max-md:hidden">
+          <SidebarTrigger className="text-muted-foreground size-9 shrink-0 [&_svg]:size-5" tabIndex={rail ? -1 : undefined} />
+        </span>
         <Link
           href={CHAT_PATH}
-          aria-label={t.meta.title}
-          tabIndex={rail ? -1 : undefined}
-          aria-hidden={rail || undefined}
-          onClick={picked}
-          className="focus-visible:ring-ring/50 flex min-w-0 items-center overflow-hidden rounded-lg outline-none focus-visible:ring-[3px] group-data-[collapsible=icon]:w-0 max-md:ms-1"
+          aria-label={rail ? t.shell.openSidebar : t.meta.title}
+          onClick={(event) => {
+            if (!rail) return picked();
+            event.preventDefault();
+            setOpen(true);
+          }}
+          className="group/brand focus-visible:ring-ring/50 relative flex min-w-0 items-center overflow-hidden rounded-lg outline-none focus-visible:ring-[3px] max-md:ms-1"
         >
-          <Lockup open={!rail} height={32} label={t.meta.title} intro />
+          <span className={cn("transition-opacity", rail && "group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0")}>
+            <Lockup open={!rail} height={32} label={t.meta.title} intro />
+          </span>
+          {rail ? (
+            <SidebarIcon
+              open={false}
+              className="text-muted-foreground absolute inset-0 m-auto opacity-0 transition-opacity group-hover/brand:opacity-100 group-focus-visible/brand:opacity-100"
+            />
+          ) : null}
         </Link>
         {isMobile ? (
           <button
