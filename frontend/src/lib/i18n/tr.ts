@@ -52,6 +52,7 @@ export const tr: Dictionary = {
     offline: "Tamga'ya ulaşılamıyor",
     settings: "Ayarlar",
     signOut: "Çıkış yap",
+    tour: "Turu başlat",
   },
   settings: {
     title: "Ayarlar",
@@ -1249,7 +1250,51 @@ export const tr: Dictionary = {
       body: "Tamga'nın değerlendirdiği her fatura, yanıtlarınız ve her ödeme burada yazılır; her girdi bir öncekiyle mühürlenir.",
     },
   },
+  tour: {
+    label: "Tamga turu",
+    step: (at: number, of: number) => `${at} / ${of}`,
+    start: "Göster",
+    next: "İleri",
+    back: "Geri",
+    skip: "Geç",
+    done: "Bitti",
+    steps: {
+      welcome: {
+        title: "Tamga'ya hoş geldiniz",
+        body: "Tamga bir şirketin e-postalarını, evraklarını ve faturalarını okur, her birini işine koyar, kime ne zaman ödeneceğini önerir ve siz onaylayınca Arc üzerinde USDC ile öder. Bir dakikalık tur?",
+      },
+      composer: {
+        title: "Kendi kelimelerinizle sorun",
+        body: "Para ya da işler hakkında sorun veya bir kural koyun. Deneyin: \u201cBu hafta kime ne borcum var?\u201d ya da \u201cBana sormadan kimseye 2.000 \u20ac'dan fazla ödeme.\u201d",
+      },
+      chats: {
+        title: "Tamga önce yazar",
+        body: "Bir fatura beklediğinde, bir işe evrak geldiğinde ya da sabah olduğunda Tamga sohbeti kendisi başlatır, üzerinde işlem yapılacak bir kartla. Sohbetleri burada listelenir.",
+      },
+      projects: {
+        title: "Kanıtlardan kurulan işler",
+        body: "Her iş kendi e-postalarını, evraklarını, faturalarını ve araçlarını toplar. Bağlantı simgesi bir bilginin nereden okunduğunu, bir şerit de Tamga'nın ne kadar emin olduğunu gösterir.",
+      },
+      payments: {
+        title: "Kime ödenecek ve neden",
+        body: "Her fatura kurallarınıza göre kontrol edilir: müşteri ödedi mi, teslim kanıtlandı mı, mükerrer mi, sınırlar içinde mi. Bekletilen fatura nedenini söyler. Onaylayın, test USDC Arc üzerinde ödenir.",
+      },
+      clock: {
+        title: "Saati ilerletin",
+        body: "Bir gün atlayın; faturaların vadesinin geldiğini, evrakların ulaştığını ve sabah özetinin geldiğini görün.",
+      },
+      world: {
+        title: "Şirketin çevresindeki dünya",
+        body: "Senaryonun kişileri, WhatsApp'ta ve e-postada. Herhangi biri olarak yazın: Tamga bunu gerçek e-posta gibi okur.",
+      },
+      account: {
+        title: "Kurallarınız ve bu tur",
+        body: "Ödeme kuralları ve tercihleriniz Ayarlar'da. Bu tur, istediğiniz zaman bu menüde sizi bekler.",
+      },
+    },
+  },
   playground: {
+    tour: "Tur",
     you: "Siz",
     youAre: (name: string, company: string) => `Siz: ${name} · ${company}`,
     relations: { client: "Müşteri", carrier: "Taşıyıcı" },

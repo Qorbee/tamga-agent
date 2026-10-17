@@ -481,7 +481,7 @@ const Composer: FC<{ autoFocus: boolean; placeholder: string; roomy: boolean }> 
     />
   );
   return (
-    <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col gap-1.5">
+    <ComposerPrimitive.Root data-tour="composer" className="aui-composer-root relative flex w-full flex-col gap-1.5">
       <ComposerPrimitive.AttachmentDropzone asChild>
         <div
           data-slot="aui_composer-shell"

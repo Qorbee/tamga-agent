@@ -34,7 +34,7 @@ const FLOATING = "pointer-events-auto size-9 hover:bg-transparent aria-expanded:
 
 /** The sidebar button as it floats over a page on a phone. */
 export function FloatingTrigger() {
-  return <SidebarTrigger className={FLOATING} />;
+  return <SidebarTrigger data-tour="menu" className={FLOATING} />;
 }
 
 /** The same button where it must open the menu, never close it: Settings, opened from the menu

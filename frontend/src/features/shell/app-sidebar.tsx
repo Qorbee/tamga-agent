@@ -181,7 +181,7 @@ export function AppSidebar({
               const active = pathname.startsWith(page.href);
               const label = t.nav[page.label];
               return (
-                <SidebarMenuItem key={page.href}>
+                <SidebarMenuItem key={page.href} data-tour={`nav-${page.label}`}>
                   <SidebarMenuButton asChild isActive={active} tooltip={label} className={ROW}>
                     <Link href={page.href} onClick={picked} aria-current={active ? "page" : undefined}>
                       <HugeiconsIcon icon={page.icon} strokeWidth={1.75} />
@@ -196,6 +196,7 @@ export function AppSidebar({
 
         {/* Always there, so the sidebar keeps its shape before the first chat. */}
         <SidebarGroup
+          data-tour="chats"
           data-chat-open={chatOpen || undefined}
           className="group-data-[collapsible=icon]:hidden"
         >

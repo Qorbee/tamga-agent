@@ -1,6 +1,6 @@
 "use client";
 
-import { Logout01Icon, Settings01Icon, UnfoldMoreIcon, UserIcon } from "@hugeicons/core-free-icons";
+import { HelpCircleIcon, Logout01Icon, Settings01Icon, UnfoldMoreIcon, UserIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -14,9 +14,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
 import { ApiError, getMe, signOut } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
+import { startTour } from "@/lib/tour";
 import { cn } from "@/lib/utils";
 
 import { useShellActions } from "./shell-actions";
@@ -30,6 +31,7 @@ export function AccountMenu({ floating = false }: { floating?: boolean }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { openSettings } = useShellActions();
+  const { setOpenMobile } = useSidebar();
   const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
   const leave = useMutation({
     mutationFn: signOut,
@@ -72,6 +74,7 @@ export function AccountMenu({ floating = false }: { floating?: boolean }) {
               </button>
             ) : (
               <SidebarMenuButton
+                data-tour="account"
                 tooltip={label || t.account.menu}
                 aria-label={t.account.menu}
                 className="data-[state=open]:bg-sidebar-accent h-12 gap-2.5 px-2 group-data-[collapsible=icon]:size-10! group-data-[collapsible=icon]:p-1!"
@@ -100,6 +103,16 @@ export function AccountMenu({ floating = false }: { floating?: boolean }) {
             <DropdownMenuItem onSelect={openSettings}>
               <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.75} />
               {t.account.settings}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                // On a phone the menu is a drawer over the page: it gives way to the tour.
+                setOpenMobile(false);
+                startTour();
+              }}
+            >
+              <HugeiconsIcon icon={HelpCircleIcon} strokeWidth={1.75} />
+              {t.account.tour}
             </DropdownMenuItem>
             {me.data ? (
               <>

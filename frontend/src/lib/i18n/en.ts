@@ -56,6 +56,7 @@ export const en = {
     offline: "Tamga is offline",
     settings: "Settings",
     signOut: "Sign out",
+    tour: "Take the tour",
   },
   settings: {
     title: "Settings",
@@ -1291,7 +1292,51 @@ export const en = {
       body: "Each bill Tamga evaluates, your answers and every payment are written here, each entry sealed with the one before it.",
     },
   },
+  tour: {
+    label: "A tour of Tamga",
+    step: (at: number, of: number) => `${at} of ${of}`,
+    start: "Show me",
+    next: "Next",
+    back: "Back",
+    skip: "Skip",
+    done: "Done",
+    steps: {
+      welcome: {
+        title: "Welcome to Tamga",
+        body: "Tamga reads a company's mail, papers and bills, puts each on its job, proposes who to pay and when, and pays in USDC on Arc once you approve. A one-minute tour?",
+      },
+      composer: {
+        title: "Ask in your own words",
+        body: "Ask about money or jobs, or set a rule. Try \u201cWhat do I owe this week?\u201d or \u201cDon't pay anyone more than \u20ac2,000 without asking me.\u201d",
+      },
+      chats: {
+        title: "Tamga writes first",
+        body: "When a bill waits, a paper lands on a job or the morning comes, Tamga starts the chat itself, with a card to act on. Its chats are listed here.",
+      },
+      projects: {
+        title: "Jobs, built from the evidence",
+        body: "Each job gathers its mails, papers, bills and trucks. The link icon shows what something was read from, and a band says how sure Tamga is.",
+      },
+      payments: {
+        title: "Who to pay, and why",
+        body: "Every bill is checked against your rules: has the client paid, is delivery proved, is it a duplicate, is it within the caps. A held bill says why. Approve, and test USDC settles on Arc.",
+      },
+      clock: {
+        title: "Move the clock",
+        body: "Skip a day and watch bills fall due, papers arrive and the morning brief come in.",
+      },
+      world: {
+        title: "The world around the company",
+        body: "The scenario's people, on WhatsApp and by mail. Write as any of them: Tamga reads it as it reads real mail.",
+      },
+      account: {
+        title: "Your rules, and this tour",
+        body: "Settings holds the payment rules and your preferences. This tour waits in this menu whenever you want it again.",
+      },
+    },
+  },
   playground: {
+    tour: "Tour",
     you: "You",
     youAre: (name: string, company: string) => `You are ${name} · ${company}`,
     relations: { client: "Client", carrier: "Carrier" },

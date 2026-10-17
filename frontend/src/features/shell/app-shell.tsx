@@ -11,6 +11,7 @@ import { CompanyEvents } from "./company-events";
 import { SearchDialog } from "./search-dialog";
 import { SettingsDialog } from "./settings-dialog";
 import { ShellActionsContext } from "./shell-actions";
+import { Tour } from "./tour";
 
 /**
  * The owner app's frame: sidebar, the page, and the canvas, plus the two dialogs any part of it
@@ -88,6 +89,7 @@ export function AppShell({
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       </SidebarProvider>
       <CompanyEvents />
+      <Tour />
       <PullRefresh />
     </ShellActionsContext.Provider>
   );

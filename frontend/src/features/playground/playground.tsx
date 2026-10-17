@@ -6,6 +6,7 @@ import {
   Cancel01Icon,
   Forward02Icon,
   Globe02Icon,
+  HelpCircleIcon,
   PlusSignIcon,
   SentIcon,
   TickDouble02Icon,
@@ -24,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { getMe, getMessage, getPolicy, getWorld, listMessages, sayAs, skipDays, type MessageSummary, type Persona } from "@/lib/api";
 import { formatDate, formatDayShort, todayIso } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/client";
+import { startTour } from "@/lib/tour";
 import { cn } from "@/lib/utils";
 
 /**
@@ -96,7 +98,7 @@ export function PlaygroundBar() {
         </span>
       ) : null}
       <span className="ms-auto flex shrink-0 items-center gap-1.5 max-sm:gap-0.5">
-        <Button size="sm" variant="outline" disabled={skip.isPending || !world.data?.ready} onClick={() => skip.mutate(1)}>
+        <Button data-tour="skip-day" size="sm" variant="outline" disabled={skip.isPending || !world.data?.ready} onClick={() => skip.mutate(1)}>
           <HugeiconsIcon icon={Forward02Icon} strokeWidth={1.75} />
           {skip.isPending && skip.variables === 1 ? (
             t.playground.skipping
@@ -118,7 +120,9 @@ export function PlaygroundBar() {
             {t.playground.skipTo(weekdays[payday] ?? "")}
           </Button>
         ) : null}
+        <IconButton icon={HelpCircleIcon} label={t.playground.tour} onClick={startTour} />
         <IconButton
+          data-tour="world"
           icon={Globe02Icon}
           label={t.playground.world}
           variant={open ? "secondary" : "ghost"}
