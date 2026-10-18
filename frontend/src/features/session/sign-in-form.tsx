@@ -1,13 +1,13 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Field, fieldErrorId } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signIn } from "@/lib/api";
+import { getMe, signIn } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
 
 import { checkEmail, checkPassword } from "./checks";
@@ -41,6 +41,13 @@ export function SignInForm() {
       router.push(next);
     },
   });
+  // Already signed in, such as a judge back at their sandbox: straight on into it. Asked afresh,
+  // so a session that has just ended is not taken for one that holds.
+  const me = useQuery({ queryKey: ["me"], queryFn: getMe, retry: false });
+  const signedIn = me.isSuccess && me.isFetchedAfterMount;
+  useEffect(() => {
+    if (signedIn) router.replace(next);
+  }, [signedIn, next, router]);
   const emailError = tried ? checkEmail(email, t) : null;
   const passwordError = tried ? checkPassword(password, t) : null;
 

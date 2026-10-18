@@ -66,6 +66,13 @@ class TooManyRequests(DomainError):
     code = "rate_limited"
 
 
+class Unavailable(DomainError):
+    """Refused for now, by a limit of the whole service rather than of whoever asked."""
+
+    status = HTTPStatus.SERVICE_UNAVAILABLE
+    code = "unavailable"
+
+
 def install_error_handlers(app: FastAPI) -> None:
     async def handle_domain_error(request: Request, exc: Exception) -> JSONResponse:
         if not isinstance(exc, DomainError):  # registered for DomainError only; narrows the type

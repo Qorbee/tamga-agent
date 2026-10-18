@@ -107,6 +107,16 @@ def configured() -> bool:
     )
 
 
+async def can_fund_sandbox() -> bool:
+    """Whether the treasury holds one more sandbox's deposit, read from the chain. Where accounts
+    cannot be opened, a sandbox opens without one, so nothing is wanted."""
+    settings = get_settings()
+    if not configured() or settings.circle_treasury_wallet_id is None:
+        return True
+    treasury = await circle.wallet(settings.circle_treasury_wallet_id)
+    return await chain.usdc_balance(treasury.address) >= settings.sandbox_deposit_usdc
+
+
 async def open_later(db: AsyncSession, company_id: uuid.UUID, terms: Terms) -> bool:
     """Writes the company's account with ``terms`` and queues its opening, in the caller's
     transaction. Nothing happens where accounts cannot be opened, or for a company that already

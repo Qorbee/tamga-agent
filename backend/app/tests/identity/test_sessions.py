@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.companies.models import CompanyKind
 from app.modules.identity import service
+from app.modules.settlement import service as settlement
+from app.platform.chain import ChainError
 
 pytestmark = pytest.mark.integration
 
@@ -171,6 +173,31 @@ async def test_guest_sandboxes_are_rate_limited_per_client(client: httpx.AsyncCl
     statuses = [(await client.post("/sessions/guest")).status_code for _ in range(allowed + 1)]
 
     assert statuses == [201] * allowed + [429]
+
+
+async def test_no_sandbox_opens_when_the_treasury_cannot_fund_it(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def empty() -> bool:
+        return False
+
+    monkeypatch.setattr(settlement, "can_fund_sandbox", empty)
+
+    refused = await client.post("/sessions/guest")
+
+    assert refused.status_code == 503
+    assert refused.json()["error"]["code"] == "unavailable"
+
+
+async def test_a_treasury_that_cannot_be_read_locks_no_judge_out(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def unreadable() -> bool:
+        raise ChainError("the node could not be asked: ConnectTimeout")
+
+    monkeypatch.setattr(settlement, "can_fund_sandbox", unreadable)
+
+    assert (await client.post("/sessions/guest")).status_code == 201
 
 
 async def test_password_attempts_are_rate_limited_per_client(client: httpx.AsyncClient) -> None:

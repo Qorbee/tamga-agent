@@ -5,6 +5,7 @@ cookie the router sets. Every request resolves it to an ``Actor``: the user, the
 acts for, and the role their membership gives them there, read fresh each time.
 """
 
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -32,6 +33,8 @@ from app.modules.playground.schemas import Choices
 from app.modules.settlement import service as settlement
 from app.platform import clock, storage
 from app.platform.auth import Actor, Role
+from app.platform.chain import ChainError
+from app.platform.circle import CircleError
 from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import (
@@ -42,12 +45,15 @@ from app.platform.errors import (
     NotFound,
     PermissionDenied,
     TooManyRequests,
+    Unavailable,
 )
 from app.platform.language import Language
 from app.platform.ratelimit import RateLimiter
 from app.platform.tokens import hash_token, new_token
 
 SESSION_COOKIE: Final = "tamga_session"
+
+logger = logging.getLogger(__name__)
 
 # last_seen_at is written at most this often, so reading a page is not a write on every request.
 _TOUCH_AFTER: Final = timedelta(minutes=10)
@@ -162,6 +168,9 @@ async def create_guest_session(
     named_company, named_owner = playground.names(chosen)
     if not _guest_limiter().allow(client):
         raise TooManyRequests("Too many new sandboxes from this address. Try again later")
+    # Asked before the count below takes its lock, so a slow node holds up no one else.
+    if not await _fundable():
+        raise Unavailable("The playground has run out of test money for now. Try again later")
     now = utcnow()
     # The count holds a lock until the commit below, so the cap is exact under a burst.
     if await companies.count_live_sandboxes(db, now) >= settings.max_active_sandboxes:
@@ -368,6 +377,16 @@ async def _live_invite(db: AsyncSession, token: str) -> Invite:
     if invite.accepted_at is not None or invite.expires_at <= utcnow():
         raise Gone("This invite was used or has expired. Ask for a new one")
     return invite
+
+
+async def _fundable() -> bool:
+    """Whether a new sandbox can be given its deposit. The chain or Circle not answering does not
+    lock judges out: the sandbox opens, and its account's opening retries on its own."""
+    try:
+        return await settlement.can_fund_sandbox()
+    except (ChainError, CircleError) as error:
+        logger.warning("the treasury's balance could not be read before a sandbox: %s", error)
+        return True
 
 
 def _limit_password_attempts(client: str) -> None:

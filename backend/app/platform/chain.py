@@ -29,6 +29,8 @@ _REVERTED: Final = 3
 _TIMEOUT: Final = 15.0
 # The topic of the vault's `Anchored(uint256,bytes32)` event: `cast keccak` of that signature.
 _ANCHORED: Final = "0x2946f6d79e30b36612401c9600819a1e622cf156a41e314844f4d582f06d242a"
+# ERC-20's `balanceOf(address)`: the token's, so not among the vault's selectors.
+_BALANCE_OF: Final = bytes.fromhex("70a08231")
 
 
 class ChainError(Exception):
@@ -136,17 +138,31 @@ async def anchored_root(tx_hash: str) -> str | None:
     return None
 
 
+async def usdc_balance(address: str) -> Decimal:
+    """The USDC an address holds, read from the token."""
+    data = await _eth_call(get_settings().usdc_address, _BALANCE_OF + _word(address))
+    if data is None:
+        raise ChainError("the token refused the balance call")
+    return usdc(int.from_bytes(data, "big"))
+
+
 async def _call(signature: str, *arguments: bytes) -> bytes | None:
     """``eth_call`` on the vault; None when the contract reverted."""
     settings = get_settings()
     if settings.policy_vault_address is None:
         raise ChainError("set POLICY_VAULT_ADDRESS: the vault is not deployed here")
-    data = _selectors()[signature] + b"".join(arguments)
+    return await _eth_call(
+        settings.policy_vault_address, _selectors()[signature] + b"".join(arguments)
+    )
+
+
+async def _eth_call(to: str, data: bytes) -> bytes | None:
+    """``eth_call`` on a contract; None when it reverted."""
     request = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "eth_call",
-        "params": [{"to": settings.policy_vault_address, "data": "0x" + data.hex()}, "latest"],
+        "params": [{"to": to, "data": "0x" + data.hex()}, "latest"],
     }
     answer = await _post(request)
     if "error" in answer:

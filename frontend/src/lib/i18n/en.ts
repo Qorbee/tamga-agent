@@ -946,6 +946,7 @@ export const en = {
     errors: {
       invalid_credentials: "Wrong email or password.",
       rate_limited: "Too many attempts. Try again later.",
+      unavailable: "The playground has run out of test money for now. Try again later.",
       gone: "This invite was used or has expired. Ask for a new one.",
       not_found: "This invite does not exist.",
       offline: "Tamga cannot be reached. Try again in a moment.",

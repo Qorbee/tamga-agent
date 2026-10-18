@@ -911,6 +911,7 @@ export const tr: Dictionary = {
     errors: {
       invalid_credentials: "E-posta veya şifre hatalı.",
       rate_limited: "Çok fazla deneme. Daha sonra tekrar deneyin.",
+      unavailable: "Deneme alanının test parası şimdilik bitti. Daha sonra tekrar deneyin.",
       gone: "Bu davet kullanılmış ya da süresi dolmuş. Yeni bir davet isteyin.",
       not_found: "Böyle bir davet yok.",
       offline: "Tamga'ya ulaşılamıyor. Birazdan tekrar deneyin.",
