@@ -347,3 +347,21 @@
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
 
 @custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
+
+/* The landing page's own scrollbar: a thin terracotta thumb on its dark stage. */
+:root:has([data-landing]) {
+  background: var(--scrim);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--primary) 75%, var(--scrim-foreground) 10%) var(--scrim);
+}
+:root:has([data-landing])::-webkit-scrollbar {
+  width: 10px;
+}
+:root:has([data-landing])::-webkit-scrollbar-track {
+  background: var(--scrim);
+}
+:root:has([data-landing])::-webkit-scrollbar-thumb {
+  border: 3px solid var(--scrim);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--primary) 80%, var(--scrim-foreground) 10%);
+}

@@ -11,4 +11,6 @@ function required(name: string, value: string | undefined): string {
  */
 export const env = {
   apiUrl: required("NEXT_PUBLIC_API_URL", process.env.NEXT_PUBLIC_API_URL),
+  // The landing page's film and pictures: a public bucket of their own, never the files' bucket.
+  mediaUrl: process.env.NEXT_PUBLIC_MEDIA_URL || "https://media.qorbee.com",
 } as const;

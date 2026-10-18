@@ -8,7 +8,7 @@ everything it shows comes from the FastAPI backend through the generated API con
 
 | Path | What is there |
 |---|---|
-| `src/app/(landing)/` | The landing page (`/`), with its media in `public/landing/`; private, left out of the public copy |
+| `src/app/(landing)/` | The landing page (`/`), its media on the media bucket (`NEXT_PUBLIC_MEDIA_URL`); private, left out of the public copy |
 | `src/app/(app)/app/` | The owner app: its layout (chat runtime, sidebar, canvas), chat home, list pages, and the `@canvas` slot |
 | `src/app/globals.css` | The design tokens for both themes, mapped onto shadcn's variables — the only place colours are defined |
 | `src/app/(auth)/` | Sign-in and invite pages, outside the app shell |

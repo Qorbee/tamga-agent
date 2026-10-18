@@ -26,6 +26,7 @@ import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-ic
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFinePointer } from "@/hooks/use-mobile";
+import { takeQuestion } from "@/lib/first-question";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 import {
@@ -44,6 +45,7 @@ import {
   type ImageMessagePartComponent,
   type TextMessagePartComponent,
   type ToolCallMessagePartComponent,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -482,6 +484,7 @@ const Composer: FC<{ autoFocus: boolean; placeholder: string; roomy: boolean }> 
   );
   return (
     <ComposerPrimitive.Root data-tour="composer" className="aui-composer-root relative flex w-full flex-col gap-1.5">
+      <CarriedQuestion />
       <ComposerPrimitive.AttachmentDropzone asChild>
         <div
           data-slot="aui_composer-shell"
@@ -922,3 +925,14 @@ const BranchPicker: FC<BranchPickerPrimitive.Root.Props> = ({
     </BranchPickerPrimitive.Root>
   );
 };
+
+/** A question typed on the landing page before the sandbox existed, put in the chat box for the
+ * owner to send. */
+function CarriedQuestion() {
+  const aui = useAui();
+  useEffect(() => {
+    const question = takeQuestion();
+    if (question) aui.composer().setText(question);
+  }, [aui]);
+  return null;
+}
