@@ -286,10 +286,10 @@ In a third, the web app:
 
 ```bash
 cd frontend && cp .env.example .env && pnpm install
-pnpm dev                                           # http://localhost:3000
+pnpm dev                                           # http://localhost:3000/sign-in
 ```
 
-**Getting in.** Open http://localhost:3000 and choose *Try it as a guest*: a private sandbox of your
+**Getting in.** Open http://localhost:3000/sign-in and choose *Try it as a guest*: a private sandbox of your
 own, deleted after a day. For a company of your own, create it with its first owner; the command
 prints the invite link where the owner sets a password:
 
