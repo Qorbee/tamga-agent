@@ -90,6 +90,8 @@ export function AppSidebar({
         <Link
           href={CHAT_PATH}
           aria-label={rail ? t.shell.openSidebar : t.meta.title}
+          // Folded to icons, the seal is the way back to the chats, so the tour lights it.
+          data-tour={rail ? "menu" : undefined}
           onClick={(event) => {
             if (!rail) return picked();
             event.preventDefault();

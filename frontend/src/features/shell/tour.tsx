@@ -47,6 +47,8 @@ const STEPS: Step[] = [
 const SEEN_KEY = "tamga_tour_seen";
 const PAD = 8;
 const GAP = 12;
+// The least room kept between a ring and the screen's edge.
+const EDGE = 3;
 // The pointer's glide to the row it taps, the tap, and the page's change after it.
 const GLIDE = 750;
 const TAP = 220;
@@ -220,6 +222,7 @@ export function Tour() {
   const last = at === steps.length - 1;
   const lit = rect && step.page ? fitAbove(rect, size) : rect;
   const position = cardPosition(lit, size);
+  const box = lit ? ring(lit) : null;
 
   // On the body itself, outside the app's subtree, which a phone's open menu makes inert.
   return createPortal(
@@ -235,10 +238,10 @@ export function Tour() {
           !lit && "opacity-0",
         )}
         style={{
-          top: lit ? lit.top - PAD : innerHeight / 2,
-          left: lit ? lit.left - PAD : innerWidth / 2,
-          width: lit ? lit.width + PAD * 2 : 0,
-          height: lit ? lit.height + PAD * 2 : 0,
+          top: box ? box.top : innerHeight / 2,
+          left: box ? box.left : innerWidth / 2,
+          width: box ? box.width : 0,
+          height: box ? box.height : 0,
           boxShadow: [
             "0 0 0 2px var(--primary)",
             "0 0 24px 2px color-mix(in oklab, var(--primary) 45%, transparent)",
@@ -320,11 +323,22 @@ export function Tour() {
   );
 }
 
+/** The ring around a lit place, kept whole on the screen: a button at its very edge (the
+ * playground's bar) is ringed inside the edge rather than cut off by it. */
+function ring(lit: DOMRect): { top: number; left: number; width: number; height: number } {
+  const top = Math.max(EDGE, lit.top - PAD);
+  const left = Math.max(EDGE, lit.left - PAD);
+  const bottom = Math.min(innerHeight - EDGE, lit.bottom + PAD);
+  const right = Math.min(innerWidth - EDGE, lit.right + PAD);
+  return { top, left, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}
+
 /** A page lit whole is taller than the screen: lit from its top down to where the card fits
- * under it, as long as a fair part of it stays lit. */
+ * under it, as long as a fair part of it stays lit. Its ring stays inside it, so it never rides
+ * over the bar above the page. */
 function fitAbove(rect: DOMRect, size: { width: number; height: number }): DOMRect {
   const height = size.height || 200;
-  const top = Math.max(rect.top, 16 + PAD);
+  const top = Math.max(rect.top + PAD, 16 + PAD);
   const bottom = Math.min(rect.bottom, innerHeight - 16 - height - GAP - PAD);
   if (bottom - top < 120) return rect;
   return new DOMRect(rect.left, top, rect.width, bottom - top);
