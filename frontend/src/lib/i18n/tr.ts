@@ -1440,6 +1440,7 @@ export const tr: Dictionary = {
         { value: 798, label: "fatura eşitlendi" },
         { value: 34, label: "iş önerildi" },
       ],
+      pilotWith: "Pilot ortağı",
       mirrored: { value: 24, label: "banka ödemesi Arc'ta test USDC ile yansıtıldı", link: "Kasayı Arcscan'de görün" },
     },
     try: {
@@ -1448,6 +1449,18 @@ export const tr: Dictionary = {
       body: "Saniyeler içinde özel bir deneme alanı açılır: işleri süren bir nakliye şirketi, ona yazan kişiler ve ileri alabileceğiniz bir saat.",
     },
     quote: "Bozkırda tamga, neyin kime ait olduğunu kanıtlardı. Tamga, kimse ödenmeden önce işin yapıldığını kanıtlar.",
-    foot: "Tameion için yapıldı · Arc test ağı · Circle Wallets",
+    foot: {
+      tagline: "Nakliye komisyoncuları için bir yapay zekâ finans operatörü: işi okur, kime neden ödeneceğini önerir ve bir sözleşmenin uyguladığı sınırlar içinde öder.",
+      product: "Ürün",
+      playground: "Deneme alanını açın",
+      how: "Nasıl çalışır",
+      company: "Şirket",
+      contact: "İletişim",
+      builtOn: "Altyapı",
+      arc: "Arc test ağı",
+      tameion: "Tameion hackathon'u",
+      rights: (year: number) => `© ${year} Qorbee. Tüm hakları saklıdır.`,
+      builtBy: "Geliştiren",
+    },
   },
 };

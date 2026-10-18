@@ -1482,6 +1482,7 @@ export const en = {
         { value: 798, label: "invoices synced" },
         { value: 34, label: "jobs proposed" },
       ],
+      pilotWith: "Piloted with",
       mirrored: { value: 24, label: "bank payments mirrored in test USDC on Arc", link: "See the vault on Arcscan" },
     },
     try: {
@@ -1490,7 +1491,19 @@ export const en = {
       body: "A private sandbox opens in seconds: a freight company with jobs under way, people who write to it, and a clock you can move.",
     },
     quote: "In the steppe, a tamga proved what was yours. Tamga proves the job was done before anyone gets paid.",
-    foot: "Built for Tameion · Arc testnet · Circle Wallets",
+    foot: {
+      tagline: "An AI finance operator for freight brokers: it reads the job, proposes who to pay and why, and pays within limits a contract enforces.",
+      product: "Product",
+      playground: "Try the playground",
+      how: "How it works",
+      company: "Company",
+      contact: "Contact",
+      builtOn: "Built on",
+      arc: "Arc testnet",
+      tameion: "Tameion hackathon",
+      rights: (year: number) => `© ${year} Qorbee. All rights reserved.`,
+      builtBy: "Built by",
+    },
   },
 };
 
