@@ -37,7 +37,7 @@ from app.platform.db import dispose_db, init_db
 from app.platform.errors import install_error_handlers
 from app.platform.origin import OriginCheck
 from app.routers import events as event_stream
-from app.routers import health
+from app.routers import health, traction
 
 
 @asynccontextmanager
@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
 
     app.include_router(health.router)
+    app.include_router(traction.router)
     app.include_router(event_stream.router)
     # Each module's routers, one line each.
     app.include_router(identity.sessions)

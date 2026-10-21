@@ -55,6 +55,9 @@ async function requestBlob(path: string): Promise<Blob> {
 // One typed function per operation. The type is an alias, never a restated interface.
 export type Health = Schemas["Health"];
 export const getHealth = () => request<Health>("/health");
+export type Traction = Schemas["Traction"];
+/** What Tamga has done for the companies using it for real, in counts: public. */
+export const getTraction = (init?: RequestInit) => request<Traction>("/traction", init);
 
 export type Me = Schemas["Me"];
 /** The signed-in user and their company; a 401 `ApiError` when no one is signed in. */

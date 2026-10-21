@@ -1839,6 +1839,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/traction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Traction */
+        get: operations["traction.traction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/translations": {
         parameters: {
             query?: never;
@@ -5053,6 +5070,28 @@ export interface components {
             subject: string | null;
             /** Thread Key */
             thread_key: string;
+        };
+        /**
+         * Traction
+         * @description Counts over every company using Tamga for real (kind `pilot`), all time.
+         */
+        Traction: {
+            /** Bills Evaluated */
+            bills_evaluated: number;
+            /** Bills Held */
+            bills_held: number;
+            /** Companies */
+            companies: number;
+            /** Files */
+            files: number;
+            /** Invoices */
+            invoices: number;
+            /** Messages */
+            messages: number;
+            /** Mirrored */
+            mirrored: number;
+            /** Projects */
+            projects: number;
         };
         /** TranslationOut */
         TranslationOut: {
@@ -9092,6 +9131,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "traction.traction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Traction"];
                 };
             };
         };

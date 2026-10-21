@@ -9581,6 +9581,55 @@
         "title": "ThreadSummary",
         "type": "object"
       },
+      "Traction": {
+        "description": "Counts over every company using Tamga for real (kind `pilot`), all time.",
+        "properties": {
+          "bills_evaluated": {
+            "title": "Bills Evaluated",
+            "type": "integer"
+          },
+          "bills_held": {
+            "title": "Bills Held",
+            "type": "integer"
+          },
+          "companies": {
+            "title": "Companies",
+            "type": "integer"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "invoices": {
+            "title": "Invoices",
+            "type": "integer"
+          },
+          "messages": {
+            "title": "Messages",
+            "type": "integer"
+          },
+          "mirrored": {
+            "title": "Mirrored",
+            "type": "integer"
+          },
+          "projects": {
+            "title": "Projects",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "companies",
+          "messages",
+          "files",
+          "invoices",
+          "projects",
+          "bills_evaluated",
+          "bills_held",
+          "mirrored"
+        ],
+        "title": "Traction",
+        "type": "object"
+      },
       "TranslationOut": {
         "properties": {
           "texts": {
@@ -17132,6 +17181,27 @@
         "summary": "List Threads",
         "tags": [
           "threads"
+        ]
+      }
+    },
+    "/traction": {
+      "get": {
+        "operationId": "traction.traction",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Traction"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Traction",
+        "tags": [
+          "traction"
         ]
       }
     },

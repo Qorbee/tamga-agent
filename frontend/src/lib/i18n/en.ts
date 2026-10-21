@@ -1406,7 +1406,8 @@ export const en = {
       label: "Sections",
       sections: { hero: "Start", reads: "Reads", why: "Weighs", seal: "Pays", record: "Records", real: "Real", try: "Try" },
     },
-    live: "Live with a freight broker in Turkey",
+    // Under the chat box, with the live count of messages read.
+    proof: (messages: string) => `In daily use at a freight broker in Turkey since Sep 27 · ${messages} messages read`,
     headline: "Subcontractors paid the day the job is",
     headlineAccent: "proven.",
     lede: "Tamga reads your mail, papers and books, builds each job from the evidence, and proposes who to pay and why. You approve; a contract on Arc caps every payment.",
@@ -1471,21 +1472,21 @@ export const en = {
     },
     real: {
       title: "Used for real,",
-      accent: "every day of the event.",
-      body: "A freight broker in Turkey ran Tamga in shadow mode on its real mail and books from Sep 27 to Oct 17. Tamga read and proposed; money still moved by bank, mirrored in test USDC on Arc.",
+      accent: "every day since Sep 27.",
+      body: "A freight broker in Turkey has run Tamga in shadow mode on its real mail and books since Sep 27, and still does. Tamga reads and proposes; money still moves by bank, and each payment is mirrored in test USDC on Arc.",
       featured: {
-        value: 24,
-        label: "bills held before money left",
-        note: "Of 48 bills weighed, 24 waited because the client had not paid yet: the sector's overdue problem, caught before a transfer.",
+        label: "bills on hold until the client pays",
+        note: (held: string, weighed: string) =>
+          `Of ${weighed} subcontractor bills weighed, ${held} wait now because the client has not paid yet: the sector's overdue problem, caught before a transfer.`,
       },
-      stats: [
-        { value: 3120, label: "messages read" },
-        { value: 1511, label: "files read" },
-        { value: 798, label: "invoices synced" },
-        { value: 34, label: "jobs proposed" },
-      ],
+      stats: {
+        messages: "messages read",
+        files: "files read",
+        invoices: "invoices from the books",
+        projects: "jobs built",
+      },
       pilotWith: "Piloted with",
-      mirrored: { value: 24, label: "bank payments mirrored in test USDC on Arc", link: "See the vault on Arcscan" },
+      mirrored: { label: "bank payments mirrored in test USDC on Arc", link: "See the vault on Arcscan" },
     },
     try: {
       title: "See it run on a company",
