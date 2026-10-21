@@ -1368,6 +1368,7 @@ export const tr: Dictionary = {
     headline: "Taşerona ödeme,",
     headlineAccent: "iş kanıtlandığı gün.",
     lede: "Tamga e-postalarınızı, evraklarınızı ve ön muhasebenizi okur; her işi belgelerden oluşturur, kime neden ödeme yapılacağını önerir. Onay sizde; Arc üzerindeki akıllı sözleşme her ödemeye limit koyar.",
+    ledeShort: "Tamga e-postanızı ve ön muhasebenizi okur, her işi kanıtlar, kime ödeneceğini önerir. Onay sizde.",
     prompts: [
       "Bu hafta kime ne kadar borcum var?",
       "Hangi araçların imzalı CMR'ı eksik?",
@@ -1378,6 +1379,12 @@ export const tr: Dictionary = {
     send: "Gönder",
     sendHint: "Önce bir deneme şirketi seçin; sorunuz o şirketin sohbetinde sizi bekler.",
     scroll: "Kaydırın",
+    pocket: {
+      title: "Her iş",
+      accent: "cebinizde.",
+      body: "Aynı uygulama telefonunuzda: her iş müşterisi, parası, araçları ve eksik evraklarıyla.",
+      alt: "Telefonda Tamga'da bir iş: müşteri, taşeronlar, faturalanan ve ödenen tutar, araçlar",
+    },
     reads: {
       steps: [
         { title: "Bir iş", accent: "parça parça gelir.", body: "Şoförden bir WhatsApp mesajı, iletilmiş bir CMR, başka para biriminde bir fatura, bir sesli mesaj. Kimse bunları dosyalamaz." },

@@ -1411,6 +1411,7 @@ export const en = {
     headline: "Subcontractors paid the day the job is",
     headlineAccent: "proven.",
     lede: "Tamga reads your mail, papers and books, builds each job from the evidence, and proposes who to pay and why. You approve; a contract on Arc caps every payment.",
+    ledeShort: "Tamga reads your mail and books, proves each job and proposes who to pay. You approve.",
     prompts: [
       "What do I owe this week?",
       "Which trucks still miss a signed CMR?",
@@ -1421,6 +1422,12 @@ export const en = {
     send: "Send",
     sendHint: "You pick a sandbox company first; your question waits in its chat.",
     scroll: "Scroll",
+    pocket: {
+      title: "Every job,",
+      accent: "in your pocket.",
+      body: "The same app on your phone: each job with its client, its money, its trucks and the papers still missing.",
+      alt: "A job in Tamga on a phone: client, subcontractors, what was invoiced and paid, and its trucks",
+    },
     reads: {
       steps: [
         { title: "A job arrives", accent: "in pieces.", body: "A WhatsApp from a driver, a forwarded CMR, an invoice in another currency, a voice note. Nobody files them." },
