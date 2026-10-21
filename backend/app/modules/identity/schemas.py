@@ -55,6 +55,8 @@ class GuestStart(BaseModel):
     company: str | None = Field(default=None, max_length=80, pattern=_A_NAME)
     # What they changed of the scenario's policy before it opened.
     choices: Choices | None = None
+    # Cloudflare Turnstile's token from the page, where the server asks for one.
+    turnstile_token: str | None = Field(default=None, max_length=2048)
 
 
 class CompanySwitch(BaseModel):

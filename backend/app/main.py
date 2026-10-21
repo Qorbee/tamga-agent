@@ -67,12 +67,18 @@ def create_app() -> FastAPI:
     logs.configure(settings.log_level)
     packs.register_all()
 
+    # The API's own pages are for building it: a deployment serves none of them, and the schema
+    # is backend/openapi.json in the repository.
+    pages = settings.app_env not in ("staging", "production")
     app = FastAPI(
         # A constant: the title is part of the committed openapi.json.
         title="tamga",
         version="0.1.0",
         lifespan=lifespan,
         generate_unique_id_function=operation_id,
+        docs_url="/docs" if pages else None,
+        redoc_url="/redoc" if pages else None,
+        openapi_url="/openapi.json" if pages else None,
     )
     # Added before CORS, so it runs inside it: CORS answers preflights before the check sees them.
     app.add_middleware(OriginCheck, allowed_origins=settings.cors_origin_list)

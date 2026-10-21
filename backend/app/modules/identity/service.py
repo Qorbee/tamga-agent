@@ -31,7 +31,7 @@ from app.modules.identity.schemas import (
 from app.modules.playground import service as playground
 from app.modules.playground.schemas import Choices
 from app.modules.settlement import service as settlement
-from app.platform import clock, storage
+from app.platform import clock, storage, turnstile
 from app.platform.auth import Actor, Role
 from app.platform.chain import ChainError
 from app.platform.circle import CircleError
@@ -39,6 +39,7 @@ from app.platform.clock import utcnow
 from app.platform.db import open_session
 from app.platform.errors import (
     BadRequest,
+    ChallengeFailed,
     Conflict,
     Gone,
     NotAuthenticated,
@@ -52,6 +53,8 @@ from app.platform.ratelimit import RateLimiter
 from app.platform.tokens import hash_token, new_token
 
 SESSION_COOKIE: Final = "tamga_session"
+# The Turnstile action the guest button's widget is rendered with (the web app's scenario picker).
+GUEST_ACTION: Final = "guest"
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +163,7 @@ async def create_guest_session(
     name: str | None = None,
     company_name: str | None = None,
     choices: Choices | None = None,
+    turnstile_token: str | None = None,
 ) -> OpenedSession:
     """A judge's one click: a sandbox company, a guest who owns it, and a session (ADR-0004).
     The company and the guest carry the names the judge gave, else the scenario's own."""
@@ -168,6 +172,9 @@ async def create_guest_session(
     named_company, named_owner = playground.names(chosen)
     if not _guest_limiter().allow(client):
         raise TooManyRequests("Too many new sandboxes from this address. Try again later")
+    # A sandbox costs test USDC and model requests from the moment it opens: a script gets none.
+    if not await turnstile.verify(turnstile_token, action=GUEST_ACTION, client=client):
+        raise ChallengeFailed("The check that a person is asking did not pass. Try again")
     # Asked before the count below takes its lock, so a slow node holds up no one else.
     if not await _fundable():
         raise Unavailable("The playground has run out of test money for now. Try again later")

@@ -98,6 +98,8 @@ services:
       args:
         # Inlined into the browser's JavaScript at build time: the API as the browser reaches it.
         NEXT_PUBLIC_API_URL: https://api.${DOMAIN:?set DOMAIN in deploy/.env}
+        # Cloudflare Turnstile's site key: public, and empty turns the bot check off.
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
     ports: !reset []
     networks: [default, proxy]
     restart: unless-stopped

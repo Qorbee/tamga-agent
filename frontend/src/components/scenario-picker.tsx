@@ -10,6 +10,7 @@ import { Segmented } from "@/components/segmented";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Turnstile, turnstileRequired } from "@/components/turnstile";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, createGuestSession, listScenarios, type GuestStart, type Scenario } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
@@ -30,8 +31,11 @@ export function ScenarioPicker({ open, onOpenChange }: { open: boolean; onOpenCh
   const queryClient = useQueryClient();
   const scenarios = useQuery({ queryKey: ["scenarios"], queryFn: listScenarios, enabled: open, staleTime: Infinity });
   const [picked, setPicked] = useState<Scenario | null>(null);
+  // Each refusal asks the bot check for a fresh token: one is redeemed at most once.
+  const [attempt, setAttempt] = useState(0);
   const start = useMutation({
     mutationFn: createGuestSession,
+    onError: () => setAttempt((at) => at + 1),
     onSuccess: () => {
       // A full load, not a client navigation: a previous sandbox's cache, chat session and
       // event stream must not carry into the new one.
@@ -60,6 +64,7 @@ export function ScenarioPicker({ open, onOpenChange }: { open: boolean; onOpenCh
             key={picked.key}
             scenario={picked}
             opening={start.isPending}
+            attempt={attempt}
             onBack={() => setPicked(null)}
             onOpen={(body) => start.mutate(body)}
           />
@@ -104,11 +109,13 @@ export function ScenarioPicker({ open, onOpenChange }: { open: boolean; onOpenCh
 function Setup({
   scenario,
   opening,
+  attempt,
   onBack,
   onOpen,
 }: {
   scenario: Scenario;
   opening: boolean;
+  attempt: number;
   onBack: () => void;
   onOpen: (body: GuestStart) => void;
 }) {
@@ -121,6 +128,7 @@ function Setup({
   const [reserve, setReserve] = useState(policy?.reserve_rule ?? "steady");
   // A scenario with no fixed pay day keeps none unless the judge picks one.
   const [payDay, setPayDay] = useState<number | null>(policy?.payment_weekday ?? null);
+  const [token, setToken] = useState<string | null>(null);
   const limitValid = /^\d{1,9}(\.\d{1,2})?$/.test(limit);
   const weekday = (day: number) =>
     new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 5 + day)));
@@ -136,6 +144,7 @@ function Setup({
           name: name.trim() || null,
           company: company.trim() || null,
           choices: policy ? { approval_limit: limit, reserve_rule: reserve, payment_weekday: payDay } : null,
+          turnstile_token: token,
         });
       }}
     >
@@ -180,12 +189,13 @@ function Setup({
           </div>
         </fieldset>
       ) : null}
+      <Turnstile action="guest" attempt={attempt} onToken={setToken} />
       <div className="flex items-center justify-between gap-3 pt-1">
         <Button type="button" variant="ghost" onClick={onBack} disabled={opening}>
           <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.75} />
           {words.back}
         </Button>
-        <Button type="submit" disabled={opening || (policy !== null && !limitValid)}>
+        <Button type="submit" disabled={opening || (policy !== null && !limitValid) || (turnstileRequired && !token)}>
           {opening ? t.auth.openingSandbox : words.open}
         </Button>
       </div>

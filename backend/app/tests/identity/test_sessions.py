@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.companies.models import CompanyKind
 from app.modules.identity import service
 from app.modules.settlement import service as settlement
+from app.platform import turnstile
 from app.platform.chain import ChainError
 
 pytestmark = pytest.mark.integration
@@ -187,6 +188,22 @@ async def test_no_sandbox_opens_when_the_treasury_cannot_fund_it(
 
     assert refused.status_code == 503
     assert refused.json()["error"]["code"] == "unavailable"
+
+
+async def test_no_sandbox_opens_for_a_failed_bot_check(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def refused(token: str | None, *, action: str, client: str) -> bool:
+        return token == "a person's"  # noqa: S105 (a test token)
+
+    monkeypatch.setattr(turnstile, "verify", refused)
+
+    failed = await client.post("/sessions/guest", json={"turnstile_token": "a script's"})
+    passed = await client.post("/sessions/guest", json={"turnstile_token": "a person's"})
+
+    assert failed.status_code == 403
+    assert failed.json()["error"]["code"] == "challenge_failed"
+    assert passed.status_code == 201
 
 
 async def test_a_treasury_that_cannot_be_read_locks_no_judge_out(

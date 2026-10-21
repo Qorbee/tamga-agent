@@ -13,4 +13,6 @@ export const env = {
   apiUrl: required("NEXT_PUBLIC_API_URL", process.env.NEXT_PUBLIC_API_URL),
   // The landing page's film and pictures: a public bucket of their own, never the files' bucket.
   mediaUrl: process.env.NEXT_PUBLIC_MEDIA_URL || "https://media.qorbee.com",
+  // Cloudflare Turnstile's site key, public by design; unset, no bot check is shown or sent.
+  turnstileSiteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || null,
 } as const;

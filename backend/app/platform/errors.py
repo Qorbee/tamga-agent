@@ -39,6 +39,13 @@ class PermissionDenied(DomainError):
     code = "permission_denied"
 
 
+class ChallengeFailed(DomainError):
+    """A bot check (Cloudflare Turnstile) did not pass: the page may try it again."""
+
+    status = HTTPStatus.FORBIDDEN
+    code = "challenge_failed"
+
+
 class NotFound(DomainError):
     status = HTTPStatus.NOT_FOUND
     code = "not_found"

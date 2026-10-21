@@ -2848,6 +2848,8 @@ export interface components {
             name?: string | null;
             /** Scenario */
             scenario?: string | null;
+            /** Turnstile Token */
+            turnstile_token?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {

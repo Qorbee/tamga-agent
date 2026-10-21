@@ -2889,6 +2889,18 @@
               }
             ],
             "title": "Scenario"
+          },
+          "turnstile_token": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnstile Token"
           }
         },
         "title": "GuestStart",

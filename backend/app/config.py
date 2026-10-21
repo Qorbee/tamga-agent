@@ -234,6 +234,11 @@ class Settings(BaseSettings):
     # Sign-ins and invite acceptances that check a password, per client address.
     password_attempts_per_client_per_hour: int = 20
     max_active_sandboxes: int = 200
+    # Cloudflare Turnstile before a guest sandbox opens (app/platform/turnstile.py): the widget's
+    # secret, and the web app's hostnames a token may be issued on, comma-separated. Without the
+    # secret no check is made, as on a laptop or in CI.
+    turnstile_secret_key: SecretStr | None = None
+    turnstile_hostnames: str = ""
 
     @field_validator("vision_pages_per_day")
     @classmethod
@@ -323,6 +328,8 @@ class Settings(BaseSettings):
             and self.arc_rpc_url.get_secret_value() == PUBLIC_ARC_RPC
         ):
             raise ValueError("set ARC_RPC_URL to the team's own node: the vault is read through it")
+        if self.turnstile_secret_key is not None and not self.turnstile_hostname_set:
+            raise ValueError("set TURNSTILE_HOSTNAMES: the web app's hostnames a token comes from")
         for model in sorted(self.models()):
             key = MODEL_PROVIDER_KEYS[model.partition(":")[0]]
             if getattr(self, key) is None:
@@ -337,6 +344,12 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def turnstile_hostname_set(self) -> frozenset[str]:
+        return frozenset(
+            name.strip() for name in self.turnstile_hostnames.split(",") if name.strip()
+        )
 
 
 @lru_cache

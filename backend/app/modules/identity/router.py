@@ -67,6 +67,7 @@ async def create_guest_session(
         name=body.name if body else None,
         company_name=body.company if body else None,
         choices=body.choices if body else None,
+        turnstile_token=body.turnstile_token if body else None,
     )
     _set_session_cookie(response, opened)
     return opened.me
