@@ -2,6 +2,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -85,6 +86,9 @@ class FakeCircle:
     async def company_state(self, company_id: uuid.UUID) -> chain.CompanyState | None:
         return self.state
 
+    async def usdc_balance(self, address: str) -> Decimal:
+        return Decimal(100)
+
     async def release(
         self,
         signature: str,
@@ -119,6 +123,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeCircle:
     for name in ("create_wallets", "execute", "transaction", "wallet"):
         monkeypatch.setattr(circle, name, getattr(stand_in, name))
     monkeypatch.setattr(chain, "company_state", stand_in.company_state)
+    monkeypatch.setattr(chain, "usdc_balance", stand_in.usdc_balance)
     monkeypatch.setattr(agent_wallet, "execute", stand_in.release)
     monkeypatch.setattr(settlement, "_POLL", 0.0)
     return stand_in
@@ -323,3 +328,30 @@ async def test_an_opening_that_never_said_it_finished_is_read_on_the_chain(
         sum(int(parameters[3]) for parameters, _ in fake.released)
         == settlement.sandbox_terms().deposit
     )
+
+
+async def test_an_open_account_is_topped_up_once_however_often_a_stopped_run_is_tried(
+    client: httpx.AsyncClient, fake: FakeCircle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    company_id = await seeded(client)
+    await settlement.open_account(company_id)
+    opened = fake.state
+    assert opened is not None
+
+    # The deposit is sent, then the run stops before it is final, and is tried again.
+    monkeypatch.setattr(settlement, "_WAIT", 0.0)
+    with pytest.raises(TimeoutError):
+        await settlement.top_up(company_id, 2_000_000)
+    monkeypatch.setattr(settlement, "_WAIT", 300.0)
+    tx_hash = await settlement.top_up(company_id, 2_000_000)
+
+    deposits = [sent for sent in fake.sent if sent[0].startswith("deposit")]
+    assert len(deposits) == 2  # the opening's, and one top-up
+    assert deposits[-1][1][1] == 2_000_000
+    assert tx_hash == "0xhash-deposit"
+    assert fake.state is not None and fake.state.balance == opened.balance + 2_000_000
+
+    # A later top-up is a new transaction, not the finished one again.
+    await settlement.top_up(company_id, 1_000_000)
+    assert len([sent for sent in fake.sent if sent[0].startswith("deposit")]) == 3
+    assert {"top-up 1", "top-up 2"} <= set((await account(company_id)).transactions)

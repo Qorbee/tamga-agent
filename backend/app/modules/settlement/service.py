@@ -54,6 +54,8 @@ _WAIT: Final = 300.0
 _ABANDONED: Final = 3600
 # An allowance no treasury balance reaches.
 _ANY_AMOUNT: Final = 2**128
+# An open account's later deposits, among its transactions: "top-up 1", "top-up 2"...
+_TOP_UP: Final = "top-up "
 
 
 class DecisionPaid(Protocol):
@@ -224,6 +226,38 @@ async def open_account(company_id: uuid.UUID) -> None:
             await db.commit()
 
 
+async def top_up(company_id: uuid.UUID, amount: int) -> str:
+    """Deposits ``amount`` more from the treasury into an open account, as its opening did, and
+    returns the deposit's hash. A top-up that stopped before its hash is the one gone on with, at
+    the amount it was sent with if it was sent, so a run tried again never deposits twice. The
+    treasury's allowance to the vault was given when the account opened."""
+    settings = get_settings()
+    vault, treasury_id = settings.policy_vault_address, settings.circle_treasury_wallet_id
+    if vault is None or treasury_id is None:
+        raise SettlementError("the vault or the treasury is not configured")
+    if amount <= 0:
+        raise SettlementError("a top-up is more than nothing")
+    async with open_session() as db:
+        account = await repository.get_account(db, company_id)
+    if account is None or account.state is not AccountState.OPEN:
+        raise SettlementError("the company has no open account on the vault")
+    tops = [name for name in account.transactions if name.startswith(_TOP_UP)]
+    stopped = [name for name in tops if not account.transactions[name].get("hash")]
+    name = stopped[0] if stopped else f"{_TOP_UP}{len(tops) + 1}"
+    key = chain.company_key(company_id)
+    return await _step(
+        company_id,
+        name,
+        lambda idempotency: circle.execute(
+            wallet_id=treasury_id,
+            contract=vault,
+            signature="deposit(bytes32,uint256)",
+            parameters=["0x" + key.hex(), amount],
+            idempotency_key=idempotency,
+        ),
+    )
+
+
 async def release_remainder(company_id: uuid.UUID) -> bool:
     """Before a sandbox is deleted: sends what is left of its balance on the vault back to the
     treasury, through the executor. Returns whether nothing of it is left there, so the sandbox
@@ -343,7 +377,7 @@ async def _wallets(company_id: uuid.UUID) -> tuple[str, list[str]]:
 async def _step(
     company_id: uuid.UUID, name: str, send: Callable[[uuid.UUID], Awaitable[str]]
 ) -> str:
-    """One transaction of the opening, sent once whatever happens: its key is written before it
+    """One transaction of an account, sent once whatever happens: its key is written before it
     is sent, its Circle id after, its hash once final. Returns the hash."""
     async with open_session() as db:
         account = await repository.get_account(db, company_id, for_update=True)
