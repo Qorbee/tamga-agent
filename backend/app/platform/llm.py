@@ -188,11 +188,12 @@ def _no_room(error: ModelHTTPError) -> bool:
     return error.status_code == 429 and code == "resource_unavailable"
 
 
-# Pydantic AI learns what a model can do from its name, and the release installed (the newest
-# that is seven days old) predates these models: it takes each for a model that does not reason,
-# and drops the effort without a word. Each is given the abilities of the model it succeeds. An
-# entry goes once the installed release knows the name; a test fails on that day.
-SUCCEEDS: Final = {"gpt-6.1-sol": "gpt-6-sol"}
+# Pydantic AI learns what a model can do from its name, and a release installed (the newest that
+# is seven days old) can predate a model: it takes it for one that does not reason, and drops the
+# effort without a word. Such a model is entered here, given the abilities of the model it
+# succeeds, as {"gpt-6.1-sol": "gpt-6-sol"} was. An entry goes once the installed release knows
+# the name; a test fails on that day.
+SUCCEEDS: Final[dict[str, str]] = {}
 
 
 @cache

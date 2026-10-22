@@ -40,7 +40,7 @@ exactly as written. A country or a city is written as that language writes it.
 translator: Agent[Sequence[str], Translated] = Agent(
     name=TRANSLATOR,
     # The texts the call holds, as they were given.
-    deps_type=Sequence[str],  # type: ignore[type-abstract]  # read only, never built
+    deps_type=Sequence[str],
     output_type=Translated,
     instructions=_INSTRUCTIONS + llm.OUTSIDE_DATA,
     retries=2,

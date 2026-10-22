@@ -43,6 +43,7 @@ dev = [
 #   exclude-newer-package = { starlette = "0 days" }  # CVE-…; remove after YYYY-MM-DD
 # and never by lowering or deleting this line.
 exclude-newer = "7 days"
+exclude-newer-package = { certifi = "0 days" }  # GHSA-6q48-6c7w-9gw2 (compromised emSign CAs); remove after 2026-10-27
 
 [tool.ruff]
 line-length = 100
