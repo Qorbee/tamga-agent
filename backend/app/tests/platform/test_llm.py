@@ -39,8 +39,9 @@ def spans(monkeypatch: pytest.MonkeyPatch) -> Iterator[InMemorySpanExporter]:
 
 
 def traced_text(exporter: InMemorySpanExporter) -> str:
+    # An attribute can hold bytes: read as text, so content kept in them is still found.
     return " ".join(
-        f"{span.name} {key} {value}"
+        f"{span.name} {key} {value.decode(errors='replace') if isinstance(value, bytes) else value}"
         for span in exporter.get_finished_spans()
         for key, value in (span.attributes or {}).items()
     )

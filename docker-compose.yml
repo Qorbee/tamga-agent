@@ -39,7 +39,7 @@ services:
   # It creates no bucket by itself: `curl -X PUT http://localhost:8333/tamga` once (the tests do
   # their own). With no identities configured it accepts any keys, which is fine on a laptop only.
   storage:
-    image: chrislusf/seaweedfs:4.47
+    image: chrislusf/seaweedfs:4.48
     command: ["server", "-dir=/data", "-ip.bind=0.0.0.0", "-s3", "-s3.port=8333"]
     # Loopback only: it accepts any keys.
     ports:
