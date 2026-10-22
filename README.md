@@ -20,7 +20,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/readme/project-dark.webp">
-  <img src=".github/readme/project-light.webp" alt="A job in Tamga: its client and subcontractors suggested with the evidence behind each, what was invoiced and what is still owed, and its trucks with their papers">
+  <img src=".github/readme/project-light.webp" alt="A job in Tamga: its client and subcontractors, what was invoiced and what is still owed, and its trucks with their papers, beside the company's other jobs and the chats Tamga started">
 </picture>
 
 > In the steppe, a *tamga* proved what was yours. Tamga proves the job was done before anyone gets paid.
@@ -52,11 +52,16 @@ World panel, skip a day, approve a bill, and follow the payment on Arcscan.
   <tr>
     <td width="66%">
       <picture>
-        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/tour-dark.webp">
-        <img src=".github/readme/tour-light.webp" alt="The guided tour lighting the Payments page">
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/money-dark.webp">
+        <img src=".github/readme/money-light.webp" alt="Money: the company's accounts in each currency, what comes in and goes out over the next four weeks, and each movement">
       </picture>
     </td>
-    <td width="34%"><img src=".github/readme/phone-proof.webp" alt="On a phone, a proof's sources in a sheet from the foot of the screen"></td>
+    <td width="34%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/readme/phone-dark.webp">
+        <img src=".github/readme/phone-light.webp" alt="On a phone, a job with its client, subcontractors, money and trucks">
+      </picture>
+    </td>
   </tr>
 </table>
 
